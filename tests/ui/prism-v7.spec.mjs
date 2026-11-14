@@ -5,10 +5,13 @@
 //   - the Process menu offers all 32 processes (Time & Pitch, the Pitch Time
 //     Changer and Hyperprism's 30), each with its picture, opening inside the
 //     panel; choosing one not in Prism's chain adds it and puts it on the pad;
-//   - every control is a half-width bar with its picture, the pad's two first;
-//   - four LFOs under the controls: Map then a click rings a control, and the
-//     deck hears the swing while the setting stays where the hand left it;
-//   - the banks have fixed widths, and nothing spills out of them.
+//   - every control is the app's shared knob with its picture, the pad's two
+//     first (half-width bars until the mock-up of 13 Nov 2026);
+//   - four LFOs under the controls: Map then a click on a control maps it, its
+//     knob shows the LFO's reach, and the deck hears the swing while the
+//     setting stays where the hand left it;
+//   - the panels beside the pad have fixed widths, and nothing spills out of
+//     them or cuts a control's name.
 
 import { test, expect } from './test.mjs';
 
@@ -64,14 +67,15 @@ test('choosing a Hyperprism process not in the chain adds it and puts it on the 
   const onPad = await page.evaluate(() => prismDeck.rack.slots.find((s) => s.kind === 'prism:hp-flanger').id === prismPad.source);
   expect(onPad).toBe(true);
   await expect(page.locator('#prismPickBtn')).toContainText('Flanger');
-  // Its every setting is a bar with its picture, the pad's two first.
+  // Its every setting is a knob with its picture, the pad's two first.
   const keys = await page.locator('#prismSettings .prism-bar').evaluateAll((els) => els.map((e) => e.dataset.key));
   const want = await page.evaluate(() => state.shapers['prism:hp-flanger'].params.map((p) => p.key));
   expect([...keys].sort()).toEqual([...want].sort());
   const p = await page.evaluate(() => prismSetup());
   expect(keys.slice(0, 2)).toEqual([p.x, p.y]);
-  expect(await page.locator('#prismSettings .prism-bar > svg.gg').evaluateAll((els) => els.filter((g) => !g.innerHTML.trim()).length)).toBe(0);
-  // Half width: two bars to a line.
+  await expect(page.locator('#prismSettings .prism-bar .ui-knob')).toHaveCount(keys.length);
+  expect(await page.locator('#prismSettings .prism-bar .ui-knob .ui-pic').evaluateAll((els) => els.filter((g) => !g.innerHTML.trim()).length)).toBe(0);
+  // Knobs side by side, several to a line.
   const [a, b] = await page.locator('#prismSettings .prism-bar').evaluateAll((els) => els.slice(0, 2).map((e) => e.getBoundingClientRect().toJSON()));
   expect(Math.abs(a.y - b.y)).toBeLessThan(1);
   expect(b.x).toBeGreaterThan(a.x + a.width - 1);
@@ -90,9 +94,11 @@ test('an LFO mapped to a control swings what the deck hears, not the setting', a
   const bar = page.locator('#prismSettings .prism-bar').nth(2);
   const key = await bar.getAttribute('data-key');
   const before = await page.evaluate((k) => prismDeck.rack.slots.find((s) => s.id === prismPad.source).params[k], key);
-  await bar.locator('input').click();
+  await bar.locator('.ui-kn').click();
   await expect(bar).toHaveClass(/plfo-on/);
   await expect(page.locator('#prismLfos .plfo-chip')).toHaveCount(1);
+  // The knob shows the LFO's reach round its ring.
+  await expect(bar.locator('.ui-kn')).toHaveClass(/\bmod\b/);
   await page.waitForTimeout(1200);
   const mine = sent.filter((b) => b.key === key);
   expect(mine.length).toBeGreaterThan(5);
@@ -107,16 +113,17 @@ test('an LFO mapped to a control swings what the deck hears, not the setting', a
   expect(after).toBe(before);
   // Clicking it again in Map unmaps it, and the setting goes back to the deck.
   await page.locator('#prismLfoMap').click();
-  await bar.locator('input').click();
+  await bar.locator('.ui-kn').click();
   await expect(bar).not.toHaveClass(/plfo-on/);
   await expect(page.locator('#prismLfos .plfo-chip')).toHaveCount(0);
 });
 
-test('the banks have fixed widths and nothing spills out of them', async ({ page }) => {
+test('the panels have fixed widths and nothing spills out of them', async ({ page }) => {
   await openPrism(page);
   const widths = async () => page.locator('#dockHyper .hs-bank').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)));
   const first = await widths();
-  expect(first).toEqual([409, 204, 102]);
+  // Controls and LFOs one column, Takes, Output.
+  expect(first).toEqual([396, 396, 236, 104]);
   await page.setViewportSize({ width: 1700, height: 900 });
   expect(await widths()).toEqual(first);
   for (const kind of ['prism:hp-multi-delay', 'prism:hp-pitch-shifter', 'prism:hp-hall']) {
@@ -125,9 +132,13 @@ test('the banks have fixed widths and nothing spills out of them', async ({ page
     await expect.poll(() => page.evaluate((k) => prismDeck.rack.slots.find((s) => s.id === prismPad.source)?.kind, kind)).toBe(kind);
     const spill = await page.locator('#dockHyper .hs-bank').evaluateAll((els) => els.filter((e) => e.scrollHeight > e.clientHeight + 1).map((e) => e.getAttribute('aria-label')));
     expect(spill).toEqual([]);
-    const cut = await page.locator('#dockHyper .prism-bar').evaluateAll((els) => els.filter((r) => {
-      const k = r.querySelector(':scope > .k'), v = r.querySelector(':scope > .v');
-      return k && v && (k.scrollWidth > k.clientWidth + 1 || k.getBoundingClientRect().right > v.getBoundingClientRect().left + 1);
+    // No knob's name or reading is cut or runs into the next knob.
+    const cut = await page.locator('#prismSettings .prism-bar').evaluateAll((els) => els.filter((r) => {
+      const box = r.getBoundingClientRect();
+      return [...r.querySelectorAll('.ui-kname, .ui-kval')].some((t) => {
+        const b = t.getBoundingClientRect();
+        return t.scrollWidth > t.clientWidth + 1 || b.left < box.left - 1 || b.right > box.right + 1;
+      });
     }).map((r) => r.dataset.key));
     expect(cut).toEqual([]);
   }

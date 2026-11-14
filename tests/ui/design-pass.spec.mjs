@@ -112,44 +112,53 @@ test('C2 · the camera pads move the camera, and the channel box follows', async
   expect(+(await page.locator('#reCamRy').inputValue())).toBeCloseTo(90, 0);
 });
 
-test('C3 · the Prism pad is square, as large as the dock leaves, its banks hard against it', async ({ page }) => {
-  // HyperStretch and the rack pad merged (5 Nov 2026): the rack pad's square
-  // box, sized to the dock, with HyperStretch's banks beside it.
+test('C3 · the Prism pad is the page, everything left of its panels, the panels hard against it', async ({ page }) => {
+  // HyperStretch and the rack pad merged (5 Nov 2026), rebuilt from RJ's
+  // mock-up (13 Nov 2026): the pad fills what the panels beside it leave, at
+  // any window size, where it was a square sized to the dock.
   const measure = () => page.evaluate(() => {
     const pad = document.getElementById('hsPad').getBoundingClientRect();
     const banks = document.querySelector('#dockHyper .hs-banks').getBoundingClientRect();
     const dock = document.getElementById('dockHyper').getBoundingClientRect();
     return { w: Math.round(pad.width), h: Math.round(pad.height), gap: Math.round(banks.left - pad.right),
+      left: Math.round(pad.left - dock.left), bottom: Math.round(dock.bottom - pad.bottom),
       inDock: banks.right <= dock.right + 1 && pad.bottom <= dock.bottom + 1 };
   });
   await openFile(page);
   await dockTab(page, 'prism');
   await page.waitForTimeout(300);
   const wide = await measure();
-  expect(Math.abs(wide.w - wide.h)).toBeLessThanOrEqual(1);
   expect(wide.w).toBeGreaterThanOrEqual(140);
+  expect(wide.h).toBeGreaterThanOrEqual(140);
   expect(wide.gap).toBeGreaterThanOrEqual(0);
   expect(wide.gap).toBeLessThanOrEqual(24);
+  // From the page's left edge to the panels, and down to its foot: only the
+  // margins and the pad panel's own frame between.
+  expect(wide.left).toBeLessThanOrEqual(24);
+  expect(wide.bottom).toBeLessThanOrEqual(24);
   expect(wide.inDock).toBe(true);
   await page.setViewportSize({ width: 1300, height: 1000 });
   await page.waitForTimeout(400);
   const narrow = await measure();
-  expect(Math.abs(narrow.w - narrow.h)).toBeLessThanOrEqual(1);
+  // The window lost 300 px across: the pad lost them, the panels kept theirs.
+  expect(wide.w - narrow.w).toBeGreaterThanOrEqual(290);
+  expect(narrow.gap).toBe(wide.gap);
   expect(narrow.inDock).toBe(true);
 });
 
-test('C3 · a process\'s settings are bars with their pictures beside the pad, all of them', async ({ page }) => {
-  // The v7 Prism page (RJ, 6 Nov 2026): every setting a half-width bar with
-  // the picture of what it does, the pad's two first; knobs before that.
+test('C3 · a process\'s settings are the shared knobs with their pictures beside the pad, all of them', async ({ page }) => {
+  // The Prism page from RJ's mock-up (13 Nov 2026): every setting the app's
+  // shared knob with the picture of what it does beside it, the pad's two
+  // first; half-width bars in v7 (6 Nov 2026), knobs of its own before that.
   const measure = () => page.evaluate(() => {
     const bars = [...document.querySelectorAll('#prismSettings .param')].map((row) => {
-      const pic = row.querySelector(':scope > svg.gg')?.getBoundingClientRect();
-      const input = row.querySelector(':scope > input[type=range]').getBoundingClientRect();
+      const pic = row.querySelector('.ui-knob .ui-pic')?.getBoundingClientRect();
+      const kn = row.querySelector('.ui-knob .ui-kn')?.getBoundingClientRect();
       return {
         label: row.querySelector('.k')?.textContent.trim(),
-        bar: row.classList.contains('prism-bar'),
+        bar: row.classList.contains('prism-bar') && !!kn,
         pic: pic ? Math.round(pic.width) : 0,
-        beside: !!pic && pic.right <= input.left + 1 && Math.abs((input.top + input.bottom) / 2 - (pic.top + pic.bottom) / 2) <= 3,
+        beside: !!pic && !!kn && pic.right <= kn.left + 1 && Math.abs((kn.top + kn.bottom) / 2 - (pic.top + pic.bottom) / 2) <= 3,
       };
     });
     return { bars, text: document.getElementById('prismSettings').textContent };
@@ -162,7 +171,7 @@ test('C3 · a process\'s settings are bars with their pictures beside the pad, a
   expect(tp.bars.map((k) => k.label)).toEqual(['Stretch', 'Pitch', 'Window', 'Cloud over engine']);
   await expect(page.locator('#hsGlide')).toBeVisible();
   expect(tp.text).not.toMatch(/tab/i);
-  // The Pitch Time Changer has six: bars, each picture beside its bar.
+  // The Pitch Time Changer has six: knobs, each picture beside its knob.
   await page.locator('#prismSource').selectOption({ label: 'Pitch Time Changer' });
   await page.waitForTimeout(300);
   const ptc = await measure();
@@ -173,11 +182,14 @@ test('C3 · a process\'s settings are bars with their pictures beside the pad, a
     expect(k.beside).toBe(true);
   }
   await expect(page.locator('#hsGlide')).toBeHidden();
-  // A click far along a bar sets what its slider set: the Pitch Time Changer's value.
+  // Turning a knob up sets what its slider set: the Pitch Time Changer's value.
   const before = await page.evaluate(() => prismPtc().feedback);
-  const row = page.locator('#prismSettings .param').filter({ hasText: 'Feedback' }).locator('input[type=range]');
-  const b = await row.boundingBox();
-  await page.mouse.click(b.x + b.width * 0.8, b.y + b.height / 2);
+  const kn = page.locator('#prismSettings .param').filter({ hasText: 'Feedback' }).locator('.ui-kn');
+  const b = await kn.boundingBox();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2 - 60, { steps: 6 });
+  await page.mouse.up();
   expect(await page.evaluate(() => prismPtc().feedback)).toBeGreaterThan(before);
 });
 

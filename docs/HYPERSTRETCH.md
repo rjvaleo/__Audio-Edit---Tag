@@ -7,16 +7,29 @@
 - The panel: `ui/app/385-hyperstretch.js`. What it drives, and how: `ui/prism-pad.js`, whose functions fill the panel's menus, limits, settings, presets and faders by the rack pad's own ids.
 - The glide: `core/crates/engine/src/glide.rs`.
 
-## The merged panel
+## The page
 
-- **The header:** the source (Time & Pitch, the Pitch Time Changer, or any rack slot), the two axes, the transport, the chip, **Loop | Lanes**, LOOP (in Lanes), the PTC switch (for the Pitch Time Changer), the presets with Save, Rename and Delete, and the post-roll.
-- **The pad:** HyperStretch's look, square, as large as the dock leaves room for beside the banks, as the rack pad's was. Linear between its limits, as Hyperprism's was, whatever the control. The rack pad swept a log control logarithmically; it no longer does.
-- **Settings:** every control of the source but the two on the pad. They move the same values their controls elsewhere move: Time & Pitch's Glide plus Window and Cloud; the Pitch Time Changer's Feedback, Grain Size, X-Fade Size and Smoothing; for a slot, every parameter in its own groups, "Added (not in the original)" among them, as the FX tab has them. No note sends you elsewhere for the rest.
-- **Gestures** and **Motion:** HyperStretch's takes A–D, rate, direction, throw, loop on release and shapes. Kept per sound and per source.
-- **Output:** Hyperprism's Playback Speed, and its L, LR and R faders with their 0 buttons.
-- **Where a take goes:**
-  - **Loop**, HyperStretch's: grab to record, stepped, looping at its own length. Live only.
-  - **Lanes**, the rack pad's: ● arms the recorder and plays; the pad's two controls become two automation lanes in the document, which LOOP wraps together and the export plays. The pad shows the take and rides along it as it plays.
+*Rebuilt 13 November 2026 from the mock-up RJ approved (`WORK DIR/page-mockups/hyperprism.html`).* The pad is the page; everything else sits in the app's own panels and wells, with the shared controls, as on Grain and Chop. The look is the shared look's (`--look-*`), so a theme reaches it, and orange (`--on`) means on.
+
+The open document's green wave, spectrogram, ruler and edit furniture are not on this page: Prism plays its own sound (the Prism deck), so they never showed what it plays. The Now Playing bar stays, and is Prism's here ([EDIT-PAGE.md](EDIT-PAGE.md)).
+
+Top to bottom:
+
+- **SOURCE:** the whole of Prism's sound, 58 px high, in its own colours (low violet, mid mint, high white, as the Edit page, Grain and Chop colour theirs: `edColourAt`, the sound measured by `edLoadSound`). Plain until it is measured. The playhead runs over it, and a click or a drag seeks the deck, as the bar's strip does. Its line says the file, format, rate, bits, channels and length; **Edit** opens the sound on the Edit page.
+- **The PRISM row:** the process (Time & Pitch, the Pitch Time Changer, or any slot of Prism's chain), the two axes, the take's transport (● ▶ ❚❚ ■ ⏮), the chip (READY, REC, PLAY), and the shared preset bar for the process. **Loop | Lanes** and LOOP are kept, unlisted (`HS_LANES_LISTED`).
+- **The Sound row:** the folder and the sound, a mini overview, and the chain's chips with **+ add effect**.
+- **The pad:** fills everything left of the panels, at any window size: the window's width and height go to it, and the panels keep theirs. Not square: the drawing is in pad pixels across and down, so the Shift lock's diagonal is 45° on screen and an arrow moves 1 px. The limits are typed into its corners (Y high top left, Y low bottom left, X low beside it, X high bottom right), with their units; the axes are named along its bottom and left edges. Its head says the take and where the engine is now.
+- **Controls:** every setting of the process as the shared knob (`uiKnobParam`, at 26) with its picture beside it, tinted by the grain facet it belongs to (`PRISM_PIC.facetOf`, `--look-f-*`). The pad's two come first, marked X and Y. Each knob turns the same range input the bar did (`prismKnob`), at the same steps and on the same curve, so every value lands where it did. Time & Pitch's Window and Cloud, the Pitch Time Changer's Feedback, Grain Size, X-Fade Size and Smoothing, and for a slot every parameter in its own groups, "Added (not in the original)" among them. The PTC switch is in its head.
+- **LFOs:** four, each with its shape, a scope in a well, Rate and Depth (and Width for a pulse) as knobs, and Map in the head. A mapped knob shows the LFO's reach round its ring and a dot where the sound is.
+- **Takes:** A–D as wells, each drawn with its take; rate and direction as shared switches; Glide, Playback Speed and Post-roll as shared bars; Throw and Loop on release; the shapes as a switch, lit for the shape the take was drawn from.
+- **Output:** Hyperprism's L, LR and R faders, upright in wells, filled from their middle (0 dB); each one's name is its 0 button.
+
+What the pad drives, and how, is `ui/prism-pad.js`; the panel is `ui/app/385-hyperstretch.js`, its pieces `386`–`388b`.
+
+**Where a take goes:**
+
+- **Loop**, HyperStretch's: grab to record, stepped, looping at its own length. Live only.
+- **Lanes**, the rack pad's: ● arms the recorder and plays; the pad's two controls become two automation lanes in the document, which LOOP wraps together and the export plays. The pad shows the take and rides along it as it plays. Unlisted while the Prism deck has no lanes.
 
 ## Where the behaviour comes from
 
@@ -41,7 +54,7 @@ Hyperprism-PPC 1.2.1 was decompiled with Ghidra:
 
 ### The pad
 
-- **Layout:** X low and high sit at the ends of the top bar; Y high and low at the top and bottom of the left bar. The original's size, 461 × 241, is not kept: the merged pad is square, sized to the dock.
+- **Layout:** the limits are in the pad's corners, X along the bottom and Y up the left. The original's size, 461 × 241, is not kept: the pad fills the page left of the panels.
 - **Mapping:** linear.
   - `X = xLo + x·(xHi − xLo)`
   - `Y = yLo + (1 − y)·(yHi − yLo)`
@@ -65,7 +78,7 @@ Hyperprism-PPC 1.2.1 was decompiled with Ghidra:
 ### Display
 
 - **The readout** shows both values under the hand while moving. On hover, before anything is touched, it shows the values under the pointer.
-- **The marker** is a yellow ball on a black crosshair, orange-red while recording.
+- **The marker** is a white ball in a ring, red while recording; a dashed ring follows it where the glide has the engine now. (The original's was a yellow ball on a black crosshair.)
 
 ### Glide
 
