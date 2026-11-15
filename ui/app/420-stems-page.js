@@ -35,6 +35,25 @@ const ST = {
 };
 
 const ST_STEMS = ['drums', 'bass', 'vocals', 'other'];
+ST.start = 'sounds';
+ST.picks = [];
+ST.vary = { nearFar: 0.5, n: 6, of: 0 };
+/// The models (only Small is installed; the rest each need RJ's OK: MAKE-PLAN.md).
+const ST_MODELS = [
+  { id: 'small', name: 'Stable Audio Open Small', a: '11 s · 0.4 s a sound · takes a guide', st: 'on the PC', cls: 'ok', title: 'Installed on the PC. Stability AI Community Licence, personal use.' },
+  { id: 'open1', name: 'Stable Audio Open 1.0', a: '47 s · fuller · takes a guide', st: 'needs your OK · 5 GB', cls: 'ask', title: 'Not installed: needs your OK and a 5 GB download.' },
+  { id: 'audiogen', name: 'AudioGen', a: '10 s · sound effects, foley', st: 'non-commercial · 4 GB', cls: 'nc', title: 'Not installed. Non-commercial: fine for your music, not to ship in MGL.' },
+  { id: 'musicgen', name: 'MusicGen melody', a: '30 s · loops that follow a tune', st: 'non-commercial · 6 GB', cls: 'nc', title: 'Not installed. Non-commercial: fine for your music, not to ship in MGL.' },
+  { id: 'mgl', name: "MGL's own synths", a: '808 kit, sine bass, pads', st: 'next', cls: 'ask', title: 'The Seq page synths, rendered here: next.' },
+];
+const ST_ALGOS = [
+  { k: 'vary', name: 'VARIATIONS', d: 'new takes of a pick, from close to far' },
+  { k: 'blend', name: 'BLEND TWO', d: 'a row of sounds part way from A to B' },
+  { k: 'kit', name: 'KIT AROUND', d: 'hats, percussion, toms, a bass note that belong with them' },
+  { k: 'loop', name: 'LOOP AROUND', d: 'the picks in a bar pattern learnt from your songs' },
+  { k: 'texture', name: 'TEXTURE FROM', d: 'pads, drones, risers made from the picks by Grain' },
+  { k: 'mutate', name: 'MUTATE', d: "versions through MGL's own effects" },
+];
 const ST_COL = {
   mix: 'var(--look-f-level)', drums: 'var(--look-f-attack)', bass: 'var(--look-f-tone)',
   vocals: 'var(--look-f-pitch)', other: 'var(--look-f-space)', guitar: 'var(--look-f-time)', piano: 'var(--look-f-time)',
@@ -119,14 +138,27 @@ function stBuild() {
 
     <div class="st-view hidden" id="stMake">
       <section class="st-panel">
-        <div class="st-ph"><b class="st-nm">MAKE A SOUND</b><span class="st-meta">cut from your own stems, then made to sound good</span></div>
-        <div class="st-row"><span id="stKind"></span>
-          <span class="st-cap st-from">From</span><select class="st-field st-from" id="stFrom" style="min-width:260px"></select>
-          <input class="st-field st-words st-prompt hidden" id="stPrompt" placeholder="say the sound: deep round dub techno kick, short tail" />
-          <span class="st-words st-wbars hidden" id="stWordsBars"></span>
-          <button class="st-btn st-primary" id="stMakeGo">Find them</button>
-          <span class="st-grow"></span>
-          <span class="st-note" id="stModelNote">Sounds from words (Stable Audio Open Small) are not installed: its licence needs your OK first.</span></div>
+        <div class="st-mktop">
+          <div class="st-col"><span class="st-cap">Start from</span><span id="stStart"></span></div>
+          <div class="st-col" style="flex:1;min-width:0"><span class="st-cap">Model</span><div class="st-models" id="stModels"></div></div>
+        </div>
+        <div class="st-row st-start st-start-stems"><span id="stKind"></span>
+          <span class="st-cap">From</span><select class="st-field" id="stFrom" style="min-width:260px"></select>
+          <span class="st-note">hits and notes cut from a split song's own stems</span></div>
+        <div class="st-row st-start st-start-words">
+          <input class="st-field st-prompt" id="stPrompt" placeholder="say the sound: deep round dub techno kick, short tail" />
+          <span class="st-wbars" id="stWordsBars"></span></div>
+        <div class="st-start st-start-sounds"><div class="st-picks" id="stPicks"></div></div>
+        <div class="st-row"><span class="st-note" id="stModelNote"></span><span class="st-grow"></span><button class="st-btn st-primary" id="stMakeGo">Find them</button></div>
+      </section>
+      <section class="st-panel st-start st-start-sounds">
+        <div class="st-ph"><b class="st-nm">MAKE AROUND THEM</b><span class="st-meta">pick a way · each makes a page of tries</span></div>
+        <div class="st-algos" id="stAlgos"></div>
+        <div class="st-row" id="stVaryCtl">
+          <span class="st-cap">Of</span><span id="stVaryOf"></span>
+          <span id="stVaryBars" class="st-wbars"></span>
+          <input class="st-field" id="stVaryWords" style="flex:1;min-width:200px" placeholder="what it is, to steer it (optional): 808 kick, dub rim…" />
+        </div>
       </section>
       <section class="st-panel">
         <div class="st-ph"><b class="st-nm">TRIES</b><span class="st-meta" id="stTriesMeta">click one to hear it and choose it</span></div>
@@ -164,7 +196,15 @@ function stBuild() {
     ],
   });
   $('stModel').append(ST.modelSeg);
-  $('stKind').append(uiSeg({ h: 28, value: ST.kind, items: [{ k: 'drums', label: 'Drum hits' }, { k: 'bass', label: 'Bass notes' }, { k: 'words', label: 'From words', title: 'Stable Audio Open Small, on the GPU machine' }], onPick: (k) => { ST.kind = k; stKindShow(); } }));
+  if (ST.kind === 'words') ST.kind = 'drums';
+  $('stKind').append(uiSeg({ h: 28, value: ST.kind, items: [{ k: 'drums', label: 'Drum hits' }, { k: 'bass', label: 'Bass notes' }], onPick: (k) => { ST.kind = k; } }));
+  $('stStart').append(uiSeg({ h: 28, value: ST.start, items: [{ k: 'words', label: 'Words' }, { k: 'sounds', label: 'My sounds' }, { k: 'stems', label: 'My stems' }], onPick: (k) => { ST.start = k; stKindShow(); } }));
+  $('stModels').innerHTML = ST_MODELS.map((m) => `<div class="st-model${m.id === 'small' ? ' on' : ' off'}" title="${stEsc(m.title)}"><b>${m.name}</b><span>${m.a}</span><span class="st-mst ${m.cls}">${m.st}</span></div>`).join('');
+  $('stAlgos').innerHTML = ST_ALGOS.map((a) => `<div class="st-algo${a.k === 'vary' ? ' on' : ' off'}" title="${stEsc(a.k === 'vary' ? a.d : 'next: ' + a.d)}"><b>${a.name}</b><span>${a.k === 'vary' ? a.d : 'next'}</span></div>`).join('');
+  const V = ST.vary;
+  $('stVaryBars').append(
+    uiBar({ label: 'Near ↔ far', h: 24, w: 170, get: () => V.nearFar, set: (u) => { V.nearFar = Math.round(u * 100) / 100; }, commit: () => {}, text: () => V.nearFar.toFixed(2), def: 0.5, col: 'var(--look-f-level)' }),
+    uiBar({ label: 'How many', h: 24, w: 130, get: () => (V.n - 2) / 10, set: (u) => { V.n = Math.round(2 + u * 10); }, commit: () => {}, text: () => `${V.n}`, def: 0.4, col: 'var(--look-f-level)' }));
   const W = ST.words = { seconds: 1.5, n: 4 };
   $('stWordsBars').append(
     uiBar({ label: 'Length', h: 24, w: 150, get: () => (W.seconds - 0.5) / 10.5, set: (u) => { W.seconds = Math.round((0.5 + u * 10.5) * 10) / 10; }, commit: () => {}, text: () => `${W.seconds.toFixed(1)} s`, def: 1 / 10.5, col: 'var(--look-f-time)' }),
@@ -258,6 +298,12 @@ function stShowSource() {
 /// A song picked in the library drawer while on this page: it becomes the
 /// song here, and a double-click also shuts the drawer.
 function stPick(file, close) {
+  // On Make with My sounds, the drawer adds a sound to make around.
+  if (ST.tab === 'make' && ST.start === 'sounds') {
+    stAddPick(file.path, (file.name || file.path.split('/').pop()).replace(/\.[^.]+$/, ''));
+    if (close && typeof closeDrawer === 'function') closeDrawer();
+    return;
+  }
   selectFile(file);
   stStage({ p: file.path, name: file.name || file.path.split('/').pop(), duration: file.duration });
   if (close && typeof closeDrawer === 'function') closeDrawer();
@@ -650,21 +696,71 @@ function stFillFrom() {
   if (keep && ST.list.some((s) => s.p === keep)) sel.value = keep;
 }
 
-/// Make's controls for the kind chosen: a song to cut from, or words.
+/// Make's controls for where it starts: words, your sounds, or a song's stems.
 function stKindShow() {
   if (!$('stMake')) return;
-  const words = ST.kind === 'words';
-  for (const el of document.querySelectorAll('#stMake .st-from')) el.classList.toggle('hidden', words);
-  for (const el of document.querySelectorAll('#stMake .st-words')) el.classList.toggle('hidden', !words);
-  $('stMakeGo').textContent = words ? 'Make them' : 'Find them';
-  $('stMakeGo').disabled = words && !ST.gpu;
-  $('stModelNote').textContent = words
-    ? (ST.gpu ? `Stable Audio Open Small on the ${ST.gpu}'s GPU · the first time it loads the model, up to a minute; then about a second` : 'Sounds from words need the GPU machine: set AUDIOLAB_GPU_HOST (see docs/STEMS.md).')
-    : 'Cut from your own stems.';
+  for (const el of document.querySelectorAll('#stMake .st-start')) el.classList.toggle('hidden', !el.classList.contains(`st-start-${ST.start}`));
+  const model = ST.start !== 'stems';
+  $('stModels').classList.toggle('st-dim', !model);
+  $('stMakeGo').textContent = { words: 'Make them', sounds: `Make ${ST.vary.n}`, stems: 'Find them' }[ST.start];
+  $('stMakeGo').disabled = (model && !ST.gpu) || (ST.start === 'sounds' && !ST.picks.length);
+  $('stModelNote').textContent = !model ? 'No model: cut from your own stems.'
+    : !ST.gpu ? 'The model runs on the GPU machine: set AUDIOLAB_GPU_HOST (see docs/STEMS.md).'
+    : ST.start === 'sounds' && !ST.picks.length ? 'Pick a sound first: + pick a sound, from the library, or Pick it on a try below.'
+    : `Stable Audio Open Small on the ${ST.gpu}'s GPU · the first time it loads the model, up to a minute; then about a second a sound`;
+  stRenderPicks();
+}
+
+/// The sounds picked to make around, A, B, C…
+function stRenderPicks() {
+  const box = $('stPicks');
+  if (!box) return;
+  box.innerHTML = ST.picks.map((p, i) => `<div class="st-pickc${i === ST.vary.of ? ' on' : ''}" data-i="${i}"><div class="st-row"><b class="st-nm">${String.fromCharCode(65 + i)} · ${stEsc(p.name)}</b><span class="st-grow"></span><button class="st-btn st-sm" data-play="${i}" title="Hear it">▶</button><button class="st-btn st-sm" data-x="${i}" title="Take it off">×</button></div><div class="st-well"><canvas data-p="${stEsc(p.p)}"></canvas></div></div>`).join('')
+    + (ST.picks.length < 4 ? '<div class="st-pickc st-add" id="stAddPick">+ pick a sound<span>from the library, or Pick it on a try</span></div>' : '');
+  for (const c of box.querySelectorAll('.st-pickc[data-i]')) c.onclick = (e) => {
+    const i = +c.dataset.i;
+    if (e.target.closest('[data-x]')) { ST.picks.splice(i, 1); ST.vary.of = Math.min(ST.vary.of, Math.max(0, ST.picks.length - 1)); stKindShow(); return; }
+    if (e.target.closest('[data-play]')) { stPlay(ST.picks[i].p); return; }
+    ST.vary.of = i; stRenderPicks();
+  };
+  $('stAddPick')?.addEventListener('click', () => { if (typeof openDrawer === 'function') openDrawer(); });
+  $('stVaryOf').textContent = ST.picks.length ? String.fromCharCode(65 + ST.vary.of) : '–';
+  for (const c of box.querySelectorAll('canvas')) stWave(c, c.dataset.p, 'var(--look-f-pitch)');
+}
+
+function stAddPick(p, name) {
+  if (ST.picks.some((x) => x.p === p)) return;
+  ST.picks.push({ p, name });
+  if (ST.picks.length > 4) ST.picks.shift();
+  ST.vary.of = ST.picks.length - 1;
+  stKindShow();
+}
+
+async function stMakeVary() {
+  const pick = ST.picks[ST.vary.of];
+  if (!pick) return;
+  $('stMakeGo').disabled = true;
+  $('stTriesMeta').textContent = `making ${ST.vary.n} variations of ${pick.name} on the ${ST.gpu}…`;
+  const t0 = performance.now();
+  try {
+    ST.tries = await postJSON('/api/stems/vary', { p: pick.p, n: ST.vary.n, nearFar: ST.vary.nearFar, prompt: $('stVaryWords').value.trim() });
+    $('stTriesMeta').textContent = `${ST.tries.length} variations of ${pick.name} in ${((performance.now() - t0) / 1000).toFixed(1)} s · close to far · click to hear, Pick it to make around it`;
+  } catch (e) {
+    toast(e.message);
+    ST.tries = [];
+    $('stTriesMeta').textContent = 'none made';
+  } finally {
+    stKindShow();
+  }
+  ST.pick = null;
+  ST.made = null;
+  ST.peakCache?.clear();
+  stShowTries(true);
 }
 
 async function stFindTries() {
-  if (ST.kind === 'words') return stMakeWords();
+  if (ST.start === 'words') return stMakeWords();
+  if (ST.start === 'sounds') return stMakeVary();
   const p = $('stFrom').value;
   if (!p) { toast('Split a song first'); return; }
   $('stMakeGo').disabled = true;
@@ -706,16 +802,23 @@ async function stMakeWords() {
 }
 
 function stShowTries(keepMeta) {
-  const col = (t) => (t.group === 'words' ? 'var(--look-f-pitch)' : t.group === 'kick' || t.group === 'snare' || t.group === 'hat' ? ST_COL.drums : ST_COL.bass);
+  const col = (t) => (t.group === 'words' || t.group === 'vary' ? 'var(--look-f-pitch)' : t.group === 'kick' || t.group === 'snare' || t.group === 'hat' ? ST_COL.drums : ST_COL.bass);
   if (!keepMeta) $('stTriesMeta').textContent = ST.tries.length ? `${ST.tries.length} found · click one to hear it and choose it` : 'none found';
-  $('stTries').innerHTML = ST.tries.map((t, i) => `<div class="st-try" data-i="${i}"><div class="st-row"><b class="st-nm" style="font-size:var(--fs-s)">${stEsc(t.label)}</b><span class="st-grow"></span><span class="st-meta">${t.seconds.toFixed(2)} s</span></div><div class="st-well"><canvas data-p="${stEsc(t.p)}" data-col="${col(t)}"></canvas></div></div>`).join('');
+  $('stTries').innerHTML = ST.tries.map((t, i) => `<div class="st-try" data-i="${i}"><div class="st-row"><b class="st-nm" style="font-size:var(--fs-s)">${stEsc(t.label)}</b><span class="st-grow"></span><span class="st-meta">${t.seconds.toFixed(2)} s</span><button class="st-btn st-sm st-pickit" title="Add it to the sounds to make around">Pick it</button></div><div class="st-well"><canvas data-p="${stEsc(t.p)}" data-col="${col(t)}"></canvas></div></div>`).join('');
   for (const el of document.querySelectorAll('#stTries .st-try')) {
-    el.onclick = () => {
+    el.onclick = (e) => {
+      if (e.target.closest('.st-pickit')) {
+        const t = ST.tries[+el.dataset.i];
+        ST.start = 'sounds';
+        $('stStart').querySelectorAll('[role="radio"]').forEach((r) => r.classList.toggle('on', r.dataset.k === 'sounds'));
+        stAddPick(t.p, t.label.split(' · ')[0] + (t.group === 'vary' ? ` ${t.nearFar.toFixed(2)}` : ''));
+        return;
+      }
       const t = ST.tries[+el.dataset.i];
       ST.pick = t;
       ST.made = null;
       for (const o of document.querySelectorAll('#stTries .st-try')) o.classList.toggle('sel', o === el);
-      $('stName').value = t.group === 'words' ? $('stPrompt').value.trim().split(/[,.]/)[0].slice(0, 48) : `${ST.song?.name || 'sound'} ${t.group}`.trim();
+      $('stName').value = t.group === 'vary' ? t.label.replace(' · ', ' ').slice(0, 48) : t.group === 'words' ? $('stPrompt').value.trim().split(/[,.]/)[0].slice(0, 48) : `${ST.song?.name || 'sound'} ${t.group}`.trim();
       $('stKeep').disabled = false;
       $('stHearB').disabled = true;
       $('stSaved').textContent = '';
@@ -735,7 +838,7 @@ async function stKeep() {
   const c = ST.chain;
   const body = {
     p: ST.pick.p,
-    folder: ST.pick.group === 'words' ? 'Words' : ST.kind === 'bass' ? 'Bass' : 'Drums',
+    folder: ST.pick.group === 'words' ? 'Words' : ST.pick.group === 'vary' ? 'Variations' : ST.kind === 'bass' ? 'Bass' : 'Drums',
     name: $('stName').value || ST.pick.group,
     rate: c.up ? c.rate : 0,
     air: c.up ? c.air : 0,

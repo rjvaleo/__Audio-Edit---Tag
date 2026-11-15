@@ -438,7 +438,8 @@ pub(super) fn api_stems_words(app: &Arc<App>, req: &Request) -> Response {
     let n = num("n", 4.0).clamp(1.0, 8.0) as u32;
     let seed = num("seed", (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1) % 100_000) as f64) as u64;
     let id = format!("w{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0));
-    let made = match crate::gpu::words(&gpu, &id, &prompt, seconds, n, seed) {
+    let req = Value::obj().set("prompt", prompt.clone()).set("seconds", seconds).set("n", n).set("seed", seed as f64);
+    let made = match crate::gpu::words(&gpu, &id, req) {
         Ok(m) => m,
         Err(e) => return Response::error(502, &e),
     };
@@ -460,6 +461,77 @@ pub(super) fn api_stems_words(app: &Arc<App>, req: &Request) -> Response {
                 .set("label", format!("{short} · {}", m.seed))
                 .set("group", "words")
                 .set("seed", m.seed as f64)
+                .set("seconds", m.seconds)
+        })
+        .collect();
+    Response::json(Value::Arr(rows).to_string())
+}
+
+/// POST {p, n, nearFar, prompt, seed}: variations of a sound in the library.
+/// The sound goes to the GPU machine as the guide; Stable Audio Open Small
+/// makes `n` new takes of it, spread from a little closer to a little further
+/// than `nearFar` (0 close .. 1 far). Tries come back into `Made/.words/`.
+pub(super) fn api_stems_vary(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let Some(gpu) = crate::gpu::config(&app.data_dir) else {
+        return Response::error(503, "variations need the GPU machine: set AUDIOLAB_GPU_HOST, or GPU.json in the data folder");
+    };
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    let rel = v.get("p").and_then(|p| p.as_str()).unwrap_or("").to_string();
+    let Some(src) = resolve_within(&lib, &rel) else { return Response::error(404, "no such sound in the library") };
+    let num = |k: &str, d: f64| match v.get(k) {
+        Some(Value::Num(n)) => *n,
+        _ => d,
+    };
+    let n = num("n", 6.0).clamp(1.0, 12.0) as usize;
+    let u = num("nearFar", 0.5).clamp(0.0, 1.0);
+    // The page's 0..1 onto the model's useful strengths: below 0.25 it hardly
+    // changes, at 0.95 it barely listens to the guide.
+    let centre = 0.25 + 0.7 * u;
+    let (lo, hi) = ((centre - 0.15).max(0.2), (centre + 0.15).min(0.97));
+    let levels: Vec<f64> = (0..n).map(|i| if n == 1 { centre } else { lo + (hi - lo) * i as f64 / (n - 1) as f64 }).map(|l| (l * 100.0).round() / 100.0).collect();
+    let seed = num("seed", (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1) % 100_000) as f64) as u64;
+    let name = src.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let prompt: String = v.get("prompt").and_then(|p| p.as_str()).map(str::to_string).filter(|p| !p.trim().is_empty()).unwrap_or_else(|| name.replace(['_', '-'], " ")).chars().filter(|c| !c.is_control()).take(300).collect();
+    let id = format!("v{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0));
+    let ext = src.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "wav".into());
+    let guide = format!("{}/sao/guides/{id}.{ext}", gpu.dir);
+    if let Err(e) = gpu.ps(&format!("New-Item -ItemType Directory -Force -Path '{}' | Out-Null", crate::gpu::win(&format!("{}/sao/guides", gpu.dir)))).and_then(|_| gpu.put(&src, &guide)) {
+        return Response::error(502, &e);
+    }
+    let req = Value::obj()
+        .set("prompt", prompt.clone())
+        .set("n", n)
+        .set("seed", seed as f64)
+        .set("init", crate::gpu::win(&guide))
+        .set("levels", Value::Arr(levels.iter().map(|l| Value::from(*l)).collect()));
+    let made = crate::gpu::words(&gpu, &id, req);
+    let _ = gpu.ps(&format!("Remove-Item -Force '{}' -ErrorAction SilentlyContinue", crate::gpu::win(&guide)));
+    let made = match made {
+        Ok(m) => m,
+        Err(e) => return Response::error(502, &e),
+    };
+    let dir = lib.join("Made").join(".words");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return Response::error(500, &e.to_string());
+    }
+    let pairs: Vec<(String, PathBuf)> = made.iter().enumerate().map(|(i, m)| (m.remote.clone(), dir.join(format!("{id}-{i:02}.wav")))).collect();
+    if let Err(e) = gpu.get_many(&pairs) {
+        return Response::error(502, &e);
+    }
+    let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}'", crate::gpu::win(&format!("{}/sao/tries/mgl/{id}", gpu.dir))));
+    let words = |l: f64| if l < 0.4 { "close" } else if l < 0.6 { "near" } else if l < 0.8 { "further" } else { "far" };
+    let rows: Vec<Value> = made
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let l = m.near_far.unwrap_or(centre);
+            Value::obj()
+                .set("p", format!("Made/.words/{id}-{i:02}.wav"))
+                .set("label", format!("{name} · {} {:.2}", words(l), l))
+                .set("group", "vary")
+                .set("seed", m.seed as f64)
+                .set("nearFar", l)
                 .set("seconds", m.seconds)
         })
         .collect();

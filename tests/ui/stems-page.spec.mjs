@@ -108,6 +108,7 @@ test('Make: drum hits cut from the drums stem, cleaned, upsampled and saved', as
   await open(page);
   await page.locator('#stTabs [role="radio"]', { hasText: 'Make a sound' }).click();
   await expect(page.locator('#stMake')).toBeVisible();
+  await page.locator('#stStart [role="radio"]', { hasText: 'My stems' }).click();
   await page.selectOption('#stFrom', 'Stems/Test Song');
   await page.click('#stMakeGo');
   await expect(page.locator('#stTries .st-try').first()).toBeVisible({ timeout: 20_000 });
@@ -138,7 +139,7 @@ test('Make from words: its own controls, and only with a GPU machine', async ({ 
   await open(page);
   const st = await (await request.get('/api/stems')).json();
   await page.locator('#stTabs [role="radio"]', { hasText: 'Make a sound' }).click();
-  await page.locator('#stKind [role="radio"]', { hasText: 'From words' }).click();
+  await page.locator('#stStart [role="radio"]', { hasText: 'Words' }).click();
   await expect(page.locator('#stPrompt')).toBeVisible();
   await expect(page.locator('#stWordsBars .ui-bar')).toHaveCount(2);
   await expect(page.locator('#stFrom')).toBeHidden();
@@ -153,7 +154,7 @@ test('Make from words: its own controls, and only with a GPU machine', async ({ 
     expect(r.status()).toBe(503);
   }
   // Back to cutting from stems: the song picker returns.
-  await page.locator('#stKind [role="radio"]', { hasText: 'Drum hits' }).click();
+  await page.locator('#stStart [role="radio"]', { hasText: 'My stems' }).click();
   await expect(page.locator('#stFrom')).toBeVisible();
   await expect(page.locator('#stPrompt')).toBeHidden();
 });
@@ -225,4 +226,38 @@ test('the split status says which stems have come back, and how far the others a
   const s = await (await request.get('/api/stems')).json();
   expect(Array.isArray(s.arrived)).toBe(true);
   expect(typeof s.incoming).toBe('object');
+});
+
+test('Make from my sounds: picks from the drawer, Variations, and only with a GPU machine', async ({ page, request }) => {
+  const st = await (await request.get('/api/state')).json();
+  const status = await (await request.get('/api/stems')).json();
+  mkdirSync(join(st.library, 'sounds'), { recursive: true });
+  wav(join(st.library, 'sounds', 'Pick Kick.wav'), 0.5, (t) => Math.sin(2 * Math.PI * (50 + 100 * Math.exp(-t * 30)) * t) * Math.exp(-t * 8));
+  wav(join(st.library, 'sounds', 'Pick Rim.wav'), 0.3, (t) => (Math.random() * 2 - 1) * Math.exp(-t * 40));
+  await request.post('/api/scan', { data: {} });
+  await expect.poll(async () => (await (await request.get('/api/files?folder=sounds')).json()).length, { timeout: 15_000 }).toBe(2);
+  await open(page);
+  await page.locator('#stTabs [role="radio"]', { hasText: 'Make a sound' }).click();
+  await page.locator('#stStart [role="radio"]', { hasText: 'My sounds' }).click();
+  await expect(page.locator('#stAlgos .st-algo.on')).toHaveText(/VARIATIONS/);
+  await expect(page.locator('#stModels .st-model.on')).toContainText('Stable Audio Open Small');
+  // Picks come from the library drawer, and stay on the Make tab.
+  await page.click('#stAddPick');
+  await page.locator('#leftPanel').getByText('sounds', { exact: true }).first().click();
+  await page.locator('#leftPanel').getByText('Pick Kick').first().click();
+  await page.locator('#leftPanel').getByText('Pick Rim').first().dblclick();
+  await expect(page.locator('#stPicks .st-pickc[data-i]')).toHaveCount(2);
+  expect(await page.evaluate(() => ({ mode: state.mode, tab: ST.tab, of: ST.vary.of }))).toEqual({ mode: 'stems', tab: 'make', of: 1 });
+  await page.locator('#stPicks .st-pickc', { hasText: 'Pick Kick' }).click();
+  await expect(page.locator('#stVaryOf')).toHaveText('A');
+  if (status.gpu) {
+    await expect(page.locator('#stMakeGo')).toBeEnabled();
+  } else {
+    await expect(page.locator('#stMakeGo')).toBeDisabled();
+    const r = await request.post('/api/stems/vary', { data: { p: 'sounds/Pick Kick.wav' } });
+    expect(r.status()).toBe(503);
+  }
+  // × takes a pick off.
+  await page.locator('#stPicks .st-pickc', { hasText: 'Pick Rim' }).locator('[data-x]').click();
+  await expect(page.locator('#stPicks .st-pickc[data-i]')).toHaveCount(1);
 });
