@@ -105,6 +105,12 @@ const COMPOSE_LISTED = false;
       icon: 'stems', label: 'Stems', mode: 'stems',
       title: 'Stems — split a song into drums, bass, vocals and other, read what is in it, and make sounds from it',
     },
+    // Clone a song: a new piece from songs split and read on Stems. The Seq
+    // frame again, showing only the Clone panel, which writes the Seq Band.
+    {
+      icon: 'clone', label: 'Clone', mode: 'clone',
+      title: 'Clone a song — a new piece from your songs: what the reading found, how near or far, played by the Band (and the PC\'s model, when it is connected)',
+    },
     {
       icon: 'theme', label: 'Theme', mode: 'theme',
       title: 'Palettes, colours, the waveform and the Look',
@@ -229,6 +235,9 @@ const COMPOSE_LISTED = false;
     // A song pulled into four lanes.
     stems:
       '<path d="M3.5 12h3"/><path d="M6.5 12 9 6.5h11.5"/><path d="M6.5 12 9 10h11.5"/><path d="M6.5 12 9 14h11.5"/><path d="M6.5 12 9 17.5h11.5"/>',
+    // One shape becoming two: a song and the new piece grown from it.
+    clone:
+      '<path d="M4 15.5c2.2-3.6 4.4-3.6 6.6 0"/><path d="M13.4 15.5c2.2-3.6 4.4-3.6 6.6 0" opacity=".7"/><path d="M7.3 12V6.5"/><path d="M16.7 12V8.5"/><path d="M7.3 6.5c3 0 5 1 9.4 2"/>',
     compose:
       '<rect x="3.5" y="4" width="4.6" height="7" rx=".8"/><rect x="9.7" y="4" width="4.6" height="7" rx=".8"/><rect x="15.9" y="4" width="4.6" height="7" rx=".8"/><path d="M3.5 14.5h17"/><path d="M3.5 17.5h11"/><path d="M3.5 20.5h14"/>',
     theme:

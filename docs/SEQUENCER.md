@@ -783,3 +783,88 @@ back the steps. The Performance recorder does not record drawing gestures.
 - Drawings do not morph point by point between presets.
 
 Tests: `tests/ui/draw.spec.mjs`.
+
+## Clone a song
+
+*14 Nov 2026.* RJ: "It's the clone a song", and, with the PC's song-from-song
+tools doing the same: "figure out a way that they can live together … you both do
+the thing and then you can use it to check each other. And then it's how you do
+like fills." Plan `WORK DIR/page-mockups/CLONE-PLAN.md`, mock-up `clone.html`.
+`ui/sequencer/clone.js` (ours, `/sequencer/clone.js`).
+
+**A page of its own** on the host's rail, after Stems: the Seq frame with only
+the Clone panel showing (`body.only-clone`, from `seq:only`), as Draw and
+Atmosphere are, so it writes the Seq Band directly.
+
+**The page is simple** (RJ, 14 Nov: "make similar, mix with so-and-so, lean
+towards da-da-da. Like super simple"; a design panel's brief, mock-up
+`clone-simple.html`). Three things:
+
+1. **Your songs:** those split and read on the Stems page (`/api/stems/list`,
+   their `songprint.json` from `/api/stems/info`), each shown *listening…* until
+   its reading arrives, then as a line in plain words (`clPrint`: "124 · G minor,
+   its own tuning · four on the floor · moving bass · dry") and a strip of which
+   stems play where. Click one: the takes start from it (FROM). **Split a song on
+   Stems** goes there (`seq:goto` `stems`).
+2. **Four buttons and one knob.** **Make similar** (every facet from your song);
+   **Mix with…** (click up to four other songs, then press it again: the drums and
+   bass come from them, the rest from any); **Lean toward…** (darker, brighter,
+   busier drums, sparser, more space, slower, faster, more dub, the bass of / the
+   drums of another song, or words, which only the PC's model reads); **Surprise
+   me**. The **Close ↔ Far** knob is how far from the songs (each take ±15).
+3. **Four takes**, each with ▶ (the Band plays it at once), a badge (close, near,
+   loose, far), its tempo, sections and length, **More like this** (that take is
+   the new starting point: its hits, bass and parts move a little; `clVary`),
+   **Less like this** (replaced by one 25 further away), and **Keep**. The
+   **family** trail goes back through what came from what. The PC's version says
+   it is not connected yet.
+
+**Keep** renders the take in the frame (`seqBridge.renderFilm`: the Band, offline,
+the whole plan and a 3 s tail, 48 kHz) and posts it to `POST /api/clone/keep`
+(`?name=&rate=`, raw interleaved stereo floats), which writes
+`Made/Clones/<song> - <take>.wav`. Then **Open in Edit / Grain / Chop** asks the
+host to open it (`seq:open`). It works only in the app (the bridge runs in the
+frame); on the page by itself it says so.
+
+**A take is its recipe** (`{ snap: { mode, sel, seed, facets }, leans, varies,
+text }`), made by `clMakeRecipe`: the engine, then the leans, then each More like
+this step. The same recipe makes the same take, so the page keeps only recipes
+(`mglClone`, v 2) and makes them again when it opens.
+
+**Under the hood** (a drawer, closed): the picked take's blueprint. Its seven
+facets (tempo and feel, key and tuning, drums, bass, chords, arrangement, texture
+and space), each **From** a song, All of them, or the dub techno style, at a
+distance **close ↔ far** (0 the song as it was, about 30 your habits with new
+material, about 70 your shape with other notes, 100 far); a change remakes the
+take. The plan (sections, the parts in each, the drum pattern and bass line each
+plays, a **fill** at a join from the bars before RJ's own section changes; clicks
+play now but aren't kept with the take). The eleven **words** the PC's model will
+read. What every button did. **The check** (the Band's take against the
+description). **Open in Seq** and **The description** (`cloneDescription`, the
+shared JSON).
+
+**What it writes** (`cloneApply`): the tempo and swing; a **learned scale** in the
+song's own cents (the reading's positions, ones within 30¢ of each other or the
+octave merged), added to the scale library under "LEARNED FROM YOUR SONGS" and
+kept in the browser (`mglLearnedScales`) so a preset that uses it opens again; the
+root (the root menu now has sharps); the Journey off (the plan is the trip); every
+part the plan uses on, Follows root; drum patterns A–D and the fill; bass lines
+A–D (By hand); the section plan, Arrange on **Plan**; the chords' cutoff, Space
+sends and pan, the delay time, from the texture. Everything comes from the
+readings, the settings and the seed: the same seed makes the same piece.
+
+**What the Band gained for it** (usable without Clone too):
+- **Drum patterns A–D and Fill** (`DM.pats`), edited by the tabs beside Pattern.
+  `dmGridText` holds `{ v: 2, pats }`; a preset from before holds one grid, which
+  becomes A.
+- **Bass lines A–D** (`bsLineText` as `{ "A": "R-…", … }`, or one line, A), edited
+  by the tabs over the line.
+- **The section plan** (`bdPlanText`: `{ secs: [{ l, b, drums, bass, chord,
+  drone, arp, melody, fill, open }] }`), played with Arrange on **Plan**: each
+  section says which parts play, which drum pattern and bass line, whether its last
+  bar is the fill, how open the chords' filter is, and whether the melody (the
+  steps) plays (`bandMelodyOn`, in the scheduler and the film's render). It goes
+  round when it ends; a strip under the Band's header shows it.
+
+Tests: `tests/ui/sequencer-clone.spec.mjs` (the Stems routes stood in for with a
+small song's reading).

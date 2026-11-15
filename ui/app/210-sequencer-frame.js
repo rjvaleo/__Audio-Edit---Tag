@@ -210,6 +210,24 @@ function seqAsk(bands, lo, hi) {
 window.addEventListener('message', (e) => {
   if (e.origin !== location.origin) return;
   const m = e.data || {};
+  // The Clone page's Open in Seq: the page it wrote the Band of.
+  // Its Split a song on Stems: the Stems page.
+  if (m.type === 'seq:goto' && (m.mode === 'seq' || m.mode === 'clone' || m.mode === 'stems')) { setMode(m.mode); return; }
+  // A kept take (a WAV in Made/Clones), opened on Edit, Grain or Chop, as the
+  // Stems page opens a stem.
+  if (m.type === 'seq:open' && typeof m.p === 'string' && m.p.startsWith('Made/')) {
+    (async () => {
+      let file = await resolveFile(m.p);
+      // The index lists a file under its top folder ("Made"), not the folder it
+      // sits in, so a nested path is looked up there.
+      if (!file.sampleRate) {
+        try { file = (await api(`/api/files?folder=${encodeURIComponent(m.p.split('/')[0])}`)).find((f) => f.path === m.p) || file; } catch { /* the stub still opens */ }
+      }
+      if (typeof setEditPage === 'function') setEditPage(['wave', 'grain', 'chop'].includes(m.page) ? m.page : 'grain', false);
+      await openInEditor(file);
+    })();
+    return;
+  }
   if (m.type === 'seq:ready') {
     seq.ready = true;
     seqSync(engine.playing);

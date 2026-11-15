@@ -205,6 +205,10 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
             Response::ok("text/javascript; charset=utf-8", SEQ_BAND_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
+        ("GET" | "HEAD", "/sequencer/clone.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_CLONE_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
         ("GET" | "HEAD", "/sequencer/draw.js") => {
             Response::ok("text/javascript; charset=utf-8", SEQ_DRAW_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
@@ -375,6 +379,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/stems/keep") => api_stems_keep(app, req),
         ("POST", "/api/stems/words") => api_stems_words(app, req),
         ("POST", "/api/stems/vary") => api_stems_vary(app, req),
+        ("POST", "/api/clone/keep") => api_clone_keep(app, req),
         // The picture for a video export. See `docs/VIDEO-EXPORT.md`.
         ("POST", "/api/video") => api_video(app, req),
         ("GET", "/api/video") => api_video_status(app),

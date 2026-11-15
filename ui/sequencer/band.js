@@ -106,20 +106,24 @@ const BAND_MORPH_IDS = [
 const BAND_SLIDER_IDS = [...BAND_MORPH_IDS, "bdSeedSlider", ...(typeof DRUMS_SLIDER_IDS !== "undefined" ? DRUMS_SLIDER_IDS : [])];
 const BAND_SELECT_IDS = [
   ...BD_CH.flatMap((ch) => [`mx${ch.c}MuteSelect`, `mx${ch.c}SoloSelect`]),
-  "apWaveSelect", "chFltSelect", "drFltSelect", "bsLineText", "bdStyleSelect", "bdArrangeSelect",
+  "apWaveSelect", "chFltSelect", "drFltSelect", "bsLineText", "bdStyleSelect", "bdArrangeSelect", "bdPlanText",
   ...["chord", "drone"].flatMap((p) => [bdKindId(p, "A"), bdKindId(p, "B")]),
   ...(typeof DRUMS_SELECT_IDS !== "undefined" ? DRUMS_SELECT_IDS : []),
 ];
 const BAND_ALL_MORPH_IDS = [...BAND_MORPH_IDS, ...(typeof DRUMS_MORPH_IDS !== "undefined" ? DRUMS_MORPH_IDS : [])];
 
 // ─── THE VALUES ──────────────────────────────────────────────────────────────
-const BAND = { swing: 50, style: "none", arrange: false, ch: {}, bass: {}, chord: {}, arp: {}, drone: {}, patch: { chord: {}, drone: {} }, edit: "drums" };
+const BAND = { swing: 50, style: "none", arrange: false, arrangeMode: "off", plan: null, ch: {}, bass: {}, chord: {}, arp: {}, drone: {}, patch: { chord: {}, drone: {} }, edit: "drums" };
+/// The bass line being edited, A–D (the section plan says which bars play which).
+let bdBassCur = "A";
 
 function bandRead() {
   const v = (id, d) => { const el = document.getElementById(id); return el ? el.value : d; };
   BAND.swing = +v("bdSwingSlider", 50);
   BAND.style = v("bdStyleSelect", "none");
-  BAND.arrange = v("bdArrangeSelect", "off") === "on";
+  BAND.arrangeMode = v("bdArrangeSelect", "off");
+  BAND.arrange = BAND.arrangeMode !== "off";
+  bandReadPlan(v("bdPlanText", ""));
   const solo = BD_CH.some((ch) => v(`mx${ch.c}SoloSelect`, "off") === "on");
   for (const ch of BD_CH) {
     BAND.ch[ch.c] = {
@@ -132,7 +136,12 @@ function bandRead() {
   BAND.arp.wave = v("apWaveSelect", "triangle");
   BAND.chord.flt = v("chFltSelect", "lowpass");
   BAND.drone.flt = v("drFltSelect", "lowpass");
-  BAND.bass.line = v("bsLineText", "R-..........R.5.");
+  // The bass lines, A–D: `{"A": "R-…", …}`; a preset from before them holds one line, A.
+  const raw = v("bsLineText", "R-..........R.5.");
+  let lines = null;
+  try { lines = raw.trim().startsWith("{") ? JSON.parse(raw) : null; } catch (e) { lines = null; }
+  BAND.bass.lines = lines && typeof lines === "object" ? lines : { A: raw };
+  BAND.bass.line = BAND.bass.lines[bdBassCur] || BAND.bass.lines.A || "";
   for (const part of ["chord", "drone"]) {
     const p = {};
     for (const k of BD_PATCH_KEYS) p[k] = +v(bdPatchId(part, k), 0);
@@ -338,6 +347,14 @@ const BD_BREAK = [0.57, 0.625]; // kick and bass out
 /// Whether a part (or drum row) plays at boundary `k`, with Arrange on.
 function bandArranged(what, k) {
   if (!BAND.arrange) return true;
+  // The section plan (the Clone page writes one): which parts play in each section.
+  if (BAND.arrangeMode === "plan") {
+    const sec = bandSectionAt(Math.floor((k * stepBeats) / 4 + 1e-9));
+    if (!sec) return true;
+    if (DM_SLOTS.some((s) => s.k === what)) return !!sec.s.drums;
+    if (what === "bass") return !!sec.s.bass;
+    return sec.s[what] == null ? true : !!sec.s[what];
+  }
   const bars = typeof J !== "undefined" && J.on ? J.bars : 128;
   const f = (((k * stepBeats) / (bars * 4)) % 1 + 1) % 1;
   if ((what === "kick" || what === "bass") && f >= BD_BREAK[0] && f < BD_BREAK[1]) return false;
@@ -347,6 +364,7 @@ function bandArranged(what, k) {
 /// How far the trip has opened (0–1): the Journey's curve when it is on, else
 /// the research's shape: up through the peak, down in the outro.
 function bandOpen(k) {
+  if (BAND.arrangeMode === "plan") { const sec = bandSectionAt(Math.floor((k * stepBeats) / 4 + 1e-9)); return sec && sec.s.open != null ? sec.s.open : 0.5; }
   if (typeof J !== "undefined" && J.on && typeof journeyWhere === "function") return journeyCurve(journeyWhere(k).f);
   if (!BAND.arrange) return 0.5;
   const f = (((k * stepBeats) / (128 * 4)) % 1 + 1) % 1;
@@ -383,7 +401,7 @@ function bandGenerate() {
   }
   // Drums: the kit and the pattern, then the research's chances.
   set("dmKitSelect", pick(S.kit), "change");
-  DM.grid = dmFromPattern(S.drums);
+  dmSetGrid(dmFromPattern(S.drums));
   for (const [slot, p] of [["ohh", 0.97], ["chh", 0.9], ["perc", 0.5], ["rim", 0.6]]) for (const st of DM.grid[slot].steps) if (st.v && st.c === 100) st.c = Math.round(p * 100);
   if (!S.clap) { for (const st of DM.grid.clap.steps) st.v = 0; }
   if (S.idm) {
@@ -493,14 +511,17 @@ function bandBuildUI() {
     + `<span class="cap">Style</span><select id="bdStyleSelect" onchange="bandRead()">${Object.entries(BD_STYLES).map(([k, s]) => `<option value="${k}">${s.name}</option>`).join("")}</select>`
     + `<button type="button" class="btn" id="bdGenerate" title="Write the whole band from the style and the seed">Generate</button>`
     + `<button type="button" class="btn" id="bdReroll" title="Another seed, and generate">◌</button>`
-    + `<span class="cap">Arrange</span>${bdSel("bdArrangeSelect", [["off", "Off"], ["on", "On"]], "off", true)}`
+    + `<span class="cap">Arrange</span>${bdSel("bdArrangeSelect", [["off", "Off"], ["on", "Dub map"], ["plan", "Plan"]], "off", true)}`
+    + `<input type="text" class="at-hidden" id="bdPlanText" value="" oninput="bandRead()" onchange="bandRead()" />`
     + `<input type="range" class="knob-hidden" id="bdSeedSlider" min="1" max="99999" value="1977" oninput="bandRead()" /></div>`
+    + `<div class="bd-planstrip" id="bdPlanStrip"></div>`
     + `<div class="ac-parts bd-cards">${cards}</div>`
     + `<div class="bd-editor" id="bdEditor">`
     + `<section class="bd-ed on" data-p="drums" id="drumsHost"></section>`
     + `<section class="bd-ed" data-p="bass"><div class="ph"><b class="nm bd-t">BASS</b><span class="meta">a sine · dub, deep, round · its own channel</span></div><div class="bd-row">`
     + `<div class="bd-sub"><div class="bd-sh"><span class="cap">The sound</span></div><div class="bd-knobs">${bdKnobs("bass")}</div></div>`
     + `<div class="bd-sub bd-line"><div class="bd-sh"><span class="cap">The line</span><span class="meta">used by the pattern "By hand": click a step for R, 3, 4, 5, 7, 8, hold (–) or rest</span></div><div class="bd-lane" id="bsLane"></div>`
+    + `<div class="bd-sh"><span class="cap">Line</span><span class="seg" id="bsLineTabs">${["A", "B", "C", "D"].map((l) => `<button type="button" data-l="${l}" class="${l === "A" ? "on" : ""}">${l}</button>`).join("")}</span><span class="meta">the section plan says which bars play which</span></div>`
     + `<input type="text" class="at-hidden" id="bsLineText" value="R-..........R.5." oninput="bandRead()" onchange="bandRead()" /></div></div></section>`
     + `<section class="bd-ed" data-p="chord"><div class="ph"><b class="nm bd-t">CHORDS</b><span class="meta">its own Atmosphere patch and filter</span><span class="grow"></span><span class="cap">Start from</span><span class="bd-starts" data-p="chord">${Object.entries(BD_PATCH_STARTS.chord).map(([k, s], i) => `<button type="button" class="btn${i ? "" : " on"}" data-k="${k}">${s.name}</button>`).join("")}</span></div>`
     + `<div class="bd-row">${bdPatchHtml("chord")}<div class="bd-sub"><div class="bd-sh"><span class="cap">The chord and its filter</span><span class="grow"></span>${bdSel("chFltSelect", BD_FILTERS, "lowpass", true)}</div><div class="bd-knobs">${bdKnobs("chord")}</div></div></div></section>`
@@ -538,6 +559,14 @@ function bandBuildUI() {
     else if (b.id === "bdGenerate") { initAudio(); bandGenerate(); }
     else if (b.id === "bdReroll") { const s = document.getElementById("bdSeedSlider"); s.value = 1 + Math.floor(Math.random() * 99998); initAudio(); bandGenerate(); }
   });
+  // Which bass line is being edited.
+  document.getElementById("bsLineTabs").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-l]");
+    if (!b) return;
+    bdBassCur = b.dataset.l;
+    for (const x of e.currentTarget.children) x.classList.toggle("on", x === b);
+    bandRead();
+  });
   // The bass line, a step at a time.
   document.getElementById("bsLane").addEventListener("click", (e) => {
     const i = e.target.closest("i");
@@ -546,7 +575,8 @@ function bandBuildUI() {
     const line = (BAND.bass.line || "").padEnd(16, ".").slice(0, 16).split("");
     line[+i.dataset.i] = order[(order.indexOf(line[+i.dataset.i]) + 1) % order.length];
     const el = document.getElementById("bsLineText");
-    el.value = line.join("");
+    const lines = { ...BAND.bass.lines, [bdBassCur]: line.join("") };
+    el.value = Object.keys(lines).length === 1 && lines.A ? lines.A : JSON.stringify(lines);
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
   });
@@ -613,6 +643,60 @@ function bandMeters() {
     grad.addColorStop(0, "#4fcc5b"); grad.addColorStop(0.7, "#f2c14e"); grad.addColorStop(0.9, "#f06a5a");
     g.fillStyle = grad; g.fillRect(0, H * (1 - h), W, H * h);
   }
+}
+
+// ─── THE SECTION PLAN ────────────────────────────────────────────────────────
+// Written by the Clone page (clone.js) into `bdPlanText`, so presets keep it:
+// `{ secs: [{ l, b, drums: "A"…"D" | "", bass: "A"…"D" | "", chord, drone, arp,
+// melody, fill, open }] }`. With Arrange on Plan, each section says which parts
+// play, which drum pattern and bass line, whether its last bar is the fill, and
+// how open the chords' filter is. The plan goes round when it ends.
+function bandReadPlan(text) {
+  let p = null;
+  try { p = text ? JSON.parse(text) : null; } catch (e) { p = null; }
+  if (!p || !Array.isArray(p.secs) || !p.secs.length) { BAND.plan = null; return; }
+  let at = 0;
+  const secs = p.secs.map((s) => { const b = Math.max(1, Math.round(s.b) || 1), x = { s, start: at, bars: b }; at += b; return x; });
+  BAND.plan = { secs, bars: at };
+  bandPaintPlan();
+}
+/// The section bar `bar` falls in, with where it starts.
+function bandSectionAt(bar) {
+  const P = BAND.plan;
+  if (!P) return null;
+  const b = ((bar % P.bars) + P.bars) % P.bars;
+  for (const x of P.secs) if (b < x.start + x.bars) return { ...x, bar: b - x.start };
+  return null;
+}
+/// Which drum pattern bar `bar` plays: the section's, or its fill on its last bar.
+function bandDrumLetter(bar) {
+  if (BAND.arrangeMode !== "plan" || !BAND.plan) return "A";
+  const x = bandSectionAt(bar);
+  if (!x) return "A";
+  if (x.s.fill && x.bar === x.bars - 1 && DM.pats && DM.pats.F) return "F";
+  return x.s.drums || "A";
+}
+/// Which bass line bar `bar` plays.
+function bandBassLine(bar) {
+  const L = BAND.bass.lines || { A: BAND.bass.line || "" };
+  if (BAND.arrangeMode !== "plan" || !BAND.plan) return L.A || "";
+  const x = bandSectionAt(bar);
+  return (x && x.s.bass && L[x.s.bass]) || L.A || "";
+}
+/// Whether the melody (the steps) plays at boundary `k`.
+function bandMelodyOn(k) {
+  if (BAND.arrangeMode !== "plan" || !BAND.plan) return true;
+  const x = bandSectionAt(Math.floor((k * stepBeats) / 4 + 1e-9));
+  return !x || x.s.melody == null || !!x.s.melody;
+}
+/// The plan, drawn under the Band's header: a block a section.
+function bandPaintPlan() {
+  const el = document.getElementById("bdPlanStrip");
+  if (!el) return;
+  const P = BAND.plan;
+  el.classList.toggle("on", !!P && BAND.arrangeMode === "plan");
+  if (!P) { el.innerHTML = ""; return; }
+  el.innerHTML = `<span class="cap">Plan</span>` + P.secs.map((x) => `<b style="flex:${x.bars}" title="${x.s.l}: ${x.bars} bars · drums ${x.s.drums || "off"} · bass ${x.s.bass || "off"}${x.s.fill ? " · fill" : ""}">${x.s.l}<small>${x.bars}</small></b>`).join("") + `<span class="meta">${P.bars} bars</span>`;
 }
 
 // ─── LFO TARGETS: THE PARTS' FILTERS AND LEVELS ──────────────────────────────

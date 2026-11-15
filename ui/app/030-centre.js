@@ -23,6 +23,7 @@ function setMode(mode) {
   const wasSynth = state.mode === 'synth';
   const wasAtmos = state.mode === 'atmos';
   const wasDraw = state.mode === 'draw';
+  const wasClone = state.mode === 'clone';
   const wasStems = state.mode === 'stems';
   const wasGrainPage = document.body.classList.contains('grainpage');
   state.mode = mode;
@@ -37,6 +38,9 @@ function setMode(mode) {
   // again, showing only the canvas, so its marks play Seq's own instruments.
   // See `docs/SEQUENCER.md`, "Draw".
   const draw = mode === 'draw';
+  // Clone a song: the Seq frame again, showing only the Clone panel (clone.js),
+  // which writes the Seq Band. See `docs/SEQUENCER.md`, "Clone a song".
+  const clone = mode === 'clone';
   const compose = mode === 'compose';
   // The Wave page: the synth, which plays no sound file and needs none open.
   // It takes the whole middle, as the sequencer does. See `docs/WAVE-SYNTH.md`.
@@ -57,7 +61,7 @@ function setMode(mode) {
   if (wasCompose && !compose) composeLeave();
   // Its telemetry and its frame loop stop the moment it is not on screen.
   if (wasSynth && !synth) wvLeave();
-  if ((wasAtmos && !atmos) || (wasDraw && !draw)) seqOnly(null);
+  if ((wasAtmos && !atmos) || (wasDraw && !draw) || (wasClone && !clone)) seqOnly(null);
   if (wasStems && !stems) stLeave();
   if (wasGrainPage && !grainPage) gsLeave();
 
@@ -90,17 +94,17 @@ function setMode(mode) {
   // The lane is the sound as a document — the thing you cut. The room is the
   // sound as a picture, and it takes the whole middle; the overview strip along
   // the top is what stays, because that is the one that says *where you are*.
-  $('lane').classList.toggle('hidden', room || seq || atmos || draw || compose || synth || theme || stems);
+  $('lane').classList.toggle('hidden', room || seq || atmos || draw || clone || compose || synth || theme || stems);
   $('waveView').classList.toggle('hidden', !synth);
   $('themeView').classList.toggle('hidden', !theme);
   $('stemsView').classList.toggle('hidden', !stems);
   $('grainView').classList.toggle('hidden', !grainPage);
   // Compose lays the same frame over its SEQ cell — see `composeEnter`.
-  $('seqView')?.classList.toggle('hidden', !(seq || atmos || draw || compose));
-  if (seq || atmos || draw || compose) seqEnsureFrame();
+  $('seqView')?.classList.toggle('hidden', !(seq || atmos || draw || clone || compose));
+  if (seq || atmos || draw || clone || compose) seqEnsureFrame();
   document.querySelectorAll('#leftRail .mode-btn').forEach((b) =>
     b.classList.toggle('active', b.dataset.mode === mode));
-  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : seq ? 'Seq' : atmos ? 'Atmosphere' : draw ? 'Draw' : compose ? 'Compose' : synth ? 'Wave' : theme ? 'Theme' : stems ? 'Stems' : 'Browse';
+  $('modeLabel').textContent = editing ? 'Edit' : room ? 'Room' : seq ? 'Seq' : atmos ? 'Atmosphere' : draw ? 'Draw' : clone ? 'Clone' : compose ? 'Compose' : synth ? 'Wave' : theme ? 'Theme' : stems ? 'Stems' : 'Browse';
   document.body.classList.toggle('editing', editing);
   // Edit and Grain are the same document, one mode; the page says which
   // furniture is out (`body.wavepage`, the Edit page's toolbar).
@@ -115,6 +119,7 @@ function setMode(mode) {
   document.body.classList.toggle('seqview', seq);
   document.body.classList.toggle('atmospage', atmos);
   document.body.classList.toggle('drawpage', draw);
+  document.body.classList.toggle('clonepage', clone);
   document.body.classList.toggle('composeview', compose);
   document.body.classList.toggle('synthpage', synth);
   document.body.classList.toggle('themepage', theme);
@@ -137,6 +142,7 @@ function setMode(mode) {
   if (compose) composeEnter();
   if (atmos) seqOnly('atmos');
   if (draw) seqOnly('draw');
+  if (clone) seqOnly('clone');
   if (synth) wvEnter();
   if (grainPage) gsEnter();
   if (theme) tpEnter();
