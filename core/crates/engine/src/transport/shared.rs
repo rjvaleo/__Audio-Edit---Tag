@@ -1,5 +1,8 @@
 //! What the audio thread and the rest share: `impl Shared`.
 
+/// How many switched slots may wait either side of the audio thread at once.
+const RETIRED_ROOM: usize = 16;
+
 use super::*;
 
 impl Shared {
@@ -40,6 +43,8 @@ impl Shared {
             cool: AtomicU32::new(0),
             layers_running: AtomicU32::new(1),
             pending_rack: Mutex::new(None),
+            pending_swaps: Mutex::new(Vec::with_capacity(RETIRED_ROOM)),
+            retired_effects: Mutex::new(Vec::with_capacity(RETIRED_ROOM)),
             pending_map: Mutex::new(None),
             pending_parts: Mutex::new(None),
             pending_bank: Mutex::new(None),
@@ -404,12 +409,43 @@ impl Shared {
         if let Some(r) = rack.as_mut() {
             r.set_meters(Arc::clone(&self.rack_meters));
         }
+        // A whole new chain supersedes any one slot still waiting to switch.
+        let stale: Vec<_> = self.pending_swaps.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
+        drop(stale);
+        self.drop_retired();
         if let Ok(mut g) = self.manual.lock() {
             g.clear();
         }
         if let Ok(mut g) = self.pending_rack.lock() {
             *g = Some(rack);
         }
+    }
+
+    /// Switch one slot to a new effect, live, fading over 20 ms while the rest
+    /// of the chain plays on (SUITE-PLAN §2.0: a mode switch). The effect is
+    /// built by the caller, off the audio thread. Controls held for the slot
+    /// by hand belong to the mode it is leaving, so they are let go.
+    pub fn swap_slot(&self, slot: usize, effect: Box<dyn fx::Effect>) {
+        if let Ok(mut g) = self.manual.lock() {
+            g.retain(|(s, _, _)| *s != slot);
+        }
+        self.drop_retired();
+        if let Ok(mut g) = self.pending_swaps.lock() {
+            // A newer switch of the same slot wins over one not yet taken.
+            if let Some(i) = g.iter().position(|(s, _)| *s == slot) {
+                let old = g.swap_remove(i);
+                drop(old);
+            }
+            if g.len() < g.capacity() {
+                g.push((slot, effect));
+            }
+        }
+    }
+
+    /// Drop, here, what the audio thread has finished with.
+    fn drop_retired(&self) {
+        let gone: Vec<_> = self.retired_effects.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
+        drop(gone);
     }
 
     /// Move one control on one slot, live, without rebuilding anything.

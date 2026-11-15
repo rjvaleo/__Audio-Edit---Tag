@@ -647,35 +647,66 @@ impl RackSpec {
     /// buffer from them once and may not resize while running. They are the
     /// *device's*, not the file's, since that is what the chain will actually
     /// be handed.
+    /// Slot `index`'s effect, built alone: what [`RackSpec::build`] puts in
+    /// that slot, for a mode switch handed to the running rack on its own
+    /// (`fx::Rack::swap_slot`). The slot's footer is the running slot's, so it
+    /// is not part of this.
+    pub fn build_slot(&self, index: usize, sample_rate: u32, channels: usize) -> Box<dyn fx::Effect> {
+        let Some(s) = self.slots.get(index) else { return Box::new(Gain { db: 0.0 }) };
+        // Every effect is `prism-fx`'s, shared with idMLab, built as this
+        // program's own was and given the stored settings by key
+        // (`fx::prism::moved`); `fx/tests/prism_parity.rs` holds each to
+        // the render the old one made, bit for bit.
+        match s {
+            // The prism Gain takes ±24 dB, every control's range; a
+            // document edited by hand past it keeps this program's own.
+            SlotSpec::Gain { db, .. } if db.abs() <= fx::GAIN_DB_MAX => {
+                moved("gain", sample_rate, &[("db".to_string(), *db)], || Box::new(Gain { db: *db }))
+            }
+            SlotSpec::Gain { db, .. } => Box::new(Gain { db: *db }),
+            SlotSpec::Eq { settings, .. } => moved("eq", sample_rate, &eq_params(settings), || Box::new(Eq::new(*settings))),
+            SlotSpec::Comp { settings, .. } => {
+                moved("compressor", sample_rate, &comp_params(settings), || Box::new(Compressor::new(*settings)))
+            }
+            SlotSpec::Shape { kind, params, .. } => {
+                fx::shape::make(*kind, sample_rate, channels, params)
+            }
+            // The id came from the catalogue when the slot was read, so
+            // this cannot miss; a gain of nothing keeps slot *n* at *n* if
+            // it somehow did.
+            SlotSpec::Prism { id, params, sound, .. } => {
+                fx::prism::make_with_sound(id, sample_rate, channels, params, sound.as_deref())
+                    .unwrap_or_else(|| Box::new(Gain { db: 0.0 }))
+            }
+        }
+    }
+
+    /// The one slot whose mode is all that changed from `had`: same slots in
+    /// the same order, the same everything else, and that slot's kind
+    /// different. A mode switch, which the running rack takes as a swap of
+    /// that slot alone rather than a rebuild of the chain (SUITE-PLAN §2.0).
+    pub fn switched_slot(&self, had: &RackSpec) -> Option<usize> {
+        if self.slots.len() != had.slots.len() || self.slot_ids != had.slot_ids {
+            return None;
+        }
+        let i = (0..self.slots.len()).find(|&i| self.slots[i].kind() != had.slots[i].kind())?;
+        if self.slots[i].bypassed() != had.slots[i].bypassed() {
+            return None;
+        }
+        let mut probe = self.clone();
+        probe.slots[i] = had.slots[i].clone();
+        let id = &self.slot_ids[i];
+        match had.modules.get(id) {
+            Some(m) => probe.modules.insert(id.clone(), m.clone()),
+            None => probe.modules.remove(id),
+        };
+        (probe == *had).then_some(i)
+    }
+
     pub fn build(&self, sample_rate: u32, channels: usize) -> Rack {
         let mut rack = Rack::new();
-        for s in &self.slots {
-            // Every effect is `prism-fx`'s, shared with idMLab, built as this
-            // program's own was and given the stored settings by key
-            // (`fx::prism::moved`); `fx/tests/prism_parity.rs` holds each to
-            // the render the old one made, bit for bit.
-            let effect: Box<dyn fx::Effect> = match s {
-                // The prism Gain takes ±24 dB, every control's range; a
-                // document edited by hand past it keeps this program's own.
-                SlotSpec::Gain { db, .. } if db.abs() <= fx::GAIN_DB_MAX => {
-                    moved("gain", sample_rate, &[("db".to_string(), *db)], || Box::new(Gain { db: *db }))
-                }
-                SlotSpec::Gain { db, .. } => Box::new(Gain { db: *db }),
-                SlotSpec::Eq { settings, .. } => moved("eq", sample_rate, &eq_params(settings), || Box::new(Eq::new(*settings))),
-                SlotSpec::Comp { settings, .. } => {
-                    moved("compressor", sample_rate, &comp_params(settings), || Box::new(Compressor::new(*settings)))
-                }
-                SlotSpec::Shape { kind, params, .. } => {
-                    fx::shape::make(*kind, sample_rate, channels, params)
-                }
-                // The id came from the catalogue when the slot was read, so
-                // this cannot miss; a gain of nothing keeps slot *n* at *n* if
-                // it somehow did.
-                SlotSpec::Prism { id, params, sound, .. } => {
-                    fx::prism::make_with_sound(id, sample_rate, channels, params, sound.as_deref())
-                        .unwrap_or_else(|| Box::new(Gain { db: 0.0 }))
-                }
-            };
+        for (i, s) in self.slots.iter().enumerate() {
+            let effect = self.build_slot(i, sample_rate, channels);
             // A bypassed slot is built and switched off rather than skipped, so
             // that slot *n* in the rack is slot *n* in the spec. Automation
             // addresses slots by position; dropping one would shift every lane

@@ -460,6 +460,7 @@ pub(super) fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
     if v.get("postRoll").is_none() {
         spec.post_roll = had
             .post_roll
+            .clone()
             .into_iter()
             .filter(|(id, _)| id == crate::pad::STRETCH || id == crate::pad::PITCH_TIME || spec.slot_ids.contains(id))
             .collect();
@@ -475,12 +476,18 @@ pub(super) fn api_rack_set(app: &Arc<App>, req: &Request) -> Response {
     // for no reason, which is heard as the reverb tail stopping the instant a
     // slider is released.
     if !matches!(v.get("keepLive"), Some(Value::Bool(true))) {
+        // A mode switch — one slot's mode, and nothing else, changed — reaches
+        // the running rack as a swap of that slot: it fades over 20 ms and
+        // every other module keeps its tails (SUITE-PLAN §2.0). Only on the
+        // deck that holds this document, since it addresses that rack's slot.
+        let switched = spec.switched_slot(&had).filter(|_| crate::live::holding(app, rel));
         // On the deck this document plays on, and only while it is the one
         // that deck holds.
         if crate::live::prism_sound(rel).is_none() || crate::live::holding(app, rel) {
-            let _ = crate::live::with(app, |h| {
-                crate::live::deck(h, rel)
-                    .set_rack(crate::live::rack_for(app, rel, h.sample_rate, h.channels))
+            let _ = crate::live::with(app, |h| match switched {
+                Some(i) => crate::live::deck(h, rel).swap_slot(i, spec.build_slot(i, h.sample_rate, h.channels)),
+                None => crate::live::deck(h, rel)
+                    .set_rack(crate::live::rack_for(app, rel, h.sample_rate, h.channels)),
             });
         }
     }

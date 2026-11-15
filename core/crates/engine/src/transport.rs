@@ -220,6 +220,16 @@ pub struct Shared {
     /// None means the rack was removed. One Option cannot say both.
     pending_rack: Mutex<Option<Option<fx::Rack>>>,
 
+    /// One slot's new effect, waiting for the audio thread to fade it in
+    /// (SUITE-PLAN §2.0: a mode switch). Built on this side, as the rack is;
+    /// the rest of the chain is not rebuilt.
+    pending_swaps: Mutex<Vec<(usize, Box<dyn fx::Effect>)>>,
+
+    /// Effects a finished fade left behind, carried off the audio thread to be
+    /// dropped here. Its room is reserved up front so the audio thread never
+    /// grows it.
+    retired_effects: Mutex<Vec<Box<dyn fx::Effect>>>,
+
     /// A transient map waiting to be adopted by the audio thread.
     ///
     /// Handed over for the same reason the rack is: deriving one runs an onset

@@ -124,3 +124,44 @@ fn a_slot_keeps_its_face_style_and_a_slot_without_one_opens_in_its_own_look() {
     // and the face never touches the sound
     assert_eq!(render(&chose), render(&none));
 }
+
+fn rack_of(slots: &str) -> RackSpec {
+    RackSpec::from_json(&json::parse(&format!(r#"{{"slots":[{slots}]}}"#)).unwrap())
+}
+
+#[test]
+fn a_mode_switch_is_seen_as_one_slot_changing_and_nothing_else_is() {
+    let had = rack_of(r#"{"kind":"prism:echo","id":"a"},{"kind":"dattorro_plate","id":"b","params":{"decay":0.7}}"#);
+    // The plate switched to the Schroeder, remembering where it was.
+    let now = rack_of(r#"{"kind":"prism:echo","id":"a"},{"suite":"reverb","mode":"schroeder-reverb","id":"b","memory":{"dattorro-plate":{"decay":0.7}}}"#);
+    assert_eq!(now.switched_slot(&had), Some(1));
+    // A control moved is not a switch.
+    let moved = rack_of(r#"{"kind":"prism:echo","id":"a"},{"kind":"dattorro_plate","id":"b","params":{"decay":0.2}}"#);
+    assert_eq!(moved.switched_slot(&had), None);
+    // Two slots switched, a slot added, or the order changed: the chain is rebuilt.
+    let two = rack_of(r#"{"kind":"prism:tremolo","id":"a"},{"kind":"schroeder_reverb","id":"b"}"#);
+    assert_eq!(two.switched_slot(&had), None);
+    let added = rack_of(r#"{"kind":"prism:echo","id":"a"},{"kind":"schroeder_reverb","id":"b"},{"kind":"gain","id":"c"}"#);
+    assert_eq!(added.switched_slot(&had), None);
+    let swapped = rack_of(r#"{"kind":"schroeder_reverb","id":"b"},{"kind":"prism:echo","id":"a"}"#);
+    assert_eq!(swapped.switched_slot(&had), None);
+    // A switch that also turns the slot off is two changes.
+    let off = rack_of(r#"{"kind":"prism:echo","id":"a"},{"kind":"schroeder_reverb","id":"b","bypassed":true}"#);
+    assert_eq!(off.switched_slot(&had), None);
+}
+
+#[test]
+fn one_slot_built_alone_is_the_slot_the_whole_rack_builds() {
+    let spec = rack_of(r#"{"kind":"prism:echo","id":"a","params":{"feedback":0.6}},{"kind":"dattorro_plate","id":"b","params":{"decay":0.7}},{"kind":"comp","id":"c"}"#);
+    for i in 0..3 {
+        let mut whole = spec.build(48_000, 2);
+        let mut alone = fx::Rack::new();
+        alone.push(spec.build_slot(i, 48_000, 2));
+        let mut only = fx::Rack::new();
+        only.push(std::mem::replace(&mut whole.slots[i].effect, Box::new(fx::Gain { db: 0.0 })));
+        let (mut a, mut b) = (source(4000), source(4000));
+        alone.process(&mut a, 2, 48_000);
+        only.process(&mut b, 2, 48_000);
+        assert_eq!(a.iter().map(|x| x.to_bits()).collect::<Vec<_>>(), b.iter().map(|x| x.to_bits()).collect::<Vec<_>>(), "slot {i}");
+    }
+}

@@ -760,3 +760,38 @@ fn no_post_roll_stops_at_the_end() {
     }
     assert!((24_000..24_000 + 512).contains(&played), "played {played} frames");
 }
+
+/// A mode switch reaches the playing rack as a swap of one slot: the chain is
+/// not rebuilt (no whole-rack fade starts), the slot fades to its new effect,
+/// a hand held on the old mode's control is let go, and what fades out comes
+/// back across to be dropped off the audio thread.
+#[test]
+fn a_slot_swap_fades_one_slot_and_leaves_the_rack_in_place() {
+    let (mut core, shared) = playing_core(1);
+    let mut rack = fx::Rack::new();
+    rack.push(Box::new(fx::Gain { db: 0.0 }));
+    rack.push(Box::new(fx::Gain { db: 0.0 }));
+    rack.reserve_mix(4096);
+    shared.set_rack(Some(rack));
+    let mut buf = vec![0.0; 512];
+    core.fill(&mut buf, 1, &shared);
+    // The adopted rack's own crossfade, run out before the swap.
+    for _ in 0..64 {
+        core.fill(&mut buf, 1, &shared);
+    }
+    assert!(core.leaving.is_none());
+
+    shared.set_manual_param(1, "db", 3.0);
+    shared.swap_slot(1, Box::new(fx::Gain { db: -6.0 }));
+    assert!(shared.manual.lock().unwrap().iter().all(|(s, _, _)| *s != 1), "the old mode's hand is let go");
+    core.fill(&mut buf, 1, &shared);
+    assert!(core.leaving.is_none(), "the whole rack was not rebuilt");
+    assert!(core.rack.as_ref().unwrap().swapping(1));
+    for _ in 0..8 {
+        core.fill(&mut buf, 1, &shared);
+    }
+    let rack = core.rack.as_ref().unwrap();
+    assert!(!rack.swapping(1));
+    assert_eq!(rack.get_param(1, "db"), Some(-6.0));
+    assert_eq!(shared.retired_effects.lock().unwrap().len(), 1, "the old gain came back across");
+}

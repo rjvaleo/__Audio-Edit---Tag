@@ -350,6 +350,34 @@ impl Core {
                 self.rack = next;
             }
         }
+        // One slot switched (a mode change): fade it in place, the rest of
+        // the chain untouched. A slot still fading keeps its turn for a later
+        // block. What fades out goes back across for the control thread to drop.
+        if let Some(rack) = self.rack.as_mut() {
+            if let Ok(mut g) = shared.pending_swaps.try_lock() {
+                let mut i = 0;
+                while i < g.len() {
+                    let slot = g[i].0;
+                    if !rack.can_swap(slot) {
+                        i += 1;
+                        continue;
+                    }
+                    let (slot, effect) = g.swap_remove(i);
+                    if rack.swap_slot(slot, effect, fx::swap_fade_frames(self.params.sample_rate)).is_ok() {
+                        // A control still travelling belongs to the mode left.
+                        self.smoothing.retain(|s| s.slot != slot);
+                    }
+                }
+            }
+            if let Ok(mut r) = shared.retired_effects.try_lock() {
+                while r.len() < r.capacity() {
+                    match rack.take_retired() {
+                        Some(e) => r.push(e),
+                        None => break,
+                    }
+                }
+            }
+        }
         if let Ok(mut g) = shared.pending_map.try_lock() {
             if let Some(next) = g.take() {
                 self.renderer.set_map(next);

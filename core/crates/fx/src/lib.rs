@@ -313,9 +313,22 @@ pub const SLOT_LEVEL_MAX: f32 = 12.0;
 /// How long a slot's Wet/dry and Level take to arrive, as a time constant.
 const SLOT_MIX_TAU: f32 = 0.01;
 
+/// How long a slot takes to fade from one effect to the next when its mode is
+/// switched: 20 ms (SUITE-PLAN §2.0).
+pub fn swap_fade_frames(sample_rate: u32) -> usize {
+    sample_rate as usize / 50
+}
+
 pub struct Slot {
     pub effect: Box<dyn Effect>,
     pub bypassed: bool,
+    /// The effect this slot is fading to, and how far through the fade it is.
+    incoming: Option<Box<dyn Effect>>,
+    fade_at: usize,
+    fade_len: usize,
+    /// The effect a finished fade left behind, waiting to be dropped off the
+    /// audio thread (`Rack::take_retired`).
+    retired: Option<Box<dyn Effect>>,
     /// Where this module's footer is set: 0..1, and dB.
     wet: f32,
     level_db: f32,
@@ -327,7 +340,62 @@ pub struct Slot {
 
 impl Slot {
     fn new(effect: Box<dyn Effect>, bypassed: bool) -> Slot {
-        Slot { effect, bypassed, wet: 1.0, level_db: 0.0, gain: 1.0, wet_now: 1.0, gain_now: 1.0 }
+        Slot {
+            effect,
+            bypassed,
+            incoming: None,
+            fade_at: 0,
+            fade_len: 0,
+            retired: None,
+            wet: 1.0,
+            level_db: 0.0,
+            gain: 1.0,
+            wet_now: 1.0,
+            gain_now: 1.0,
+        }
+    }
+
+    /// Run the slot's effect — or, while it is fading to another, both, the
+    /// old on `buf` and the new on a copy in `x`, joined with an equal-power
+    /// curve. Past the fade's end the output is the new effect's own, bit for
+    /// bit, and the old one is retired.
+    fn run(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32, x: &mut Vec<f32>) {
+        let Some(next) = self.incoming.as_mut() else {
+            self.effect.process(buf, channels, sample_rate);
+            return;
+        };
+        // Only ever grown off the audio thread: `Rack::reserve_mix`.
+        if x.len() < buf.len() {
+            x.resize(buf.len(), 0.0);
+        }
+        let x = &mut x[..buf.len()];
+        x.copy_from_slice(buf);
+        self.effect.process(buf, channels, sample_rate);
+        next.process(x, channels, sample_rate);
+        let ch = channels.max(1);
+        for (f, (o, n)) in buf.chunks_mut(ch).zip(x.chunks(ch)).enumerate() {
+            let at = self.fade_at + f;
+            if at >= self.fade_len {
+                o.copy_from_slice(n);
+                continue;
+            }
+            let t = at as f32 / self.fade_len as f32 * std::f32::consts::FRAC_PI_2;
+            let (g_old, g_new) = (t.cos(), t.sin());
+            for (o, n) in o.iter_mut().zip(n) {
+                *o = *o * g_old + *n * g_new;
+            }
+        }
+        self.fade_at += buf.len() / ch;
+        if self.fade_at >= self.fade_len {
+            self.land();
+        }
+    }
+
+    /// Finish a fade: the new effect is the slot's, the old one waits.
+    fn land(&mut self) {
+        if let Some(next) = self.incoming.take() {
+            self.retired = Some(std::mem::replace(&mut self.effect, next));
+        }
     }
 
     /// Put the footer somewhere at once: for a slot being built, not played.
@@ -387,11 +455,13 @@ pub struct Rack {
     meters: Option<Arc<RackMeters>>,
     /// What went into a module with a footer in use. See [`Rack::reserve_mix`].
     dry: Vec<f32>,
+    /// What went into a slot fading between two effects, for the new one.
+    xfade: Vec<f32>,
 }
 
 impl Rack {
     pub fn new() -> Self {
-        Rack { slots: Vec::new(), meters: None, dry: Vec::new() }
+        Rack { slots: Vec::new(), meters: None, dry: Vec::new(), xfade: Vec::new() }
     }
 
     /// Share a meter block with whoever is drawing it. The rack writes; the
@@ -428,6 +498,9 @@ impl Rack {
     pub fn reset(&mut self) {
         for s in &mut self.slots {
             s.effect.reset();
+            if let Some(n) = s.incoming.as_mut() {
+                n.reset();
+            }
         }
     }
 
@@ -437,6 +510,47 @@ impl Rack {
         if self.dry.len() < samples {
             self.dry.resize(samples, 0.0);
         }
+        if self.xfade.len() < samples {
+            self.xfade.resize(samples, 0.0);
+        }
+    }
+
+    /// Fade slot `slot` to `effect` over `fade_frames` (SUITE-PLAN §2.0): what
+    /// a mode switch does to the running rack. Every other slot goes on as it
+    /// was. `effect` is built off the audio thread; nothing here allocates or
+    /// frees, and the effect a fade leaves behind waits in
+    /// [`Rack::take_retired`]. A bypassed slot takes it at once.
+    ///
+    /// Handed back if there is no such slot, or the slot is still fading or
+    /// still holds a retired effect.
+    pub fn swap_slot(&mut self, slot: usize, effect: Box<dyn Effect>, fade_frames: usize) -> Result<(), Box<dyn Effect>> {
+        if !self.can_swap(slot) {
+            return Err(effect);
+        }
+        let s = &mut self.slots[slot];
+        s.incoming = Some(effect);
+        s.fade_at = 0;
+        s.fade_len = fade_frames.max(1);
+        if s.bypassed {
+            s.land();
+        }
+        Ok(())
+    }
+
+    /// Whether [`Rack::swap_slot`] would take an effect for slot `slot` now.
+    pub fn can_swap(&self, slot: usize) -> bool {
+        self.slots.get(slot).is_some_and(|s| s.incoming.is_none() && s.retired.is_none())
+    }
+
+    /// Whether slot `slot` is fading between two effects.
+    pub fn swapping(&self, slot: usize) -> bool {
+        self.slots.get(slot).is_some_and(|s| s.incoming.is_some())
+    }
+
+    /// An effect a finished fade left behind, for the caller to drop off the
+    /// audio thread. One at a time; None when there is nothing waiting.
+    pub fn take_retired(&mut self) -> Option<Box<dyn Effect>> {
+        self.slots.iter_mut().find_map(|s| s.retired.take())
     }
 
     pub fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32) {
@@ -446,7 +560,7 @@ impl Rack {
         for (i, s) in self.slots.iter_mut().enumerate() {
             if !s.bypassed {
                 if s.plain() {
-                    s.effect.process(buf, channels, sample_rate);
+                    s.run(buf, channels, sample_rate, &mut self.xfade);
                 } else {
                     // Only ever grown off the audio thread: a rack built for
                     // the device has `reserve_mix`ed its largest block.
@@ -455,7 +569,7 @@ impl Rack {
                     }
                     let dry = &mut self.dry[..buf.len()];
                     dry.copy_from_slice(buf);
-                    s.effect.process(buf, channels, sample_rate);
+                    s.run(buf, channels, sample_rate, &mut self.xfade);
                     s.blend(buf, dry, channels, sample_rate);
                 }
             }
@@ -481,7 +595,15 @@ impl Rack {
                 s.set_level(value);
                 true
             }
-            _ => s.effect.set_param(key, value),
+            // While a slot fades, a control reaches the effect it is fading
+            // to; the one leaving takes it too, where it has it.
+            _ => {
+                let old = s.effect.set_param(key, value);
+                match s.incoming.as_mut() {
+                    Some(n) => n.set_param(key, value),
+                    None => old,
+                }
+            }
         }
     }
 
@@ -492,7 +614,10 @@ impl Rack {
         match key {
             SLOT_WET => Some(s.wet),
             SLOT_LEVEL => Some(s.level_db),
-            _ => s.effect.get_param(key),
+            _ => match s.incoming.as_ref() {
+                Some(n) => n.get_param(key),
+                None => s.effect.get_param(key),
+            },
         }
     }
 
