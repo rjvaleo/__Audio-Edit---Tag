@@ -45,6 +45,8 @@ mod prism;
 use prism::*;
 mod stems;
 use stems::*;
+mod stem_kits;
+use stem_kits::*;
 
 /// How many files one measuring pass takes on before answering.
 ///
@@ -368,6 +370,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/export/stop") => api_export_stop(app),
         ("GET", "/api/stems") => api_stems_status(app),
         ("POST", "/api/stems/split") => api_stems_split(app, req),
+        ("POST", "/api/stems/kit") => api_stems_kit(app, req),
         ("POST", "/api/stems/upload") => api_stems_upload(app, req),
         ("POST", "/api/stems/stop") => api_stems_stop(app),
         ("GET", "/api/stems/list") => api_stems_list(app),

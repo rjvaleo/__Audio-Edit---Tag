@@ -154,3 +154,14 @@ WAV, AIFF, FLAC, MP3, M4A or Ogg). A file from the computer is sent to `POST
 /api/stems/upload?name=…` (its bytes; that route may carry a whole file, `http::body_cap`), kept
 in the library's `Imports/` under a name nothing is using yet, and split from there like any other
 song. It stays the song to split until one is picked in the library after it.
+
+## A song's own kit
+
+*14 Nov 2026.* RJ, on Clone's takes not sounding like his song: "Try doing what you say with playing
+sounds from the library." `POST /api/stems/kit {"p": "Stems/<song>"}` (`routes/stem_kits.rs`) cuts,
+from a split song's stems, its clearest kick, snare and closed hat and an open hat (songprint's
+`find_hits`; kicks keep at least 280 ms and snares 200 ms of body, so a busy stem's next hit does not
+leave a click), and up to three held bass notes at different pitches, each named with the pitch the
+reading measured (`bass note 36.40.wav` is MIDI 36 and 40 cents). They go to `Stems/<song>/kit/`
+with a `kit.json`, and `/api/seq/kits` lists every such folder first, as "<song> (its own)", so the
+Band's kit menu offers it.
