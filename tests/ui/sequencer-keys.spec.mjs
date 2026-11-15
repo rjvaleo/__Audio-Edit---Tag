@@ -4,7 +4,8 @@
 // - Atmosphere is on MIDI 3 and Classic on 4 until changed, kept in this
 //   browser and sent to the server;
 // - a note on a part's channel plays that part and no other;
-// - a synth that is off is silent to its keys and to MIDI.
+// - Atmosphere is its own instrument: its keys and MIDI play it whether or
+//   not the sequencer does; Classic, off, is silent to MIDI.
 //
 // MIDI is played with `/api/engine/midi/inject`, the server's way in for a
 // test: the same routing a keyboard's message takes.
@@ -49,15 +50,18 @@ test('a key on the strip sounds Atmosphere for as long as it is held', async ({ 
   await expect(key).toHaveClass(/\bon\b/);
   await page.mouse.up();
   expect(await held(page)).toEqual([]);
-  // Off is silent.
+  // Its own instrument: the sequencer not playing it does not silence its keys.
   await mode(page, 'classic');
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 4);
+  await page.evaluate(() => { document.body.classList.add('only-atmos'); });
+  const b2 = await key.boundingBox();
+  await page.mouse.move(b2.x + b2.width / 2, b2.y + b2.height - 4);
   await page.mouse.down();
-  expect(await held(page)).toEqual([]);
+  expect(await held(page)).toEqual(['atmos:60']);
   await page.mouse.up();
+  expect(await held(page)).toEqual([]);
 });
 
-test('MIDI plays each synth on its own channel, and not while it is off', async ({ page }) => {
+test('MIDI plays each synth on its own channel; Atmosphere always, Classic only while on', async ({ page }) => {
   await openSeq(page);
   await page.evaluate(() => kySendChannels());
   await mode(page, 'both');
@@ -69,11 +73,41 @@ test('MIDI plays each synth on its own channel, and not while it is off', async 
   await inject(page, [0x82, 62, 0]);
   await inject(page, [0x83, 64, 0]);
   await expect.poll(() => held(page)).toEqual([]);
-  // Off mutes MIDI too.
+  // Atmosphere plays from MIDI whether or not the sequencer uses it;
+  // Classic, off, does not.
   await mode(page, 'classic');
   await inject(page, [0x92, 67, 100]);
   await inject(page, [0x93, 69, 100]);
-  await expect.poll(() => held(page)).toEqual(['classic:69']);
+  await expect.poll(() => held(page)).toEqual(['atmos:67', 'classic:69']);
+  await mode(page, 'atmos');
+  await inject(page, [0x93, 71, 100]);
+  await inject(page, [0x92, 72, 100]);
+  await expect.poll(() => held(page)).toEqual(['atmos:67', 'atmos:72', 'classic:69']);
   await inject(page, [0xb3, 123, 0]); // all notes off
   await expect.poll(() => held(page)).toEqual([]);
+});
+
+test('a fresh Atmosphere sounds from a key, with nothing set up and nothing turned on', async ({ page }) => {
+  await openSeq(page);
+  const r = await page.evaluate(async () => {
+    const kinds = [AT.kindA, AT.kindB];
+    const Real = window.AudioContext, rate = 48000;
+    const off = new OfflineAudioContext(2, rate, rate);
+    off.createMediaStreamDestination = () => off.createGain();
+    window.AudioContext = function () { return off; };
+    audioCtx = null;
+    try { initAudio(); } finally { window.AudioContext = Real; }
+    const was = atmosOn;
+    const v = kyAtmosOn(kyHz(60), 0.8);
+    const buf = await off.startRendering();
+    audioCtx = null;
+    const x = buf.getChannelData(0);
+    let s = 0;
+    for (let i = rate / 2; i < x.length; i++) s += x[i] * x[i];
+    return { kinds, was, voice: !!v, rms: Math.sqrt(s / (x.length / 2)) };
+  });
+  expect(r.was).toBe(false); // the sequencer is not playing it
+  expect(r.kinds.every(Boolean)).toBe(true);
+  expect(r.voice).toBe(true);
+  expect(r.rms).toBeGreaterThan(0.001);
 });

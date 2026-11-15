@@ -250,7 +250,9 @@ function atmosRead() {
     if (what) what.textContent = kind.name + " · " + kind.sub;
   }
   const note = document.getElementById("atModeNote");
-  if (note) note.textContent = atmosOn ? (classicOn ? "playing with Classic" : "playing alone") + " · two oscillators, held notes, long swells · true pitch" : "off · turn it on to play it with Classic, or alone";
+  // Its own instrument (RJ, 14 Nov 2026): the keys and MIDI play it always;
+  // the switch is whether the sequencer's steps play it too.
+  if (note) note.textContent = atmosOn ? "the sequencer plays it too, " + (classicOn ? "with Classic" : "instead of Classic") + " · its keys and MIDI play it" : "its own instrument: play it from its keys or MIDI · switch on to have the sequencer play it too";
   atmosPaintSegs();
   atmosApplyGlobal();
   atmosDrawAmp();

@@ -444,8 +444,12 @@ respond to its own MIDI channel", "each item gets its own midi channel", and
 - **Held from MIDI too**, with the velocity. Two parts on the same channel
   play together; a release goes to whoever had the press, even if a channel
   changed in between. CC 120/123 let every key go.
-- **Off is silent**: a synth that is off plays nothing from the steps, its
-  keys or MIDI.
+- **Atmosphere is its own instrument** (RJ: "a completely separate synth
+  from the scale sequencer … I shouldn't have to turn it on"). Its keys and
+  MIDI play it always, from the Atmosphere page or Seq; its power switch is
+  only whether the sequencer's steps play it too. The Atmosphere page is
+  never dimmed and has no "turn on". It starts on Classic's waves in
+  oscillator A. Classic, off, is silent to MIDI.
 - **How MIDI gets here.** The synths are WebAudio in this page, so the server
   keeps what arrives on their channels in a numbered queue, and the page asks
   for it with a long poll (`GET /api/engine/midi/events?after=N&wait=ms`),

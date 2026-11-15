@@ -1,7 +1,8 @@
 // Keys and MIDI for the sequencer's synths (ours, 14 Nov 2026). RJ: "The
 // atmosphere synth should have a MIDI keyboard on it and respond to its own
-// MIDI channel", "each item gets its own midi channel", and "Off mutes MIDI
-// too".
+// MIDI channel" and "each item gets its own midi channel". Then: "The
+// atmosphere synth should be a completely separate synth from the scale
+// sequencer … its own keyboard … I shouldn't have to turn it on."
 //
 // **Held notes.** A key, on the screen or on a MIDI keyboard, sounds for as
 // long as it is down: Atmosphere's voice (atmos.js, `atmosPlay`) is started
@@ -18,8 +19,9 @@
 // (`/api/engine/midi/events`), answered the moment a note lands. Atmosphere is
 // on 3 and Classic on 4 until they are changed, each in its own panel; the
 // choice is kept in this browser (`midiChannel.<part>`, as Wave's and Grain's
-// are) and sent to the server. A synth that is off is silent to its keys and
-// to MIDI, as it is to the steps. The Band's parts have channels on the server
+// are) and sent to the server. Atmosphere's keys and MIDI always play it: its
+// switch is only whether the sequencer's steps play it too. Classic, which
+// has no keys of its own here, is silent to MIDI while it is off. The Band's parts have channels on the server
 // already (5 to 8, drums on 10); nothing here plays them yet.
 
 const KY_PARTS = { atmos: 3, classic: 4 };
@@ -110,7 +112,8 @@ function kyAtmosOn(freq, vel) {
   };
 }
 
-const kyOn = (part) => (part === "atmos" ? atmosOn : classicOn);
+// Atmosphere is an instrument of its own, played whether or not the steps use it.
+const kyOn = (part) => (part === "atmos" ? true : classicOn);
 
 /// A key down for `part`, from the strip or from MIDI.
 function kyNoteOn(part, key, vel = 0.8) {

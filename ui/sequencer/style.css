@@ -641,8 +641,8 @@ body.compact .step-mini-btn { height: 16px; font-size: 7px; }
    OUTPUT scope. Everything else is the Seq page's and hidden here. Of the
    transport, Play, Stop, the tempo and where it is stay, so it can be heard
    from here; the host's transport runs it as well.
-   Off, Atmosphere's panels are shown dimmed rather than folded away, and the
-   bar says so and turns it on (`#atTurnOn`). On, the bar carries Classic's
+   Atmosphere is played here from its own keys and MIDI whether or not the
+   sequencer uses it. With the sequencer playing it, the bar carries Classic's
    power (`#atWithClassic`), whose own panel is not on this page.
    Switched on by the host with `seq:only`; see `bridge.js`. */
 body.only-atmos .page { padding: 10px 14px 12px; gap: 8px; }
@@ -674,9 +674,9 @@ body.only-atmos .at-group { grid-column: 1 / -1; gap: 10px; }
 body.only-atmos .at-body { gap: 10px; }
 body.only-atmos .r3 { grid-template-columns: minmax(0, 1fr); }
 body.only-atmos .at-only { display: grid !important; }
-body.only-atmos:not(.atmos-mode) .at-body,
-body.only-atmos:not(.atmos-mode) .fx-space { opacity: 0.45; }
-body.only-atmos:not(.atmos-mode) .at-turn-on { display: inline-flex; color: var(--on); border-color: color-mix(in srgb, var(--on) 55%, var(--look-line)); }
+/* Its own instrument (RJ, 14 Nov 2026: "I shouldn't have to turn it on"):
+   nothing here is dimmed or asks to be turned on. The power in the bar is
+   only whether the sequencer's steps play it too; the keys always do. */
 body.only-atmos.atmos-mode .at-with { display: inline-flex; align-items: center; gap: 5px; flex: none; }
 /* Big and clear: the scopes grow with the page, the cards with them. */
 body.only-atmos .at-osc svg { height: 32px; }
