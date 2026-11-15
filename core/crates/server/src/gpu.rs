@@ -186,6 +186,47 @@ pub fn tries_dir(gpu: &Gpu, model: &str, id: &str) -> String {
     format!("{}/{}/tries/mgl/{id}", gpu.dir, maker(model).map_or("sao", |m| m.1))
 }
 
+/// File a job's tries into the PC's own library instead of throwing them away
+/// (RJ, 14 Nov: "Keep all the sounds in the library that are created on the
+/// server"). The tries folder gets a `meta.json` and moves into
+/// `pc-sounds-inbox`, where the PC Controller commits it to `pc-sounds`.
+/// Each entry: the try's file there, its words, seed, length and label.
+pub fn to_library(gpu: &Gpu, model: &str, id: &str, way: &str, files: &[(String, String, u64, f64, String)]) {
+    let full = match model {
+        "tangoflux" => "tangoflux",
+        "acestep" => "ace-step-1.5",
+        _ => "stable-audio-open-small",
+    };
+    let rows: Vec<Value> = files
+        .iter()
+        .map(|(remote, prompt, seed, secs, label)| {
+            let name = remote.rsplit(['/', '\\']).next().unwrap_or(remote).to_string();
+            Value::obj().set("name", name).set("prompt", prompt.clone()).set("seed", *seed as f64).set("seconds", *secs).set("label", label.clone())
+        })
+        .collect();
+    let meta = Value::obj().set("model", full).set("way", way).set("files", Value::Arr(rows));
+    let dir = tries_dir(gpu, model, id);
+    let local = std::env::temp_dir().join(format!("mgl-meta-{id}.json"));
+    let filed = std::fs::write(&local, meta.to_string())
+        .map_err(|e| e.to_string())
+        .and_then(|_| gpu.put(&local, &format!("{dir}/meta.json")))
+        .and_then(|_| {
+            let inbox = format!("{}/pc-sounds-inbox", gpu.dir);
+            gpu.ps(&format!(
+                "New-Item -ItemType Directory -Force -Path '{}' | Out-Null; Move-Item -Force '{}' '{}'",
+                win(&inbox),
+                win(&dir),
+                win(&format!("{inbox}/{model}-{id}"))
+            ))
+            .map(|_| ())
+        });
+    let _ = std::fs::remove_file(&local);
+    // If it could not be filed, it is left where it was made rather than lost.
+    if let Err(e) = filed {
+        eprintln!("[gpu] could not file {id} into the PC's library: {e}");
+    }
+}
+
 /// One sound maker kept loaded on the GPU machine between requests, let go
 /// after ten idle minutes so the GPU is free for anything else. One at a time:
 /// the 3060's 12 GB holds one model, so asking for another ends this one.

@@ -127,6 +127,11 @@ page never talks to the PC. Configure it with `AUDIOLAB_GPU_HOST=pc` (and option
   (`sao`, `tangoflux`, `acestep\ACE-Step-1.5\.venv`); one is loaded at a time, and choosing
   another closes it. TangoFlux checked: two 4 s tries in 47 s, model load included. ACE-Step's
   first run (14 Nov): download and load 847 s, then 88 s for 15 s of music. My sounds always uses Small, the only one that takes a guide sound.
+- **Nothing made on the PC is thrown away** (RJ: "Keep all the sounds in the library that are
+  created on the server"). After each job the tries folder there gets a `meta.json` (model, way,
+  each file's words, seed, length) and moves into `agent-net\pc-sounds-inbox`; the PC Controller
+  files it into its `pc-sounds` library (git, with LFS) within ten seconds, where its Library page
+  shows it under "Made for MGL". `gpu::to_library`.
 - The PC scripts are `tools/pc/make.py`, `make_tangoflux.py` and `make_acestep.py` in this repo,
   deployed as `make.py` in each model's folder (`C:\Users\rjval\agent-net\sao\make.py` …).
 - Before either, Ollama's loaded model is stopped, to free the GPU.
