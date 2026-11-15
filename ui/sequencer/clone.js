@@ -6,22 +6,22 @@
 //
 // A page of its own on the host's rail, shown in the Seq frame like Draw and
 // Atmosphere (`body.only-clone`, from `seq:only`), so it drives the Seq Band
-// directly. Three steps:
+// directly. The page is simple (THE PAGE, below): your songs, four buttons
+// and a knob, four takes. Under it, the engine each take is made with:
 //
-//   1. Songs: the ones split and read on the Stems page (`/api/stems/list`,
-//      `/api/stems/info`, their `songprint.json`). Clone one, Grow a snippet of
-//      one, or Blend up to five.
-//   2. The description: seven facets (tempo and feel, key and tuning, drums,
-//      bass, chords, arrangement, texture and space), each taking its material
-//      **From** a song, All of them, or the dub techno style, at a distance
-//      **near ↔ far** (0 the song as it was … 100 far); the eleven words the
-//      PC's model reads; and the section plan (sections, the parts in each, the
-//      drum and bass patterns, a fill at the joins).
-//   3. Make it sound: **MGL's instruments** (the Band plays the plan: drum
-//      patterns A–D and the fill from your bars, bass lines A–D from your bass,
-//      a learned scale in your song's cents, the section plan) and **the PC's
-//      model** (not connected yet: shown as such).
-//   4. Check: the Band's plan against the description, facet by facet.
+//   - Songs: the ones split and read on the Stems page (`/api/stems/list`,
+//     `/api/stems/info`, their `songprint.json`).
+//   - The description: seven facets (tempo and feel, key and tuning, drums,
+//     bass, chords, arrangement, texture and space), each taking its material
+//     **From** a song, All of them, or the dub techno style, at a distance
+//     **close ↔ far** (0 the song as it was … 100 far); the eleven words the
+//     PC's model reads; and the section plan (sections, the parts in each, the
+//     drum and bass patterns, a fill at the joins).
+//   - The sound: **MGL's instruments** (the Band plays the plan: drum patterns
+//     A–D and the fill from your bars, bass lines A–D from your bass, a learned
+//     scale in your song's cents, the section plan). The PC's model is not
+//     connected yet, and says so.
+//   - The check: the Band's plan against the description, facet by facet.
 //
 // **Worked out, not rolled.** Everything comes from the readings, the settings
 // and the seed (`jRng`, journey.js): the same seed and settings make the same
@@ -48,19 +48,12 @@ const CL_PC = "Not connected yet. The PC's song tools (task 005) are being built
 const CL = {
   mode: "clone", sel: [], seed: 7, facets: {}, words: {}, edited: {},
   snip: { start: 0.38, len: 0.09 }, plan: null, songs: [], info: {}, made: null,
+  // The page: the song takes start from, the songs mixed in, the knob, the
+  // takes (a family of generations), and what the buttons did.
+  from: "", mixing: [], dial: 35, family: [], gen: -1, picked: 0, log: [], verb: null, leans: [], playingId: null, keeping: null,
 };
 for (const f of CL_FACETS) CL.facets[f.k] = { from: "", v: { tempo: 10, key: 0, drums: 30, bass: 30, chords: 70, arr: 30, tex: 20 }[f.k] };
 CL.facets.chords.from = "dub";
-function clSave() {
-  try { localStorage.setItem("mglClone", JSON.stringify({ mode: CL.mode, sel: CL.sel, seed: CL.seed, facets: CL.facets, words: CL.words, edited: CL.edited, snip: CL.snip, plan: CL.plan })); } catch (e) { /* private window */ }
-}
-function clLoadSaved() {
-  try {
-    const d = JSON.parse(localStorage.getItem("mglClone") || "null");
-    if (d) for (const k of ["mode", "sel", "seed", "facets", "words", "edited", "snip", "plan"]) if (d[k] != null) CL[k] = d[k];
-  } catch (e) { /* none */ }
-}
-
 // ─── THE SONGS ───────────────────────────────────────────────────────────────
 async function clFetchSongs() {
   try {
@@ -68,9 +61,14 @@ async function clFetchSongs() {
     const list = r.ok ? await r.json() : [];
     CL.songs = (Array.isArray(list) ? list : list.songs || []).filter((s) => s.analysed);
   } catch (e) { CL.songs = []; }
-  CL.sel = CL.sel.filter((p) => CL.songs.some((s) => s.p === p));
-  if (!CL.sel.length && CL.songs.length) CL.sel = [CL.songs[0].p];
-  await Promise.all(CL.sel.map(clInfo));
+  const has = (p) => CL.songs.some((s) => s.p === p);
+  if (CL.from && !has(CL.from)) CL.from = "";
+  CL.mixing = CL.mixing.filter(has);
+  if (!CL.from && CL.songs.length) CL.from = CL.songs[0].p;
+  // Each song shows itself listening until it is read.
+  const paint = () => { if (typeof clPaintCrate === "function" && document.getElementById("clCrate")) { clPaintCrate(); clPaintVerbs(); if (!CL.family[CL.gen]) clPaintTakes(); } };
+  paint();
+  await Promise.all(CL.songs.map(async (s) => { await clInfo(s.p); paint(); }));
 }
 async function clInfo(p) {
   if (CL.info[p]) return CL.info[p];
@@ -85,7 +83,14 @@ async function clInfo(p) {
 const clFullName = (p) => { const s = CL.songs.find((x) => x.p === p); const a = CL.info[p]; return (a && a.title) || (s && (s.card && s.card.title)) || (s && s.name) || p; };
 const clSongName = (p) => clFullName(p).replace(/\s*\([^)]*\)\s*$/, "");
 /// A word or two for the From buttons: the end of its name ("Hangar", "Breakdown").
-const clShort = (p) => { const w = clSongName(p).split(/\s+/).filter((x) => !/^(in|the|of|a|an|on|to)$/i.test(x)); return w.slice(-1)[0] || clSongName(p); };
+const clShort = (p) => {
+  const raw = clSongName(p).replace(/_/g, " ").split(/\s+/).map((x) => x.replace(/^[^\p{L}\d']+|[^\p{L}\d']+$/gu, "")).filter(Boolean);
+  const w = raw.filter((x) => !/^(in|the|of|a|an|on|to)$/i.test(x) && !/^\d+$/.test(x));
+  // A name ending in a number ("mark 2"): its first word says more.
+  return (/^\d+$/.test(raw[raw.length - 1] || "") ? w[0] : w[w.length - 1]) || clSongName(p);
+};
+/// A song's name, cut short for a chip.
+const clChipName = (p) => { const n = clSongName(p).replace(/_/g, " ").replace(/^[-\s\d]+/, ""); return n.length > 22 ? n.slice(0, 21) + "…" : n; };
 /// The readings a facet takes its material from.
 function clSources(fk) {
   const from = CL.facets[fk].from;
@@ -463,70 +468,420 @@ function clCheck() {
 }
 
 // ─── THE PAGE ────────────────────────────────────────────────────────────────
+// The simple page (14 Nov 2026, the design panel; the mock-up
+// `WORK DIR/page-mockups/clone-simple.html`). RJ: "I'm loading my songs in.
+// You're figuring out what that makes them a song … make similar, mix with
+// so-and-so, lean towards da-da-da. Like super simple."
+//
+// Three things on it: **your songs**, each read into a line; **four buttons and
+// one knob** (Make similar, Mix with…, Lean toward…, Surprise me; Close ↔ Far);
+// and **four takes**, each a recipe the engine above makes into a Band piece.
+// A take plays at once on the Band; More like this makes it the new starting
+// point (the family trail goes back); Keep renders it to `Made/Clones/`, where
+// Edit, Grain and Chop open it. The facets, the words, the plan and the check
+// are the blueprint, closed in the drawer Under the hood.
+//
+// A take is kept as its **recipe**, not its notes: the songs, the facets, the
+// seed, the leans, and any More like this steps on top. The same recipe makes
+// the same take (`clMakeRecipe`), so the page keeps only recipes.
+
+const CL_LEANS = ["darker", "brighter", "busier drums", "sparser", "more space", "slower", "faster", "more dub"];
+const CL_VERB_NAME = { similar: "Similar", mix: "Mixed", lean: "Leaning", surprise: "Surprise", more: "Like", less: "Less like" };
 const clEsc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function clToast(t) {
   let el = document.getElementById("clToast");
   if (!el) { el = document.createElement("div"); el.id = "clToast"; el.className = "cl-toast"; document.body.append(el); }
   el.textContent = t; el.classList.add("on");
-  clearTimeout(clToast.t); clToast.t = setTimeout(() => el.classList.remove("on"), 1800);
+  clearTimeout(clToast.t); clToast.t = setTimeout(() => el.classList.remove("on"), 2200);
+}
+const clDeep = (o) => JSON.parse(JSON.stringify(o));
+const clClamp = (v) => Math.round(Math.max(0, Math.min(100, v)));
+function clLog(verb, what) { CL.log.unshift({ verb, what }); CL.log = CL.log.slice(0, 40); }
+
+// ─── A SONG IN A LINE ────────────────────────────────────────────────────────
+/// What the reading found, in plain words: "124 · C# minor, its own tuning ·
+/// busy drums · deep held bass · dry".
+function clPrint(a) {
+  if (!a) return "";
+  const bpm = a.tempo ? Math.round(+a.tempo.bpm) : "?";
+  const tm = a.tempo && a.tempo.map ? a.tempo.map.map((m) => +m[1]).filter(Number.isFinite) : [];
+  const drift = tm.length && Math.max(...tm) - Math.min(...tm) > 3 ? ", drifting" : "";
+  const sc = clScale(a);
+  const own = sc && sc.cents.some((c) => Math.abs(c - Math.round(c / 100) * 100) > 15) ? ", its own tuning" : "";
+  const fam = ((a.drums && a.drums.common_bars) || [])[0];
+  let dr = "no drums";
+  if (fam) {
+    const n = clHits(clRowsFromBar(fam)), four = /^X...X...X...X...$/.test(fam.kick.replace(/x/g, "X"));
+    dr = four ? "four on the floor" : n >= 18 ? "busy drums" : n >= 9 ? "steady drums" : "sparse drums";
+  }
+  const notes = (a.bass && a.bass.notes) || [];
+  let bs = "no bass";
+  if (notes.length) {
+    const pcs = new Set(notes.map((x) => ((Math.round(x[3]) % 12) + 12) % 12)).size, len = notes.reduce((s, x) => s + (+x[2] || 0), 0) / notes.length;
+    bs = pcs <= 1 ? "one-note bass" : len >= 6 ? "deep held bass" : len <= 2 ? "busy bass" : "moving bass";
+  }
+  const t = a.texture || {};
+  const sp = (+t.width_mean || 0) > 0.4 ? "wide" : (+t.smear_mean || 0) > 0.35 ? "wet" : "dry";
+  return `<b>${bpm}</b>${drift} · <b>${clEsc(a.key ? a.key.name : "")}</b>${own} · ${dr} · ${bs} · ${sp}`;
 }
 
+// ─── A TAKE: ITS RECIPE, MADE ────────────────────────────────────────────────
+/// Put a recipe's songs, facets and seed into the state the engine reads.
+function clSetRecipe(rc) {
+  CL.mode = rc.snap.mode; CL.sel = rc.snap.sel.slice(); CL.seed = rc.snap.seed; CL.facets = clDeep(rc.snap.facets);
+}
+/// Make a recipe: the engine, then the leans, then each More like this step.
+function clMakeRecipe(rc) {
+  clSetRecipe(rc);
+  CL.edited = {};
+  cloneMake();
+  clLean(rc.leans || [], jRng(rc.snap.seed * 7 + 3));
+  for (const v of rc.varies || []) clVary(v.amt, jRng(v.seed));
+  clWords(true);
+  if (rc.text) CL.words.mood = rc.text;
+  return { made: CL.made, plan: CL.plan, words: { ...CL.words } };
+}
+const clGridSteps = (g, fn) => { for (const slot of Object.keys(g)) g[slot].steps.slice(0, 16).forEach((st, i) => fn(slot, st, i)); };
+/// Leans that change what was made (the ones that change where it comes from
+/// are set in the recipe's facets: the bass of, the drums of, more dub).
+function clLean(leans, rnd) {
+  const M = CL.made;
+  for (const l of leans) {
+    if (l === "darker") M.cut = Math.max(5, M.cut - 25);
+    else if (l === "brighter") M.cut = Math.min(95, M.cut + 30);
+    else if (l === "more space") M.space = Math.min(90, M.space + 30);
+    else if (l === "slower") M.bpm = Math.max(60, Math.round((M.bpm - 8) * 10) / 10);
+    else if (l === "faster") M.bpm = Math.min(180, Math.round((M.bpm + 8) * 10) / 10);
+    else if (l === "more dub") { M.chordPat = "seventh-stab"; M.delayT = "0.75"; M.space = Math.min(90, M.space + 15); }
+    else if (l === "busier drums") {
+      for (const k of "ABCD") clGridSteps(M.pats[k], (slot, st, i) => {
+        if (slot === "chh" && !st.v && rnd() < (i % 2 ? 0.35 : 0.7)) st.v = 50 + Math.floor(rnd() * 30);
+        if (slot === "kick" && !st.v && i % 4 === 3 && rnd() < 0.2) st.v = 70;
+      });
+    } else if (l === "sparser") {
+      for (const k of "ABCD") clGridSteps(M.pats[k], (slot, st, i) => { if (st.v && !(slot === "kick" && i % 4 === 0) && rnd() < 0.45) st.v = 0; });
+      for (const s of CL.plan.secs) s.arp = 0;
+    }
+  }
+}
+/// More like this: the same piece, a little changed. Hits move a step or two,
+/// a bass line swaps or changes a note, a part comes or goes in a section.
+function clVary(amt, rnd) {
+  const M = CL.made;
+  for (const k of "ABCD") {
+    const g = M.pats[k];
+    for (const slot of Object.keys(g)) {
+      const st = g[slot].steps;
+      for (let i = 0; i < 16; i++) {
+        if (!st[i].v || rnd() > amt * 0.5) continue;
+        const j = (i + [1, -1, 2, -2][Math.floor(rnd() * 4)] + 16) % 16;
+        if (!st[j].v) { st[j].v = st[i].v; st[i].v = 0; }
+      }
+    }
+  }
+  const L = M.lines;
+  if (rnd() < amt) { const a = "ABCD"[Math.floor(rnd() * 4)], b = "ABCD"[Math.floor(rnd() * 4)]; [L[a], L[b]] = [L[b], L[a]]; }
+  for (const k of "ABCD") if (rnd() < amt) L[k] = L[k].replace(/[R3457 8]/g, (c) => (rnd() < 0.3 ? "R458"[Math.floor(rnd() * 4)] : c));
+  for (const s of CL.plan.secs) {
+    for (const p of ["chord", "arp", "drone"]) if (rnd() < amt * 0.15) s[p] = s[p] ? 0 : 1;
+    if (s.drums && rnd() < amt * 0.3) s.drums = "ABCD"[Math.floor(rnd() * 4)];
+  }
+}
+/// How far a take is from its songs: the facets' distances, the leans, the
+/// More like this steps.
+function clDistance(rc) {
+  const vs = Object.values(rc.snap.facets).map((f) => f.v);
+  return clClamp(vs.reduce((a, b) => a + b, 0) / vs.length + (rc.leans || []).length * 6 + (rc.varies || []).reduce((a, v) => a + v.amt * 25, 0));
+}
+const clBadge = (d) => (d < 25 ? "close" : d < 50 ? "near" : d < 75 ? "loose" : "far");
+function clEnsure(t) { if (!t.made) Object.assign(t, clMakeRecipe(t.recipe)); return t; }
+
+// ─── THE BUTTONS: A RECIPE FOR EACH OF FOUR TAKES ───────────────────────────
+const clFacetsAt = (r, v, from) => { const f = {}; for (const F of CL_FACETS) f[F.k] = { from: from || "", v: clClamp(v + (r() - 0.5) * 30) }; return f; };
+const clNewSeed = () => 1 + Math.floor(Math.random() * 99998);
+const clPicked = () => { const g = CL.family[CL.gen]; return g && g.takes[CL.picked] ? g.takes[CL.picked] : null; };
+/// The recipe a lean starts from: the take you picked, or your song as it is.
+function clBase() {
+  const t = clPicked();
+  if (t && t.recipe.snap.sel[0] === CL.from) return clDeep(t.recipe);
+  const r = jRng(CL.seed);
+  return { snap: { mode: "clone", sel: [CL.from], seed: CL.seed, facets: clFacetsAt(r, CL.dial) }, leans: [], varies: [] };
+}
+function clRecipe(verb, i, r, ctx) {
+  const seed = clNewSeed();
+  if (verb === "similar") return { snap: { mode: "clone", sel: [CL.from], seed, facets: clFacetsAt(r, CL.dial) }, leans: [], varies: [] };
+  if (verb === "mix") {
+    const sel = [CL.from, ...CL.mixing].slice(0, 5), others = sel.slice(1);
+    const f = clFacetsAt(r, CL.dial, CL.from);
+    // Each take draws the drums and the bass from the songs mixed in, and the
+    // rest from any of them; the first two keep your song's arrangement.
+    f.drums.from = others[(i + Math.floor(r() * others.length)) % others.length];
+    f.bass.from = others[(i + 1 + Math.floor(r() * others.length)) % others.length];
+    for (const k of ["chords", "tex"]) f[k].from = sel[Math.floor(r() * sel.length)];
+    f.tempo.from = i % 2 ? "all" : CL.from;
+    f.arr.from = i < 2 ? CL.from : sel[Math.floor(r() * sel.length)];
+    return { snap: { mode: "blend", sel, seed, facets: f }, leans: [], varies: [] };
+  }
+  if (verb === "lean") {
+    const rc = clDeep(ctx.base);
+    rc.snap.seed = seed; rc.varies = [];
+    for (const k of Object.keys(rc.snap.facets)) rc.snap.facets[k].v = clClamp(rc.snap.facets[k].v + (r() - 0.5) * 16);
+    for (const l of ctx.leans) {
+      const m = /^the (bass|drums) of (.+)$/.exec(l);
+      if (m) {
+        const p = CL.songs.find((s) => s.p === m[2]);
+        if (p) { if (!rc.snap.sel.includes(p.p)) rc.snap.sel = [...rc.snap.sel, p.p].slice(0, 5); rc.snap.mode = "blend"; rc.snap.facets[m[1]] = { from: p.p, v: 0 }; }
+      } else if (l === "more dub") {
+        rc.snap.facets.chords = { from: "dub", v: Math.max(70, rc.snap.facets.chords.v) };
+        rc.snap.facets.tex = { from: "dub", v: rc.snap.facets.tex.v };
+      }
+    }
+    rc.leans = [...new Set([...(rc.leans || []), ...ctx.leans.filter((l) => CL_LEANS.includes(l))])];
+    if (ctx.text) rc.text = ctx.text;
+    return rc;
+  }
+  if (verb === "surprise") {
+    const pool = CL.songs.filter((s) => CL.info[s.p] && s.p !== CL.from).map((s) => s.p);
+    const sel = [CL.from];
+    while (pool.length && sel.length < 3 && r() < 0.7) sel.push(pool.splice(Math.floor(r() * pool.length), 1)[0]);
+    const f = clFacetsAt(r, Math.max(CL.dial, 70));
+    for (const k of Object.keys(f)) { const x = r(); f[k].from = x < 0.2 ? "dub" : sel[Math.floor(r() * sel.length)]; }
+    const leans = r() < 0.6 ? [CL_LEANS[Math.floor(r() * CL_LEANS.length)]] : [];
+    return { snap: { mode: sel.length > 1 ? "blend" : "clone", sel, seed, facets: f }, leans, varies: [] };
+  }
+  if (verb === "more") { const rc = clDeep(ctx.base); rc.varies = [...(rc.varies || []), { seed, amt: Math.round((0.12 + CL.dial / 250) * 100) / 100 }]; return rc; }
+  return null;
+}
+/// What a button did, in the engine's words (the drawer's log).
+function clSaid(verb, ctx) {
+  const n = (p) => (p === "dub" ? "dub techno" : p === "all" ? "all of them" : clShort(p));
+  if (verb === "similar") return `every facet from ${n(CL.from)}, ${CL.dial} (each take ±15)`;
+  if (verb === "mix") return `drums and bass from ${CL.mixing.map(n).join(" + ")}; the rest drawn from all ${CL.mixing.length + 1}; ${CL.dial}`;
+  if (verb === "surprise") return `facets drawn from your songs and dub techno, ${Math.max(CL.dial, 70)}`;
+  if (verb === "more") return `${ctx.name} is the new starting point; each take moves its hits, bass and parts a little`;
+  if (verb === "lean") {
+    const m = { darker: "chords: filter −25", brighter: "chords: filter +30", "busier drums": "drums: more hats, ghost kicks", sparser: "drums: hits thinned; arp out", "more space": "chords: space +30", slower: "tempo −8 BPM", faster: "tempo +8 BPM", "more dub": "chords and texture: dub techno; stabs, dotted-1/8 delay" };
+    const parts = ctx.leans.map((l) => { const x = /^the (bass|drums) of (.+)$/.exec(l); return x ? `the ${x[1]} of ${clSongName(x[2])} → ${x[1]} from it, 0` : `${l} → ${m[l] || l}`; });
+    if (ctx.text) parts.push(`“${ctx.text}” → the words the PC's model reads (the Band doesn't read words)`);
+    return parts.join("; ");
+  }
+  return "";
+}
+/// Four takes from a button. They are made at once; the Band plays the one you
+/// press ▶ on.
+function clMake(verb, ctx = {}) {
+  if (!CL.from || !CL.info[CL.from]) { clToast("Pick a song first"); return; }
+  const r = jRng(clNewSeed());
+  const takes = [0, 1, 2, 3].map((i) => {
+    const recipe = clRecipe(verb, i, r, ctx);
+    return clEnsure({ id: "t" + clNewSeed(), name: `${verb === "more" ? "More" : CL_VERB_NAME[verb]} ${"ABCD"[i]}`, recipe, kept: null });
+  });
+  clLog(verb === "more" ? `More like ${ctx.name}` : CL_VERB_NAME[verb], clSaid(verb, ctx));
+  // A new family member: after the one shown, dropping any you had gone back past.
+  CL.family = CL.family.slice(0, CL.gen + 1);
+  if (verb !== "more" && verb !== "lean") CL.family = [];
+  CL.family.push({ label: verb === "more" ? ctx.name : verb === "similar" && !CL.family.length ? clShort(CL.from) : CL_VERB_NAME[verb], takes });
+  CL.family = CL.family.slice(-8);
+  CL.gen = CL.family.length - 1;
+  CL.picked = 0;
+  CL.verb = null; CL.leans = [];
+  clSetFrom(takes[0]);
+  // Playing: the first new take carries on playing.
+  if (isPlaying) clUseTake(takes[0]);
+  clSave(); clPaintAll(true);
+  clToast(`Four takes · ${clSaid(verb, ctx).split(";")[0]}`);
+}
+/// Less like this: that take, replaced by one further from it.
+function clLess(i) {
+  const g = CL.family[CL.gen], t = g.takes[i];
+  const rc = clDeep(t.recipe);
+  rc.snap.seed = clNewSeed(); rc.varies = [];
+  for (const k of Object.keys(rc.snap.facets)) rc.snap.facets[k].v = clClamp(rc.snap.facets[k].v + 25);
+  g.takes[i] = clEnsure({ id: "t" + clNewSeed(), name: t.name.replace(/′*$/, "") + "′", recipe: rc, kept: null });
+  clLog(`Less like ${t.name}`, "a new seed, every facet 25 further");
+  if (CL.picked === i) clSetFrom(g.takes[i]);
+  clSave(); clPaintTakes(); clPaintHood();
+  clToast(`${t.name}: replaced by one less like it`);
+}
+
+// ─── A TAKE, ON THE BAND ─────────────────────────────────────────────────────
+/// The take the drawer shows: its recipe and what it made, as the state.
+function clSetFrom(t) {
+  clEnsure(t);
+  clSetRecipe(t.recipe);
+  CL.made = t.made; CL.plan = t.plan; CL.words = { ...t.words }; CL.edited = {};
+}
+/// The take, written into the Band's controls.
+function clUseTake(t) { initAudio(); clSetFrom(t); cloneApply(); CL.playingId = t.id; }
+function clPlay(i) {
+  const t = CL.family[CL.gen].takes[i];
+  if (isPlaying && CL.playingId === t.id) { stopSeq(); clPaintTakes(); return; }
+  CL.picked = i;
+  clUseTake(t);
+  if (!isPlaying) togglePlay();
+  clSave(); clPaintTakes(); clPaintHood();
+}
+/// Keep: the take rendered here (the Band, offline, the whole plan) and written
+/// to `Made/Clones/<song> - <take>.wav`.
+async function clKeep(i) {
+  const t = CL.family[CL.gen].takes[i];
+  if (t.kept) { clToast(`${t.name} is kept: ${t.kept}`); return; }
+  if (CL.keeping) return;
+  // The render runs through the frame's bridge, which is there only in the app.
+  if (!window.seqBridge) { clToast("Keep works in the app: open the Clone page there"); return; }
+  CL.keeping = t.id; clPaintTakes();
+  try {
+    if (isPlaying) stopSeq();
+    clUseTake(t);
+    const bars = t.plan.secs.reduce((a, s) => a + s.b, 0);
+    const seconds = (bars * 4 * 60) / t.made.bpm + 3;
+    const r = await window.seqBridge.renderFilm({ seconds, rate: 48000, fps: 2, bands: 8, liss: 16, at0: 0 });
+    const n = r.left.length, inter = new Float32Array(n * 2);
+    for (let k = 0; k < n; k++) { inter[k * 2] = r.left[k]; inter[k * 2 + 1] = (r.right || r.left)[k]; }
+    const name = `${clSongName(t.recipe.snap.sel[0])} - ${t.name}`;
+    const res = await fetch(`/api/clone/keep?rate=48000&name=${encodeURIComponent(name)}`, { method: "POST", body: inter.buffer });
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    t.kept = (await res.json()).p;
+    t.peaks = clPeaks(r.left, r.right || r.left, 160);
+    clLog(`Kept ${t.name}`, t.kept);
+    clToast(`${t.name} kept in ${t.kept}: open it in Edit, Grain or Chop`);
+  } catch (e) {
+    clToast(`Could not keep ${t.name}: ${e.message || e}`);
+  } finally {
+    CL.keeping = null; clSave(); clPaintTakes(); clPaintHood();
+  }
+}
+function clPeaks(L, R, n) {
+  const out = [], w = Math.max(1, Math.floor(L.length / n));
+  for (let i = 0; i < n; i++) { let m = 0; for (let k = i * w; k < Math.min(L.length, (i + 1) * w); k += 16) m = Math.max(m, Math.abs(L[k]), Math.abs(R[k])); out.push(Math.round(m * 100) / 100); }
+  return out;
+}
+const clOpenIn = (p, page) => { try { window.parent.postMessage({ type: "seq:open", p, page }, location.origin); } catch (e) { /* on its own */ } };
+
+// ─── SAVING (recipes only; a take is made again from its recipe) ────────────
+function clSave() {
+  const fam = CL.family.map((g) => ({ label: g.label, takes: g.takes.map((t) => ({ id: t.id, name: t.name, recipe: t.recipe, kept: t.kept, peaks: t.peaks })) }));
+  try { localStorage.setItem("mglClone", JSON.stringify({ v: 2, from: CL.from, mixing: CL.mixing, dial: CL.dial, family: fam, gen: CL.gen, picked: CL.picked, log: CL.log, seed: CL.seed })); } catch (e) { /* private window */ }
+}
+function clLoadSaved() {
+  try {
+    const d = JSON.parse(localStorage.getItem("mglClone") || "null");
+    if (!d || d.v !== 2) return;
+    for (const k of ["from", "mixing", "dial", "family", "gen", "picked", "log", "seed"]) if (d[k] != null) CL[k] = d[k];
+  } catch (e) { /* none */ }
+}
+
+// ─── THE PAGE, BUILT ─────────────────────────────────────────────────────────
 function cloneBuildUI() {
   if (document.querySelector(".clone-page")) return;
   const page = document.querySelector(".page");
   const sec = document.createElement("section");
   sec.className = "clone-page";
   sec.innerHTML = `
-  <div class="panel cl-head"><span class="cl-title">CLONE <span>/ A NEW PIECE FROM YOUR SONGS</span></span><span class="grow"></span>
-    <span class="cl-steps"><b data-step="1"><i>1</i>Songs</b><s></s><b data-step="2"><i>2</i>The description</b><s></s><b data-step="3"><i>3</i>Make it sound</b><s></s><b data-step="4"><i>4</i>Check</b></span></div>
-  <div class="panel">
-    <div class="ph"><b class="nm">1 · SONGS</b><span class="meta">split and read on the Stems page</span><span class="grow"></span>
-      <span class="cap">Make</span><span class="seg" id="clMode"><button type="button" data-m="clone">Clone one</button><button type="button" data-m="grow">Grow a snippet</button><button type="button" data-m="blend">Blend up to five</button></span></div>
-    <span class="meta cl-help" id="clHelp"></span>
-    <div class="cl-songs" id="clSongs"></div>
-    <div class="cl-snip" id="clSnip"><div class="well"><canvas id="clSnipWave"></canvas><div class="cl-reg" id="clReg"><span id="clRegLabel"></span></div></div></div>
+  <div class="cl-head"><span class="cl-title">CLONE <span>/ YOUR SONGS, AGAIN</span></span><span class="cl-sub">Pick a song. Press a button. Four takes come back.</span></div>
+  <div class="cl-crate" id="clCrate"></div>
+  <div class="cl-verbs" id="clVerbs">
+    <button type="button" class="cl-verb" data-v="similar"><svg viewBox="0 0 24 24"><circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/></svg>Make similar</button>
+    <button type="button" class="cl-verb" data-v="mix"><svg viewBox="0 0 24 24"><path d="M4 7h4l8 10h4M4 17h4l8-10h4"/></svg>Mix with…</button>
+    <button type="button" class="cl-verb" data-v="lean"><svg viewBox="0 0 24 24"><path d="M5 19 19 5M11 5h8v8"/></svg>Lean toward…</button>
+    <button type="button" class="cl-verb" data-v="surprise"><svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg>Surprise me</button>
+    <div class="cl-dial"><span class="lb">Close</span><div class="cl-knob" id="clKnob" tabindex="0" role="slider" aria-label="Close to far" aria-valuemin="0" aria-valuemax="100" title="Close keeps it like your song; far lets it go"></div><span class="lb">Far</span><span class="rd" id="clDialRd"></span></div>
   </div>
-  <div class="cl-grid2">
-    <div class="panel"><div class="ph"><b class="nm">2 · THE DESCRIPTION</b><span class="meta">what the reading found · From and how near, for each facet</span></div><div class="cl-facets" id="clFacets"></div></div>
-    <div class="panel"><div class="ph"><b class="nm">THE WORDS THE MODEL READS</b><span class="grow"></span><button type="button" class="btn" id="clRewrite">↺ From the facets</button></div>
-      <div class="cl-words" id="clWords"></div><span class="meta cl-wrap">Eleven fields for the PC's model, written from the facets; an edited one keeps your words. The Band reads the facets and the plan.</span></div>
-  </div>
-  <div class="panel"><div class="ph"><b class="nm">THE PLAN</b><span class="meta">click a part to turn it on or off there · ◆ a join: <b class="cl-f">F</b> a fill from the Band, learned from your bars before a change</span><span class="grow"></span>
-      <span class="meta" id="clSeed"></span><button type="button" class="btn" id="clReroll">◌ Re-roll</button><button type="button" class="btn primary" id="clGenerate">Generate</button></div>
-    <div class="cl-plan" id="clPlan"></div></div>
-  <div class="panel"><div class="ph"><b class="nm">3 · MAKE IT SOUND</b><span class="meta">two engines, one description</span><span class="grow"></span><span class="meta" id="clLen"></span></div>
-    <div class="cl-engines">
-      <div class="cl-eng"><div class="ph"><b class="nm cl-band">MGL'S INSTRUMENTS</b><span class="meta">the Band · every note editable, in your tuning</span></div>
-        <div class="row"><button type="button" class="btn primary" id="clPlay">▶ Play</button><button type="button" class="btn" id="clOpen">Open in Seq</button><span class="meta" id="clBandState">not yet made</span></div>
-        <span class="meta cl-wrap">drum patterns A–D and the fill from your bars · bass lines A–D from your bass · the learned scale in your song's cents · the plan above</span></div>
-      <div class="cl-eng cl-pc"><div class="ph"><b class="nm cl-pcn">THE PC'S MODEL</b><span class="meta">song from song · audio on the RTX 3060</span></div>
-        <div class="row cl-waits"><span class="cap">Length</span><span class="seg"><button type="button" class="on">Snippet · 8 bars</button><button type="button">Full</button></span><span class="cap">Takes</span><span class="seg"><button type="button">1</button><button type="button" class="on">3</button><button type="button">5</button></span><button type="button" class="btn" disabled>Render</button></div>
-        <span class="meta cl-wrap cl-pcstate" id="clPcState"></span>
-        <button type="button" class="btn" id="clDesc" style="align-self:flex-start">Show the description it will read</button><pre class="cl-json" id="clJson"></pre></div>
-    </div></div>
-  <div class="panel"><div class="ph"><b class="nm">4 · CHECK</b><span class="meta">the Band's plan set against the description, facet by facet; the PC's takes join it when its model is connected</span></div>
-    <div class="cl-check" id="clCheck"></div></div>`;
+  <div class="cl-hint" id="clHint"></div>
+  <div class="cl-chips" id="clChips"></div>
+  <div class="cl-trail" id="clTrail"></div>
+  <div class="cl-takes" id="clTakes"></div>
+  <details class="cl-hood" id="clHood"><summary>UNDER THE HOOD <span>the blueprint of the take you picked, and what every button did</span></summary>
+    <div class="cl-hood-in">
+      <div class="cl-hood-bar"><b id="clHoodName"></b><span class="meta" id="clLen"></span><span class="grow"></span><button type="button" class="btn" id="clOpen">Open in Seq</button><button type="button" class="btn" id="clDesc">The description</button></div>
+      <pre class="cl-json" id="clJson"></pre>
+      <div class="cl-sub2">THE FACETS <span>From and how far, for each; a change remakes this take</span></div>
+      <div class="cl-facets" id="clFacets"></div>
+      <div class="cl-sub2">THE PLAN <span>click a part to turn it on or off there · ◆ a join, F a fill · plays now, not kept with the take</span></div>
+      <div class="cl-plan" id="clPlan"></div>
+      <div class="cl-grid2">
+        <div><div class="cl-sub2">THE WORDS THE PC'S MODEL READS</div><div class="cl-words" id="clWords"></div></div>
+        <div><div class="cl-sub2">WHAT THE BUTTONS DID</div><div class="cl-log" id="clLog"></div></div>
+      </div>
+      <div class="cl-sub2">THE CHECK <span>the Band's take against the description; the PC's takes join it when its model is connected</span></div>
+      <div class="cl-check" id="clCheck"></div>
+    </div></details>`;
   page.appendChild(sec);
 
-  // Clicks.
-  document.getElementById("clMode").addEventListener("click", (e) => {
-    const b = e.target.closest("button[data-m]"); if (!b) return;
-    CL.mode = b.dataset.m;
-    if (CL.mode !== "blend") CL.sel = CL.sel.slice(0, 1);
-    clRegen("mode");
-  });
-  document.getElementById("clSongs").addEventListener("click", async (e) => {
+  document.getElementById("clCrate").addEventListener("click", (e) => {
+    const go = e.target.closest("[data-go]");
+    if (go) { try { window.parent.postMessage({ type: "seq:goto", mode: "stems" }, location.origin); } catch (er) { /* on its own */ } return; }
     const c = e.target.closest(".cl-song[data-p]"); if (!c) return;
     const p = c.dataset.p;
-    if (CL.mode === "blend") { CL.sel = CL.sel.includes(p) ? CL.sel.filter((x) => x !== p) : [...CL.sel, p].slice(-5); if (!CL.sel.length) CL.sel = [p]; }
-    else CL.sel = [p];
-    await Promise.all(CL.sel.map(clInfo));
-    clRegen("songs");
+    if (!CL.info[p]) return;
+    if (CL.verb === "mix" && p !== CL.from) {
+      CL.mixing = CL.mixing.includes(p) ? CL.mixing.filter((x) => x !== p) : [...CL.mixing, p].slice(0, 4);
+      clSave(); clPaintCrate(); clPaintVerbs();
+      return;
+    }
+    CL.from = p; CL.mixing = CL.mixing.filter((x) => x !== p);
+    clSave(); clPaintCrate(); clPaintVerbs();
+    clToast(`From ${clSongName(p)}`);
   });
+  document.getElementById("clVerbs").addEventListener("click", (e) => {
+    const b = e.target.closest(".cl-verb"); if (!b) return;
+    const v = b.dataset.v;
+    if (!CL.from) { clToast("Pick a song first"); return; }
+    if (v === "mix") {
+      if (CL.verb === "mix" && CL.mixing.length) { clMake("mix"); return; }
+      CL.verb = CL.verb === "mix" ? null : "mix";
+      clPaintVerbs(); clPaintCrate();
+      return;
+    }
+    if (v === "lean") { CL.verb = CL.verb === "lean" ? null : "lean"; clPaintVerbs(); return; }
+    clMake(v);
+  });
+  document.getElementById("clChips").addEventListener("click", (e) => {
+    const c = e.target.closest(".cl-chip[data-l]");
+    if (c) { const l = c.dataset.l; CL.leans = CL.leans.includes(l) ? CL.leans.filter((x) => x !== l) : [...CL.leans, l]; clPaintVerbs(); return; }
+    if (e.target.id === "clLeanGo") {
+      const text = document.getElementById("clLeanText").value.trim();
+      if (!CL.leans.length && !text) { clToast("Pick a lean, or say it"); return; }
+      clMake("lean", { base: clBase(), leans: CL.leans.slice(), text });
+    }
+  });
+  document.getElementById("clChips").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "clLeanText") document.getElementById("clLeanGo").click(); });
+  document.getElementById("clTakes").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-a]"); if (!b) return;
+    const i = +b.closest(".cl-take").dataset.i, a = b.dataset.a, t = CL.family[CL.gen].takes[i];
+    if (a === "play") clPlay(i);
+    else if (a === "more") clMake("more", { base: t.recipe, name: t.name });
+    else if (a === "less") clLess(i);
+    else if (a === "keep") clKeep(i);
+    else if (a === "open" && t.kept) clOpenIn(t.kept, b.dataset.page);
+    else if (a === "pick") { CL.picked = i; clSetFrom(t); clSave(); clPaintTakes(); clPaintHood(); }
+  });
+  document.getElementById("clTrail").addEventListener("click", (e) => {
+    const b = e.target.closest("b[data-g]"); if (!b) return;
+    CL.gen = +b.dataset.g; CL.picked = 0;
+    clSetFrom(CL.family[CL.gen].takes[0]);
+    clSave(); clPaintAll();
+    clToast("Back to " + CL.family[CL.gen].label);
+  });
+  const knob = document.getElementById("clKnob");
+  knob.addEventListener("pointerdown", (e) => {
+    const y0 = e.clientY, d0 = CL.dial;
+    knob.setPointerCapture(e.pointerId);
+    const move = (ev) => { CL.dial = clClamp(d0 + (y0 - ev.clientY) * 0.6); clPaintDial(); };
+    const up = () => { knob.removeEventListener("pointermove", move); knob.removeEventListener("pointerup", up); clSave(); };
+    knob.addEventListener("pointermove", move); knob.addEventListener("pointerup", up);
+  });
+  knob.addEventListener("wheel", (e) => { e.preventDefault(); CL.dial = clClamp(CL.dial - Math.sign(e.deltaY) * 4); clPaintDial(); clSave(); }, { passive: false });
+  knob.addEventListener("keydown", (e) => {
+    const d = { ArrowUp: 5, ArrowRight: 5, ArrowDown: -5, ArrowLeft: -5 }[e.key];
+    if (d) { e.preventDefault(); CL.dial = clClamp(CL.dial + d); clPaintDial(); clSave(); }
+  });
+
+  // The drawer: the blueprint, editable.
   document.getElementById("clFacets").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-src]"); if (!b || b.disabled) return;
     CL.facets[b.closest("[data-f]").dataset.f].from = b.dataset.src;
-    clRegen("facet");
+    clRemakePicked("facet");
   });
   document.getElementById("clFacets").addEventListener("pointerdown", (e) => {
     const tr = e.target.closest(".cl-tr"); if (!tr) return;
@@ -537,12 +892,12 @@ function cloneBuildUI() {
       tr.parentElement.querySelector("em").textContent = `${CL.facets[fk].v} · ${CL_TIERS[clTier(CL.facets[fk].v)]}`;
     };
     go(e.clientX);
-    const move = (ev) => go(ev.clientX), up = () => { removeEventListener("pointermove", move); removeEventListener("pointerup", up); clRegen("facet"); };
+    const move = (ev) => go(ev.clientX), up = () => { removeEventListener("pointermove", move); removeEventListener("pointerup", up); clRemakePicked("facet"); };
     addEventListener("pointermove", move); addEventListener("pointerup", up);
   });
-  document.getElementById("clWords").addEventListener("input", (e) => { const k = e.target.dataset.k; if (!k) return; CL.words[k] = e.target.value; CL.edited[k] = true; e.target.classList.add("edited"); clSave(); });
-  document.getElementById("clRewrite").addEventListener("click", () => { clWords(true); clPaint(); clSave(); clToast("All eleven written again from the facets"); });
+  document.getElementById("clWords").addEventListener("input", (e) => { const k = e.target.dataset.k; if (!k) return; CL.words[k] = e.target.value; CL.edited[k] = true; e.target.classList.add("edited"); });
   document.getElementById("clPlan").addEventListener("click", (e) => {
+    if (!CL.plan) return;
     const u = e.target.closest(".cl-join[data-j]");
     if (u) { const s = CL.plan.secs[+u.dataset.j]; s.fill = s.fill ? 0 : 1; clPlanChanged(s.fill ? "A fill from the Band at this join" : "No fill at this join"); return; }
     const c = e.target.closest(".cl-cell[data-p]"); if (!c) return;
@@ -550,115 +905,143 @@ function cloneBuildUI() {
     if (k === "drums" || k === "bass") s[k] = s[k] ? "" : "A"; else s[k] = s[k] ? 0 : 1;
     clPlanChanged(`${k} ${s[k] ? "on" : "off"} in section ${s.l}`);
   });
-  document.getElementById("clGenerate").addEventListener("click", () => { initAudio(); cloneMake(); cloneApply(); clPaint(); clStep(3); clToast("Made from the description, seed " + CL.seed + ": the Band has it"); });
-  document.getElementById("clReroll").addEventListener("click", () => { CL.seed = 1 + Math.floor(Math.random() * 99998); initAudio(); cloneMake(); cloneApply(); clPaint(); clToast("Re-rolled: seed " + CL.seed); });
-  document.getElementById("clPlay").addEventListener("click", () => {
-    initAudio();
-    if (!CL.made) { cloneMake(); cloneApply(); clPaint(); }
-    if (isPlaying) { stopSeq(); clBandState(); return; }
-    togglePlay(); clBandState(); clStep(4);
-  });
   document.getElementById("clOpen").addEventListener("click", () => {
-    if (!CL.made) { cloneMake(); cloneApply(); }
+    const t = clPicked(); if (!t) { clToast("Make some takes first"); return; }
+    clUseTake(t);
     try { window.parent.postMessage({ type: "seq:goto", mode: "seq" }, location.origin); } catch (e) { /* on its own */ }
-    clToast("The Band has the piece; Seq edits every part, pattern and section");
+    clToast("The Band has the take; Seq edits every part, pattern and section");
   });
   document.getElementById("clDesc").addEventListener("click", () => { const el = document.getElementById("clJson"); el.classList.toggle("on"); el.textContent = JSON.stringify(cloneDescription(), null, 1); });
-  document.getElementById("clReg").addEventListener("pointerdown", (e) => {
-    const reg = e.currentTarget, box = reg.parentElement.getBoundingClientRect(), x0 = e.clientX, s0 = CL.snip.start;
-    const move = (ev) => { CL.snip.start = Math.max(0, Math.min(1 - CL.snip.len, s0 + (ev.clientX - x0) / box.width)); clSnipPaint(); };
-    const up = () => { removeEventListener("pointermove", move); removeEventListener("pointerup", up); clRegen("snip"); };
-    addEventListener("pointermove", move); addEventListener("pointerup", up);
-  });
-  setInterval(clBandState, 500);
+  setInterval(() => { if (document.body.classList.contains("only-clone")) clPaintPlaying(); }, 400);
 }
 
+/// A facet changed in the drawer: the picked take's recipe changes, and it is
+/// made again; the Band has it.
+function clRemakePicked(why) {
+  const t = clPicked(); if (!t) { clPaintHood(); return; }
+  t.recipe.snap.facets = clDeep(CL.facets); t.recipe.snap.sel = CL.sel.slice();
+  t.made = null; clEnsure(t); clSetFrom(t);
+  if (CL.playingId === t.id) cloneApply();
+  clLog(`Changed ${t.name}`, why === "facet" ? "a facet, under the hood" : why);
+  clSave(); clPaintTakes(); clPaintHood();
+}
 function clPlanChanged(msg) {
   const el = document.getElementById("bdPlanText");
-  if (el && CL.made) { el.value = JSON.stringify(CL.plan); el.dispatchEvent(new Event("change", { bubbles: true })); }
-  clWords(false); clSave(); clPaint(); clCheck(); clToast(msg);
-}
-/// After a change to songs, mode or facets: make it again, and the Band has it.
-function clRegen(why) {
-  if (!CL.sel.length) { clPaint(); return; }
-  cloneMake();
-  if (CL.applied) cloneApply();
-  clPaint();
-  clStep(why === "songs" || why === "mode" ? 1 : 2);
-}
-function clStep(n) { for (const b of document.querySelectorAll(".cl-steps b")) b.classList.toggle("on", +b.dataset.step <= n); }
-function clBandState() {
-  const el = document.getElementById("clBandState"), play = document.getElementById("clPlay");
-  if (!el) return;
-  el.textContent = !CL.made ? "Generate makes the piece, and the Band has it" : isPlaying ? `playing · ${clBarNow()}` : "ready · plays here, or open it in Seq";
-  play.textContent = isPlaying ? "■ Stop" : "▶ Play";
-}
-function clBarNow() {
-  if (!BAND.plan) return "";
-  const bar = Math.floor((seqStepCount * stepBeats) / 4), x = bandSectionAt(bar);
-  return x ? `section ${x.s.l}, bar ${x.bar + 1} of ${x.bars}` : "";
+  if (el && CL.playingId) { el.value = JSON.stringify(CL.plan); el.dispatchEvent(new Event("change", { bubbles: true })); }
+  clPaintHood(); clToast(msg);
 }
 
-function clSnipPaint() {
-  const reg = document.getElementById("clReg");
-  if (!reg) return;
-  reg.style.left = CL.snip.start * 100 + "%"; reg.style.width = CL.snip.len * 100 + "%";
-  const a = CL.info[CL.sel[0]], n = a ? a.bar_count || (a.bars || []).length : 0;
-  const b0 = Math.floor(CL.snip.start * n), b1 = Math.max(b0 + 1, Math.floor((CL.snip.start + CL.snip.len) * n));
-  document.getElementById("clRegLabel").textContent = n ? `bars ${b0 + 1}–${b1} of ${clSongName(CL.sel[0])}` : "";
-  // The song's loudness by bar, as its waveform.
-  const c = document.getElementById("clSnipWave");
-  if (!c || !a || !a.bars) return;
-  const W = (c.width = c.offsetWidth || 600), H = (c.height = 56), g = c.getContext("2d");
-  g.clearRect(0, 0, W, H);
-  g.fillStyle = typeof seqInk === "function" ? seqInk("pitch", 0.8) : "#a99be0";
-  a.bars.forEach((b, i) => { const h = Math.max(1, ((b.mix_db + 40) / 40) * (H - 6)); g.fillRect((i / a.bars.length) * W, (H - h) / 2, Math.max(1, W / a.bars.length - 1), h); });
-}
-
-function clPaint() {
-  const help = { clone: "Clone one: a new piece near to or far from one song. Pick one.", grow: "Grow a snippet: drag the stretch you like; the piece grows from it. Pick one.", blend: "Blend up to five: each facet takes its material from one of them, or from all. A new composition, not an average." };
-  for (const b of document.querySelectorAll("#clMode button")) b.classList.toggle("on", b.dataset.m === CL.mode);
-  document.getElementById("clHelp").textContent = help[CL.mode];
-  // Songs.
-  const sb = document.getElementById("clSongs");
-  if (!CL.songs.length) sb.innerHTML = `<div class="cl-song add"><b>No songs read yet.</b> Split a song on the Stems page; when it is read, it appears here.</div>`;
-  else sb.innerHTML = CL.songs.map((s) => {
-    const a = CL.info[s.p], card = s.card || {};
-    const bars = a ? a.bar_count || (a.bars || []).length : card.bars || 0;
-    let strip = "";
-    if (a && a.sections) ["drums", "bass", "vocals", "other"].forEach((st, r) => { for (const x of a.sections) if ((x.stems_on || []).includes(st)) strip += `<i style="top:${r * 6}px;left:${(x.start_bar / bars) * 100}%;width:${(x.bars / bars) * 100}%;background:var(--cl-${st})"></i>`; });
-    const bpmT = a && a.tempo ? Math.round(+a.tempo.bpm) : card.bpm ? Math.round(card.bpm) : "";
-    const key = a && a.key ? a.key.name : card.key || "";
-    return `<div class="cl-song${CL.sel.includes(s.p) ? " sel" : ""}" data-p="${clEsc(s.p)}" title="${clEsc(clFullName(s.p))}"><div class="sn"><span class="chk">✓</span><b>${clEsc(clSongName(s.p))}</b></div>`
-      + `<div class="nums"><span><em>${bpmT}</em> BPM</span><span>${clEsc(key)}</span><span>${bars ? bars + " bars" : ""}</span></div><div class="strip">${strip}</div></div>`;
+// ─── PAINTING ────────────────────────────────────────────────────────────────
+function clPaintAll(fresh) { clPaintCrate(); clPaintVerbs(); clPaintDial(); clPaintTrail(); clPaintTakes(fresh); clPaintHood(); }
+function clPaintCrate() {
+  const box = document.getElementById("clCrate");
+  const cards = CL.songs.map((s) => {
+    const a = CL.info[s.p], from = s.p === CL.from, mixed = CL.mixing.includes(s.p);
+    const tag = from ? `<span class="tag">FROM</span>` : mixed ? `<span class="tag mix">+ MIX</span>` : "";
+    const body = a ? `<span class="fp">${clPrint(a)}</span>${clStrip(a)}` : `<span class="cl-listen"><i></i><i></i><i></i><i></i>listening…</span>`;
+    return `<div class="cl-song${from ? " from" : ""}${mixed ? " mixed" : ""}${a ? "" : " reading"}" data-p="${clEsc(s.p)}" title="${clEsc(clFullName(s.p))}">${tag}<b class="cl-nm">${clEsc(clSongName(s.p))}</b>${body}</div>`;
   }).join("");
-  document.getElementById("clSnip").classList.toggle("on", CL.mode === "grow");
-  if (CL.mode === "grow") requestAnimationFrame(clSnipPaint);
-  // Facets.
-  const srcs = [...CL.sel.map((p) => [p, clShort(p)]), ["all", "All"], ["dub", "Dub techno"]];
-  let f = `<span class="hd">FACET</span><span class="hd">FROM</span><span class="hd">NEAR ↔ FAR</span><span class="hd">WHAT IT READ</span>`;
-  for (const F of CL_FACETS) {
-    const st = CL.facets[F.k];
-    if (st.from && st.from !== "all" && st.from !== "dub" && !CL.sel.includes(st.from)) st.from = "";
-    if (st.from === "all" && CL.sel.length < 2) st.from = "";
-    const cur = st.from || CL.sel[0] || "dub";
-    f += `<span class="fn" style="--fc:var(--f-${F.c})"><i></i>${F.n}</span>`
-      + `<span class="seg sm" data-f="${F.k}">${srcs.map(([k, n]) => `<button type="button" data-src="${clEsc(k)}" class="${k === cur ? "on" : ""}" ${k === "all" && CL.sel.length < 2 ? "disabled" : ""}>${clEsc(n)}</button>`).join("")}</span>`
-      + `<span class="cl-nf" style="--fc:var(--f-${F.c});--v:${st.v / 100}"><span class="cl-tr" data-f="${F.k}"></span><em>${st.v} · ${CL_TIERS[clTier(st.v)]}</em></span>`
-      + `<span class="rd">${clRead(F.k)}</span>`;
+  box.innerHTML = cards + `<div class="cl-song add"><b>+ Add songs</b><span>A song you split on the Stems page is read here, and appears.</span><button type="button" class="btn" data-go="stems">Split a song on Stems</button></div>`;
+}
+/// Which stems play where in a song, as a thin strip.
+function clStrip(a) {
+  const bars = a.bar_count || (a.bars || []).length;
+  if (!a.sections || !bars) return "";
+  let h = "";
+  ["drums", "bass", "vocals", "other"].forEach((st, r) => { for (const x of a.sections) if ((x.stems_on || []).includes(st)) h += `<i style="top:${r * 5}px;left:${(x.start_bar / bars) * 100}%;width:${(x.bars / bars) * 100}%;background:var(--cl-${st})"></i>`; });
+  return `<span class="strip">${h}</span>`;
+}
+function clPaintVerbs() {
+  for (const b of document.querySelectorAll(".cl-verb")) { b.classList.toggle("on", b.dataset.v === CL.verb); b.classList.toggle("dis", !CL.from); }
+  const hint = document.getElementById("clHint");
+  hint.classList.toggle("on", CL.verb === "mix");
+  hint.textContent = CL.mixing.length ? `Mixing in ${CL.mixing.map(clShort).join(", ")}. Press Mix with… again for four takes.` : "Click the songs to mix in (up to four), then press Mix with… again.";
+  const chips = document.getElementById("clChips");
+  chips.classList.toggle("on", CL.verb === "lean");
+  if (CL.verb !== "lean") return;
+  const others = CL.songs.filter((s) => s.p !== CL.from && CL.info[s.p]);
+  const keep = document.getElementById("clLeanText") ? document.getElementById("clLeanText").value : "";
+  const chip = (l, text) => `<span class="cl-chip${CL.leans.includes(l) ? " on" : ""}" data-l="${clEsc(l)}" title="${clEsc(l.replace(/ of Stems\/.*$/, (x) => " of " + clSongName(x.slice(4))))}">${clEsc(text)}</span>`;
+  // The song chips: "the bass of" and "the drums of" each song, by its name.
+  const ofSong = (part) => (others.length ? `<span class="cl-chrow"><span class="cl-chlab">the ${part} of</span>${others.map((s) => chip(`the ${part} of ${s.p}`, clChipName(s.p))).join("")}</span>` : "");
+  chips.innerHTML = CL_LEANS.map((l) => chip(l, l)).join("") + ofSong("bass") + ofSong("drums")
+    + `<input id="clLeanText" placeholder="or say it: “like a rainy night in Berlin”" value="${clEsc(keep)}"><button type="button" class="btn primary" id="clLeanGo">Lean</button>`;
+}
+function clPaintDial() {
+  const v = CL.dial / 100, a0 = -135, a1 = a0 + 270 * v, R = 26, cx = 32, cy = 32;
+  const P = (a) => [cx + R * Math.sin((a * Math.PI) / 180), cy - R * Math.cos((a * Math.PI) / 180)];
+  const arc = (f, t) => { const [x0, y0] = P(f), [x1, y1] = P(t); return `M${x0} ${y0}A${R} ${R} 0 ${t - f > 180 ? 1 : 0} 1 ${x1} ${y1}`; };
+  const px = cx + 16 * Math.sin((a1 * Math.PI) / 180), py = cy - 16 * Math.cos((a1 * Math.PI) / 180);
+  const k = document.getElementById("clKnob");
+  k.innerHTML = `<svg viewBox="0 0 64 64"><path d="${arc(a0, 135)}" stroke="var(--look-track)" stroke-width="5" fill="none" stroke-linecap="round"/>${v > 0.004 ? `<path d="${arc(a0, a1)}" stroke="var(--on)" stroke-width="5" fill="none" stroke-linecap="round"/>` : ""}<circle cx="32" cy="32" r="18" fill="#33373e" stroke="rgba(0,0,0,.6)"/><path d="M32 32L${px} ${py}" stroke="var(--look-text)" stroke-width="3" stroke-linecap="round"/></svg>`;
+  k.setAttribute("aria-valuenow", CL.dial);
+  document.getElementById("clDialRd").textContent = `${CL.dial < 20 ? "very close" : CL.dial < 45 ? "close" : CL.dial < 70 ? "loose" : "far"} · ${CL.dial}`;
+}
+function clPaintTrail() {
+  const el = document.getElementById("clTrail");
+  el.innerHTML = CL.family.length ? `<span>FAMILY</span>` + CL.family.map((g, i) => `<b class="${i === CL.gen ? "cur" : ""}" data-g="${i}">${clEsc(g.label)}</b>`).join("<s>→</s>") : "";
+}
+const clTime = (t) => { const bars = t.plan.secs.reduce((a, s) => a + s.b, 0), sec = Math.round((bars * 240) / t.made.bpm); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`; };
+function clPaintTakes(fresh) {
+  const box = document.getElementById("clTakes"), g = CL.family[CL.gen];
+  if (!g) { box.innerHTML = `<div class="cl-empty">${!CL.songs.length ? "No songs read yet. Split one on the Stems page and it appears here." : CL.info[CL.from] ? "Press a button. Four takes come back." : "Reading your songs…"}</div>`; return; }
+  box.innerHTML = g.takes.map((t, i) => {
+    clEnsure(t);
+    const d = clDistance(t.recipe), w = clBadge(d), keeping = CL.keeping === t.id;
+    const key = t.made.scale ? t.made.scale.name.replace(/ \(learned\)$/, "") : "";
+    return `<div class="cl-take${i === CL.picked ? " picked" : ""}${t.kept ? " kept" : ""}${fresh ? " fresh" : ""}" data-i="${i}" style="--d:${i * 70}ms">`
+      + `<div class="top"><button type="button" class="pb" data-a="play" aria-label="Play ${clEsc(t.name)}">▶</button><b class="tn" data-a="pick">${clEsc(t.name)}</b><span class="badge ${w}">${w}</span></div>`
+      + `<div class="cl-shape" data-a="pick">${t.peaks ? clWave(t.peaks) : clShape(t.plan)}</div>`
+      + `<span class="src">${Math.round(t.made.bpm)} BPM · ${t.plan.secs.length} sections · ${clTime(t)}${key ? " · in " + clEsc(clShort(t.recipe.snap.sel[0])) + "'s tuning" : ""}</span>`
+      + `<span class="pc">${t.kept ? `kept · <b>${clEsc(t.kept.split("/").pop())}</b>` : "the Band now · the PC's version: not connected yet"}</span>`
+      + `<div class="acts"><button type="button" class="btn" data-a="more">More like this</button><button type="button" class="btn" data-a="less">Less like this</button><button type="button" class="btn${t.kept ? " on" : ""}" data-a="keep"${keeping ? " disabled" : ""}>${keeping ? "Rendering…" : t.kept ? "Kept" : "Keep"}</button></div>`
+      + (t.kept ? `<div class="opens"><button type="button" class="btn" data-a="open" data-page="wave">Open in Edit</button><button type="button" class="btn" data-a="open" data-page="grain">Grain</button><button type="button" class="btn" data-a="open" data-page="chop">Chop</button></div>` : "")
+      + `</div>`;
+  }).join("");
+  clPaintPlaying();
+}
+/// A take, before it is kept: its plan, part by part, section by section.
+function clShape(plan) {
+  const lanes = [["drums", "attack"], ["bass", "tone"], ["chord", "space"], ["drone", "level"], ["arp", "time"], ["melody", "pitch"]];
+  return lanes.map(([k, c]) => `<span class="ln">${plan.secs.map((s) => `<i style="flex:${s.b};${s[k] ? `background:var(--f-${c})` : ""}"></i>`).join("")}</span>`).join("");
+}
+/// A kept take: its sound.
+function clWave(peaks) { return `<span class="wv">${peaks.map((p) => `<i style="height:${Math.max(4, p * 100)}%"></i>`).join("")}</span>`; }
+function clPaintPlaying() {
+  for (const el of document.querySelectorAll(".cl-take")) {
+    const t = CL.family[CL.gen] && CL.family[CL.gen].takes[+el.dataset.i];
+    const on = !!t && isPlaying && CL.playingId === t.id;
+    el.classList.toggle("playing", on);
+    const b = el.querySelector(".pb"); if (b) b.textContent = on ? "■" : "▶";
   }
-  document.getElementById("clFacets").innerHTML = f;
-  // Words.
+}
+function clPaintHood() {
+  const t = clPicked();
+  document.getElementById("clHoodName").textContent = t ? `${t.name} · from ${t.recipe.snap.sel.map(clShort).join(" + ")} · seed ${t.recipe.snap.seed}` : "Make some takes first";
+  // The facets.
+  const fb = document.getElementById("clFacets");
+  if (!t) { fb.innerHTML = ""; document.getElementById("clPlan").innerHTML = ""; }
+  else {
+    const srcs = [...CL.sel.map((p) => [p, clShort(p)]), ["all", "All"], ["dub", "Dub techno"]];
+    let f = `<span class="hd">FACET</span><span class="hd">FROM</span><span class="hd">CLOSE ↔ FAR</span><span class="hd">WHAT IT READ</span>`;
+    for (const F of CL_FACETS) {
+      const st = CL.facets[F.k];
+      const cur = st.from || CL.sel[0] || "dub";
+      f += `<span class="fn" style="--fc:var(--f-${F.c})"><i></i>${F.n}</span>`
+        + `<span class="seg sm" data-f="${F.k}">${srcs.map(([k, n]) => `<button type="button" data-src="${clEsc(k)}" class="${k === cur ? "on" : ""}" ${k === "all" && CL.sel.length < 2 ? "disabled" : ""}>${clEsc(n)}</button>`).join("")}</span>`
+        + `<span class="cl-nf" style="--fc:var(--f-${F.c});--v:${st.v / 100}"><span class="cl-tr" data-f="${F.k}"></span><em>${st.v} · ${CL_TIERS[clTier(st.v)]}</em></span>`
+        + `<span class="rd">${clRead(F.k)}</span>`;
+    }
+    fb.innerHTML = f;
+    clPlanPaint();
+  }
+  // The words.
   const wb = document.getElementById("clWords");
   if (!wb.children.length) wb.innerHTML = CL_WORDS.map((k) => `<label for="clw-${k}">${k}</label><input id="clw-${k}" data-k="${k}" spellcheck="false">`).join("");
-  for (const k of CL_WORDS) { const el = document.getElementById("clw-" + k); if (document.activeElement !== el) el.value = CL.words[k] || ""; el.classList.toggle("edited", !!CL.edited[k]); }
-  // The plan.
-  clPlanPaint();
-  document.getElementById("clSeed").textContent = "seed " + CL.seed;
-  document.getElementById("clPcState").textContent = CL_PC;
+  for (const k of CL_WORDS) { const el = document.getElementById("clw-" + k); if (document.activeElement !== el) el.value = (t && CL.words[k]) || ""; }
+  document.getElementById("clLog").innerHTML = CL.log.length ? CL.log.map((l) => `<div><b>${clEsc(l.verb)}</b> · ${clEsc(l.what)}</div>`).join("") : `<div class="dim">Nothing yet.</div>`;
   if (document.getElementById("clJson").classList.contains("on")) document.getElementById("clJson").textContent = JSON.stringify(cloneDescription(), null, 1);
-  clBandState();
-  clCheck();
+  if (t) clCheck(); else document.getElementById("clCheck").innerHTML = "";
 }
 
 /// What a facet read, in a line.
@@ -668,22 +1051,24 @@ function clRead(fk) {
   const ss = clSources(fk);
   if (!ss.length) return `<span class="dim">pick a song</span>`;
   const a = ss[0], more = ss.length > 1 ? ` <span class="dim">+${ss.length - 1} more</span>` : "";
-  switch (fk) {
-    case "tempo": return `<b>${(+a.tempo.bpm).toFixed(1)} BPM</b>${a.tempo.map && a.tempo.map.length ? `, ${Math.round(Math.min(...a.tempo.map.map((m) => m[1])))}–${Math.round(Math.max(...a.tempo.map.map((m) => m[1])))}` : ""}; 16ths ${(+a.drums.swing_16th_pct).toFixed(0)} %${more}`;
-    case "key": return `<b>${a.key.name}</b>, own scale <b>${(a.tuning.scale_cents_above_tonic || []).map((c) => Math.round(c)).join(" · ")}¢</b>${more}`;
-    case "drums": return `<b>${a.drums.bar_families} bar families</b>; most-used: ${(a.drums.common_bars || []).slice(0, 1).map((b) => `<code>${b.kick}</code>`).join("")}${more}`;
-    case "bass": return `<b>${a.bass.range}</b>, ${(a.bass.notes || []).length} notes${more}`;
-    case "chords": return `rough: <b>${(a.chords.changes || []).slice(0, 3).map((c) => c[1]).join(" → ")}</b> …${more}`;
-    case "arr": return `<b>${a.change.sections} sections, ~${a.change.section_bars_median} bars</b>; stems come and go <b>${a.change.entries_exits_per_minute}×/min</b>${more}`;
-    case "tex": return `smear <b>${(+a.texture.smear_mean).toFixed(2)}</b>, width <b>${(+a.texture.width_mean).toFixed(2)}</b>, hiss ${Math.round(a.texture.hiss_floor_db)} dB${more}`;
-  }
+  try {
+    switch (fk) {
+      case "tempo": return `<b>${(+a.tempo.bpm).toFixed(1)} BPM</b>${a.tempo.map && a.tempo.map.length ? `, ${Math.round(Math.min(...a.tempo.map.map((m) => m[1])))}–${Math.round(Math.max(...a.tempo.map.map((m) => m[1])))}` : ""}; 16ths ${(+a.drums.swing_16th_pct).toFixed(0)} %${more}`;
+      case "key": return `<b>${a.key.name}</b>, own scale <b>${(a.tuning.scale_cents_above_tonic || []).map((c) => Math.round(c)).join(" · ")}¢</b>${more}`;
+      case "drums": return `<b>${a.drums.bar_families} bar families</b>; most-used: ${(a.drums.common_bars || []).slice(0, 1).map((b) => `<code>${b.kick}</code>`).join("")}${more}`;
+      case "bass": return `<b>${a.bass.range}</b>, ${(a.bass.notes || []).length} notes${more}`;
+      case "chords": return `rough: <b>${(a.chords.changes || []).slice(0, 3).map((c) => c[1]).join(" → ")}</b> …${more}`;
+      case "arr": return `<b>${a.change.sections} sections, ~${a.change.section_bars_median} bars</b>; stems come and go <b>${a.change.entries_exits_per_minute}×/min</b>${more}`;
+      case "tex": return `smear <b>${(+a.texture.smear_mean).toFixed(2)}</b>, width <b>${(+a.texture.width_mean).toFixed(2)}</b>, hiss ${Math.round(a.texture.hiss_floor_db)} dB${more}`;
+    }
+  } catch (e) { /* a reading without that part */ }
   return "";
 }
 
 const CL_LANES = [["drums", "DRUMS", "attack"], ["bass", "BASS", "tone"], ["chord", "CHORDS", "space"], ["drone", "DRONE", "level"], ["arp", "ARP", "time"], ["melody", "MELODY", "pitch"]];
 function clPlanPaint() {
   const box = document.getElementById("clPlan");
-  if (!CL.plan) { box.innerHTML = `<span class="meta">Generate makes a plan from the description.</span>`; return; }
+  if (!CL.plan) { box.innerHTML = ""; return; }
   const secs = CL.plan.secs, T = secs.reduce((a, s) => a + s.b, 0);
   let h = `<span class="pl">SECTIONS</span><div class="secs">${secs.map((s) => `<b style="flex:${s.b}" class="${s.snip ? "snip" : ""}">${s.snip ? "snippet" : clEsc(s.l)}<small>${s.b}</small></b>`).join("")}</div>`;
   h += `<span class="pl">FILLS</span><div class="joins">${secs.map((s, i) => `<i style="flex:${s.b}">${i < secs.length - 1 ? `<u class="cl-join${s.fill ? " on" : ""}" data-j="${i}" title="The join after ${clEsc(s.l)}: click for a fill or none">${s.fill ? "F" : "◆"}</u>` : ""}</i>`).join("")}</div>`;
@@ -693,19 +1078,16 @@ function clPlanPaint() {
   document.getElementById("clLen").textContent = `${T} bars · ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} at ${(CL.made && CL.made.bpm) || "?"} BPM`;
 }
 
-/// The host showed the page: read the songs again (one may have been split since).
+/// The host showed the page: read the songs again (one may have been split
+/// since); each new one shows itself listening while it is read.
 async function cloneShown() {
   await clFetchSongs();
-  if (!CL.plan && CL.sel.length) cloneMake();
-  clPaint();
-  clStep(CL.made ? 2 : 1);
+  if (CL.family[CL.gen]) clSetFrom(CL.family[CL.gen].takes[CL.picked] || CL.family[CL.gen].takes[0]);
+  clPaintAll();
 }
 
 // ─── START ───────────────────────────────────────────────────────────────────
 clLearnedScalesBack();
 clLoadSaved();
 cloneBuildUI();
-clPaint();
-// Generate writes the Band; from then on, changes to the description do too.
-document.getElementById("clGenerate").addEventListener("click", () => { CL.applied = true; });
-document.getElementById("clReroll").addEventListener("click", () => { CL.applied = true; });
+clPaintAll();

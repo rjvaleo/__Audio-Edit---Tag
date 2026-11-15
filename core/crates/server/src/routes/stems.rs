@@ -503,3 +503,39 @@ pub(super) fn api_stems_keep(app: &Arc<App>, req: &Request) -> Response {
             .to_string(),
     )
 }
+
+/// POST raw interleaved stereo 32-bit floats, `?name=&rate=`: the Clone page's
+/// kept take (the Band's piece, rendered in the Seq frame), written to
+/// `Made/Clones/<name>.wav`, where Edit, Grain and Chop open it.
+pub(super) fn api_clone_keep(app: &Arc<App>, req: &Request) -> Response {
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    if req.body.len() < 8 || req.body.len() % 8 != 0 {
+        return Response::error(400, "no sound sent");
+    }
+    let rate: u32 = req.param("rate").and_then(|r| r.parse().ok()).filter(|r| (8000..=192_000).contains(r)).unwrap_or(48_000);
+    let samples: Vec<f32> = req
+        .body
+        .chunks_exact(4)
+        .map(|b| {
+            let v = f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+            if v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 }
+        })
+        .collect();
+    let base = crate::docs::safe_name(req.param("name").unwrap_or("clone"));
+    let dir = lib.join("Made").join("Clones");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return Response::error(500, &e.to_string());
+    }
+    let path = crate::capture::unique(dir.join(format!("{}.wav", if base.is_empty() { "clone" } else { &base })));
+    if let Err(e) = crate::capture::write_wav(&path, &samples, 2, rate) {
+        return Response::error(500, &e.to_string());
+    }
+    reindex_for(app, "Made/");
+    let file = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    Response::json(
+        Value::obj()
+            .set("p", format!("Made/Clones/{file}"))
+            .set("seconds", ((samples.len() / 2) as f64 / rate as f64 * 1000.0).round() / 1000.0)
+            .to_string(),
+    )
+}

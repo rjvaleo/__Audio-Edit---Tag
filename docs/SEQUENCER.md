@@ -794,29 +794,54 @@ like fills." Plan `WORK DIR/page-mockups/CLONE-PLAN.md`, mock-up `clone.html`.
 
 **A page of its own** on the host's rail, after Stems: the Seq frame with only
 the Clone panel showing (`body.only-clone`, from `seq:only`), as Draw and
-Atmosphere are, so it writes the Seq Band directly. **Open in Seq** asks the host
-to show Seq (`seq:goto`).
+Atmosphere are, so it writes the Seq Band directly.
 
-1. **Songs:** those split and read on the Stems page (`/api/stems/list`, their
-   `songprint.json` from `/api/stems/info`). **Clone one**, **Grow a snippet**
-   (drag the stretch on the song's bars; its own bars lead the drums, and it is
-   the plan's first section), or **Blend up to five**.
-2. **The description:** seven facets (tempo and feel, key and tuning, drums,
-   bass, chords, arrangement, texture and space), each **From** a song, All of
-   them, or the dub techno style, at a distance **near ↔ far**: 0 the song as it
-   was, about 30 your habits with new material, about 70 your shape with other
-   notes, 100 far. The eleven **words** the PC's model will read (style, tempo,
-   key, drums, bass, harmony, pads, lead, fx, mood, structure), written from the
-   facets; an edited one keeps RJ's words.
-3. **The plan:** sections, the parts in each, the drum pattern and bass line each
-   plays, and a **fill** at a join (from the bars before RJ's own section
-   changes). Click a part to turn it on or off there; click a join for a fill.
-4. **Make it sound:** **MGL's instruments** play it now. **The PC's model** says
-   it is not connected: its song tools (PC task 005) are being built there and the
-   Stems session wires them in; `Show the description it will read` gives the
-   shared JSON (`cloneDescription`).
-5. **Check:** the Band's plan against the description, facet by facet; the PC's
-   takes join it when the model is connected.
+**The page is simple** (RJ, 14 Nov: "make similar, mix with so-and-so, lean
+towards da-da-da. Like super simple"; a design panel's brief, mock-up
+`clone-simple.html`). Three things:
+
+1. **Your songs:** those split and read on the Stems page (`/api/stems/list`,
+   their `songprint.json` from `/api/stems/info`), each shown *listening…* until
+   its reading arrives, then as a line in plain words (`clPrint`: "124 · G minor,
+   its own tuning · four on the floor · moving bass · dry") and a strip of which
+   stems play where. Click one: the takes start from it (FROM). **Split a song on
+   Stems** goes there (`seq:goto` `stems`).
+2. **Four buttons and one knob.** **Make similar** (every facet from your song);
+   **Mix with…** (click up to four other songs, then press it again: the drums and
+   bass come from them, the rest from any); **Lean toward…** (darker, brighter,
+   busier drums, sparser, more space, slower, faster, more dub, the bass of / the
+   drums of another song, or words, which only the PC's model reads); **Surprise
+   me**. The **Close ↔ Far** knob is how far from the songs (each take ±15).
+3. **Four takes**, each with ▶ (the Band plays it at once), a badge (close, near,
+   loose, far), its tempo, sections and length, **More like this** (that take is
+   the new starting point: its hits, bass and parts move a little; `clVary`),
+   **Less like this** (replaced by one 25 further away), and **Keep**. The
+   **family** trail goes back through what came from what. The PC's version says
+   it is not connected yet.
+
+**Keep** renders the take in the frame (`seqBridge.renderFilm`: the Band, offline,
+the whole plan and a 3 s tail, 48 kHz) and posts it to `POST /api/clone/keep`
+(`?name=&rate=`, raw interleaved stereo floats), which writes
+`Made/Clones/<song> - <take>.wav`. Then **Open in Edit / Grain / Chop** asks the
+host to open it (`seq:open`). It works only in the app (the bridge runs in the
+frame); on the page by itself it says so.
+
+**A take is its recipe** (`{ snap: { mode, sel, seed, facets }, leans, varies,
+text }`), made by `clMakeRecipe`: the engine, then the leans, then each More like
+this step. The same recipe makes the same take, so the page keeps only recipes
+(`mglClone`, v 2) and makes them again when it opens.
+
+**Under the hood** (a drawer, closed): the picked take's blueprint. Its seven
+facets (tempo and feel, key and tuning, drums, bass, chords, arrangement, texture
+and space), each **From** a song, All of them, or the dub techno style, at a
+distance **close ↔ far** (0 the song as it was, about 30 your habits with new
+material, about 70 your shape with other notes, 100 far); a change remakes the
+take. The plan (sections, the parts in each, the drum pattern and bass line each
+plays, a **fill** at a join from the bars before RJ's own section changes; clicks
+play now but aren't kept with the take). The eleven **words** the PC's model will
+read. What every button did. **The check** (the Band's take against the
+description). **Open in Seq** and **The description** (`cloneDescription`, the
+shared JSON).
 
 **What it writes** (`cloneApply`): the tempo and swing; a **learned scale** in the
 song's own cents (the reading's positions, ones within 30¢ of each other or the

@@ -378,6 +378,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/stems/tries") => api_stems_tries(app, req),
         ("POST", "/api/stems/keep") => api_stems_keep(app, req),
         ("POST", "/api/stems/words") => api_stems_words(app, req),
+        ("POST", "/api/clone/keep") => api_clone_keep(app, req),
         // The picture for a video export. See `docs/VIDEO-EXPORT.md`.
         ("POST", "/api/video") => api_video(app, req),
         ("GET", "/api/video") => api_video_status(app),

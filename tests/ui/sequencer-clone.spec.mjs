@@ -1,5 +1,7 @@
 // Clone a song (`ui/sequencer/clone.js`): the host's Clone page, which reads
-// songs split on the Stems page and writes the Seq Band.
+// songs split on the Stems page and writes the Seq Band. The page is simple
+// (your songs, four buttons and a knob, four takes); the engine under it is
+// tested here directly too.
 //
 // The scratch library has no split songs, so the Stems routes are stood in for
 // with a small song's reading (the shape of a real `songprint.json`).
@@ -11,7 +13,9 @@
 //   on a section's last bar, the melody only where the plan has it;
 // - Blend takes each facet from the song it is set to;
 // - presets keep the patterns and the plan, and a preset from before them loads;
-// - the PC's model shows that it is not connected.
+// - the page: songs read into a line; Make similar, Mix with, Lean toward,
+//   More / Less like this, the family trail; a take plays on the Band; Keep
+//   renders it and posts it to Made/Clones; recipes come back after a reload.
 
 import { test, expect } from './test.mjs';
 
@@ -54,7 +58,7 @@ const TWO = song('Other Song', 132, 9, 'A minor',
   [{ label: 'A', start_bar: 0, bars: 16, stems_on: ['drums', 'bass'], mix_db: -5 }, { label: 'B', start_bar: 16, bars: 16, stems_on: ['drums', 'bass', 'other'], mix_db: -3 }],
   [200, 300, 500, 700, 800, 1000]);
 
-async function openClone(page) {
+async function openClone(page, keep) {
   await page.route('**/api/stems/list', (r) => r.fulfill({ json: [
     { p: 'Stems/Test Song', name: 'Test Song', analysed: true, card: { title: ONE.title } },
     { p: 'Stems/Other Song', name: 'Other Song', analysed: true, card: { title: TWO.title } },
@@ -63,9 +67,10 @@ async function openClone(page) {
     const p = new URL(r.request().url()).searchParams.get('p');
     r.fulfill({ json: { p, analysis: p === 'Stems/Other Song' ? TWO : ONE } });
   });
-  await page.addInitScript(() => { try { localStorage.removeItem('mglClone'); localStorage.removeItem('mglLearnedScales'); } catch (e) { /* none */ } });
+  // A clean page once per test; a reload in the test keeps what it saved.
+  if (!keep) await page.addInitScript(() => { try { if (!sessionStorage.getItem('clClean')) { localStorage.removeItem('mglClone'); localStorage.removeItem('mglLearnedScales'); sessionStorage.setItem('clClean', '1'); } } catch (e) { /* none */ } });
   await page.goto('/sequencer/');
-  await page.waitForFunction(() => typeof cloneMake === 'function' && !!document.getElementById('clGenerate'));
+  await page.waitForFunction(() => typeof cloneMake === 'function' && !!document.getElementById('clVerbs'));
   await page.evaluate(async () => {
     document.body.classList.add('only-clone');
     await cloneShown();
@@ -157,11 +162,10 @@ test('Blend takes each facet from the song it is set to', async ({ page }) => {
     CL.facets.drums.from = 'Stems/Other Song';
     CL.facets.arr.from = 'Stems/Test Song';
     CL.facets.key.from = 'Stems/Test Song';
-    initAudio(); cloneMake(); cloneApply(); clPaint();
+    initAudio(); cloneMake(); cloneApply();
     return {
       bpm: CL.made.bpm, kickA: DM.pats.A.kick.steps.slice(0, 16).map((x) => (x.v ? 'X' : '.')).join(''),
       secs: CL.plan.secs.length, scale: SCALES[selectedScaleIdx].name,
-      allOn: !document.querySelector('#clFacets button[data-src="all"]').disabled,
       words: CL.words.style,
     };
   });
@@ -169,7 +173,6 @@ test('Blend takes each facet from the song it is set to', async ({ page }) => {
   expect(got.kickA).toBe('X.X.X.X.X.X.X.X.');
   expect(got.secs).toBe(3);
   expect(got.scale).toBe('Test Song (learned)');
-  expect(got.allOn).toBe(true);
   expect(got.words).toContain('a blend of 2 songs');
 });
 
@@ -197,29 +200,137 @@ test('presets keep the patterns and the plan; a preset from before them loads it
   expect(got.oldOnlyA).toBe('A');
 });
 
-test('the page: songs, facets, the eleven words, the plan; the PC\'s model says it is not connected', async ({ page }) => {
+test('the page: each song in a line; Make similar makes four takes; one plays on the Band; the drawer has the blueprint', async ({ page }) => {
   await openClone(page);
-  await page.click('#clGenerate');
-  const got = await page.evaluate(() => ({
-    songs: [...document.querySelectorAll('.cl-song[data-p] b')].map((b) => b.textContent),
-    facets: document.querySelectorAll('#clFacets .fn').length,
-    words: document.querySelectorAll('#clWords input').length,
-    lanes: document.querySelectorAll('#clPlan .lane').length,
-    pc: document.getElementById('clPcState').textContent,
-    renderOff: document.querySelector('.cl-pc button[disabled]') !== null,
-    check: document.querySelectorAll('#clCheck .fn').length,
-    agree: [...document.querySelectorAll('#clCheck .agree')].map((x) => x.className.split(' ').pop()),
+  await expect(page.locator('.cl-song[data-p]')).toHaveCount(2);
+  const songs = await page.evaluate(() => [...document.querySelectorAll('.cl-song[data-p]')].map((c) => [c.querySelector('.cl-nm').textContent, c.querySelector('.fp').textContent, c.classList.contains('from')]));
+  expect(songs[0][0]).toBe('Test Song');
+  expect(songs[0][1]).toContain('118 · D minor, its own tuning');
+  expect(songs[0][2]).toBe(true);
+  expect(songs[1][1]).toContain('132 · A minor');
+  await expect(page.locator('#clTakes .cl-empty')).toBeVisible();
+  await page.click('.cl-verb[data-v="similar"]');
+  await expect(page.locator('.cl-take')).toHaveCount(4);
+  const takes = await page.evaluate(() => CL.family[0].takes.map((t) => [t.name, t.recipe.snap.sel.join(), t.recipe.snap.mode]));
+  expect(takes.map((t) => t[0])).toEqual(['Similar A', 'Similar B', 'Similar C', 'Similar D']);
+  expect(takes.every((t) => t[1] === 'Stems/Test Song' && t[2] === 'clone')).toBe(true);
+  expect(await page.locator('.cl-take .badge').first().textContent()).toMatch(/close|near|loose|far/);
+  expect(await page.locator('.cl-take .pc').first().textContent()).toContain('not connected yet');
+  // ▶ plays it on the Band, in the song's tuning, on its plan.
+  await page.click('.cl-take[data-i="1"] .pb');
+  const playing = await page.evaluate(() => ({ playing: isPlaying, mode: BAND.arrangeMode, scale: SCALES[selectedScaleIdx].name, picked: CL.picked, cls: document.querySelector('.cl-take[data-i="1"]').className }));
+  expect(playing.playing).toBe(true);
+  expect(playing.mode).toBe('plan');
+  expect(playing.scale).toBe('Test Song (learned)');
+  expect(playing.picked).toBe(1);
+  await expect(page.locator('.cl-take[data-i="1"]')).toHaveClass(/playing/);
+  await page.click('.cl-take[data-i="1"] .pb');
+  expect(await page.evaluate(() => isPlaying)).toBe(false);
+  // The drawer: the facets, the plan, the words, the check, what the buttons did.
+  await page.click('#clHood > summary');
+  const hood = await page.evaluate(() => ({
+    facets: document.querySelectorAll('#clFacets .fn').length, words: document.querySelectorAll('#clWords input').length,
+    lanes: document.querySelectorAll('#clPlan .lane').length, check: document.querySelectorAll('#clCheck .fn').length,
+    log: document.getElementById('clLog').textContent, name: document.getElementById('clHoodName').textContent,
   }));
-  expect(got.songs).toEqual(['Test Song', 'Other Song']);
-  expect(got.facets).toBe(7);
-  expect(got.words).toBe(11);
-  expect(got.lanes).toBe(6);
-  expect(got.pc).toContain('Not connected yet');
-  expect(got.renderOff).toBe(true);
-  expect(got.check).toBe(6);
-  // At the defaults (near), tempo, key and sections agree with the song.
-  expect(got.agree.slice(0, 2)).toEqual(['ok', 'ok']);
-  // A lane cell turns a part off there, and the Band's plan follows.
-  await page.click('#clPlan .cl-cell[data-p="bass"][data-s="0"]');
-  expect(await page.evaluate(() => [CL.plan.secs[0].bass, JSON.parse(document.getElementById('bdPlanText').value).secs[0].bass])).toEqual(['', '']);
+  expect(hood).toMatchObject({ facets: 7, words: 11, lanes: 6, check: 6 });
+  expect(hood.log).toContain('Similar · every facet from Song');
+  expect(hood.name).toContain('Similar B');
+  // A facet changed there remakes the take.
+  const before = await page.evaluate(() => CL.family[0].takes[1].recipe.snap.facets.drums.from);
+  await page.click('#clFacets [data-f="drums"] button[data-src="dub"]');
+  expect(before).toBe('');
+  expect(await page.evaluate(() => [CL.family[0].takes[1].recipe.snap.facets.drums.from, CL.family[0].takes[1].made.pats.F.kick.steps.length > 0])).toEqual(['dub', true]);
+});
+
+test('Mix with, Lean toward, More and Less like this, and the family trail', async ({ page }) => {
+  await openClone(page);
+  await page.click('.cl-verb[data-v="mix"]');
+  await expect(page.locator('#clHint')).toBeVisible();
+  await page.click('.cl-song[data-p="Stems/Other Song"]');
+  await expect(page.locator('.cl-song[data-p="Stems/Other Song"]')).toHaveClass(/mixed/);
+  await page.click('.cl-verb[data-v="mix"]');
+  await expect(page.locator('.cl-take')).toHaveCount(4);
+  const mix = await page.evaluate(() => CL.family[0].takes.map((t) => [t.name, t.recipe.snap.sel.length, t.recipe.snap.facets.drums.from, t.recipe.snap.facets.bass.from]));
+  expect(mix[0][0]).toBe('Mixed A');
+  expect(mix.every((t) => t[1] === 2 && t[2] === 'Stems/Other Song' && t[3] === 'Stems/Other Song')).toBe(true);
+  // Lean toward: slower, and the bass of the other song.
+  await page.click('.cl-take[data-i="0"] .tn');
+  await page.click('.cl-verb[data-v="lean"]');
+  await page.click('.cl-chip[data-l="slower"]');
+  await page.click('.cl-chip[data-l="darker"]');
+  await page.fill('#clLeanText', 'like a rainy night');
+  await page.click('#clLeanGo');
+  await expect(page.locator('#clTrail b')).toHaveCount(2);
+  const lean = await page.evaluate(() => { const base = CL.family[0].takes[0], t = CL.family[1].takes[0]; return { leans: t.recipe.leans, cut: [t.made.cut, clMakeRecipe({ ...t.recipe, leans: [] }).made.cut], mood: t.words.mood, name: t.name }; });
+  expect(lean.leans).toEqual(['slower', 'darker']);
+  expect(lean.cut[0]).toBeLessThan(lean.cut[1]);
+  expect(lean.mood).toBe('like a rainy night');
+  expect(lean.name).toBe('Leaning A');
+  // More like this: that take is the new starting point.
+  await page.click('.cl-take[data-i="2"] [data-a="more"]');
+  await expect(page.locator('#clTrail b')).toHaveCount(3);
+  const more = await page.evaluate(() => ({ trail: [...document.querySelectorAll('#clTrail b')].map((b) => b.textContent), varies: CL.family[2].takes.map((t) => t.recipe.varies.length), base: CL.family[2].takes[0].recipe.snap.seed === CL.family[1].takes[2].recipe.snap.seed }));
+  expect(more.trail).toEqual(['Mixed', 'Leaning', 'Leaning C']);
+  expect(more.varies).toEqual([1, 1, 1, 1]);
+  expect(more.base).toBe(true);
+  // Less like this: that one, replaced by one further away.
+  await page.click('.cl-take[data-i="3"] [data-a="less"]');
+  await expect(page.locator('.cl-take[data-i="3"] .tn')).toHaveText('More D′');
+  // Back along the trail.
+  await page.click('#clTrail b[data-g="0"]');
+  await expect(page.locator('.cl-take[data-i="0"] .tn')).toHaveText('Mixed A');
+  expect(await page.evaluate(() => CL.family.length)).toBe(3);
+});
+
+test('the same recipe makes the same take; the takes come back after a reload', async ({ page }) => {
+  await openClone(page);
+  await page.click('.cl-verb[data-v="similar"]');
+  const same = await page.evaluate(() => {
+    const rc = CL.family[0].takes[2].recipe;
+    const a = JSON.stringify(clMakeRecipe(rc)), b = JSON.stringify(clMakeRecipe(rc));
+    return { same: a === b, stored: JSON.stringify(clMakeRecipe(rc).plan) === JSON.stringify(CL.family[0].takes[2].plan) };
+  });
+  expect(same).toEqual({ same: true, stored: true });
+  const names = await page.evaluate(() => CL.family[0].takes.map((t) => t.name + t.recipe.snap.seed));
+  await openClone(page, true);
+  await expect(page.locator('.cl-take')).toHaveCount(4);
+  expect(await page.evaluate(() => CL.family[0].takes.map((t) => t.name + t.recipe.snap.seed))).toEqual(names);
+});
+
+test('in the app, Keep renders the take into Made/Clones, and Open in Grain opens it there', async ({ page }) => {
+  test.setTimeout(60000);
+  await page.route('**/api/stems/list', (r) => r.fulfill({ json: [{ p: 'Stems/Test Song', name: 'Test Song', analysed: true, card: { title: ONE.title } }] }));
+  await page.route('**/api/stems/info**', (r) => r.fulfill({ json: { p: 'Stems/Test Song', analysis: ONE } }));
+  await page.addInitScript(() => { try { localStorage.removeItem('mglClone'); } catch (e) { /* none */ } });
+  await page.goto('/');
+  await page.waitForFunction(() => typeof setMode === 'function');
+  await page.evaluate(() => setMode('clone'));
+  const frame = () => page.frames().find((f) => f.url().includes('/sequencer/'));
+  await expect.poll(() => !!frame()).toBe(true);
+  await frame().waitForFunction(() => typeof clKeep === 'function' && document.querySelectorAll('.cl-song[data-p] .fp').length === 1, null, { timeout: 15000 });
+  await frame().click('.cl-verb[data-v="similar"]');
+  // A short take, so the render is quick: two bars.
+  await frame().evaluate(() => { const t = CL.family[0].takes[0]; t.plan.secs = [{ ...t.plan.secs[t.plan.secs.length - 1], b: 2, fill: 0 }]; });
+  await frame().click('.cl-take[data-i="0"] [data-a="keep"]');
+  await frame().waitForSelector('.cl-take[data-i="0"] .opens', { timeout: 30000 });
+  const kept = await frame().evaluate(() => ({ p: CL.family[0].takes[0].kept, bpm: CL.family[0].takes[0].made.bpm, peaks: CL.family[0].takes[0].peaks.length }));
+  expect(kept.p).toBe('Made/Clones/Test Song - Similar A.wav');
+  expect(kept.peaks).toBe(160);
+  const files = await page.evaluate(() => fetch('/api/files?folder=Made').then((r) => r.json()));
+  const f = files.find((x) => x.path === kept.p);
+  expect(f.sampleRate).toBe(48000);
+  expect(f.channels).toBe(2);
+  // Two bars at the take's tempo and a 3 s tail.
+  expect(Math.abs(f.duration - ((2 * 240) / kept.bpm + 3))).toBeLessThan(0.1);
+  await expect(frame().locator('.cl-take[data-i="0"] .pc')).toContainText('Test Song - Similar A.wav');
+  await frame().click('.cl-take[data-i="0"] [data-a="open"][data-page="grain"]');
+  await expect.poll(() => page.evaluate(() => [state.mode, editPage, state.selectedFile && state.selectedFile.path])).toEqual(['edit', 'grain', 'Made/Clones/Test Song - Similar A.wav']);
+});
+
+test('on the page by itself, Keep says it works in the app', async ({ page }) => {
+  await openClone(page);
+  await page.click('.cl-verb[data-v="similar"]');
+  await page.click('.cl-take[data-i="0"] [data-a="keep"]');
+  await expect(page.locator('#clToast')).toContainText('Keep works in the app');
 });
