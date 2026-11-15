@@ -457,7 +457,7 @@ pub(super) fn api_stems_words(app: &Arc<App>, req: &Request) -> Response {
     if let Err(e) = gpu.get_many(&pairs) {
         return Response::error(502, &e);
     }
-    let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}'", crate::gpu::win(&crate::gpu::tries_dir(&gpu, &model, &id))));
+    crate::gpu::to_library(&gpu, &model, &id, "words", &made.iter().map(|m| (m.remote.clone(), prompt.clone(), m.seed, m.seconds, String::new())).collect::<Vec<_>>());
     let short: String = prompt.chars().take(40).collect();
     let rows: Vec<Value> = made
         .iter()
@@ -525,7 +525,7 @@ pub(super) fn api_stems_vary(app: &Arc<App>, req: &Request) -> Response {
     if let Err(e) = gpu.get_many(&pairs) {
         return Response::error(502, &e);
     }
-    let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}'", crate::gpu::win(&format!("{}/sao/tries/mgl/{id}", gpu.dir))));
+    crate::gpu::to_library(&gpu, "sao", &id, "variations", &made.iter().map(|m| (m.remote.clone(), prompt.clone(), m.seed, m.seconds, format!("variation of {name}, near-far {:.2}", m.near_far.unwrap_or(centre)))).collect::<Vec<_>>());
     let words = |l: f64| if l < 0.4 { "close" } else if l < 0.6 { "near" } else if l < 0.8 { "further" } else { "far" };
     let rows: Vec<Value> = made
         .iter()
@@ -566,7 +566,7 @@ fn gpu_tries(gpu: &crate::gpu::Gpu, lib: &Path, id: &str, model: &str, guides: &
     std::fs::create_dir_all(&dir).map_err(|e| Response::error(500, &e.to_string()))?;
     let pairs: Vec<(String, PathBuf)> = made.iter().enumerate().map(|(i, m)| (m.remote.clone(), dir.join(format!("{id}-{i:02}.wav")))).collect();
     gpu.get_many(&pairs).map_err(|e| Response::error(502, &e))?;
-    let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}'", crate::gpu::win(&crate::gpu::tries_dir(gpu, model, id))));
+    // The caller files the tries into the PC's library (`gpu::to_library`).
     Ok(made.into_iter().enumerate().map(|(i, m)| (m, format!("Made/.words/{id}-{i:02}.wav"))).collect())
 }
 
@@ -599,6 +599,7 @@ pub(super) fn api_stems_blend(app: &Arc<App>, req: &Request) -> Response {
     };
     let name = |p: &Path| p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     let (na, nb) = (name(&a), name(&b));
+    crate::gpu::to_library(&gpu, "sao", &id, "blend", &made.iter().enumerate().map(|(i, (m, _))| (m.remote.clone(), format!("blend of {na} and {nb}"), m.seed, m.seconds, format!("step {i} of {}", made.len() - 1))).collect::<Vec<_>>());
     let rows: Vec<Value> = made
         .iter()
         .enumerate()
@@ -663,6 +664,7 @@ pub(super) fn api_stems_kit(app: &Arc<App>, req: &Request) -> Response {
         Ok(m) => m,
         Err(r) => return r,
     };
+    crate::gpu::to_library(&gpu, "sao", &id, "kit", &made.iter().zip(&parts).zip(&prompts).map(|(((m, _), part), pr)| (m.remote.clone(), pr.clone(), m.seed, m.seconds, part.1.to_lowercase())).collect::<Vec<_>>());
     let mut rows = Vec::new();
     for ((m, p), part) in made.iter().zip(&parts) {
         let file = lib.join(p);
