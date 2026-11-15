@@ -83,7 +83,8 @@ test('MIDI plays each synth on its own channel; Atmosphere always, Classic only 
   await inject(page, [0x93, 71, 100]);
   await inject(page, [0x92, 72, 100]);
   await expect.poll(() => held(page)).toEqual(['atmos:67', 'atmos:72', 'classic:69']);
-  await inject(page, [0xb3, 123, 0]); // all notes off
+  await inject(page, [0xb3, 123, 0]); // all notes off, on each one's channel
+  await inject(page, [0xb2, 123, 0]);
   await expect.poll(() => held(page)).toEqual([]);
 });
 
