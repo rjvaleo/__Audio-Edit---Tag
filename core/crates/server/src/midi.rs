@@ -29,11 +29,24 @@
 //!
 //! A release goes to wherever its press went, so changing a channel with a key
 //! down does not leave a note stuck.
+//!
+//! # The page's parts
+//!
+//! The sequencer's instruments are played in the page (WebAudio, in the Seq
+//! frame), not here, so their notes cannot be delivered the way Wave's and
+//! Grain's are. RJ, 14 Nov 2026: "The atmosphere synth should have a MIDI
+//! keyboard on it and respond to its own MIDI channel", and "each item gets
+//! its own midi channel". Each of [`PARTS`] has a channel of its own; what
+//! arrives on it is kept in a short queue, numbered, and the page asks for
+//! what is new with a long poll (`GET /api/engine/midi/events`), which answers
+//! the moment a note lands. On the same channel as Wave or Grain, a part plays
+//! with them. The queue's lock is held for a push or a copy and nothing more.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::mpsc::{self, Sender};
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use engine::{GrainKeys, WaveEvent, WaveShared};
@@ -58,6 +71,40 @@ pub enum Dest {
     /// -1..1, as the wheel is: the page's bend range turns it into semitones.
     Bend(f32),
     AllOff,
+}
+
+/// The page's parts and their channels until they are changed, 1 to 16: the
+/// sequencer's two synths, then the Band's parts. Ten is General MIDI's drums.
+pub const PARTS: [(&str, u8); 7] =
+    [("atmos", 3), ("classic", 4), ("bass", 5), ("chords", 6), ("arp", 7), ("drone", 8), ("drums", 10)];
+
+/// How many events the page's queue keeps: a page that falls further behind
+/// than this starts again from now.
+const PAGE_KEEP: usize = 512;
+
+/// What a page part is told.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PartEvent {
+    On { key: u8, vel: f32 },
+    Off { key: u8 },
+    /// -1..1, as the wheel is.
+    Bend(f32),
+    AllOff,
+}
+
+/// One event for the page: its number, the part (an index into [`PARTS`]) and
+/// what it is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PageEvent {
+    pub n: u64,
+    pub part: usize,
+    pub e: PartEvent,
+}
+
+#[derive(Default)]
+struct PageQueue {
+    next: u64,
+    events: VecDeque<PageEvent>,
 }
 
 /// A note for the `midi-notes` thread.
@@ -86,6 +133,12 @@ pub struct Router {
     /// Where the wheel is, -1..1, and the last velocity pressed.
     bend: AtomicU32,
     velocity: AtomicU32,
+    /// Each page part's channel, 0..=15, in the order of [`PARTS`].
+    parts: [AtomicU8; PARTS.len()],
+    /// Which parts each key on each channel went to, a bit for each.
+    part_sent: Vec<AtomicU8>,
+    page: Mutex<PageQueue>,
+    page_new: Condvar,
 }
 
 impl Router {
@@ -100,6 +153,104 @@ impl Router {
             held: std::array::from_fn(|_| AtomicU64::new(0)),
             bend: AtomicU32::new(0f32.to_bits()),
             velocity: AtomicU32::new(0f32.to_bits()),
+            parts: std::array::from_fn(|i| AtomicU8::new(PARTS[i].1 - 1)),
+            part_sent: (0..16 * 128).map(|_| AtomicU8::new(0)).collect(),
+            page: Mutex::new(PageQueue { next: 1, events: VecDeque::new() }),
+            page_new: Condvar::new(),
+        }
+    }
+
+    /// Which of [`PARTS`] is called `name`.
+    pub fn part_index(name: &str) -> Option<usize> {
+        PARTS.iter().position(|(n, _)| *n == name)
+    }
+
+    /// Set a page part's channel, 1 to 16.
+    pub fn set_part_channel(&self, part: usize, one_based: u8) {
+        if let Some(c) = self.parts.get(part) {
+            c.store(one_based.clamp(1, 16) - 1, Ordering::Relaxed);
+        }
+    }
+
+    /// A page part's channel, 1 to 16.
+    pub fn part_channel(&self, part: usize) -> u8 {
+        self.parts.get(part).map_or(0, |c| c.load(Ordering::Relaxed)) + 1
+    }
+
+    /// What a message on `channel` (0..=15) means to each page part. A release
+    /// goes to the parts its press went to, whatever the channels are now.
+    pub fn route_parts(&self, e: WaveEvent, channel: u8) -> Vec<(usize, PartEvent)> {
+        let ch = channel & 15;
+        let on: Vec<usize> = (0..PARTS.len()).filter(|&i| self.parts[i].load(Ordering::Relaxed) == ch).collect();
+        let slot = |note: u8| &self.part_sent[ch as usize * 128 + (note as usize & 127)];
+        match e {
+            WaveEvent::NoteOn { note, vel } => {
+                slot(note).store(on.iter().fold(0u8, |m, &i| m | 1 << i), Ordering::Relaxed);
+                on.into_iter().map(|i| (i, PartEvent::On { key: note, vel })).collect()
+            }
+            WaveEvent::NoteOff { note } => {
+                let was = slot(note).swap(0, Ordering::Relaxed);
+                (0..PARTS.len()).filter(|&i| was >> i & 1 == 1).map(|i| (i, PartEvent::Off { key: note })).collect()
+            }
+            WaveEvent::Bend(v) => on.into_iter().map(|i| (i, PartEvent::Bend(v))).collect(),
+            WaveEvent::AllNotesOff => {
+                for k in 0..128 {
+                    self.part_sent[ch as usize * 128 + k].store(0, Ordering::Relaxed);
+                }
+                on.into_iter().map(|i| (i, PartEvent::AllOff)).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Put events on the page's queue and wake whoever is waiting for them.
+    pub fn push_page(&self, events: Vec<(usize, PartEvent)>) {
+        if events.is_empty() {
+            return;
+        }
+        let Ok(mut q) = self.page.lock() else { return };
+        for (part, e) in events {
+            let n = q.next;
+            q.next += 1;
+            q.events.push_back(PageEvent { n, part, e });
+            if q.events.len() > PAGE_KEEP {
+                q.events.pop_front();
+            }
+        }
+        drop(q);
+        self.page_new.notify_all();
+    }
+
+    /// The events after `after`, waiting up to `wait` for one if there are
+    /// none yet, and the number of the last event there is. No `after` is
+    /// "from now": the number, and nothing that came before. A number from
+    /// before a restart (past the last) is treated the same.
+    pub fn page_events(&self, after: Option<u64>, wait: Duration) -> (u64, Vec<PageEvent>) {
+        let Ok(mut q) = self.page.lock() else { return (0, Vec::new()) };
+        let last = |q: &PageQueue| q.next - 1;
+        let after = match after {
+            Some(a) if a <= last(&q) => a,
+            _ => return (last(&q), Vec::new()),
+        };
+        if last(&q) == after && !wait.is_zero() {
+            q = match self.page_new.wait_timeout_while(q, wait, |q| q.next - 1 == after) {
+                Ok((q, _)) => q,
+                Err(_) => return (after, Vec::new()),
+            };
+        }
+        let out: Vec<PageEvent> = q.events.iter().filter(|e| e.n > after).copied().collect();
+        (last(&q), out)
+    }
+
+    /// One raw MIDI message, as if a port had sent it, for the page parts.
+    /// The tests' way in, and the page's own key strip never needs it.
+    pub fn inject_parts(&self, msg: &[u8]) -> bool {
+        match parse(msg) {
+            Some(e) => {
+                self.push_page(self.route_parts(e, msg[0] & 0x0f));
+                true
+            }
+            None => false,
         }
     }
 
@@ -273,6 +424,7 @@ fn run(app: Arc<App>, notes: Sender<GrainNote>) {
                             for d in app.midi.route(e, msg[0] & 0x0f).into_iter().flatten() {
                                 app.midi.deliver(d, &notes);
                             }
+                            app.midi.push_page(app.midi.route_parts(e, msg[0] & 0x0f));
                         }
                     }, ()) {
                         Ok(c) => {
@@ -438,6 +590,65 @@ mod tests {
         assert_eq!(r.channel(Instrument::Wave), 1);
         r.set_channel(Instrument::Wave, 99);
         assert_eq!(r.channel(Instrument::Wave), 16);
+    }
+
+    fn part(name: &str) -> usize {
+        Router::part_index(name).unwrap()
+    }
+
+    #[test]
+    fn each_page_part_has_its_own_channel() {
+        let r = router();
+        let want = [("atmos", 3), ("classic", 4), ("bass", 5), ("chords", 6), ("arp", 7), ("drone", 8), ("drums", 10)];
+        for (name, ch) in want {
+            assert_eq!(r.part_channel(part(name)), ch, "{name}");
+        }
+        assert_eq!(r.route_parts(parse(&[0x92, 60, 127]).unwrap(), 2), vec![(part("atmos"), PartEvent::On { key: 60, vel: 1.0 })]);
+        assert_eq!(r.route_parts(parse(&[0x93, 62, 127]).unwrap(), 3), vec![(part("classic"), PartEvent::On { key: 62, vel: 1.0 })]);
+        assert_eq!(r.route_parts(parse(&[0x99, 36, 127]).unwrap(), 9), vec![(part("drums"), PartEvent::On { key: 36, vel: 1.0 })]);
+        assert!(r.route_parts(parse(&[0x90, 60, 127]).unwrap(), 0).is_empty(), "Wave's channel is nobody's in the page");
+        assert!(r.route_parts(parse(&[0x9f, 60, 127]).unwrap(), 15).is_empty());
+    }
+
+    #[test]
+    fn page_parts_on_one_channel_play_together_and_release_follows_the_press() {
+        let r = router();
+        r.set_part_channel(part("classic"), 3);
+        let on = r.route_parts(parse(&[0x92, 64, 127]).unwrap(), 2);
+        assert_eq!(on.len(), 2);
+        // Moved away with the key down: the release still reaches both.
+        r.set_part_channel(part("atmos"), 9);
+        let off = r.route_parts(parse(&[0x82, 64, 0]).unwrap(), 2);
+        assert_eq!(off, vec![(part("atmos"), PartEvent::Off { key: 64 }), (part("classic"), PartEvent::Off { key: 64 })]);
+        assert!(r.route_parts(parse(&[0x82, 64, 0]).unwrap(), 2).is_empty(), "a second release is nobody's");
+    }
+
+    #[test]
+    fn the_page_queue_is_numbered_and_starts_from_now() {
+        let r = router();
+        let (n0, ev) = r.page_events(None, Duration::ZERO);
+        assert_eq!((n0, ev.len()), (0, 0));
+        r.inject_parts(&[0x92, 60, 100]);
+        r.inject_parts(&[0x82, 60, 0]);
+        r.inject_parts(&[0x90, 60, 100]); // Wave's: not the page's
+        // No `after` is "from now": the number, and nothing to play.
+        let (n, ev) = r.page_events(None, Duration::ZERO);
+        assert_eq!(n, 2);
+        assert!(ev.is_empty());
+        // From 0, everything there is.
+        assert_eq!(r.page_events(Some(0), Duration::ZERO).1.len(), 2);
+        let (n, ev) = r.page_events(Some(1), Duration::ZERO);
+        assert_eq!((n, ev.len()), (2, 1));
+        assert_eq!(ev[0].e, PartEvent::Off { key: 60 });
+        // A wait answers as soon as something lands.
+        let r = Arc::new(r);
+        let r2 = Arc::clone(&r);
+        let t = std::thread::spawn(move || r2.page_events(Some(2), Duration::from_secs(5)));
+        std::thread::sleep(Duration::from_millis(50));
+        r.inject_parts(&[0xe2, 0x7f, 0x7f]);
+        let (n, ev) = t.join().unwrap();
+        assert_eq!(n, 3);
+        assert_eq!(ev[0].e, PartEvent::Bend(1.0));
     }
 
     #[test]

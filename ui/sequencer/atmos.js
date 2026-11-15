@@ -631,7 +631,8 @@ function atmosNoteDur(stepDur) {
   return stepDur * ((AT.atHold ?? 300) / 100);
 }
 
-/// Play one note at `freq` (true pitch, from the scale) at `time` for `dur`.
+/// Play one note at `freq` (true pitch, from the scale) at `time` for `dur`;
+/// answers the voice, which keys.js lets go early for a held key.
 /// Accompany (accompany.js) passes `o`: `ac` plays it into Accompany's chain
 /// and pool, past the filter; `gain` scales it; `atk` and `rel`, in seconds,
 /// stand in for the envelope's (the drone's Swell). Its notes do not glide,
@@ -721,6 +722,7 @@ function atmosPlay(freq, time, dur, o = null) {
     n.connect(hp); hp.connect(g); g.connect(env);
   }
   (ac ? atAcVoices : atVoices).push(v);
+  return v;
 }
 
 function atStealOldest(v, time) {

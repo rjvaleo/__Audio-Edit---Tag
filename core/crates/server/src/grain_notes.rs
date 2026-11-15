@@ -166,15 +166,16 @@ pub fn post_voice(app: &Arc<App>, req: &Request) -> Response {
 /// draw on its own keys.
 pub fn get_midi(app: &Arc<App>) -> Response {
     let keys = app.midi.held_keys().into_iter().map(|k| Value::Num(k as f64)).collect();
-    Response::json(
-        Value::obj()
-            .set("notes", Value::Arr(keys))
-            .set("bend", app.midi.bend() as f64)
-            .set("vel", app.midi.velocity() as f64)
-            .set("wave", app.midi.channel(Instrument::Wave) as f64)
-            .set("grain", app.midi.channel(Instrument::Grain) as f64)
-            .to_string(),
-    )
+    let mut o = Value::obj()
+        .set("notes", Value::Arr(keys))
+        .set("bend", app.midi.bend() as f64)
+        .set("vel", app.midi.velocity() as f64)
+        .set("wave", app.midi.channel(Instrument::Wave) as f64)
+        .set("grain", app.midi.channel(Instrument::Grain) as f64);
+    for (i, (name, _)) in crate::midi::PARTS.iter().enumerate() {
+        o = o.set(name, app.midi.part_channel(i) as f64);
+    }
+    Response::json(o.to_string())
 }
 
 /// `POST /api/engine/midi`: each instrument's channel, 1 to 16, either or both.
@@ -191,7 +192,58 @@ pub fn post_midi(app: &Arc<App>, req: &Request) -> Response {
             app.midi.set_channel(who, ch.round() as u8);
         }
     }
+    for (i, (name, _)) in crate::midi::PARTS.iter().enumerate() {
+        if let Some(ch) = num(v.get(name)) {
+            if !(1.0..=16.0).contains(&ch) {
+                return Response::error(400, "a MIDI channel is 1 to 16");
+            }
+            app.midi.set_part_channel(i, ch.round() as u8);
+        }
+    }
     get_midi(app)
+}
+
+/// `GET /api/engine/midi/events?after=N&wait=ms`: what has arrived for the
+/// sequencer's parts since event N, waiting up to `wait` (at most 2 s) for
+/// something if nothing has. No `after` is "from now". Answers
+/// `{n, events: [{n, part, on|off|bend|allOff, key, vel}]}`; ask again with
+/// `after=n`. Starts MIDI listening, as the Wave and Grain routes do.
+pub fn get_midi_events(app: &Arc<App>, req: &Request) -> Response {
+    crate::midi::ensure(app);
+    let after: Option<u64> = req.param("after").and_then(|a| a.parse().ok());
+    let wait = std::time::Duration::from_millis(req.number::<u64>("wait", 0).min(2000));
+    let (n, events) = app.midi.page_events(after, wait);
+    let list = events
+        .into_iter()
+        .map(|e| {
+            let o = Value::obj().set("n", e.n as f64).set("part", crate::midi::PARTS[e.part].0);
+            match e.e {
+                crate::midi::PartEvent::On { key, vel } => o.set("on", true).set("key", key as f64).set("vel", vel as f64),
+                crate::midi::PartEvent::Off { key } => o.set("on", false).set("key", key as f64),
+                crate::midi::PartEvent::Bend(b) => o.set("bend", b as f64),
+                crate::midi::PartEvent::AllOff => o.set("allOff", true),
+            }
+        })
+        .collect();
+    Response::json(Value::obj().set("n", n as f64).set("events", Value::Arr(list)).to_string())
+}
+
+/// `POST /api/engine/midi/inject {msg: [status, data, data]}`: one raw MIDI
+/// message for the sequencer's parts, as if a keyboard had sent it. How the
+/// tests play a channel without a keyboard; Wave and Grain do not hear it.
+pub fn post_midi_inject(app: &Arc<App>, req: &Request) -> Response {
+    let v = match body(req) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let msg: Vec<u8> = match v.get("msg") {
+        Some(Value::Arr(a)) => a.iter().filter_map(|x| num(Some(x))).map(|x| x.clamp(0.0, 255.0) as u8).collect(),
+        _ => return Response::error(400, "msg is a list of bytes"),
+    };
+    if !app.midi.inject_parts(&msg) {
+        return Response::error(400, "not a MIDI message the parts understand");
+    }
+    Response::json(Value::obj().set("ok", true).to_string())
 }
 
 // ──────────────────────────────────────────────────────────── recording
