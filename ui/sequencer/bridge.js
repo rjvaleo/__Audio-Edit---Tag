@@ -912,6 +912,8 @@ async function flush() {
       spectrumInto(an, fbuf, rate, w, spectra, i * bands);
       lissajousInto(aL, aR, bL, bR, lissN, liss, i * lissN * 2);
       if (i % 30 === 0) post({ type: 'seq:render-progress', fraction: i / nFrames });
+      // In the frame itself (the Clone page's Keep): how far, every frame.
+      if (typeof o.onProgress === 'function') o.onProgress(i / nFrames);
     };
 
     let buffer;

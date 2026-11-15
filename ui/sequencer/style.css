@@ -812,8 +812,25 @@ body.only-clone .clone-page { display: flex; flex-direction: column; gap: 14px; 
 .cl-takes { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
 .cl-empty { grid-column: 1 / -1; padding: 30px; text-align: center; color: var(--look-text-3); font: 400 14px var(--ui); border-radius: 14px; border: 1.5px dashed var(--look-line); }
 .cl-take { border-radius: 14px; padding: 12px; background: linear-gradient(180deg, var(--look-panel-hi), var(--look-panel)); box-shadow: 0 0 0 1px var(--look-line), 0 6px 14px rgba(0, 0, 0, 0.4); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.cl-take.fresh { animation: cl-in 0.35s ease-out both; animation-delay: var(--d); }
-@keyframes cl-in { from { opacity: 0; transform: translateY(8px); } }
+.cl-take.fresh { animation: cl-in 0.55s cubic-bezier(0.2, 0.8, 0.3, 1) both, cl-glow 1.6s ease-out both; animation-delay: var(--d), calc(var(--d) + 0.2s); }
+@keyframes cl-in { from { opacity: 0; transform: translateY(18px) scale(0.97); } }
+@keyframes cl-glow { 0% { box-shadow: 0 0 0 2px var(--on), 0 0 24px color-mix(in srgb, var(--on) 45%, transparent); } 100% { box-shadow: 0 0 0 1px var(--look-line), 0 6px 14px rgba(0, 0, 0, 0.4); } }
+/* over the takes: what was just made, what a take is, what was just saved */
+.cl-takes-head { display: flex; flex-direction: column; gap: 8px; scroll-margin-top: 12px; }
+.cl-takes-head:empty { display: none; }
+.tk-line { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--on) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--on) 30%, var(--look-line)); }
+.tk-line b { font: 600 16px var(--ui); color: var(--on); }
+.tk-line span { font: 400 13px var(--ui); color: var(--look-text-2); }
+.tk-line em { font-style: normal; font-weight: 600; color: var(--f-space); }
+.tk-line.flash { animation: cl-flash 1.4s ease-out; }
+@keyframes cl-flash { 0% { background: color-mix(in srgb, var(--on) 35%, transparent); } 100% { background: color-mix(in srgb, var(--on) 8%, transparent); } }
+.tk-saved { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--f-space) 16%, transparent); box-shadow: inset 0 0 0 1.5px var(--f-space); animation: cl-flash-g 1.6s ease-out; }
+@keyframes cl-flash-g { 0% { background: color-mix(in srgb, var(--f-space) 45%, transparent); } }
+.tk-saved b { font: 700 16px var(--ui); color: var(--f-space); }
+.tk-saved span { font: 500 13px var(--mono); color: var(--look-text); margin-right: auto; }
+.tk-saved .btn { color: var(--f-space); }
+.tk-error { font: 600 13px var(--ui); color: var(--rec); padding: 10px 14px; border-radius: 12px; box-shadow: inset 0 0 0 1.5px var(--rec); }
+.tk-saving { font: 500 13px var(--ui); color: var(--f-time); padding: 0 4px; }
 .cl-take.picked { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--on) 60%, var(--look-line)), 0 6px 14px rgba(0, 0, 0, 0.4); }
 .cl-take.kept { box-shadow: 0 0 0 2px var(--f-space), 0 6px 14px rgba(0, 0, 0, 0.4); }
 .cl-take .top { display: flex; align-items: center; gap: 8px; }
@@ -832,10 +849,23 @@ body.only-clone .clone-page { display: flex; flex-direction: column; gap: 14px; 
 .cl-shape .wv i { flex: 1; background: var(--f-space); border-radius: 1px; min-width: 0; }
 .cl-take.playing .cl-shape { box-shadow: inset 0 0 0 1px var(--f-space); }
 .cl-take .src { font: 400 11px var(--mono); color: var(--look-text-2); }
-.cl-take .pc { font: 400 11px var(--mono); color: var(--look-text-3); }
-.cl-take .pc b { color: var(--f-space); font-weight: 500; }
+.cl-take .pc { align-self: flex-start; font: 500 10.5px var(--ui); color: var(--look-text-3); padding: 2px 8px; border-radius: 9px; box-shadow: inset 0 0 0 1px var(--look-line); }
+/* Keep: the bar while it renders, and Saved when it is done */
+.cl-take.keeping { box-shadow: 0 0 0 2px var(--f-time), 0 6px 14px rgba(0, 0, 0, 0.4); }
+.kp { display: flex; flex-direction: column; gap: 5px; }
+.kp-bar { position: relative; height: 10px; border-radius: 5px; background: var(--look-well); overflow: hidden; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8); }
+.kp-bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 5px; background: linear-gradient(90deg, color-mix(in srgb, var(--f-time) 60%, transparent), var(--f-time)); transition: width 0.15s linear; }
+.kp-say { font: 600 12px var(--ui); color: var(--f-time); }
+.kp-note { font: 400 11px var(--ui); color: var(--look-text-3); }
+.cl-take .saved { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--f-space) 14%, transparent); }
+.cl-take .saved b { font: 700 13px var(--ui); color: var(--f-space); }
+.cl-take .saved span { font: 400 10.5px var(--mono); color: var(--look-text-2); overflow-wrap: anywhere; }
+.cl-take.just-saved { animation: cl-glow-g 2s ease-out; }
+@keyframes cl-glow-g { 0% { box-shadow: 0 0 0 3px var(--f-space), 0 0 30px color-mix(in srgb, var(--f-space) 55%, transparent); } }
+.cl-take .acts .btn.keep { color: var(--on); }
 .cl-take .acts, .cl-take .opens { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
 .cl-take .acts { grid-template-columns: 1fr 1fr auto; }
+.cl-take.kept .acts { grid-template-columns: 1fr 1fr; }
 .cl-take .acts .btn, .cl-take .opens .btn { justify-content: center; min-width: 0; padding: 0 8px; font-size: 11.5px; white-space: nowrap; }
 .cl-take .acts .btn.on { color: var(--f-space); }
 .cl-take .opens .btn { color: var(--f-space); }
