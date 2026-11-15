@@ -786,3 +786,15 @@ body.docmode .panel.left { left: var(--rail); }
    that is worth words. This is not that. */
 #stretchOut.pending { color: var(--warn); }
 
+
+/* The mode bar (SUITE-PLAN §4.1, `070c-rack-modes.js`): family tabs, then the
+   mode, its class badge and, for a suite's mode, the face style. */
+.fx-modebar { display: grid; gap: 3px; margin: 0 0 3px; min-width: 0; }
+.fx-modebar .fx-mode-families { width: 100%; min-width: 0; }
+.fx-modebar .fx-mode-families > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-modebar-line { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.fx-modebar-line .fx-mode-drop { flex: 1 1 auto; min-width: 0; }
+.fx-modebar-line .fx-mode-drop .ui-dd { width: 100%; min-width: 0; }
+.fx-modebar-line .fx-class-badge { align-self: center; flex: 0 0 auto; }
+.fx-modebar-line .fx-face-style { flex: 0 0 auto; }
+.automation-lane.missing .automation-lane-controls { opacity: .55; }

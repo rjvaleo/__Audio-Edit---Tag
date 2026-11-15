@@ -12,7 +12,9 @@ function automationUnit(value,min,max,log=false){
 }
 
 function renderFxModuleControls(box, slot, shaper, slotIndex) {
-  if (fxIsBuiltin(slot.kind)) { renderFxFace(box, slot, slotIndex, box.closest('.fx-module')); return; }
+  // A Hyperprism, SoundHack or Lexicon mode the slot has put in the MGL face
+  // draws as the program's own effects do (SUITE-PLAN §4.1, D6).
+  if (fxIsBuiltin(slot.kind) || fxFaceStyle(slot) === 'mgl') { renderFxFace(box, slot, slotIndex, box.closest('.fx-module')); return; }
   // `key` names the one control this row writes, so the value can be moved on
   // the effect that is already running. Without one there is nothing to address
   // and the whole rack has to be posted instead — which *rebuilds the chain*,

@@ -509,6 +509,9 @@ function renderRack() {
       </div>`;
     el.querySelector('h2').textContent = meta.name;
     const head = el.querySelector('.fx-module-head');
+    // A mode of a module carries its mode bar under the head (`070c-rack-modes.js`).
+    const modeBar = fxModeBar(slot, i);
+    if (modeBar) head.after(modeBar);
     head.draggable = true;
     head.ondragstart = (event) => {
       event.dataTransfer.effectAllowed = 'move';

@@ -248,6 +248,9 @@ function renderAutomation() {
     }
     // A lane naming something that no longer exists keeps its curve and says
     // so, rather than being silently repointed at whatever is first in the list.
+    // Dimmed, too: a module switched to a mode without this control keeps the
+    // lane, and it reaches its control again on the way back.
+    row.classList.toggle('missing', !offered.some(([v]) => v === lane.target));
     if (!offered.some(([v]) => v === lane.target)) {
       const o = document.createElement('option');
       o.value = lane.target; o.textContent = `Missing — ${lane.target}`;
@@ -642,7 +645,9 @@ function drawLane(canvas, lane) {
 
   const p = (lane.points || []).slice().sort((a, b) => a.frame - b.frame);
   // Bypass stops the grain's lanes and the picture's; a take plays regardless.
-  const dim = lane.enabled === false || (!lane.seq && state.automation.bypassed);
+  // A lane whose control the module's mode no longer has is drawn dim too.
+  const missing = !lane.seq && String(lane.target || '').startsWith('fx.') && !automationTargets().some(([v]) => v === lane.target);
+  const dim = lane.enabled === false || (!lane.seq && state.automation.bypassed) || missing;
   // The lane's own colour, the one the timeline above draws it in.
   c.strokeStyle = dim ? '#3d5162' : perfLaneColor(lane.target);
   c.fillStyle = c.strokeStyle;

@@ -141,6 +141,24 @@ pub(super) fn suites_json() -> Value {
 /// way, plus what only prism effects carry: the choices a control steps
 /// through, and the panel — the original's groups, the controls shown first,
 /// and the Prism pad's default pair.
+/// A role's name as the interface reads it, and the order a face draws them in.
+pub(super) fn role_name(r: fx::prism::prism_fx::Role) -> &'static str {
+    use fx::prism::prism_fx::Role::*;
+    match r {
+        Time => "time",
+        Space => "space",
+        Tone => "tone",
+        Motion => "motion",
+        Drive => "drive",
+        Noise => "noise",
+        Dynamics => "dynamics",
+        Pitch => "pitch",
+        Stereo => "stereo",
+        Output => "output",
+        Engine => "engine",
+    }
+}
+
 fn prism_entry(d: &'static fx::prism::prism_fx::Descriptor) -> Value {
     use fx::prism::prism_fx::{Category, Display, ParamKind};
     let strs = |xs: &[&str]| Value::Arr(xs.iter().map(|x| Value::from(*x)).collect());
@@ -159,6 +177,12 @@ fn prism_entry(d: &'static fx::prism::prism_fx::Descriptor) -> Value {
             // A control that only means something in one setting of another.
             let v = match p.when {
                 Some((key, value)) => v.set("when", Value::obj().set("key", key).set("value", value as f64)),
+                None => v,
+            };
+            // Where a face files it (SUITE-PLAN §2.0): one layout serves every
+            // mode of a module, each with its own controls.
+            let v = match p.role {
+                Some(r) => v.set("role", role_name(r)),
                 None => v,
             };
             match p.kind {

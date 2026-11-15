@@ -101,3 +101,26 @@ fn an_unknown_module_or_mode_is_dropped_not_guessed() {
     assert!(doc(r#"{"suite":"no-such","mode":"x","id":"s"}"#).slots.is_empty());
     assert!(doc(r#"{"kind":"suite:reverb","id":"s"}"#).slots.is_empty());
 }
+
+#[test]
+fn a_slot_keeps_its_face_style_and_a_slot_without_one_opens_in_its_own_look() {
+    // SUITE-PLAN §4.1, D6: a Hyperprism, SoundHack or Lexicon mode may be
+    // drawn by the MGL face or in its original's look; the choice is the
+    // slot's, and a document that never chose opens in the look it had.
+    let chose = doc(r#"{"kind":"prism:hp-echo","id":"s","face":"mgl"}"#);
+    let saved = chose.to_json();
+    let slot = |v: &Value| v.get("slots").and_then(|s| if let Value::Arr(a) = s { a.first().cloned() } else { None }).unwrap();
+    assert_eq!(slot(&saved).get("face").and_then(Value::as_str), Some("mgl"));
+    assert_eq!(RackSpec::from_json(&saved), chose);
+    let back = doc(r#"{"kind":"prism:hp-echo","id":"s","face":"original"}"#);
+    assert_eq!(slot(&back.to_json()).get("face").and_then(Value::as_str), Some("original"));
+    // never chosen: nothing written, so the look is the mode's own
+    let none = doc(r#"{"kind":"prism:hp-echo","id":"s"}"#);
+    assert!(slot(&none.to_json()).get("face").is_none());
+    // only the two looks there are
+    let odd = doc(r#"{"kind":"prism:hp-echo","id":"s","face":"wobbly"}"#);
+    assert!(slot(&odd.to_json()).get("face").is_none());
+    assert_eq!(odd, none);
+    // and the face never touches the sound
+    assert_eq!(render(&chose), render(&none));
+}

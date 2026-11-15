@@ -839,3 +839,14 @@ body.prism-mapping #dockHyper #prismSettings .prism-knob .ui-kn { cursor: copy; 
 .ppick-i .pic { width: 22px; height: 16.5px; }
 /* The native menu stays for the paths that pick a source by value; unseen. */
 .ppick-mirror { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* A face's rows never widen the module: the column is the module's width, and
+   a knob's long name (a Hyperprism control's, in the MGL face) ends in an
+   ellipsis rather than pushing its neighbours past the edge. The rows are
+   packed so every knob keeps its whole ring (`fxDeckFace`). */
+.fx-deck, .fx-sect { grid-template-columns: minmax(0, 1fr); }
+/* Inside a group, a fader takes the share of a fader, as it does across the
+   row: an equal share left a knob beside two faders narrower than its ring. */
+.fx-sect > div > .fxf { flex-grow: .7; }
+.fx-face .ui-knob .ui-lab { overflow: hidden; }
+.fx-face .ui-knob .ui-lab > * { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }

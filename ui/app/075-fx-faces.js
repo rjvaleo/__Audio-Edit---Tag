@@ -552,6 +552,8 @@ function fxIsTech(m, key) {
   // Bandwidth is technical in the plate (a coefficient) and musical in a
   // filter (in Hz).
   if (key === 'bandwidth') return m.byKey[key]?.unit !== 'Hz';
+  // A control a mode files under Engine is technical by its own say.
+  if (m.byKey[key]?.role === 'engine') return true;
   return FX_TECH.has(key);
 }
 function fxControl(m, p, onMove, label) {
