@@ -174,10 +174,26 @@ song. It stays the song to split until one is picked in the library after it.
 ## A song's own kit
 
 *14 Nov 2026.* RJ, on Clone's takes not sounding like his song: "Try doing what you say with playing
-sounds from the library." `POST /api/stems/kit {"p": "Stems/<song>"}` (`routes/stem_kits.rs`) cuts,
+sounds from the library." `POST /api/stems/own-kit {"p": "Stems/<song>"}` (`routes/stem_kits.rs`) cuts,
 from a split song's stems, its clearest kick, snare and closed hat and an open hat (songprint's
-`find_hits`; kicks keep at least 280 ms and snares 200 ms of body, so a busy stem's next hit does not
-leave a click), and up to three held bass notes at different pitches, each named with the pitch the
-reading measured (`bass note 36.40.wav` is MIDI 36 and 40 cents). They go to `Stems/<song>/kit/`
-with a `kit.json`, and `/api/seq/kits` lists every such folder first, as "<song> (its own)", so the
-Band's kit menu offers it.
+`find_hits`), and held bass notes across the song's range, at least two semitones apart, each named
+with the pitch measured on the cut (`bass note 36.40.wav` is MIDI 36 and 40 cents). They go to
+`Stems/<song>/kit/` with a `kit.json`, and `/api/seq/kits` lists every such folder first, as
+"<song> (its own)", so the Band's kit menu offers it. Cutting again replaces the folder's files.
+
+On the first cut RJ said: "The bass is really muddy. And there's like some stuff after the sounds."
+So:
+- **Every sound ends where the next starts** (`sound::next_attack`: the level climbing back 6 dB
+  after the sound has begun to die). Of up to eight hits of each kind, the clearest one with room
+  for its body wins: a kick 180 ms, a snare 140 ms, a closed hat 40 ms, an open hat 250 ms (the
+  hat that rings longest). A kick with no room keeps its body, and everything above 160 Hz is
+  filtered out from where the next hit came in (`sound::low_after`).
+- **A bass note** comes from the reading's notes of two steps or more. It is ranked down for a kick
+  on its attack or under it, and starts at the quiet just before its attack, not on the grid. It
+  ends at the next note (the level read over two of its cycles, so the wave's own swing is not
+  counted, and only a rise back near its own level after 150 ms) or once it has died 30 dB away.
+  It is kept when its pitch holds steady (`sound::steadiness`: YIN over 90 ms windows, an octave
+  slip forgiven), and higher notes are preferred. A bass too gritty to measure keeps the reading's
+  pitch, ranked well under one that measures.
+- **Its low mids are cut** 4 dB in a broad bell at 280 Hz, with a high-pass at half its
+  fundamental for rumble (`sound::unmud`).

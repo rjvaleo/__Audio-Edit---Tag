@@ -258,6 +258,22 @@ impl Biquad {
         let a0 = 1.0 + al;
         Biquad { b: [(1.0 + cw) / 2.0 / a0, -(1.0 + cw) / a0, (1.0 + cw) / 2.0 / a0], a: [-2.0 * cw / a0, (1.0 - al) / a0], z: vec![[0.0; 2]; ch] }
     }
+    fn lowpass(rate: u32, hz: f32, q: f32, ch: usize) -> Self {
+        let w = 2.0 * PI * hz / rate as f32;
+        let (cw, sw) = (w.cos(), w.sin());
+        let al = sw / (2.0 * q);
+        let a0 = 1.0 + al;
+        Biquad { b: [(1.0 - cw) / 2.0 / a0, (1.0 - cw) / a0, (1.0 - cw) / 2.0 / a0], a: [-2.0 * cw / a0, (1.0 - al) / a0], z: vec![[0.0; 2]; ch] }
+    }
+    /// A peaking bell, `db` at `hz` (negative to cut).
+    fn peaking(rate: u32, hz: f32, q: f32, db: f32, ch: usize) -> Self {
+        let a = 10f32.powf(db / 40.0);
+        let w = 2.0 * PI * hz / rate as f32;
+        let (cw, sw) = (w.cos(), w.sin());
+        let al = sw / (2.0 * q);
+        let a0 = 1.0 + al / a;
+        Biquad { b: [(1.0 + al * a) / a0, -2.0 * cw / a0, (1.0 - al * a) / a0], a: [-2.0 * cw / a0, (1.0 - al / a) / a0], z: vec![[0.0; 2]; ch] }
+    }
     fn run(&mut self, x: f32, c: usize) -> f32 {
         let z = &mut self.z[c];
         let y = self.b[0] * x + z[0];
@@ -292,6 +308,130 @@ pub fn upsample(s: &Sound, to: u32, air: f32, above: f32) -> Sound {
         }
     }
     y
+}
+
+/// Take the mud out of a bass note (RJ, 14 Nov 2026, on the song's own kit:
+/// "The bass is really muddy"): a high-pass under its fundamental for the
+/// rumble, and the low mids, where a bass stem's boom and the kick's bleed pile
+/// up, cut by `cut_db` at `mud_hz`, a broad bell.
+pub fn unmud(s: &Sound, fundamental_hz: f32, mud_hz: f32, cut_db: f32) -> Sound {
+    let ch = s.channels.max(1);
+    let mut hp = Biquad::highpass(s.rate, (fundamental_hz * 0.5).max(20.0), 0.707, ch);
+    let mut bell = Biquad::peaking(s.rate, mud_hz, 0.8, cut_db, ch);
+    let mut y = s.clone();
+    for i in 0..y.frames() {
+        for c in 0..ch {
+            let v = y.x[i * ch + c];
+            y.x[i * ch + c] = bell.run(hp.run(v, c), c);
+        }
+    }
+    y
+}
+
+/// Where the next sound starts in a cut: once the sound has peaked (within its
+/// first 80 ms) and begun to fall, the first place the level climbs back 6 dB
+/// or more over the lowest it had fallen to, for 10 ms, while still within
+/// 45 dB of the peak. Seconds from the start, at that lowest point, or None
+/// when the sound only dies away. (RJ: "there's like some stuff after the
+/// sounds": the next hit, or the next note, caught in the cut.)
+pub fn next_attack(s: &Sound) -> Option<f32> {
+    next_attack_over(s, 0.005, -45.0, 0.0)
+}
+
+/// `next_attack`, the level read over `frame` seconds (for a low note, two of
+/// its cycles or more, so the wave's own rise and fall is not taken for one),
+/// and the climb counted only when it comes back within `floor_db` of the
+/// peak (for a held note, a few dB: a new note, not the sound's own wobble),
+/// and only from `settle` seconds in (a note that swells after its pluck).
+pub fn next_attack_over(s: &Sound, frame: f32, floor_db: f32, settle: f32) -> Option<f32> {
+    let x = mono(s);
+    let w = ((frame * s.rate as f32) as usize).max(1);
+    let env: Vec<f32> = x.chunks(w).map(|c| (c.iter().map(|v| v * v).sum::<f32>() / c.len() as f32).sqrt()).collect();
+    let head = ((0.08 / frame).ceil() as usize).max(2).min(env.len());
+    let (pi, pk) = env[..head].iter().enumerate().fold((0, 0.0f32), |m, (i, v)| if *v > m.1 { (i, *v) } else { m });
+    if pk <= 1e-9 {
+        return None;
+    }
+    let floor = pk * 10f32.powf(floor_db / 20.0);
+    let from = (pi + 1).max((settle * s.rate as f32) as usize / w);
+    let (mut lo, mut lo_i) = (env.get(from).copied().unwrap_or(pk).min(pk), from);
+    for i in from..env.len().saturating_sub(1) {
+        if env[i] < lo {
+            lo = env[i];
+            lo_i = i;
+        } else if env[i] > lo * 2.0 && env[i + 1] > lo * 2.0 && env[i] > floor {
+            return Some((lo_i * w) as f32 / s.rate as f32);
+        }
+    }
+    None
+}
+
+/// From `from` seconds on, only what is under `hz` (a 4-pole low-pass, faded
+/// in over 8 ms): a kick's body kept while the hat or snare that came in over
+/// its tail is taken out.
+pub fn low_after(s: &Sound, from: f32, hz: f32) -> Sound {
+    let ch = s.channels.max(1);
+    let (mut a, mut b) = (Biquad::lowpass(s.rate, hz, 0.707, ch), Biquad::lowpass(s.rate, hz, 0.707, ch));
+    let at = (from.max(0.0) * s.rate as f32) as usize;
+    let fade = ((0.008 * s.rate as f32) as usize).max(1);
+    let mut y = s.clone();
+    for i in 0..y.frames() {
+        let g = (i.saturating_sub(at) as f32 / fade as f32).min(1.0) * (i >= at) as u8 as f32;
+        for c in 0..ch {
+            let v = y.x[i * ch + c];
+            let lp = b.run(a.run(v, c), c);
+            y.x[i * ch + c] = v * (1.0 - g) + lp * g;
+        }
+    }
+    y
+}
+
+/// Where a sound has died away: the first `frame`-long stretch after its peak
+/// (within its first 80 ms) that is `db` or more under it. Seconds, or None.
+pub fn dies_at(s: &Sound, frame: f32, db: f32) -> Option<f32> {
+    let x = mono(s);
+    let w = ((frame * s.rate as f32) as usize).max(1);
+    let env: Vec<f32> = x.chunks(w).map(|c| (c.iter().map(|v| v * v).sum::<f32>() / c.len() as f32).sqrt()).collect();
+    let head = ((0.08 / frame).ceil() as usize).max(2).min(env.len());
+    let (pi, pk) = env[..head].iter().enumerate().fold((0, 0.0f32), |m, (i, v)| if *v > m.1 { (i, *v) } else { m });
+    let floor = pk * 10f32.powf(db / 20.0);
+    (pi + 1..env.len()).find(|&i| env[i] < floor).map(|i| (i * w) as f32 / s.rate as f32)
+}
+
+/// The first `secs` of a sound.
+pub fn until(s: &Sound, secs: f32) -> Sound {
+    let n = ((secs.max(0.0) * s.rate as f32) as usize).min(s.frames());
+    Sound { rate: s.rate, channels: s.channels, x: s.x[..n * s.channels].to_vec() }
+}
+
+/// How steady a held note's pitch is: YIN over 90 ms windows from 30 ms in to
+/// 85% of the way through. (its median pitch as MIDI, the spread in cents, the
+/// share of windows that were pitched), or None when none were.
+pub fn steadiness(s: &Sound) -> Option<(f32, f32, f32)> {
+    let x = mono(s);
+    let r = s.rate as f32;
+    let (win, hop) = ((0.09 * r) as usize, (0.03 * r) as usize);
+    let (a, z) = ((0.03 * r) as usize, (x.len() as f32 * 0.85) as usize);
+    let mut got: Vec<f32> = Vec::new();
+    let mut tried = 0;
+    let mut i = a;
+    while i + win <= z {
+        tried += 1;
+        if let Some((hz, ap)) = crate::pitch::yin(&x[i..i + win], r, 25.0, 400.0) {
+            if ap < 0.35 {
+                got.push(crate::pitch::midi(hz));
+            }
+        }
+        i += hop;
+    }
+    if got.is_empty() {
+        return None;
+    }
+    got.sort_by(f32::total_cmp);
+    let med = got[got.len() / 2];
+    let mut dev: Vec<f32> = got.iter().map(|m| (m - med).abs() * 100.0).collect();
+    dev.sort_by(f32::total_cmp);
+    Some((med, dev[dev.len() / 2] * 1.4826, got.len() as f32 / tried.max(1) as f32))
 }
 
 /// What a drum hit is like, for making a kit around it.
@@ -392,6 +532,61 @@ mod tests {
         let up = shift(&s, 2.0);
         assert!((pitch_of(&up).unwrap() - 35.0).abs() < 0.3);
         assert!(up.frames() < s.frames());
+    }
+
+    #[test]
+    fn unmud_cuts_the_low_mids_and_keeps_the_note() {
+        let lo = unmud(&tone(44100, 55.0, 1.0), 55.0, 300.0, -5.0);
+        let mid = unmud(&tone(44100, 300.0, 1.0), 55.0, 300.0, -5.0);
+        let pk = |s: &Sound| s.x[20000..].iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!((pk(&lo) - 0.5).abs() < 0.08, "the note itself: {}", pk(&lo));
+        assert!((pk(&mid) - 0.5 * 10f32.powf(-5.0 / 20.0)).abs() < 0.02, "300 Hz: {}", pk(&mid));
+        let rumble = unmud(&tone(44100, 15.0, 1.0), 55.0, 300.0, -5.0);
+        assert!(pk(&rumble) < 0.2, "rumble under the note: {}", pk(&rumble));
+    }
+
+    #[test]
+    fn next_attack_finds_the_next_hit() {
+        // a hit dying away, and a second one at 0.3 s
+        let rate = 44100;
+        let hit = |t: f32| if t < 0.0 { 0.0 } else { (2.0 * PI * 80.0 * t).sin() * (-t * 20.0).exp() };
+        let n = (rate as f32 * 0.6) as usize;
+        let two = Sound { rate, channels: 1, x: (0..n).map(|i| { let t = i as f32 / rate as f32; hit(t) + 0.5 * hit(t - 0.3) }).collect() };
+        let at = next_attack(&two).expect("the second hit");
+        assert!(at > 0.27 && at <= 0.3, "{at}");
+        let one = Sound { rate, channels: 1, x: (0..n).map(|i| hit(i as f32 / rate as f32)).collect() };
+        assert_eq!(next_attack(&one), None);
+        // held to its own level, the second hit (6 dB under the first) is not a new note
+        assert_eq!(next_attack_over(&two, 0.025, -4.0, 0.0), None);
+        assert_eq!(next_attack_over(&two, 0.005, -45.0, 0.35), None, "the second hit, in the settling time");
+        assert!((until(&two, at).seconds() - at).abs() < 0.001);
+        // e^-20t is 30 dB down at ln(31.6)/20 = 0.17 s
+        let d = dies_at(&one, 0.01, -30.0).unwrap();
+        assert!(d > 0.15 && d < 0.2, "{d}");
+    }
+
+    #[test]
+    fn low_after_keeps_the_body_and_drops_the_highs() {
+        let rate = 44100;
+        let n = (rate as f32 * 0.4) as usize;
+        let s = Sound { rate, channels: 1, x: (0..n).map(|i| { let t = i as f32 / rate as f32; 0.4 * (2.0 * PI * 60.0 * t).sin() + 0.4 * (2.0 * PI * 6000.0 * t).sin() }).collect() };
+        let y = low_after(&s, 0.1, 160.0);
+        let rms = |a: usize, z: usize, x: &[f32]| (x[a..z].iter().map(|v| v * v).sum::<f32>() / (z - a) as f32).sqrt();
+        assert!((rms(0, 4000, &y.x) - rms(0, 4000, &s.x)).abs() < 1e-4, "before: untouched");
+        let tail = rms(10000, 17000, &y.x);
+        assert!((tail - 0.4 / 2f32.sqrt()).abs() < 0.04, "after: the 60 Hz alone, {tail}");
+    }
+
+    #[test]
+    fn steadiness_of_a_held_note() {
+        let (m, spread, voiced) = steadiness(&tone(44100, 55.0, 0.8)).unwrap();
+        assert!((m - 33.0).abs() < 0.1 && spread < 5.0 && voiced > 0.9, "{m} {spread} {voiced}");
+        // a slide from 55 to 82 Hz spreads
+        let rate = 44100;
+        let n = (rate as f32 * 0.8) as usize;
+        let mut ph = 0.0f32;
+        let slide = Sound { rate, channels: 1, x: (0..n).map(|i| { let f = 55.0 + 27.0 * i as f32 / n as f32; ph += 2.0 * PI * f / rate as f32; ph.sin() * 0.5 }).collect() };
+        assert!(steadiness(&slide).unwrap().1 > 100.0);
     }
 
     #[test]
