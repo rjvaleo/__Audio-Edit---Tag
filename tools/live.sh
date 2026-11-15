@@ -29,7 +29,8 @@ if [ -n "$OLD" ]; then
   done
 fi
 printf '\n──── %s  restarted (%s) ────\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$(git log -1 --format='%h %s' 2>/dev/null)" >> "$LOG"
-AUDIOLAB_DATA="$PWD/data" AUDIOLAB_PORT=8737 nohup ./core/target/release/audiolab >> "$LOG" 2>&1 < /dev/null &
+# No new browser window: the app is already open where RJ uses it.
+AUDIOLAB_NO_BROWSER=1 AUDIOLAB_DATA="$PWD/data" AUDIOLAB_PORT=8737 nohup ./core/target/release/audiolab >> "$LOG" 2>&1 < /dev/null &
 for _ in $(seq 1 60); do
   curl -sf -o /dev/null http://127.0.0.1:8737/api/state && break
   sleep 1
