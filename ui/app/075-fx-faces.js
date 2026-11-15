@@ -330,16 +330,17 @@ const FXP = (() => {
 /// columns down and across (`.fx-module-rail` wraps by column).
 const FX_FACE_W = 348;
 
-/// An effect that is MultiGrainLive's own gets a face: the three original
-/// modules, every shaper, and the prism effects whose source is this program.
-/// Hyperprism, SoundHack and Lexicon keep the panels drawn from their originals
-/// (`renderPrismControls`), with a picture added to each control.
+/// Every effect gets a face — the three original modules, every shaper, and
+/// every prism effect, the suite's new modes among them (Comb Hall, JC Reverb,
+/// Ambient FDN …) — except Hyperprism, SoundHack and Lexicon, which keep the
+/// panels drawn from their originals (`renderPrismControls`), with a picture
+/// added to each control, unless the slot chose the MGL face.
 function fxIsBuiltin(kind) {
   if (kind === 'eq' || kind === 'comp' || kind === 'gain') return true;
   const s = state.shapers[kind];
   if (!s) return false;
   if (!kind.startsWith('prism:')) return true;
-  return /^MultiGrainLive/.test(s.source || '');
+  return !fxSuiteOf(s);
 }
 
 /// Each effect in its family's colour: the knob rings, the display, the
