@@ -7,6 +7,7 @@ use fx::shape::ShapeKind;
 use fx::{Compressor, Eq, Gain, MasterSettings, Maximizer, Rack};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
+use fx::prism::prism_fx::suite as prism_fx_suite;
 
 /// The rack as the UI describes it: a plain, serialisable list.
 ///
@@ -45,6 +46,18 @@ pub struct RackSpec {
     /// Each module's own Wet/dry and Level, per slot id, for the ones not at
     /// full wet and nought dB. In JSON they are `wet` and `level` on the slot.
     pub mixes: BTreeMap<String, SlotMix>,
+    /// Each module's revision and the values it remembers for the modes it
+    /// has visited, per slot id (SUITE-PLAN §2.0, §3.4). Only for slots that
+    /// carry either; a slot with no rev is rev 1.
+    pub modules: BTreeMap<String, SlotModule>,
+}
+
+/// What a slot keeps as a module beyond its running mode's values.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SlotModule {
+    pub rev: Option<u16>,
+    /// `{ "<mode>": { "<key>": value } }`, as the interface wrote it.
+    pub memory: Option<Value>,
 }
 
 /// A module's footer: 0..1, and dB.
@@ -244,6 +257,7 @@ impl RackSpec {
             post_roll: BTreeMap::new(),
             ranges: BTreeMap::new(),
             mixes: BTreeMap::new(),
+            modules: BTreeMap::new(),
         }
     }
 
@@ -276,6 +290,7 @@ impl RackSpec {
             post_roll: BTreeMap::new(),
             ranges: BTreeMap::new(),
             mixes: BTreeMap::new(),
+            modules: BTreeMap::new(),
         }
     }
 
@@ -287,8 +302,27 @@ impl RackSpec {
         let mut slots = Vec::new();
         let mut slot_ids = Vec::new();
         let mut mixes = BTreeMap::new();
+        let mut modules = BTreeMap::new();
         for (index, it) in items.iter().enumerate() {
-            let kind = it.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+            let stored = it.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+            // A slot saved by the suite build names its module and mode. The
+            // mode is what the slot is; the stored kind is kept as written
+            // when it opens that same mode (a twin's name stays its own), and
+            // otherwise the mode's keeper kind is built. An unknown module or
+            // mode drops the slot, as an unknown kind does.
+            let keeper;
+            let suite = it.get("suite").and_then(Value::as_str).or_else(|| stored.strip_prefix("suite:"));
+            let kind = match suite {
+                None => stored,
+                Some(s) => match it.get("mode").and_then(Value::as_str).and_then(|m| prism_fx_suite::find_mode(s, m)) {
+                    Some(m) if fx::suite::mode_of_kind(stored).is_some_and(|(_, x)| x.id == m.id && x.kernel == m.kernel) => stored,
+                    Some(m) => {
+                        keeper = fx::suite::keeper_kind(m);
+                        keeper.as_str()
+                    }
+                    None => "",
+                },
+            };
             let bypassed = flag(it.get("bypassed"));
             // A rack saved before slots had names gets one derived from where
             // it sat, which is stable for as long as nothing is reordered —
@@ -298,7 +332,7 @@ impl RackSpec {
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string)
-                .unwrap_or_else(|| format!("legacy-{kind}-{index}"));
+                .unwrap_or_else(|| format!("legacy-{stored}-{index}"));
             let before = slots.len();
             match kind {
                 "gain" => slots.push(SlotSpec::Gain {
@@ -403,6 +437,15 @@ impl RackSpec {
                 if mix != SlotMix::default() {
                     mixes.insert(id.clone(), mix);
                 }
+                let module = SlotModule {
+                    rev: it.get("rev").and_then(|r| if let Value::Num(n) = r { Some(*n) } else { None })
+                        // rev 1 is what no rev means, so it is not kept apart
+                        .filter(|n| n.is_finite() && *n >= 2.0 && *n <= u16::MAX as f64).map(|n| n as u16),
+                    memory: it.get("memory").filter(|m| matches!(m, Value::Obj(_))).cloned(),
+                };
+                if module != SlotModule::default() {
+                    modules.insert(id.clone(), module);
+                }
                 slot_ids.push(id);
             }
         }
@@ -415,6 +458,7 @@ impl RackSpec {
             post_roll: BTreeMap::new(),
             ranges: BTreeMap::new(),
             mixes,
+            modules,
         };
         spec.pads = pads_from_json(v.get("pads"), &spec);
         if let Some(Value::Obj(m)) = v.get("ranges") {
@@ -460,6 +504,17 @@ impl RackSpec {
                     .set("bypassed", s.bypassed());
                 if let Some(m) = self.slot_ids.get(i).and_then(|id| self.mixes.get(id)) {
                     base = base.set("wet", m.wet as f64).set("level", m.level as f64);
+                }
+                // The module and mode, beside the kind an older build reads (D14).
+                let module = self.slot_ids.get(i).and_then(|id| self.modules.get(id));
+                if let Some((suite, mode)) = fx::suite::mode_of_kind(s.kind()) {
+                    base = base
+                        .set("suite", suite.id)
+                        .set("mode", mode.id)
+                        .set("rev", module.and_then(|m| m.rev).unwrap_or(1) as f64);
+                }
+                if let Some(mem) = module.and_then(|m| m.memory.clone()) {
+                    base = base.set("memory", mem);
                 }
                 match s {
                     SlotSpec::Gain { db, .. } => base.set("db", *db as f64),
@@ -812,6 +867,8 @@ pub fn pitch_time_to_json(p: &engine::transport::PitchTime) -> Value {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod suite_tests;
 
 
 // The EQ and compressor keep their settings in named fields rather than a

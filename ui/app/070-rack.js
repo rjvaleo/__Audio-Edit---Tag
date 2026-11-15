@@ -26,6 +26,7 @@ async function loadShapers() {
   try {
     const r = await api('/api/fx');
     for (const s of r.shapers || []) state.shapers[s.kind] = s;
+    state.suites = r.suites || [];
   } catch { /* the chain still works; only the shapers go missing */ }
   renderFxPicker();
 }
@@ -79,9 +80,12 @@ function shaperBorn(kind, key) {
   return state.shapers?.[kind]?.params?.find((p) => p.key === key)?.default;
 }
 
-function addFxModule(kind) {
+function addFxModule(kind, mode) {
   if (!kind || !state.rack) return;
   const slot = defaultFxSlot(kind);
+  // A module added from the picker names its module and mode, and is the
+  // mode's latest revision (SUITE-PLAN §3.4).
+  if (slot && mode) Object.assign(slot, { suite: mode.suite, mode: mode.id, rev: mode.rev });
   if (!slot) return;
   state.rack.slots.push(slot);
   state.rackSelected = state.rack.slots.length - 1;
@@ -90,9 +94,35 @@ function addFxModule(kind) {
   renderRack();
 }
 
-/// The picker's catalogue: every effect that can be added, filed by kind, in
-/// the order the kinds first appear.
+/// The picker's catalogue: the modules (SUITE-PLAN §3.1), each with its
+/// families of listed modes. An unlisted mode is never offered, and a module
+/// with nothing listed yet is not shown. An older server with no suites gets
+/// the old kinds.
 function fxPickerCatalogue() {
+  if (state.suites?.length) {
+    return state.suites.filter((s) => s.offered).map((s) => ({
+      group: s.label,
+      suite: s.id,
+      families: s.families.map((f) => ({ label: f.label, items: f.modes.filter((m) => m.listed)
+        .map((m) => ({ ...m, suite: s.id, suiteLabel: s.label })) })).filter((f) => f.items.length),
+      get items() { return this.families.flatMap((f) => f.items); },
+    }));
+  }
+  return fxPickerKinds();
+}
+
+/// The class badge a mode carries, with the original in its tooltip.
+const FX_CLASS_BADGE = { measured: 'Model · measured', static: 'Model', port: 'Port', paper: 'Paper', ours: 'Ours', partial: 'Partial' };
+function fxClassBadge(mode) {
+  const b = document.createElement('span');
+  b.className = `fx-class-badge fx-class-${mode.class}`;
+  b.textContent = FX_CLASS_BADGE[mode.class] || mode.class;
+  b.title = mode.source + (mode.verdict ? ` (port ${mode.verdict} the original)` : '');
+  return b;
+}
+
+/// The kinds, as the picker filed them before the suites.
+function fxPickerKinds() {
   // A prism effect says what it is, so it is filed by that rather than by a
   // list of names here.
   const PRISM_GROUPS = { delay: 'Reverb & Delay', reverb: 'Reverb & Delay',
@@ -170,19 +200,50 @@ function renderFxPicker(open) {
   const back = $('fxPickerBack');
   if ($('fxPicker')?.classList.contains('hidden')) return;
   const catalogue = fxPickerCatalogue();
-  const group = catalogue.find((g) => g.group === open);
+  const search = $('fxPickerSearch');
+  const query = (search?.value || '').trim().toLowerCase();
+  const group = query ? null : catalogue.find((g) => g.group === open);
   if (title) title.textContent = group ? group.group : 'Add module';
   if (back) back.hidden = !group;
-  box.className = 'fx-picker-groups' + (group ? ' in-group' : '');
+  box.className = 'fx-picker-groups' + (group || query ? ' in-group' : '');
+  const item = (m) => {
+    const button = document.createElement('button');
+    button.className = 'fx-picker-item';
+    button.dataset.kind = m.kind;
+    if (m.id) { button.dataset.suite = m.suite; button.dataset.mode = m.id; }
+    button.setAttribute('aria-label', m.label);
+    const name = document.createElement('span');
+    name.className = 'fx-picker-name';
+    name.textContent = m.label;
+    button.append(fxPickerThumb(m.kind, 0.25), name);
+    if (m.class) button.appendChild(fxClassBadge(m));
+    button.title = m.source || m.label;
+    button.onclick = () => addFxModule(m.kind, m.id ? m : null);
+    return button;
+  };
+  // A search finds modes across every module by name, module or source:
+  // "Gemini" or "Lexicon" lands on the right mode.
+  if (query) {
+    const section = document.createElement('section');
+    section.className = 'fx-picker-group';
+    for (const m of catalogue.flatMap((g) => g.items)) {
+      const hay = `${m.label} ${m.suiteLabel || ''} ${m.source || ''}`.toLowerCase();
+      if (hay.includes(query)) section.appendChild(item(m));
+    }
+    if (!section.childElementCount) section.textContent = 'Nothing matches.';
+    box.appendChild(section);
+    return;
+  }
   if (!group) {
-    for (const { group: name, items } of catalogue) {
+    for (const { group: name, items, suite } of catalogue) {
       const tile = document.createElement('button');
       tile.className = 'fx-picker-cat';
       tile.dataset.group = name;
-      tile.setAttribute('aria-label', `${name}, ${items.length} effects`);
+      if (suite) tile.dataset.suite = suite;
+      tile.setAttribute('aria-label', `${name}, ${items.length} modes`);
       const faces = document.createElement('span');
       faces.className = 'fx-picker-cat-faces';
-      for (const item of items.slice(0, 3)) faces.appendChild(fxPickerThumb(item.kind, 0.25));
+      for (const it of items.slice(0, 3)) faces.appendChild(fxPickerThumb(it.kind, 0.25));
       const label = document.createElement('span');
       label.className = 'fx-picker-cat-name';
       label.innerHTML = '<b></b><i></i>';
@@ -194,22 +255,19 @@ function renderFxPicker(open) {
     }
     return;
   }
-  const section = document.createElement('section');
-  section.className = 'fx-picker-group';
-  section.dataset.group = group.group;
-  for (const item of group.items) {
-    const button = document.createElement('button');
-    button.className = 'fx-picker-item';
-    button.dataset.kind = item.kind;
-    button.setAttribute('aria-label', item.label);
-    const name = document.createElement('span');
-    name.className = 'fx-picker-name';
-    name.textContent = item.label;
-    button.append(fxPickerThumb(item.kind, 0.25), name);
-    button.onclick = () => addFxModule(item.kind);
-    section.appendChild(button);
+  for (const fam of group.families || [{ label: '', items: group.items }]) {
+    if (fam.label && (group.families?.length || 0) > 1) {
+      const h = document.createElement('h3');
+      h.className = 'fx-picker-family';
+      h.textContent = fam.label;
+      box.appendChild(h);
+    }
+    const section = document.createElement('section');
+    section.className = 'fx-picker-group';
+    section.dataset.group = group.group;
+    for (const m of fam.items) section.appendChild(item(m));
+    box.appendChild(section);
   }
-  box.appendChild(section);
 }
 
 function closeFxPicker() {
@@ -223,6 +281,7 @@ $('fxAdd').onclick = () => {
 };
 $('fxPickerClose').onclick = closeFxPicker;
 $('fxPickerBack').onclick = () => renderFxPicker();
+$('fxPickerSearch')?.addEventListener('input', () => renderFxPicker());
 
 async function loadRack() {
   await loadShapers();

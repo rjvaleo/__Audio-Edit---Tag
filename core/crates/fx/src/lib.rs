@@ -24,6 +24,7 @@ pub mod phaser;
 pub mod prism;
 pub mod reverb;
 pub mod shape;
+pub mod suite;
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;

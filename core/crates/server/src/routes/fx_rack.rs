@@ -76,7 +76,65 @@ pub(super) fn api_fx_catalogue() -> Response {
         })
         .chain(fx::prism::catalogue().iter().map(|e| prism_entry(e.descriptor)))
         .collect();
-    Response::json(Value::obj().set("shapers", Value::Arr(kinds)).to_string())
+    Response::json(Value::obj().set("shapers", Value::Arr(kinds)).set("suites", suites_json()).to_string())
+}
+
+/// The modules (SUITE-PLAN §3.2): each suite's families and modes, with the
+/// kind a mode is added and saved as (its keeper), so the interface finds the
+/// mode's controls among `shapers` by that kind. Unlisted modes are served too,
+/// so an old document's slot can show its mode greyed; the picker never offers
+/// them.
+pub(super) fn suites_json() -> Value {
+    use fx::prism::prism_fx::suite::{Exactness, Verdict, SUITES};
+    let class = |c: Exactness| match c {
+        Exactness::Measured => ("measured", ""),
+        Exactness::Static => ("static", ""),
+        Exactness::Port(v) => ("port", match v {
+            Verdict::Matches => "matches",
+            Verdict::Differs => "differs",
+            Verdict::Unchecked => "unchecked",
+        }),
+        Exactness::Paper => ("paper", ""),
+        Exactness::Ours => ("ours", ""),
+        Exactness::Partial => ("partial", ""),
+    };
+    Value::Arr(
+        SUITES
+            .iter()
+            .map(|s| {
+                let families = s
+                    .families
+                    .iter()
+                    .map(|f| {
+                        let modes = f
+                            .modes
+                            .iter()
+                            .map(|m| {
+                                let (c, v) = class(m.class);
+                                Value::obj()
+                                    .set("id", m.id)
+                                    .set("label", m.label)
+                                    .set("kind", fx::suite::keeper_kind(m))
+                                    .set("kernel", m.kernel)
+                                    .set("class", c)
+                                    .set("verdict", v)
+                                    .set("listed", m.listed)
+                                    .set("rev", m.rev as f64)
+                                    .set("source", m.source)
+                            })
+                            .collect();
+                        Value::obj().set("label", f.label).set("modes", Value::Arr(modes))
+                    })
+                    .collect();
+                Value::obj()
+                    .set("id", s.id)
+                    .set("label", s.label)
+                    .set("face", format!("{:?}", s.face).to_lowercase())
+                    .set("offered", s.offered())
+                    .set("families", Value::Arr(families))
+            })
+            .collect(),
+    )
 }
 
 /// A prism effect, shaped like a shaper so the interface draws it the same

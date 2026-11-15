@@ -83,7 +83,7 @@ test('＋ opens the real add menu, and what it adds persists at the end of the c
   await page.click('#gsFxPlus');
   await expect(page.locator('#gsFxView')).toBeVisible();
   await expect(page.locator('#fxPicker')).toBeVisible();
-  await page.click('#fxPicker .fx-picker-cat[data-group="Reverb & Delay"]');
+  await page.click('#fxPicker .fx-picker-cat[data-group="Reverb"]');
   await page.click('#fxPicker .fx-picker-item[data-kind="dattorro_plate"]');
   await expect(page.locator('#gsFxStrip .gs-tile[data-ci]')).toHaveCount(2);
   await expect.poll(async () => (await stored(page)).map((s) => s.kind)).toEqual(['eq', 'dattorro_plate']);

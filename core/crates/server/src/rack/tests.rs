@@ -210,7 +210,7 @@ fn every_shaper_survives_a_round_trip_with_its_parameters() {
             .collect();
         slots.push(SlotSpec::Shape { kind, params, bypassed: false });
     }
-    let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new(), mixes: BTreeMap::new() };
+    let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new(), mixes: BTreeMap::new(), modules: BTreeMap::new() };
     let back = RackSpec::from_json(&spec.to_json());
     assert_eq!(back, spec, "a shaper lost something on the way through JSON");
     assert!(!back.build(48_000, 2).is_empty(), "none of them built");
@@ -230,7 +230,7 @@ fn every_prism_effect_survives_a_round_trip_with_its_parameters() {
             .collect();
         slots.push(SlotSpec::Prism { id: d.id, params, sound: None, bypassed: false });
     }
-    let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new(), mixes: BTreeMap::new() };
+    let spec = RackSpec { slot_ids: named(&slots), slots, master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new(), mixes: BTreeMap::new(), modules: BTreeMap::new() };
     let json = spec.to_json();
     let Some(Value::Arr(items)) = json.get("slots") else { panic!("no slots") };
     for (item, entry) in items.iter().zip(fx::prism::catalogue()) {
@@ -446,6 +446,7 @@ fn an_enabled_band_with_gain_makes_the_rack_active() {
         post_roll: BTreeMap::new(),
         ranges: BTreeMap::new(),
         mixes: BTreeMap::new(),
+        modules: BTreeMap::new(),
     };
     assert!(spec.is_active());
     assert!(!spec.build(48_000, 2).is_empty());
@@ -463,6 +464,7 @@ fn a_flat_enabled_eq_is_not_treated_as_active() {
         post_roll: BTreeMap::new(),
         ranges: BTreeMap::new(),
         mixes: BTreeMap::new(),
+        modules: BTreeMap::new(),
     };
     assert!(!spec.is_active());
 }
@@ -478,6 +480,7 @@ fn a_bypassed_slot_is_left_out_of_the_built_rack() {
         post_roll: BTreeMap::new(),
         ranges: BTreeMap::new(),
         mixes: BTreeMap::new(),
+        modules: BTreeMap::new(),
     };
     assert!(spec.build(48_000, 2).is_empty());
     assert!(!spec.is_active());
@@ -529,6 +532,7 @@ fn the_eq_curve_is_flat_when_nothing_is_boosted() {
         post_roll: BTreeMap::new(),
         ranges: BTreeMap::new(),
         mixes: BTreeMap::new(),
+        modules: BTreeMap::new(),
     };
     for (f, db) in spec.eq_curve(48000, 64) {
         assert!(db.abs() < 0.1, "flat EQ curved by {db} dB at {f} Hz");
@@ -552,6 +556,7 @@ fn the_eq_curve_peaks_near_the_boosted_band() {
         post_roll: BTreeMap::new(),
         ranges: BTreeMap::new(),
         mixes: BTreeMap::new(),
+        modules: BTreeMap::new(),
     };
     let curve = spec.eq_curve(48000, 200);
     let (peak_f, peak_db) = curve
@@ -573,7 +578,7 @@ fn the_store_hands_out_a_default_chain_for_unknown_files() {
 #[test]
 fn the_store_remembers_what_was_set() {
     let store = RackStore::default();
-    store.set("a.wav", RackSpec { slot_ids: vec!["g".into()], slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new(), mixes: BTreeMap::new() });
+    store.set("a.wav", RackSpec { slot_ids: vec!["g".into()], slots: vec![SlotSpec::Gain { db: 5.0, bypassed: false }], master: MasterSettings::default(), pads: BTreeMap::new(), pitch_time: Default::default(), post_roll: BTreeMap::new(), ranges: BTreeMap::new(), mixes: BTreeMap::new(), modules: BTreeMap::new() });
     assert!(store.is_active("a.wav"));
     assert_eq!(store.get("a.wav").slots.len(), 1);
 }

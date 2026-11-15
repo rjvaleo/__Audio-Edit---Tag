@@ -42,14 +42,19 @@ async function storedSlot(page, kind) {
 /// Add a module, and wait until the server has it: a control moved before then
 /// is addressed to a slot the server does not know yet.
 ///
-/// The picker shows the kinds first: the kind the effect is filed under is
-/// opened, then its face is picked.
-async function addFromPicker(page, label) {
-  await page.locator('#fxAdd').click();
-  const group = await page.evaluate((pattern) => fxPickerCatalogue()
-    .find((g) => g.items.some((i) => new RegExp(`^${pattern}$`).test(i.label)))?.group, label);
-  await page.locator(`.fx-picker-cat[data-group="${group}"]`).click();
-  await page.locator('.fx-picker-item', { has: page.locator('.fx-picker-name', { hasText: new RegExp(`^${label}$`) }) }).click();
+/// The picker shows the modules first (SUITE-PLAN §3.1): the module the kind's
+/// mode is filed under is opened, then its face is picked. A kind the picker
+/// no longer offers (an unlisted mode, §1.4–1.5) is added as an old document
+/// holds it.
+async function addFromPicker(page, kind) {
+  const suite = await page.evaluate((k) => fxPickerCatalogue().find((g) => g.items.some((i) => i.kind === k))?.suite, kind);
+  if (suite) {
+    await page.locator('#fxAdd').click();
+    await page.locator(`.fx-picker-cat[data-suite="${suite}"]`).click();
+    await page.locator(`.fx-picker-item[data-kind="${kind}"]`).click();
+  } else {
+    await page.evaluate((k) => addFxModule(k), kind);
+  }
   await page.waitForFunction(async () => {
     const id = state.rack.slots.at(-1)?.id;
     const r = await api(`/api/rack?p=${encodeURIComponent(state.selectedFile.path)}`);
@@ -67,16 +72,16 @@ async function slide(row, value) {
   }, value);
 }
 
-/// Every effect the picker offers, as [label, kind it is filed under], read by
-/// opening each kind in turn. Leaves the picker shut.
+/// Every mode the picker offers, as [kind, module it is filed under], read by
+/// opening each module in turn. Leaves the picker shut.
 async function pickerEntries(page) {
   await page.locator('#fxAdd').click();
   const entries = [];
-  const kinds = await page.locator('.fx-picker-cat').evaluateAll((tiles) => tiles.map((t) => t.dataset.group));
-  for (const kind of kinds) {
-    await page.locator(`.fx-picker-cat[data-group="${kind}"]`).click();
-    await expect(page.locator('#fxPickerTitle')).toHaveText(kind);
-    for (const label of await page.locator('.fx-picker-name').allTextContents()) entries.push([label, kind]);
+  const groups = await page.locator('.fx-picker-cat').evaluateAll((tiles) => tiles.map((t) => t.dataset.group));
+  for (const group of groups) {
+    await page.locator(`.fx-picker-cat[data-group="${group}"]`).click();
+    await expect(page.locator('#fxPickerTitle')).toHaveText(group);
+    for (const kind of await page.locator('.fx-picker-item').evaluateAll((b) => b.map((x) => x.dataset.kind))) entries.push([kind, group]);
     await page.locator('#fxPickerBack').click();
   }
   await page.locator('#fxPickerClose').click();
@@ -93,7 +98,7 @@ test('the picker shows the kinds first, each with its faces, and a kind opened s
   expect(await tiles.count()).toBeGreaterThan(4);
   await expect(page.locator('.fx-picker-item')).toHaveCount(0);
   await expect(tiles.first().locator('.fx-picker-thumb .fx-face')).not.toHaveCount(0);
-  await page.locator('.fx-picker-cat[data-group="Reverb & Delay"]').click();
+  await page.locator('.fx-picker-cat[data-group="Reverb"]').click();
   await expect(page.locator('.fx-picker-cat')).toHaveCount(0);
   const items = page.locator('.fx-picker-item');
   expect(await items.count()).toBeGreaterThan(4);
@@ -107,22 +112,47 @@ test('the picker shows the kinds first, each with its faces, and a kind opened s
   await expect(page.locator('#fxPicker .fx-module')).toHaveCount(0);
 });
 
-test('the picker offers the prism effects, and Echo only once', async ({ page }) => {
+test('the picker offers every listed mode once, under its module, and never an unlisted one', async ({ page }) => {
   await openRack(page);
   const entries = await pickerEntries(page);
-  for (const label of ['Tremolo', 'Decimator', 'Echo', 'Multi Delay', 'Stereo Matrix', 'Spectral Dynamics', 'Convolution']) {
-    expect(count(entries, label), label).toBe(1);
+  const suites = await page.evaluate(() => state.suites);
+  // the modules with something to offer, in the plan's order (Cassette from P6)
+  expect([...new Set(entries.map(([, g]) => g))]).toEqual(suites.filter((s) => s.offered).map((s) => s.label));
+  for (const s of suites) {
+    for (const m of s.families.flatMap((f) => f.modes)) {
+      expect(count(entries, m.kind), `${s.id}/${m.id}`).toBe(m.listed ? 1 : 0);
+      if (m.listed) expect(kindOf(entries, m.kind)).toBe(s.label);
+    }
+  }
+  for (const gone of ['prism:decimator', 'prism:multi-delay', 'prism:stereo-matrix', 'prism:hp-single-delay', 'invert', 'swap', 'width']) {
+    expect(count(entries, gone), gone).toBe(0);
   }
   const kinds = await page.evaluate(() => Object.keys(state.shapers));
   expect(kinds).toContain('prism:echo');
   expect(kinds).not.toContain('dattorro_echo');
-  // Filed where the old Echo was.
-  expect(kindOf(entries, 'Echo')).toBe('Reverb & Delay');
+  expect(kindOf(entries, 'prism:echo')).toBe('Delay');
+});
+
+test('a mode in the picker carries its class badge, the original in its tooltip, and a search finds it', async ({ page }) => {
+  await openRack(page);
+  await page.locator('#fxAdd').click();
+  await page.locator('.fx-picker-cat[data-suite="reverb"]').click();
+  const hall = page.locator('.fx-picker-item[data-kind="prism:hp-hall"]');
+  await expect(hall.locator('.fx-picker-name')).toHaveText('Large Hall');
+  await expect(hall.locator('.fx-class-badge')).toHaveText('Port');
+  await expect(hall.locator('.fx-class-badge')).toHaveAttribute('title', /Hyperprism/);
+  await expect(page.locator('.fx-picker-item[data-kind="prism:lxp-hall"] .fx-class-badge')).toHaveText('Ours');
+  await expect(page.locator('.fx-picker-family')).toContainText(['Classic', 'Hall & Room', 'Studio']);
+  await page.locator('#fxPickerBack').click();
+  await page.locator('#fxPickerSearch').fill('lexicon');
+  await expect(page.locator('.fx-picker-item')).toHaveCount(4);
+  await page.locator('#fxPickerSearch').fill('');
+  await expect(page.locator('.fx-picker-cat')).not.toHaveCount(0);
 });
 
 test('a prism effect lays its controls out in the original\'s groups', async ({ page }) => {
   await openRack(page);
-  const module = await addFromPicker(page, 'Tremolo');
+  const module = await addFromPicker(page, 'prism:tremolo');
   await expect(module.locator('h2')).toHaveText('Tremolo');
   const groups = module.locator('.prism-group');
   await expect(groups).toHaveCount(2);
@@ -141,7 +171,7 @@ test('a prism effect lays its controls out in the original\'s groups', async ({ 
 
 test('moving a prism control reaches the stored rack', async ({ page }) => {
   await openRack(page);
-  const module = await addFromPicker(page, 'Decimator');
+  const module = await addFromPicker(page, 'prism:decimator');
   const bits = module.locator('.param', { hasText: 'Bit depth' });
   await slide(bits, 6);
   await expect(bits.locator('.v')).toHaveText('6');
@@ -150,7 +180,7 @@ test('moving a prism control reaches the stored rack', async ({ page }) => {
 
 test('the Prism pad moves its two controls together', async ({ page }) => {
   await openRack(page);
-  const module = await addFromPicker(page, 'Tremolo');
+  const module = await addFromPicker(page, 'prism:tremolo');
   const pad = module.locator('.prism-pad');
   await expect(pad).toBeVisible();
   await expect(pad).toHaveAttribute('aria-label', /Rate.*Depth/);
@@ -187,11 +217,11 @@ test('a document made with the old Echo opens on the prism one', async ({ page }
 
 test('Multi Delay and Stereo Matrix arrive in the rack with their groups', async ({ page }) => {
   await openRack(page);
-  const delay = await addFromPicker(page, 'Multi Delay');
+  const delay = await addFromPicker(page, 'prism:multi-delay');
   await expect(delay.locator('.prism-group-label')).toHaveText(['Taps', 'Repeats', 'Levels']);
   await expect(delay.locator('.param .k')).toContainText(['Delay 1', 'Delay 2', 'Spread', 'Feedback', 'Dry / Wet']);
   await expect(delay.locator('.prism-pad')).toHaveAttribute('aria-label', /Delay 1.*Delay 2/);
-  const matrix = await addFromPicker(page, 'Stereo Matrix');
+  const matrix = await addFromPicker(page, 'prism:stereo-matrix');
   await expect(matrix.locator('.prism-group-label')).toHaveText(['Width', 'Position', 'Balance']);
   const side = matrix.locator('.param', { hasText: /^Side/ });
   await slide(side, 2);
@@ -201,7 +231,7 @@ test('Multi Delay and Stereo Matrix arrive in the rack with their groups', async
 
 test('Spectral Dynamics lays out SoundHack\'s dialog and dims the gate\'s reduction out of Gate-Duck', async ({ page }) => {
   await openRack(page);
-  const module = await addFromPicker(page, 'Spectral Dynamics');
+  const module = await addFromPicker(page, 'prism:spectral-dynamics');
   await expect(module.locator('.prism-group-label')).toHaveText(['Process', 'Bands', 'Amount', 'Threshold']);
   const reduction = module.locator('.param', { hasText: 'Gain/Reduction' });
   await expect(reduction).toHaveClass(/\binactive\b/);
@@ -214,7 +244,7 @@ test('Spectral Dynamics lays out SoundHack\'s dialog and dims the gate\'s reduct
 
 test('Convolution takes its impulse from the library', async ({ page }) => {
   await openRack(page);
-  const module = await addFromPicker(page, 'Convolution');
+  const module = await addFromPicker(page, 'prism:convolution');
   const row = module.locator('.prism-sound');
   await expect(row.locator('.k')).toHaveText('Impulse');
   await expect(row.locator('.prism-sound-name')).toHaveText('none');
@@ -230,7 +260,7 @@ test('Convolution takes its impulse from the library', async ({ page }) => {
 
 test('Spectral Dynamics takes a threshold sound from the library, as SoundHack\'s threshold file', async ({ page }) => {
   await openRack(page);
-  const module = await addFromPicker(page, 'Spectral Dynamics');
+  const module = await addFromPicker(page, 'prism:spectral-dynamics');
   const row = module.locator('.prism-sound');
   await expect(row.locator('.k')).toHaveText('Threshold sound');
   await expect(module.locator('.param .k', { hasText: 'Use threshold sound' })).toHaveCount(1);
@@ -245,22 +275,21 @@ test('Spectral Dynamics takes a threshold sound from the library, as SoundHack\'
 test('SoundHack\'s nine plug-ins arrive with the originals\' panels, filed by what they do', async ({ page }) => {
   await openRack(page);
   const entries = await pickerEntries(page);
-  for (const label of ['++decimate', '++matrix', '++phasor', '++delay', '++pitchdelay', '++flipper',
-    '++bubbler', '++chebyshev', '++compand']) {
-    expect(count(entries, label), label).toBe(1);
+  for (const id of ['decimate', 'matrix', 'phasor', 'delay', 'pitchdelay', 'flipper', 'bubbler', 'chebyshev', 'compand']) {
+    expect(count(entries, `prism:sh-${id}`), id).toBe(1);
   }
-  expect(kindOf(entries, '++delay')).toBe('Reverb & Delay');
-  expect(kindOf(entries, '++pitchdelay')).toBe('Pitch & Motion');
+  expect(kindOf(entries, 'prism:sh-delay')).toBe('Delay');
+  expect(kindOf(entries, 'prism:sh-pitchdelay')).toBe('Pitch');
   // A granular delay that pitches its grains sits with the pitch effects.
-  expect(kindOf(entries, '++bubbler')).toBe('Pitch & Motion');
-  expect(kindOf(entries, '++compand')).toBe('EQ & Compression');
+  expect(kindOf(entries, 'prism:sh-bubbler')).toBe('Pitch');
+  expect(kindOf(entries, 'prism:sh-compand')).toBe('Dynamics');
 
-  const delay = await addFromPicker(page, '\\+\\+delay');
+  const delay = await addFromPicker(page, 'prism:sh-delay');
   await expect(delay.locator('.prism-group-label')).toHaveText(['Delay', 'LFO', 'Filter', 'Level']);
   await expect(delay.locator('.param .k')).toContainText(['Feedback −', 'Freeze', 'Two heads']);
 
   // The response is the RMS window: dimmed while the detector reads peaks.
-  const compand = await addFromPicker(page, '\\+\\+compand');
+  const compand = await addFromPicker(page, 'prism:sh-compand');
   // A dial reads its value over its name, so it is found by the name.
   const response = compand.locator('.param', { has: page.locator('.k', { hasText: /^Response$/ }) });
   await expect(response).toHaveClass(/\binactive\b/);
@@ -269,7 +298,7 @@ test('SoundHack\'s nine plug-ins arrive with the originals\' panels, filed by wh
   await expect(response).not.toHaveClass(/\binactive\b/);
   expect((await storedSlot(page, 'prism:sh-compand')).params.rms).toBe(1);
 
-  const bubbler = await addFromPicker(page, '\\+\\+bubbler');
+  const bubbler = await addFromPicker(page, 'prism:sh-bubbler');
   await expect(bubbler.locator('.prism-group-label')).toHaveText(['Delay', 'Grains', 'Keys', 'Level']);
   await bubbler.locator('.sh-key[aria-label="5th"]').click();
   expect((await storedSlot(page, 'prism:sh-bubbler')).params.key7).toBe(1);
@@ -278,13 +307,13 @@ test('SoundHack\'s nine plug-ins arrive with the originals\' panels, filed by wh
 test('Lexicon\'s four LXP reverbs arrive with their edit pages, filed with the reverbs', async ({ page }) => {
   await openRack(page);
   const entries = await pickerEntries(page);
-  for (const label of ['LXP Chamber', 'LXP Hall', 'LXP Plate', 'LXP Room']) {
-    expect(count(entries, label), label).toBe(1);
-    expect(kindOf(entries, label)).toBe('Reverb & Delay');
+  for (const id of ['chamber', 'hall', 'plate', 'room']) {
+    expect(count(entries, `prism:lxp-${id}`), id).toBe(1);
+    expect(kindOf(entries, `prism:lxp-${id}`)).toBe('Reverb');
   }
 
   // The Hall and the Room have four reflections that cross sides, and no echoes.
-  const hall = await addFromPicker(page, 'LXP Hall');
+  const hall = await addFromPicker(page, 'prism:lxp-hall');
   // The LXP's own pages, after its Soft Row (`076-fx-suites.js`).
   await expect(hall.locator('.prism-group-label')).toHaveText(['Soft Row', 'Reverb', 'Modulation', 'Reflections', 'Levels, Mix and EQ']);
   await expect(hall.locator('.param .k')).toContainText(['Reverb Time', 'Tap Slope', 'L-R Rfl Dly', 'R-L Rfl Gain', 'Early Level']);
@@ -300,7 +329,7 @@ test('Lexicon\'s four LXP reverbs arrive with their edit pages, filed with the r
   expect(stored).toBeCloseTo(await page.evaluate(() => state.rack.slots.at(-1).params.sizeM), 2);
 
   // The Chamber and the Plate have two reflections, and echoes with a polarity.
-  const chamber = await addFromPicker(page, 'LXP Chamber');
+  const chamber = await addFromPicker(page, 'prism:lxp-chamber');
   await expect(chamber.locator('.prism-group-label')).toHaveText(['Soft Row', 'Reverb', 'Modulation', 'Reflections', 'Echoes', 'Levels, Mix and EQ']);
   await chamber.locator('.lex-tab', { hasText: /^Echoes$/ }).click();
   const polarity = chamber.locator('.param', { hasText: /^L Eko FBack Polarity/ });
@@ -314,15 +343,11 @@ test('Lexicon\'s four LXP reverbs arrive with their edit pages, filed with the r
 test('Hyperprism\'s processes are in the picker, each built from its code', async ({ page }) => {
   await openRack(page);
   const entries = await pickerEntries(page);
-  for (const name of ['Low Pass', 'High Pass', 'Band Pass', 'Band Reject', 'Phaser', 'Flanger', 'Chorus',
-    'Ring Modulator', 'Tremolo', 'Vibrato', 'Single Delay', 'Multi Delay', 'Echo', 'EchoTranz',
-    'Medium Room Reverb', 'Hall Reverb', 'Pan', 'Auto-Pan', 'Quasi Stereo', 'Stereo Dynamics', 'More Stereo',
-    'Noise Gate', 'Compressor', 'MS Matrix', 'Sonic Decimator', 'Pitch Shifter', 'Comb Filter', 'Doppler',
-    'Frequency Modulator', 'Hyper Stereo']) {
-    expect(count(entries, `Hyperprism ${name}`), name).toBe(1);
-  }
+  const hp = await page.evaluate(() => Object.keys(state.shapers).filter((k) => k.startsWith('prism:hp-')));
+  expect(hp.length).toBe(30);
+  for (const kind of hp) expect(count(entries, kind), kind).toBe(kind === 'prism:hp-single-delay' ? 0 : 1);
   // Its pad is Hyperprism's own window: Frequency across, Q up.
-  const filter = await addFromPicker(page, 'Hyperprism Low Pass');
+  const filter = await addFromPicker(page, 'prism:hp-low-pass');
   await expect(filter.locator('.prism-pad')).toHaveAttribute('aria-label', /Frequency.*Q/);
   expect((await storedSlot(page, 'prism:hp-low-pass')).params.freqHz).toBe(20000);
 });
