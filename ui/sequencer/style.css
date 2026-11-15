@@ -941,3 +941,13 @@ body.only-clone .clone-page { display: flex; flex-direction: column; gap: 14px; 
 .bd-planstrip b small { color: var(--look-text-3); font-weight: 400; }
 .bd-planstrip .meta { margin-left: 6px; font-size: 10px; }
 .dm-tabs button { height: 22px; padding: 0 8px; }
+
+/* ─── KEYS (keys.js): Atmosphere's key strip, and each synth's MIDI channel ─── */
+.ky-panel { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.ky-oct { display: inline-flex; align-items: center; gap: 6px; }
+.ky-oct .mono { min-width: 26px; text-align: center; font-size: 11px; }
+.ky-midi { font-size: 11px; padding: 2px 4px; margin-left: 8px; }
+.ky-strip { display: flex; gap: 2px; height: 64px; touch-action: none; user-select: none; }
+.ky-key { flex: 1; min-width: 0; border-radius: 0 0 3px 3px; background: #d9dce1; cursor: pointer; }
+.ky-key.blk { background: #1c1f24; height: 62%; }
+.ky-key.on { background: var(--on); }

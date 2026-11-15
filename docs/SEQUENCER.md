@@ -423,6 +423,38 @@ The make-up gain of each kind (`AT_LEVEL`) was set from offline renders, so
 switching kinds keeps the level within 6 dB of Classic; the test holds it there.
 Tests: `tests/ui/sequencer-atmos.spec.mjs`.
 
+## Keys and MIDI
+
+RJ, 14 Nov 2026: "The atmosphere synth should have a MIDI keyboard on it and
+respond to its own MIDI channel", "each item gets its own midi channel", and
+"Off mutes MIDI too". `ui/sequencer/keys.js`, with the server's half in
+`midi.rs`.
+
+- **Atmosphere's key strip** (KEYS, on its panel, so on Seq and on the
+  Atmosphere page): two octaves from a C, −/+ to move them. A key sounds for
+  as long as it is held, with Atmosphere's own Release when it is let go.
+  Every key plays the scale's nearest degree in its true tuning, as the 88
+  keys do.
+- **A MIDI channel each.** Atmosphere is on 3 and Classic on 4 until they are
+  changed, from the menu on each one's panel; kept in this browser
+  (`midiChannel.atmos`, `midiChannel.classic`) and sent to the server. Wave
+  (1) and Grain (2) are unchanged. The Band's parts have channels on the
+  server already (Bass 5, Chords 6, Arp 7, Drone 8, Drums 10), and nothing
+  plays them yet: that comes with the Band's own tab.
+- **Held from MIDI too**, with the velocity. Two parts on the same channel
+  play together; a release goes to whoever had the press, even if a channel
+  changed in between. CC 120/123 let every key go.
+- **Off is silent**: a synth that is off plays nothing from the steps, its
+  keys or MIDI.
+- **How MIDI gets here.** The synths are WebAudio in this page, so the server
+  keeps what arrives on their channels in a numbered queue, and the page asks
+  for it with a long poll (`GET /api/engine/midi/events?after=N&wait=ms`),
+  answered the moment a note lands. No `after` is "from now".
+  `POST /api/engine/midi/inject {msg}` puts a raw message through the same
+  routing, for the tests.
+- Not yet: the pitch wheel and the mod wheel do nothing to these two synths,
+  and the computer keyboard does not play the strip (its keys edit steps).
+
 ## The page in the app's look
 
 *14 Nov 2026.* The approved mock-ups `seq.html` (the page) and `seq-voice.html`
