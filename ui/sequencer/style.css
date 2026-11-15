@@ -796,6 +796,11 @@ body.only-clone .clone-page { display: flex; flex-direction: column; gap: 14px; 
 .cl-knob:focus-visible { outline: 2px solid var(--on); outline-offset: 2px; }
 .cl-knob svg { width: 64px; height: 64px; display: block; }
 .cl-dial .rd { font: 600 12px var(--mono); color: var(--on); min-width: 92px; }
+.cl-sounds { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cl-sounds .cap { font: 600 12px var(--ui); color: var(--look-text-3); }
+.cl-sounds .seg button { height: 28px; padding: 0 12px; font-size: 12.5px; }
+.cl-sounds .say { font: 400 12.5px var(--ui); color: var(--look-text-2); }
+.cl-sounds .say.busy { color: var(--f-time); }
 .cl-hint { display: none; font: 500 13px var(--ui); color: var(--f-space); } .cl-hint.on { display: block; }
 .cl-chips { display: none; gap: 8px; flex-wrap: wrap; align-items: center; padding: 10px 12px; border-radius: 12px; background: rgba(0, 0, 0, 0.2); box-shadow: inset 0 0 0 1px var(--look-line); }
 .cl-chips.on { display: flex; }

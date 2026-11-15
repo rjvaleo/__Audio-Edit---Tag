@@ -3,7 +3,7 @@
 //! playing sounds from the library", that is, the Band playing the song's own
 //! drum hits and bass notes, cut from its stems, in place of MGL's synth.
 //!
-//! `POST /api/stems/kit {"p": "Stems/<song>"}` cuts, from the song's stems:
+//! `POST /api/stems/own-kit {"p": "Stems/<song>"}` cuts, from the song's stems:
 //! - its clearest kick, snare and closed hat (songprint's `find_hits`, the same
 //!   finder the Stems page's Make uses), and an open hat (the next clearest hat,
 //!   left to ring);
@@ -20,7 +20,7 @@
 use super::*;
 use songprint::sound;
 
-pub(super) fn api_stems_kit(app: &Arc<App>, req: &Request) -> Response {
+pub(super) fn api_stems_own_kit(app: &Arc<App>, req: &Request) -> Response {
     let Some(v) = json::parse(&String::from_utf8_lossy(&req.body)) else { return Response::error(400, "invalid JSON") };
     let Some(rel) = v.get("p").and_then(|p| p.as_str()).map(str::to_string) else { return Response::error(400, "no song given") };
     let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };

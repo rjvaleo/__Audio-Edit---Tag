@@ -51,6 +51,8 @@ const CL = {
   // The page: the song takes start from, the songs mixed in, the knob, the
   // takes (a family of generations), and what the buttons did.
   from: "", mixing: [], dial: 35, family: [], gen: -1, picked: 0, log: [], verb: null, leans: [], playingId: null, keeping: null,
+  // Whether takes play the song's own drums and bass (cut from its stems).
+  own: true, ownState: {},
 };
 for (const f of CL_FACETS) CL.facets[f.k] = { from: "", v: { tempo: 10, key: 0, drums: 30, bass: 30, chords: 70, arr: 30, tex: 20 }[f.k] };
 CL.facets.chords.from = "dub";
@@ -725,7 +727,68 @@ function clSetFrom(t) {
   CL.made = t.made; CL.plan = t.plan; CL.words = { ...t.words }; CL.edited = {};
 }
 /// The take, written into the Band's controls.
-function clUseTake(t) { initAudio(); clSetFrom(t); cloneApply(); CL.playingId = t.id; }
+function clUseTake(t) { initAudio(); clSetFrom(t); cloneApply(); CL.playingId = t.id; return clSounds(t); }
+
+// ─── THE SONG'S OWN SOUNDS ──────────────────────────────────────────────────
+// RJ, on takes not sounding like his song: "try doing what you say with
+// playing sounds from the library." With **Your song's sounds** on, a take
+// plays the drum hits and held bass notes cut from its song's stems
+// (`/api/stems/own-kit`, once per song, into `Stems/<song>/kit/`): the Band's kit
+// is set to that kit and its bass to those notes. Off, the Band's own sounds.
+const clKitId = (song) => "m:" + song + "/kit";
+/// The song's own kit, cut if it has none yet. Resolves to the kit's id, or null.
+async function clOwnKit(song) {
+  const id = clKitId(song);
+  await dmLoadMachines();
+  if (DM_MACHINES[id]) return id;
+  if (CL.ownState[song] === "cutting") return CL.ownState[song + "#p"];
+  CL.ownState[song] = "cutting"; clPaintSounds();
+  const p = (async () => {
+    try {
+      const r = await fetch("/api/stems/own-kit", { method: "POST", body: JSON.stringify({ p: song }) });
+      if (!r.ok) throw new Error((await r.text()) || r.statusText);
+      await dmLoadMachines(true);
+      CL.ownState[song] = DM_MACHINES[id] ? "ready" : "none";
+      return DM_MACHINES[id] ? id : null;
+    } catch (e) {
+      CL.ownState[song] = "failed"; CL.ownError = String(e.message || e);
+      return null;
+    } finally { clPaintSounds(); }
+  })();
+  CL.ownState[song + "#p"] = p;
+  return p;
+}
+/// The take's sounds into the Band: the song's own, or the Band's.
+async function clSounds(t) {
+  const set = (id, v) => { const el = document.getElementById(id); if (!el || el.value === v) return; el.value = v; el.dispatchEvent(new Event("change", { bubbles: true })); };
+  const song = t.recipe.snap.sel[0];
+  if (!CL.own) {
+    const k = document.getElementById("dmKitSelect");
+    if (k && /^m:Stems\//.test(k.value)) set("dmKitSelect", "synth");
+    set("bsKitText", "");
+    return;
+  }
+  const id = await clOwnKit(song);
+  if (!id || CL.playingId !== t.id && CL.keeping !== t.id) return;
+  if (!document.querySelector(`#dmKitSelect option[value="${CSS.escape(id)}"]`)) dmFillKitSelect();
+  set("dmKitSelect", id);
+  set("bsKitText", DM_MACHINES[id].bass.length ? id : "");
+  await Promise.all([dmLoadKit(id), bandLoadBassKit(id)]);
+  CL.ownState[song] = "ready"; clPaintSounds();
+}
+/// The switch, and what it is doing for the song takes come from.
+function clPaintSounds() {
+  const el = document.getElementById("clSounds");
+  if (!el) return;
+  const st = CL.ownState[CL.from], name = CL.from ? clShort(CL.from) : "your song";
+  const say = !CL.own ? "the Band's synth drums and sine bass"
+    : st === "cutting" ? `cutting ${name}'s drum hits and bass notes from its stems…`
+    : st === "failed" ? `couldn't cut ${name}'s sounds (${CL.ownError || "no stems"}): the Band's own play instead`
+    : st === "none" ? `${name} has too few clear hits for a kit: the Band's own play instead`
+    : st === "ready" ? `${name}'s own kick, snare, hats and bass notes`
+    : `${name}'s own drums and bass, cut from its stems when a take plays`;
+  el.innerHTML = `<span class="cap">Takes play</span><span class="seg"><button type="button" data-own="1" class="${CL.own ? "on" : ""}">Your song's sounds</button><button type="button" data-own="0" class="${CL.own ? "" : "on"}">The Band's sounds</button></span><span class="say${st === "cutting" ? " busy" : ""}">${clEsc(say)}</span>`;
+}
 function clPlay(i) {
   if (CL.keeping) { clToast("The Band is rendering a take for Keep; it plays again when that's done"); return; }
   const t = CL.family[CL.gen].takes[i];
@@ -747,7 +810,7 @@ async function clKeep(i) {
   clPaintTakes(); clPaintHead();
   try {
     if (isPlaying) stopSeq();
-    clUseTake(t);
+    await clUseTake(t);
     const bars = t.plan.secs.reduce((a, s) => a + s.b, 0);
     const seconds = (bars * 4 * 60) / t.made.bpm + 3;
     let shown = 0;
@@ -797,13 +860,13 @@ const clOpenIn = (p, page) => { try { window.parent.postMessage({ type: "seq:ope
 // ─── SAVING (recipes only; a take is made again from its recipe) ────────────
 function clSave() {
   const fam = CL.family.map((g) => ({ label: g.label, takes: g.takes.map((t) => ({ id: t.id, name: t.name, recipe: t.recipe, kept: t.kept, peaks: t.peaks })) }));
-  try { localStorage.setItem("mglClone", JSON.stringify({ v: 2, from: CL.from, mixing: CL.mixing, dial: CL.dial, family: fam, gen: CL.gen, picked: CL.picked, log: CL.log, seed: CL.seed })); } catch (e) { /* private window */ }
+  try { localStorage.setItem("mglClone", JSON.stringify({ v: 2, own: CL.own, from: CL.from, mixing: CL.mixing, dial: CL.dial, family: fam, gen: CL.gen, picked: CL.picked, log: CL.log, seed: CL.seed })); } catch (e) { /* private window */ }
 }
 function clLoadSaved() {
   try {
     const d = JSON.parse(localStorage.getItem("mglClone") || "null");
     if (!d || d.v !== 2) return;
-    for (const k of ["from", "mixing", "dial", "family", "gen", "picked", "log", "seed"]) if (d[k] != null) CL[k] = d[k];
+    for (const k of ["own", "from", "mixing", "dial", "family", "gen", "picked", "log", "seed"]) if (d[k] != null) CL[k] = d[k];
   } catch (e) { /* none */ }
 }
 
@@ -823,6 +886,7 @@ function cloneBuildUI() {
     <button type="button" class="cl-verb" data-v="surprise"><svg viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg>Surprise me</button>
     <div class="cl-dial"><span class="lb">Close</span><div class="cl-knob" id="clKnob" tabindex="0" role="slider" aria-label="Close to far" aria-valuemin="0" aria-valuemax="100" title="Close keeps it like your song; far lets it go"></div><span class="lb">Far</span><span class="rd" id="clDialRd"></span></div>
   </div>
+  <div class="cl-sounds" id="clSounds"></div>
   <div class="cl-hint" id="clHint"></div>
   <div class="cl-chips" id="clChips"></div>
   <div class="cl-trail" id="clTrail"></div>
@@ -857,7 +921,7 @@ function cloneBuildUI() {
       return;
     }
     CL.from = p; CL.mixing = CL.mixing.filter((x) => x !== p);
-    clSave(); clPaintCrate(); clPaintVerbs();
+    clSave(); clPaintCrate(); clPaintVerbs(); clPaintSounds();
     clToast(`From ${clSongName(p)}`);
   });
   document.getElementById("clVerbs").addEventListener("click", (e) => {
@@ -872,6 +936,12 @@ function cloneBuildUI() {
     }
     if (v === "lean") { CL.verb = CL.verb === "lean" ? null : "lean"; clPaintVerbs(); return; }
     clMake(v);
+  });
+  document.getElementById("clSounds").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-own]"); if (!b) return;
+    CL.own = b.dataset.own === "1"; clSave(); clPaintSounds();
+    const t = clPicked();
+    if (t && CL.playingId === t.id) clSounds(t);
   });
   document.getElementById("clChips").addEventListener("click", (e) => {
     const c = e.target.closest(".cl-chip[data-l]");
@@ -972,7 +1042,7 @@ function clPlanChanged(msg) {
 }
 
 // ─── PAINTING ────────────────────────────────────────────────────────────────
-function clPaintAll(fresh) { clPaintCrate(); clPaintVerbs(); clPaintDial(); clPaintTrail(); clPaintHead(fresh); clPaintTakes(fresh); clPaintHood(); }
+function clPaintAll(fresh) { clPaintCrate(); clPaintSounds(); clPaintVerbs(); clPaintDial(); clPaintTrail(); clPaintHead(fresh); clPaintTakes(fresh); clPaintHood(); }
 /// Over the takes: what was just made, what a take is, and what was just saved.
 function clPaintHead(fresh) {
   const el = document.getElementById("clTakesHead"), g = CL.family[CL.gen];

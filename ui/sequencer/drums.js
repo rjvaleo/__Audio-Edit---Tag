@@ -89,17 +89,21 @@ function dmPretty(name) {
 
 /// The server's list of machines, once.
 let dmMachinesAsked = false;
-async function dmLoadMachines() {
-  if (dmMachinesAsked) return;
+async function dmLoadMachines(again) {
+  if (dmMachinesAsked && !again) return;
   dmMachinesAsked = true;
   try {
     const r = await fetch("/api/seq/kits");
     if (!r.ok) return;
     const list = await r.json();
     for (const m of list) {
-      const files = dmGuessKit(m.files || []);
+      // A song's own kit (`Stems/<song>/kit`, cut by `/api/stems/own-kit`) has held
+      // bass notes too, each named for its pitch: "bass note 36.40.wav".
+      const notes = (m.files || []).map((f) => [f, /^bass note (\d+(?:\.\d+)?)\.(wav|aiff?)$/i.exec(f)]).filter((x) => x[1]);
+      const files = dmGuessKit((m.files || []).filter((f) => !/^bass note /i.test(f)));
       if (Object.keys(files).length < 3) continue;
-      DM_MACHINES["m:" + m.path] = { name: dmPretty(m.name), dir: m.path.replace(/\/?$/, "/"), files };
+      const dir = m.path.replace(/\/?$/, "/");
+      DM_MACHINES["m:" + m.path] = { name: m.own ? m.name : dmPretty(m.name), dir, files, own: !!m.own, bass: notes.map(([f, x]) => ({ p: dir + f, midi: +x[1] })) };
     }
     dmFillKitSelect();
   } catch (e) { /* on its own, with no server: the built-in kits */ }
@@ -409,8 +413,10 @@ function dmFillKitSelect() {
   if (!sel) return;
   const v = sel.value || "synth";
   const opt = (id, k) => `<option value="${id}">${k.name}</option>`;
-  const mach = Object.entries(DM_MACHINES).sort((a, b) => a[1].name.localeCompare(b[1].name));
-  sel.innerHTML = `<optgroup label="Kits">${Object.entries(DM_KITS).map(([id, k]) => opt(id, k)).join("")}</optgroup>`
+  const mach = Object.entries(DM_MACHINES).filter(([, k]) => !k.own).sort((a, b) => a[1].name.localeCompare(b[1].name));
+  const own = Object.entries(DM_MACHINES).filter(([, k]) => k.own).sort((a, b) => a[1].name.localeCompare(b[1].name));
+  sel.innerHTML = (own.length ? `<optgroup label="Your songs' own sounds">${own.map(([id, k]) => opt(id, k)).join("")}</optgroup>` : "")
+    + `<optgroup label="Kits">${Object.entries(DM_KITS).map(([id, k]) => opt(id, k)).join("")}</optgroup>`
     + (mach.length ? `<optgroup label="Every drum machine in the library">${mach.map(([id, k]) => opt(id, k)).join("")}</optgroup>` : "");
   sel.value = [...sel.options].some((o) => o.value === v) ? v : "synth";
 }

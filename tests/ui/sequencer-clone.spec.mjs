@@ -345,3 +345,51 @@ test('on the page by itself, Keep says it works in the app', async ({ page }) =>
   await page.click('.cl-take[data-i="0"] [data-a="keep"]');
   await expect(page.locator('#clToast')).toContainText('Keep works in the app');
 });
+
+/// A short WAV: a sine at `hz`, for the song's own kit stood in for.
+function sineWav(hz, sec = 0.4, rate = 44100) {
+  const n = Math.round(sec * rate), h = Buffer.alloc(44), pcm = Buffer.alloc(n * 2);
+  h.write('RIFF', 0); h.writeUInt32LE(36 + n * 2, 4); h.write('WAVE', 8); h.write('fmt ', 12); h.writeUInt32LE(16, 16);
+  h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22); h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34);
+  h.write('data', 36); h.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) pcm.writeInt16LE(Math.round(Math.sin((2 * Math.PI * hz * i) / rate) * 12000 * (1 - i / n)), i * 2);
+  return Buffer.concat([h, pcm]);
+}
+
+test("your song's sounds: the song's own kit is cut once, the Band plays its drums and its bass notes, and the switch turns it off", async ({ page }) => {
+  let cut = 0;
+  const own = { name: 'Test Song (its own)', path: 'Stems/Test Song/kit', own: true, files: ['bass note 36.00.wav', 'bass note 43.50.wav', 'closed hat.wav', 'kick.wav', 'open hat.wav', 'snare.wav'] };
+  await page.route('**/api/seq/kits', (r) => r.fulfill({ json: cut ? [own] : [] }));
+  await page.route('**/api/stems/own-kit', async (r) => { cut++; await r.fulfill({ json: { p: 'Stems/Test Song/kit', song: JSON.parse(r.request().postData()).p } }); });
+  await page.route('**/audio?p=Stems%2FTest%20Song%2Fkit**', (r) => r.fulfill({ body: sineWav(65.4), contentType: 'audio/wav' }));
+  await openClone(page);
+  await expect(page.locator('#clSounds button[data-own="1"]')).toHaveClass(/on/);
+  await page.click('.cl-verb[data-v="similar"]');
+  await page.click('.cl-take[data-i="0"] .pb');
+  await expect.poll(() => page.evaluate(() => document.getElementById('dmKitSelect').value)).toBe('m:Stems/Test Song/kit');
+  await expect(page.locator('#clSounds .say')).toContainText("Song's own kick, snare, hats and bass notes");
+  const got = await page.evaluate(() => {
+    const made = [];
+    const real = audioCtx.createBufferSource.bind(audioCtx);
+    audioCtx.createBufferSource = () => { const s = real(); made.push(s); return s; };
+    // D2 (38) asked for: the nearest note is 36.00, two semitones up.
+    bdBass({ part: 'bass', hz: 440 * 2 ** ((38 - 69) / 12), dur: 0.3 }, audioCtx.currentTime + 0.05);
+    audioCtx.createBufferSource = real;
+    return { bassKit: document.getElementById('bsKitText').value, notes: bandBassNotes(BAND.bassKit).map((n) => n.midi), rate: made[0] && made[0].playbackRate.value, drumsLoaded: !!dmSample('kick'), menu: document.querySelector('#dmKitSelect optgroup').label };
+  });
+  expect(cut).toBe(1);
+  expect(got.bassKit).toBe('m:Stems/Test Song/kit');
+  expect(got.notes).toEqual([36, 43.5]);
+  expect(got.rate).toBeCloseTo(2 ** (2 / 12), 4);
+  expect(got.drumsLoaded).toBe(true);
+  expect(got.menu).toBe("Your songs' own sounds");
+  // Another take of the same song: the kit is there, not cut again.
+  await page.click('.cl-take[data-i="1"] .pb');
+  await page.click('.cl-take[data-i="1"] .pb');
+  expect(cut).toBe(1);
+  // Off: the Band's own sounds again.
+  await page.click('#clSounds button[data-own="0"]');
+  await page.click('.cl-take[data-i="0"] .pb');
+  await expect.poll(() => page.evaluate(() => [document.getElementById('dmKitSelect').value, document.getElementById('bsKitText').value])).toEqual(['synth', '']);
+  await page.click('.cl-take[data-i="0"] .pb');
+});

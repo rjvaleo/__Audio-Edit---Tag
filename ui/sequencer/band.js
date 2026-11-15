@@ -106,7 +106,7 @@ const BAND_MORPH_IDS = [
 const BAND_SLIDER_IDS = [...BAND_MORPH_IDS, "bdSeedSlider", ...(typeof DRUMS_SLIDER_IDS !== "undefined" ? DRUMS_SLIDER_IDS : [])];
 const BAND_SELECT_IDS = [
   ...BD_CH.flatMap((ch) => [`mx${ch.c}MuteSelect`, `mx${ch.c}SoloSelect`]),
-  "apWaveSelect", "chFltSelect", "drFltSelect", "bsLineText", "bdStyleSelect", "bdArrangeSelect", "bdPlanText",
+  "apWaveSelect", "chFltSelect", "drFltSelect", "bsLineText", "bdStyleSelect", "bdArrangeSelect", "bdPlanText", "bsKitText",
   ...["chord", "drone"].flatMap((p) => [bdKindId(p, "A"), bdKindId(p, "B")]),
   ...(typeof DRUMS_SELECT_IDS !== "undefined" ? DRUMS_SELECT_IDS : []),
 ];
@@ -124,6 +124,9 @@ function bandRead() {
   BAND.arrangeMode = v("bdArrangeSelect", "off");
   BAND.arrange = BAND.arrangeMode !== "off";
   bandReadPlan(v("bdPlanText", ""));
+  // The bass's sound: the synth, or a song's own notes (a kit with bass notes).
+  BAND.bassKit = v("bsKitText", "");
+  if (BAND.bassKit) bandLoadBassKit(BAND.bassKit);
   const solo = BD_CH.some((ch) => v(`mx${ch.c}SoloSelect`, "off") === "on");
   for (const ch of BD_CH) {
     BAND.ch[ch.c] = {
@@ -265,8 +268,47 @@ function bandVoice(e, t) {
   }
 }
 
+/// A song's own bass notes (`bsKitText`, a kit from `/api/stems/own-kit`): the
+/// notes, loaded, nearest first when one is asked for.
+function bandBassNotes(id) {
+  const m = typeof DM_MACHINES !== "undefined" && DM_MACHINES[id];
+  return m && m.bass ? m.bass.filter((n) => DM_BUF.get(n.p)) : [];
+}
+function bandLoadBassKit(id) {
+  const m = typeof DM_MACHINES !== "undefined" && DM_MACHINES[id];
+  return m && m.bass ? Promise.all(m.bass.map((n) => dmFetch(n.p))) : Promise.resolve([]);
+}
+/// The bass from a song's own notes: the nearest held note, played at the
+/// rate that puts it on the note asked for, through the same drive and low-pass.
+function bdBassSampled(e, t, notes) {
+  const c = audioCtx, P = BAND.bass, N = bdNodes;
+  const want = 69 + 12 * Math.log2(e.hz / 440);
+  const n = notes.reduce((a, x) => (Math.abs(x.midi - want) < Math.abs(a.midi - want) ? x : a), notes[0]);
+  const src = c.createBufferSource(), env = c.createGain(), sh = c.createWaveShaper(), lp = c.createBiquadFilter();
+  src.buffer = DM_BUF.get(n.p);
+  src.playbackRate.value = Math.pow(2, (want - n.midi) / 12);
+  if (e.bend && e.bend.length > 1) drawBend(src.detune, e.bend, t);
+  const drive = P.bsDrive / 100, k = 1 + drive * 8, m = 512, curve = new Float32Array(m);
+  for (let i = 0; i < m; i++) { const x = (i / (m - 1)) * 2 - 1; curve[i] = drive < 0.01 ? x : Math.tanh(k * x) / Math.tanh(k); }
+  sh.curve = curve;
+  lp.type = "lowpass"; lp.frequency.value = bdExp(P.bsLp, 60, 4000); lp.Q.value = 0.7;
+  const atk = Math.min(0.01, bdExp(P.bsAtk, 1, 300) / 1000), rel = bdExp(P.bsRel, 10, 2000) / 1000, dur = Math.max(0.02, e.dur * (P.bsLen / 100));
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(0.9, t + atk);
+  env.gain.setValueAtTime(0.9, t + Math.max(atk, dur));
+  env.gain.setTargetAtTime(0, t + Math.max(atk, dur), rel / 4);
+  src.connect(env); env.connect(sh); sh.connect(lp); lp.connect(e.into || N.ch.Bas.in);
+  const end = t + Math.max(atk, dur) + rel * 1.5 + 0.05;
+  src.start(t); src.stop(end);
+  bdPrevBass = e.hz;
+  bdVoices.push({ env, oscs: [src], start: t, end });
+}
+
 /// The bass: a sine, with the octave above by Weight, through drive and a low-pass.
+/// Or, when the Band has a song's own bass notes, those (`bdBassSampled`).
 function bdBass(e, t) {
+  const own = BAND.bassKit ? bandBassNotes(BAND.bassKit) : [];
+  if (own.length) return bdBassSampled(e, t, own);
   const c = audioCtx, P = BAND.bass, N = bdNodes;
   const o = c.createOscillator(), o2 = c.createGain(), w = c.createOscillator(), env = c.createGain(), sh = c.createWaveShaper(), lp = c.createBiquadFilter();
   o.type = "sine"; w.type = "sine";
@@ -513,6 +555,7 @@ function bandBuildUI() {
     + `<button type="button" class="btn" id="bdReroll" title="Another seed, and generate">◌</button>`
     + `<span class="cap">Arrange</span>${bdSel("bdArrangeSelect", [["off", "Off"], ["on", "Dub map"], ["plan", "Plan"]], "off", true)}`
     + `<input type="text" class="at-hidden" id="bdPlanText" value="" oninput="bandRead()" onchange="bandRead()" />`
+    + `<input type="text" class="at-hidden" id="bsKitText" value="" oninput="bandRead()" onchange="bandRead()" />`
     + `<input type="range" class="knob-hidden" id="bdSeedSlider" min="1" max="99999" value="1977" oninput="bandRead()" /></div>`
     + `<div class="bd-planstrip" id="bdPlanStrip"></div>`
     + `<div class="ac-parts bd-cards">${cards}</div>`

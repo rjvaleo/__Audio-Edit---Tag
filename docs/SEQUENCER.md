@@ -826,6 +826,18 @@ the whole plan and a 3 s tail, 48 kHz) and posts it to `POST /api/clone/keep`
 host to open it (`seq:open`). It works only in the app (the bridge runs in the
 frame); on the page by itself it says so.
 
+**Your song's sounds** (on by default; "Takes play: Your song's sounds | The Band's
+sounds"). RJ: "try doing what you say with playing sounds from the library." A take
+then plays the drum hits and held bass notes cut from its song's own stems: the
+first time a song's take plays, `POST /api/stems/own-kit {p: "Stems/<song>"}`
+(`stem_kits.rs`) cuts `Stems/<song>/kit/` (kick, snare, closed and open hat, and
+`bass note <midi>.wav` files), which `/api/seq/kits` lists first as "<song> (its
+own)" (the kit menu's "Your songs' own sounds"). The Band's kit is set to it, and
+`bsKitText` to it, so the bass plays the nearest held note repitched by playback
+rate (`bdBassSampled`, through the bass's own drive and low-pass), falling back to
+the sine without one. Keep waits for the kit before it renders. (Not the Stems
+page's Kit around, which is `/api/stems/kit`.)
+
 **A take is its recipe** (`{ snap: { mode, sel, seed, facets }, leans, varies,
 text }`), made by `clMakeRecipe`: the engine, then the leans, then each More like
 this step. The same recipe makes the same take, so the page keeps only recipes
