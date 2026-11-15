@@ -704,6 +704,210 @@ pub(super) fn api_stems_kit(app: &Arc<App>, req: &Request) -> Response {
     )
 }
 
+/// Write made sounds as tries, `Made/.words/<id>-NN.wav`, and their rows.
+fn local_tries(lib: &Path, id: &str, made: Vec<(sound::Sound, Value)>) -> Result<Vec<Value>, Response> {
+    let dir = lib.join("Made").join(".words");
+    std::fs::create_dir_all(&dir).map_err(|e| Response::error(500, &e.to_string()))?;
+    let mut rows = Vec::new();
+    for (i, (s, row)) in made.into_iter().enumerate() {
+        let name = format!("{id}-{i:02}.wav");
+        sound::write_wav(&dir.join(&name), &s).map_err(|e| Response::error(500, &e.to_string()))?;
+        rows.push(row.set("p", format!("Made/.words/{name}")).set("seconds", (s.seconds() as f64 * 1000.0).round() / 1000.0));
+    }
+    Ok(rows)
+}
+
+fn picks_of(lib: &Path, v: &Value, secs: f32) -> Vec<(String, sound::Sound)> {
+    v.get("picks")
+        .and_then(|a| a.arr())
+        .map(|a| {
+            a.iter()
+                .filter_map(|p| p.as_str())
+                .filter_map(|p| resolve_within(lib, p).and_then(|f| sound::read_span(&f, 0.0, secs).ok()).map(|s| (p.rsplit('/').next().unwrap_or(p).rsplit_once('.').map(|x| x.0).unwrap_or(p).to_string(), s)))
+                .filter(|(_, s)| s.frames() > 64)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn seed_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(1)
+}
+
+/// POST {p, n, far, through: hp|rack|both, peakDb, seed}: `n` versions of a
+/// sound, each through one to three of MGL's own effects with their controls
+/// moved at random, up to `far` (0..1) of their travel. Made here.
+pub(super) fn api_stems_mutate(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    let rel = v.get("p").and_then(|p| p.as_str()).unwrap_or("").to_string();
+    let Some(src) = resolve_within(&lib, &rel) else { return Response::error(404, "no such sound in the library") };
+    let Ok(snd) = sound::read_span(&src, 0.0, 30.0) else { return Response::error(500, "could not read the sound") };
+    let num = |k: &str, d: f64| match v.get(k) {
+        Some(Value::Num(n)) => *n,
+        _ => d,
+    };
+    let n = num("n", 8.0).clamp(1.0, 16.0) as usize;
+    let far = num("far", 0.5).clamp(0.0, 1.0) as f32;
+    let through = match v.get("through").and_then(|t| t.as_str()) {
+        Some("hp") => "hp",
+        Some("rack") => "rack",
+        _ => "both",
+    };
+    let seed = num("seed", (seed_now() % 1_000_000) as f64) as u64;
+    let name = src.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let made = crate::make::mutate(&snd, n, far, through, num("peakDb", -1.0).clamp(-24.0, 0.0) as f32, seed);
+    let rows: Vec<(sound::Sound, Value)> = made
+        .into_iter()
+        .enumerate()
+        .map(|(i, (s, words, steps))| {
+            let chain = Value::Arr(
+                steps
+                    .iter()
+                    .map(|st| {
+                        let mut params = Value::obj();
+                        for (k, x) in &st.params {
+                            params = params.set(k, *x as f64);
+                        }
+                        Value::obj().set("kind", format!("prism:{}", st.id)).set("params", params)
+                    })
+                    .collect(),
+            );
+            (s, Value::obj().set("label", format!("{name} · {} · {words}", i + 1)).set("group", "mutate").set("chain", chain))
+        })
+        .collect();
+    match local_tries(&lib, &job_id("m"), rows) {
+        Ok(r) => Response::json(Value::Arr(r).to_string()),
+        Err(e) => e,
+    }
+}
+
+/// POST {picks, shape: pad|drone|riser|all, n, seconds, stretch, density, space, seed}:
+/// textures made from the picks by the Grain engine's cloud, offline, here.
+pub(super) fn api_stems_texture(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    let picks = picks_of(&lib, &v, 20.0);
+    if picks.is_empty() {
+        return Response::error(400, "pick a sound or two first");
+    }
+    let num = |k: &str, d: f64| match v.get(k) {
+        Some(Value::Num(n)) => *n,
+        _ => d,
+    };
+    let n = num("n", 6.0).clamp(1.0, 12.0) as usize;
+    let t = crate::make::Texture {
+        seconds: num("seconds", 8.0).clamp(1.0, 60.0) as f32,
+        stretch: num("stretch", 20.0).clamp(1.5, 100.0) as f32,
+        density: num("density", 0.4).clamp(0.0, 1.0) as f32,
+        space: num("space", 0.5).clamp(0.0, 1.0) as f32,
+    };
+    let shapes: Vec<crate::make::Shape> = match v.get("shape").and_then(|s| s.as_str()).and_then(crate::make::Shape::from_str) {
+        Some(s) => vec![s],
+        None => vec![crate::make::Shape::Pad, crate::make::Shape::Drone, crate::make::Shape::Riser],
+    };
+    let seed = num("seed", (seed_now() % 1_000_000) as f64) as u64;
+    let rows: Vec<(sound::Sound, Value)> = (0..n)
+        .map(|i| {
+            // Each pick in turn, then the next shape: A pad, B pad, A drone…
+            let (name, s) = &picks[i % picks.len()];
+            let shape = shapes[(i / picks.len()) % shapes.len()];
+            let out = crate::make::texture(s, shape, &t, seed + i as u64 * 31);
+            (out, Value::obj().set("label", format!("{} · {name} · {}", shape.name().to_uppercase(), i + 1)).set("group", "texture").set("shape", shape.name()))
+        })
+        .collect();
+    match local_tries(&lib, &job_id("t"), rows) {
+        Ok(r) => Response::json(Value::Arr(r).to_string()),
+        Err(e) => e,
+    }
+}
+
+/// The commonest bars of a split song (or of all of them), most played first,
+/// with its tempo and swing.
+fn learnt_bars(lib: &Path, from: &str) -> (Vec<(usize, crate::make::Bar)>, Option<f32>, Option<f32>) {
+    let mut dirs = Vec::new();
+    if from == "all" {
+        if let Ok(rd) = std::fs::read_dir(lib.join("Stems")) {
+            dirs.extend(rd.flatten().map(|e| e.path()).filter(|p| p.join("songprint.json").is_file()));
+        }
+    } else if let Some(d) = resolve_within(lib, from) {
+        dirs.push(d);
+    }
+    let mut bars = Vec::new();
+    let (mut bpm, mut swing) = (None, None);
+    for d in dirs {
+        let Some(j) = std::fs::read_to_string(d.join("songprint.json")).ok().and_then(|t| crate::json::parse(&t)) else { continue };
+        if bpm.is_none() {
+            bpm = j.get("tempo").and_then(|t| t.get("bpm")).and_then(|b| if let Value::Num(n) = b { Some(*n as f32) } else { None });
+            swing = j.get("drums").and_then(|t| t.get("swing_16th_pct")).and_then(|b| if let Value::Num(n) = b { Some(*n as f32 / 100.0) } else { None });
+        }
+        for b in j.get("drums").and_then(|d| d.get("common_bars")).and_then(|c| c.arr()).unwrap_or(&[]) {
+            let g = |k: &str| b.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let count = match b.get("bars") {
+                Some(Value::Num(n)) => *n as usize,
+                _ => 1,
+            };
+            bars.push((count, crate::make::Bar::from_glyphs(&g("kick"), &g("snare"), &g("hat"))));
+        }
+    }
+    bars.sort_by(|a, b| b.0.cmp(&a.0));
+    (bars, bpm, swing)
+}
+
+/// POST {picks, from: Stems/<song>|all|"", bpm, bars, busy, fills, swing, n, seed}:
+/// loops of the picks in bar patterns learnt from a split song's drums (or from
+/// all of them), with fills, made here. Each loop is its bars long exactly.
+pub(super) fn api_stems_loop(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    let picks = picks_of(&lib, &v, 3.0);
+    if picks.is_empty() {
+        return Response::error(400, "pick a sound or two first");
+    }
+    let num = |k: &str| match v.get(k) {
+        Some(Value::Num(n)) => Some(*n),
+        _ => None,
+    };
+    let from = v.get("from").and_then(|f| f.as_str()).unwrap_or("").to_string();
+    let (learnt, song_bpm, song_swing) = if from.is_empty() { (Vec::new(), None, None) } else { learnt_bars(&lib, &from) };
+    let from_words = if learnt.is_empty() { "stock bars".to_string() } else if from == "all" { "all your songs".into() } else { from.trim_start_matches("Stems/").to_string() };
+    let bars: Vec<crate::make::Bar> = if learnt.is_empty() { crate::make::stock_bars() } else { learnt.into_iter().map(|b| b.1).collect() };
+    let bpm = num("bpm").map(|b| b as f32).or(song_bpm).unwrap_or(110.0).clamp(40.0, 240.0);
+    let base = crate::make::Loop {
+        bpm,
+        bars: num("bars").unwrap_or(2.0).clamp(1.0, 8.0) as usize,
+        busy: num("busy").unwrap_or(0.5).clamp(0.0, 1.0) as f32,
+        fills: num("fills").unwrap_or(0.3).clamp(0.0, 1.0) as f32,
+        swing: num("swing").map(|s| s as f32).or(song_swing).unwrap_or(0.5).clamp(0.5, 0.75),
+    };
+    let snds: Vec<sound::Sound> = picks.iter().map(|p| p.1.clone()).collect();
+    let kit = crate::make::roles(&snds);
+    let n = num("n").unwrap_or(4.0).clamp(1.0, 8.0) as usize;
+    let seed = num("seed").map(|s| s as u64).unwrap_or(seed_now() % 1_000_000);
+    // The four of a set: as asked, with a fill, busier, sparser; then more of the same.
+    let ways: [(&str, f32, f32); 4] = [("straight", 0.0, 0.0), ("with fill", 0.0, 1.0), ("busier", 0.25, 0.0), ("sparser", -0.25, 0.0)];
+    let rows: Vec<(sound::Sound, Value)> = (0..n)
+        .map(|i| {
+            let (word, db, df) = ways[i % 4];
+            let l = crate::make::Loop {
+                busy: (base.busy + db).clamp(0.0, 1.0),
+                // "straight" has none, "with fill" at least half; the others as asked.
+                fills: if df > 0.0 { base.fills.max(0.5) } else if i % 4 == 0 { 0.0 } else { base.fills },
+                ..base
+            };
+            let mut rng = crate::make::Rng::new(seed + i as u64 * 101);
+            let played = crate::make::arrange(&bars, &l, &mut rng);
+            let s = crate::make::render_loop(&played, &kit, &l, &mut rng);
+            let label = format!("LOOP {} · {word} · {} bar{} · {:.0} BPM · {from_words}", i + 1, l.bars, if l.bars == 1 { "" } else { "s" }, l.bpm);
+            (s, Value::obj().set("label", label).set("group", "loop").set("bpm", l.bpm as f64).set("bars", l.bars))
+        })
+        .collect();
+    match local_tries(&lib, &job_id("l"), rows) {
+        Ok(r) => Response::json(Value::Arr(r).to_string()),
+        Err(e) => e,
+    }
+}
+
 /// POST {p: a try, rate, air, above, trimDb, fadeOutMs, peakDb, folder, name}:
 /// clean it, upsample it, and save it to `Made/<folder>/`.
 pub(super) fn api_stems_keep(app: &Arc<App>, req: &Request) -> Response {
@@ -728,11 +932,21 @@ pub(super) fn api_stems_keep(app: &Arc<App>, req: &Request) -> Response {
             peak_db: Some(num("peakDb", -1.0) as f32),
         },
     );
+    // A loop is kept whole: its length is what makes it loop.
+    let c = if matches!(v.get("whole"), Some(Value::Bool(true))) {
+        let mut w = snd.clone();
+        crate::make::to_peak(&mut w, num("peakDb", -1.0) as f32);
+        w
+    } else {
+        c
+    };
     let rate = num("rate", 0.0) as u32;
     let out = if rate >= 8000 && rate <= 192_000 {
         let up = sound::upsample(&c, rate, num("air", 0.0).clamp(0.0, 1.0) as f32, num("above", 11_000.0) as f32);
         // the exciter can push the peak over; bring it back to the asked level
-        sound::clean(&up, &sound::Clean { trim_db: -120.0, fade_in_ms: 0.0, fade_out_ms: 0.0, peak_db: Some(num("peakDb", -1.0) as f32) })
+        let mut up = up;
+        crate::make::to_peak(&mut up, num("peakDb", -1.0) as f32);
+        up
     } else {
         c
     };

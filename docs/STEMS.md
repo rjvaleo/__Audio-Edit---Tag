@@ -100,14 +100,33 @@ page never talks to the PC. Configure it with `AUDIOLAB_GPU_HOST=pc` (and option
   chosen parts (kick, snare, hats, toms, conga, bass…) in one batch, each with its own words.
   Tuned parts are moved to the song's key: low tom on the key note, mid tom a fifth up, conga
   an octave up, bass on the key note; at most 6 semitones, so a part keeps its own range. About
-  5 s for eight parts. `/api/stems/kit`; kept ones in `Made/Kits/`. Loop, Texture and Mutate are
-  shown as next (`WORK DIR/page-mockups/MAKE-PLAN.md`).
+  5 s for eight parts. `/api/stems/kit`; kept ones in `Made/Kits/`.
+- **Mutate, Texture from and Loop around** (RJ: "Yes, build Loop around, Texture from and
+  Mutate") are made here with MGL's own engines, no model and no GPU machine, in a second or so
+  (`server/src/make.rs`):
+  - **Mutate:** `n` versions of the chosen pick, each through one to three of the shared effects
+    (Hyperprism, the rack's own, or both), every control moved from its default by up to **How
+    far** of its travel; smoothing, levels and mix stay put. The label names each effect and its
+    two most moved controls; the try carries the chain as rack slots (`chain`). Repeatable by
+    seed. `/api/stems/mutate {p, n, far, through, peakDb, seed}`; kept in `Made/Mutations/`.
+  - **Texture from:** pads, drones (an octave down) and risers (sped up an octave into the end),
+    from the picks in turn, by the Grain engine's cloud rendered offline (`offline.rs`), the picks
+    read **Stretch** times slower; **Density** sets the grains' overlap and layers, **Space** an
+    LXP hall under it. `/api/stems/texture {picks, shape, n, seconds, stretch, density, space}`;
+    kept in `Made/Textures/`. A model wash behind it is not built.
+  - **Loop around:** the picks as kick, snare and hat (low and short is the kick, bright the hat;
+    one pick plays all three, moved in pitch), in the commonest bars of a split song's drum
+    analysis (`common_bars`) or of all of them, at its tempo and swing; four a set: straight, with
+    a fill, busier, sparser. Fills are a snare run over the last beat or two, from the picks (not
+    the model). Each loop is its bars long exactly and tails wrap to the start, so it loops; Save
+    keeps it whole. `/api/stems/loop {picks, from, bpm, bars, busy, fills, swing, n}`; kept in
+    `Made/Loops/`.
 - **Models** on Make → From words: Stable Audio Open Small (up to 11 s), TangoFlux (up to 30 s;
   non-commercial licence, personal use only) and ACE-Step 1.5 (songs up to 10 min; MIT; its first
   use downloads about 10 GB to the PC). Each has its own folder and venv on the PC
   (`sao`, `tangoflux`, `acestep\ACE-Step-1.5\.venv`); one is loaded at a time, and choosing
-  another closes it. TangoFlux checked: two 4 s tries in 47 s, model load included. ACE-Step is
-  wired but not yet run. My sounds always uses Small, the only one that takes a guide sound.
+  another closes it. TangoFlux checked: two 4 s tries in 47 s, model load included. ACE-Step's
+  first run (14 Nov): download and load 847 s, then 88 s for 15 s of music. My sounds always uses Small, the only one that takes a guide sound.
 - The PC scripts are `tools/pc/make.py`, `make_tangoflux.py` and `make_acestep.py` in this repo,
   deployed as `make.py` in each model's folder (`C:\Users\rjval\agent-net\sao\make.py` …).
 - Before either, Ollama's loaded model is stopped, to free the GPU.
@@ -151,7 +170,9 @@ off; everything else works on stems already split.
 | `POST /api/stems/analyse {p}` | read it again |
 | `POST /api/stems/learn {p, forget?}` | hand it to the Band, or take it back |
 | `POST /api/stems/tries {p, kind, per}` | cut tries into `Stems/<song>/.tries/` |
-| `POST /api/stems/keep {p, rate, air, above, trimDb, fadeOutMs, peakDb, folder, name}` | clean, upsample, save to `Made/<folder>/` |
+| `POST /api/stems/keep {p, rate, air, above, trimDb, fadeOutMs, peakDb, folder, name, whole}` | clean, upsample, save to `Made/<folder>/`; `whole` keeps the length (loops) |
+| `POST /api/stems/{words,vary,blend,kit}` | made on the GPU machine (above) |
+| `POST /api/stems/{mutate,texture,loop}` | made here (above) |
 
 ## Tests
 

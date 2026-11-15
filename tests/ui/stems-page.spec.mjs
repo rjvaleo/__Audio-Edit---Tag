@@ -292,9 +292,6 @@ test('Make from my sounds: Blend two needs A and B, Kit around takes parts', asy
   await expect(page.locator('#stMakeGo')).toHaveText('Make the kit · 8');
   await page.locator('#stKitParts button', { hasText: 'clap' }).click();
   await expect(page.locator('#stMakeGo')).toHaveText('Make the kit · 9');
-  // The ways not built yet do nothing.
-  await page.locator('#stAlgos .st-algo', { hasText: 'MUTATE' }).click();
-  expect(await page.evaluate(() => ST.algo)).toBe('kit');
   if (!status.gpu) {
     expect((await request.post('/api/stems/blend', { data: { a: 'sounds/Pick Kick.wav', b: 'sounds/Pick Rim.wav' } })).status()).toBe(503);
     expect((await request.post('/api/stems/kit', { data: { picks: ['sounds/Pick Kick.wav'] } })).status()).toBe(503);
@@ -317,4 +314,67 @@ test('Make from words: the installed models can be chosen, and a guide sound kee
   await expect(page.locator('#stModels .st-model.on')).toContainText('Stable Audio Open Small');
   await page.locator('#stModels .st-model[data-m="tangoflux"]').click();
   await expect(page.locator('#stModels .st-model.on')).toContainText('Stable Audio Open Small');
+});
+
+test('Make from my sounds: Mutate, Texture from and Loop around are made here, with no GPU machine', async ({ page, request }) => {
+  const st = await (await request.get('/api/state')).json();
+  await laySong(request);
+  expect((await request.post('/api/stems/analyse', { data: { p: 'Stems/Test Song' } })).ok()).toBe(true);
+  mkdirSync(join(st.library, 'sounds'), { recursive: true });
+  wav(join(st.library, 'sounds', 'Here Kick.wav'), 0.5, (t) => Math.sin(2 * Math.PI * (50 + 100 * Math.exp(-t * 30)) * t) * Math.exp(-t * 8));
+  wav(join(st.library, 'sounds', 'Here Hat.wav'), 0.2, (t) => (Math.random() * 2 - 1) * Math.exp(-t * 60));
+  await request.post('/api/scan', { data: {} });
+  await expect.poll(async () => (await (await request.get('/api/files?folder=sounds')).json()).filter((f) => f.name.startsWith('Here')).length, { timeout: 15_000 }).toBe(2);
+  await open(page);
+  // As if there were no GPU machine: these three need none.
+  await page.evaluate(() => { ST.gpu = null; });
+  await page.locator('#stTabs [role="radio"]', { hasText: 'Make a sound' }).click();
+  await page.locator('#stStart [role="radio"]', { hasText: 'My sounds' }).click();
+  await page.click('#stAddPick');
+  await page.locator('#leftPanel').getByText('sounds', { exact: true }).first().click();
+  await page.locator('#leftPanel').getByText('Here Kick').first().dblclick();
+  await page.click('#stAddPick');
+  await page.locator('#leftPanel').getByText('Here Hat').first().dblclick();
+  await expect(page.locator('#stPicks .st-pickc[data-i]')).toHaveCount(2);
+
+  // Mutate: of the chosen pick, each try says its effects.
+  await page.locator('#stAlgos .st-algo', { hasText: 'MUTATE' }).click();
+  await expect(page.locator('#stMutateCtl')).toBeVisible();
+  await expect(page.locator('#stMakeGo')).toHaveText('Make 8');
+  await expect(page.locator('#stMakeGo')).toBeEnabled();
+  await expect(page.locator('#stModelNote')).toContainText('made here');
+  await page.locator('#stMutThrough [role="radio"]', { hasText: 'Hyperprism' }).click();
+  await page.click('#stMakeGo');
+  await expect(page.locator('#stTries .st-try')).toHaveCount(8, { timeout: 60_000 });
+  const mut = await page.evaluate(() => ST.tries);
+  expect(mut.every((t) => t.group === 'mutate' && t.chain.length >= 1 && t.chain.every((c) => c.kind.startsWith('prism:hp-')))).toBe(true);
+  await expect(page.locator('#stTries .st-try').first()).toContainText('Here Hat · 1 ·');
+
+  // Texture from: pads from the picks, as long as asked.
+  await page.locator('#stAlgos .st-algo', { hasText: 'TEXTURE FROM' }).click();
+  await expect(page.locator('#stTextureCtl')).toBeVisible();
+  await expect(page.locator('#stMutateCtl')).toBeHidden();
+  await page.evaluate(() => { ST.texture.seconds = 3; ST.texture.n = 2; });
+  await page.click('#stMakeGo');
+  await expect(page.locator('#stTries .st-try')).toHaveCount(2, { timeout: 60_000 });
+  const tex = await page.evaluate(() => ST.tries);
+  expect(tex.every((t) => t.group === 'texture' && t.shape === 'pad' && Math.abs(t.seconds - 3) < 0.6)).toBe(true);
+
+  // Loop around: from the laid song's drums, its tempo, each loop its bars long.
+  await page.locator('#stAlgos .st-algo', { hasText: 'LOOP AROUND' }).click();
+  await expect(page.locator('#stLoopCtl')).toBeVisible();
+  await page.locator('#stLoopFrom').selectOption('Stems/Test Song');
+  await page.click('#stMakeGo');
+  await expect(page.locator('#stTries .st-try')).toHaveCount(4, { timeout: 60_000 });
+  const loops = await page.evaluate(() => ST.tries);
+  for (const l of loops) expect(Math.abs(l.seconds - (l.bars * 4 * 60) / l.bpm)).toBeLessThan(0.002);
+  await expect(page.locator('#stTries .st-try').nth(1)).toContainText('with fill');
+  await expect(page.locator('#stTries .st-try').first()).toContainText('Test Song');
+  expect(Math.abs(loops[0].bpm - 120)).toBeLessThan(3);
+  // Saved, a loop keeps its length exactly.
+  await page.locator('#stTries .st-try').first().click();
+  await page.click('#stKeep');
+  await expect(page.locator('#stSaved')).toContainText('Made/Loops/');
+  const made = await page.evaluate(() => ST.made);
+  expect(Math.abs(made.seconds - loops[0].seconds)).toBeLessThan(0.002);
 });

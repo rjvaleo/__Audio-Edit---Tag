@@ -41,6 +41,11 @@ ST.vary = { nearFar: 0.5, n: 6, of: 0 };
 ST.algo = 'vary';
 ST.blend = { n: 7, wander: 0 };
 ST.kit = { parts: new Set(['hat', 'ohat', 'shaker', 'rim', 'tomlo', 'tommid', 'conga', 'bass']) };
+/// Made here, with MGL's own engines: no model, no GPU machine.
+ST.loop = { bpm: 0, bars: 2, busy: 0.5, fills: 0.3, from: 'all' };
+ST.texture = { seconds: 8, stretch: 20, density: 0.4, space: 0.5, shape: 'pad', n: 6 };
+ST.mutate = { far: 0.5, n: 8, peak: -1, through: 'both' };
+const ST_LOCAL = ['loop', 'texture', 'mutate'];
 const ST_KIT = [['hat', 'closed hat'], ['ohat', 'open hat'], ['shaker', 'shaker'], ['rim', 'rim'], ['clap', 'clap'], ['tomlo', 'low tom'], ['tommid', 'mid tom'], ['conga', 'conga'], ['bass', 'bass note']];
 /// The models (only Small is installed; the rest each need RJ's OK: MAKE-PLAN.md).
 /// The models. Installed ones can be chosen; a guide sound (My sounds) needs
@@ -171,6 +176,22 @@ function stBuild() {
           <input class="st-field" id="stKitStyle" style="flex:1;min-width:160px" placeholder="style (optional): dub techno, 808…" />
           <span class="st-meta" id="stKitHeard"></span>
         </div>
+        <div class="st-row st-algoctl" id="stLoopCtl">
+          <span id="stLoopBars" class="st-wbars"></span>
+          <span class="st-cap">Learnt from</span><select class="st-field" id="stLoopFrom" style="min-width:200px"></select>
+          <span class="st-meta">made here · kick, snare and hat from the picks</span>
+        </div>
+        <div class="st-row st-algoctl" id="stTextureCtl">
+          <span id="stTexShape"></span>
+          <span id="stTexBars" class="st-wbars"></span>
+          <span class="st-meta">made here by Grain · the picks in turn</span>
+        </div>
+        <div class="st-row st-algoctl" id="stMutateCtl">
+          <span class="st-cap">Of</span><span id="stMutOf"></span>
+          <span id="stMutThrough"></span>
+          <span id="stMutBars" class="st-wbars"></span>
+          <span class="st-meta">made here · each label says its effects</span>
+        </div>
         <div class="st-row st-algoctl" id="stVaryCtl">
           <span class="st-cap">Of</span><span id="stVaryOf"></span>
           <span id="stVaryBars" class="st-wbars"></span>
@@ -224,7 +245,7 @@ function stBuild() {
     ST.words.seconds = Math.min(m.max, Math.max(m.min, ST.words.seconds));
     stKindShow();
   };
-  const built = ['vary', 'blend', 'kit'];
+  const built = ['vary', 'blend', 'kit', 'loop', 'texture', 'mutate'];
   $('stAlgos').innerHTML = ST_ALGOS.map((a) => `<div class="st-algo${built.includes(a.k) ? '' : ' off'}" data-k="${a.k}" title="${stEsc(built.includes(a.k) ? a.d : 'next: ' + a.d)}"><b>${a.name}</b><span>${built.includes(a.k) ? a.d : 'next'}</span></div>`).join('');
   for (const el of document.querySelectorAll('#stAlgos .st-algo')) el.onclick = () => { if (built.includes(el.dataset.k)) { ST.algo = el.dataset.k; stKindShow(); } };
   const B = ST.blend;
@@ -233,6 +254,24 @@ function stBuild() {
     uiBar({ label: 'Wander', h: 24, w: 150, get: () => B.wander, set: (u) => { B.wander = Math.round(u * 100) / 100; }, commit: () => {}, text: () => (B.wander ? `${Math.round(B.wander * 100)} %` : 'off'), def: 0, col: 'var(--look-f-level)' }));
   $('stKitParts').innerHTML = ST_KIT.map(([k, l]) => `<button class="st-btn st-sm${ST.kit.parts.has(k) ? ' on' : ''}" data-k="${k}">${l}</button>`).join('');
   for (const b of $('stKitParts').querySelectorAll('button')) b.onclick = () => { ST.kit.parts.has(b.dataset.k) ? ST.kit.parts.delete(b.dataset.k) : ST.kit.parts.add(b.dataset.k); b.classList.toggle('on', ST.kit.parts.has(b.dataset.k)); stKindShow(); };
+  const L = ST.loop, T = ST.texture, M = ST.mutate;
+  $('stLoopBars').append(
+    uiBar({ label: 'Tempo', h: 24, w: 130, get: () => (L.bpm ? (L.bpm - 60) / 120 : 0), set: (u) => { L.bpm = u < 0.01 ? 0 : Math.round(60 + u * 120); }, commit: () => {}, text: () => (L.bpm ? `${L.bpm} BPM` : 'the song’s'), def: 0, col: 'var(--look-f-time)' }),
+    uiBar({ label: 'Bars', h: 24, w: 100, get: () => [1, 2, 4].indexOf(L.bars) / 2, set: (u) => { L.bars = [1, 2, 4][Math.round(u * 2)]; }, commit: () => {}, text: () => `${L.bars}`, def: 0.5, col: 'var(--look-f-time)' }),
+    uiBar({ label: 'Busy', h: 24, w: 120, get: () => L.busy, set: (u) => { L.busy = Math.round(u * 100) / 100; }, commit: () => {}, text: () => `${Math.round(L.busy * 100)} %`, def: 0.5, col: 'var(--look-f-attack)' }),
+    uiBar({ label: 'Fills', h: 24, w: 120, get: () => L.fills, set: (u) => { L.fills = Math.round(u * 100) / 100; }, commit: () => {}, text: () => `${Math.round(L.fills * 100)} %`, def: 0.3, col: 'var(--look-f-attack)' }));
+  $('stTexShape').append(uiSeg({ h: 24, value: T.shape, items: [{ k: 'pad', label: 'pad' }, { k: 'drone', label: 'drone' }, { k: 'riser', label: 'riser' }, { k: 'all', label: 'all' }], onPick: (k) => { T.shape = k; } }));
+  $('stTexBars').append(
+    uiBar({ label: 'Length', h: 24, w: 120, get: () => (T.seconds - 2) / 28, set: (u) => { T.seconds = Math.round(2 + u * 28); }, commit: () => {}, text: () => `${T.seconds} s`, def: 6 / 28, col: 'var(--look-f-time)' }),
+    uiBar({ label: 'Stretch', h: 24, w: 120, get: () => Math.log(T.stretch / 2) / Math.log(50), set: (u) => { T.stretch = Math.round(2 * Math.pow(50, u)); }, commit: () => {}, text: () => `${T.stretch}×`, def: Math.log(10) / Math.log(50), col: 'var(--look-f-time)' }),
+    uiBar({ label: 'Density', h: 24, w: 120, get: () => T.density, set: (u) => { T.density = Math.round(u * 100) / 100; }, commit: () => {}, text: () => `${Math.round(T.density * 100)} %`, def: 0.4, col: 'var(--look-f-level)' }),
+    uiBar({ label: 'Space', h: 24, w: 120, get: () => T.space, set: (u) => { T.space = Math.round(u * 100) / 100; }, commit: () => {}, text: () => `${Math.round(T.space * 100)} %`, def: 0.5, col: 'var(--look-f-space)' }),
+    uiBar({ label: 'How many', h: 24, w: 110, get: () => (T.n - 1) / 11, set: (u) => { T.n = Math.round(1 + u * 11); }, commit: () => {}, text: () => `${T.n}`, def: 5 / 11, col: 'var(--look-f-level)' }));
+  $('stMutThrough').append(uiSeg({ h: 24, value: M.through, items: [{ k: 'hp', label: 'Hyperprism' }, { k: 'rack', label: 'the rack' }, { k: 'both', label: 'both' }], onPick: (k) => { M.through = k; } }));
+  $('stMutBars').append(
+    uiBar({ label: 'How far', h: 24, w: 130, get: () => M.far, set: (u) => { M.far = Math.round(u * 100) / 100; }, commit: () => {}, text: () => `${Math.round(M.far * 100)} %`, def: 0.5, col: 'var(--look-f-level)' }),
+    uiBar({ label: 'How many', h: 24, w: 120, get: () => (M.n - 2) / 14, set: (u) => { M.n = Math.round(2 + u * 14); stKindShow(); }, commit: () => {}, text: () => `${M.n}`, def: 6 / 14, col: 'var(--look-f-level)' }),
+    uiBar({ label: 'Keep level', h: 24, w: 130, get: () => (M.peak + 12) / 12, set: (u) => { M.peak = Math.round((-12 + u * 12) * 2) / 2; }, commit: () => {}, text: () => `${M.peak} dB`, def: 11 / 12, col: 'var(--look-f-level)' }));
   const V = ST.vary;
   $('stVaryBars').append(
     uiBar({ label: 'Near ↔ far', h: 24, w: 170, get: () => V.nearFar, set: (u) => { V.nearFar = Math.round(u * 100) / 100; }, commit: () => {}, text: () => V.nearFar.toFixed(2), def: 0.5, col: 'var(--look-f-level)' }),
@@ -745,14 +784,18 @@ function stKindShow() {
   for (const b of document.querySelectorAll('#stWordsBars .ui-bar')) b.sync?.();
   for (const el of document.querySelectorAll('#stMake .st-start')) el.classList.toggle('hidden', !el.classList.contains(`st-start-${ST.start}`));
   const model = ST.start !== 'stems';
-  $('stModels').classList.toggle('st-dim', !model);
   for (const a of document.querySelectorAll('#stAlgos .st-algo')) a.classList.toggle('on', a.dataset.k === ST.algo);
-  for (const id of ['vary', 'blend', 'kit']) $(`st${id[0].toUpperCase()}${id.slice(1)}Ctl`).classList.toggle('hidden', ST.algo !== id);
+  for (const id of ['vary', 'blend', 'kit', 'loop', 'texture', 'mutate']) $(`st${id[0].toUpperCase()}${id.slice(1)}Ctl`).classList.toggle('hidden', ST.algo !== id);
+  const local = ST.start === 'sounds' && ST_LOCAL.includes(ST.algo);
+  $('stModels').classList.toggle('st-dim', !model || local);
+  stFillLoopFrom();
   const need = ST.algo === 'blend' ? 2 : 1;
-  $('stMakeGo').textContent = { words: 'Make them', sounds: { vary: `Make ${ST.vary.n}`, blend: `Blend in ${ST.blend.n}`, kit: `Make the kit · ${ST.kit.parts.size}` }[ST.algo], stems: 'Find them' }[ST.start];
-  $('stMakeGo').disabled = (model && !ST.gpu) || (ST.start === 'sounds' && (ST.picks.length < need || (ST.algo === 'kit' && !ST.kit.parts.size)));
+  $('stMakeGo').textContent = { words: 'Make them', sounds: { vary: `Make ${ST.vary.n}`, blend: `Blend in ${ST.blend.n}`, kit: `Make the kit · ${ST.kit.parts.size}`, loop: 'Make 4 loops', texture: `Make ${ST.texture.n}`, mutate: `Make ${ST.mutate.n}` }[ST.algo], stems: 'Find them' }[ST.start];
+  $('stMakeGo').disabled = (model && !local && !ST.gpu) || (ST.start === 'sounds' && (ST.picks.length < need || (ST.algo === 'kit' && !ST.kit.parts.size)));
   if ($('stBlendAB')) $('stBlendAB').textContent = ST.picks.length >= 2 ? `A · ${ST.picks[0].name}  →  B · ${ST.picks[1].name}` : 'Blend needs two picks: A and B';
   $('stModelNote').textContent = !model ? 'No model: cut from your own stems.'
+    : local && !ST.picks.length ? 'Pick a sound first: + pick a sound, from the library, or Pick it on a try below.'
+    : local ? "No model: made here with MGL's own engines, in a second or two."
     : !ST.gpu ? 'The model runs on the GPU machine: set AUDIOLAB_GPU_HOST (see docs/STEMS.md).'
     : ST.start === 'sounds' && ST.picks.length < need ? (need === 2 ? 'Blend needs two picks.' : 'Pick a sound first: + pick a sound, from the library, or Pick it on a try below.')
     : `${stModel().name} on the ${ST.gpu}'s GPU · ${ST.model === 'sao' ? 'the first time it loads the model, up to a minute; then about a second a sound' : ST.model === 'tangoflux' ? 'about 15 s a sound, after loading' : 'its first use downloads about 10 GB; then about a minute a piece'}`;
@@ -773,6 +816,7 @@ function stRenderPicks() {
   };
   $('stAddPick')?.addEventListener('click', () => { if (typeof openDrawer === 'function') openDrawer(); });
   $('stVaryOf').textContent = ST.picks.length ? String.fromCharCode(65 + ST.vary.of) : '–';
+  $('stMutOf').textContent = $('stVaryOf').textContent;
   for (const c of box.querySelectorAll('canvas')) stWave(c, c.dataset.p, 'var(--look-f-pitch)');
 }
 
@@ -818,6 +862,54 @@ function stMakeKit() {
   });
 }
 
+/// The ways made here (no GPU machine): Loop around, Texture from, Mutate.
+async function stMakeHere(what, url, body, done) {
+  $('stMakeGo').disabled = true;
+  $('stTriesMeta').textContent = `${what}…`;
+  const t0 = performance.now();
+  try {
+    ST.tries = await postJSON(url, body);
+    $('stTriesMeta').textContent = `${done(ST.tries)} in ${((performance.now() - t0) / 1000).toFixed(1)} s · click to hear · Pick it to make around it`;
+  } catch (e) {
+    toast(e.message);
+    ST.tries = [];
+    $('stTriesMeta').textContent = 'none made';
+  } finally {
+    stKindShow();
+  }
+  ST.pick = null;
+  ST.made = null;
+  ST.peakCache?.clear();
+  stShowTries(true);
+}
+
+function stFillLoopFrom() {
+  const sel = $('stLoopFrom');
+  if (!sel) return;
+  const keep = sel.value || ST.loop.from;
+  const learnt = ST.list.filter((s) => s.analysed !== false);
+  sel.innerHTML = '<option value="all">all your songs</option>' + learnt.map((s) => `<option value="${stEsc(s.p)}">${stEsc(s.name)}</option>`).join('') + '<option value="">stock bars</option>';
+  sel.value = [...sel.options].some((o) => o.value === keep) ? keep : 'all';
+  sel.onchange = () => { ST.loop.from = sel.value; };
+}
+
+function stMakeLoop() {
+  const L = ST.loop;
+  return stMakeHere(`making loops of ${ST.picks.map((x) => x.name).join(', ')}`, '/api/stems/loop', { picks: ST.picks.map((x) => x.p), from: $('stLoopFrom').value, bpm: L.bpm || undefined, bars: L.bars, busy: L.busy, fills: L.fills, n: 4 }, (r) => `${r.length} loops${r[0] ? ` at ${Math.round(r[0].bpm)} BPM` : ''}`);
+}
+
+function stMakeTexture() {
+  const T = ST.texture;
+  return stMakeHere(`making ${T.n} textures with Grain`, '/api/stems/texture', { picks: ST.picks.map((x) => x.p), shape: T.shape, n: T.n, seconds: T.seconds, stretch: T.stretch, density: T.density, space: T.space }, (r) => `${r.length} textures`);
+}
+
+function stMakeMutate() {
+  const pick = ST.picks[ST.vary.of];
+  if (!pick) return;
+  const M = ST.mutate;
+  return stMakeHere(`mutating ${pick.name}`, '/api/stems/mutate', { p: pick.p, n: M.n, far: M.far, through: M.through, peakDb: M.peak }, (r) => `${r.length} mutations of ${pick.name}`);
+}
+
 async function stMakeVary() {
   const pick = ST.picks[ST.vary.of];
   if (!pick) return;
@@ -842,7 +934,7 @@ async function stMakeVary() {
 
 async function stFindTries() {
   if (ST.start === 'words') return stMakeWords();
-  if (ST.start === 'sounds') return ST.algo === 'blend' ? stMakeBlend() : ST.algo === 'kit' ? stMakeKit() : stMakeVary();
+  if (ST.start === 'sounds') return ({ blend: stMakeBlend, kit: stMakeKit, loop: stMakeLoop, texture: stMakeTexture, mutate: stMakeMutate }[ST.algo] || stMakeVary)();
   const p = $('stFrom').value;
   if (!p) { toast('Split a song first'); return; }
   $('stMakeGo').disabled = true;
@@ -884,7 +976,7 @@ async function stMakeWords() {
 }
 
 function stShowTries(keepMeta) {
-  const col = (t) => (t.group === 'kit' ? (t.note != null ? 'var(--look-f-tone)' : 'var(--look-f-time)') : t.group === 'blend' ? 'var(--look-f-space)' : t.group === 'words' || t.group === 'vary' ? 'var(--look-f-pitch)' : t.group === 'kick' || t.group === 'snare' || t.group === 'hat' ? ST_COL.drums : ST_COL.bass);
+  const col = (t) => (t.group === 'loop' ? ST_COL.drums : t.group === 'texture' ? 'var(--look-f-space)' : t.group === 'mutate' ? 'var(--look-f-level)' : t.group === 'kit' ? (t.note != null ? 'var(--look-f-tone)' : 'var(--look-f-time)') : t.group === 'blend' ? 'var(--look-f-space)' : t.group === 'words' || t.group === 'vary' ? 'var(--look-f-pitch)' : t.group === 'kick' || t.group === 'snare' || t.group === 'hat' ? ST_COL.drums : ST_COL.bass);
   if (!keepMeta) $('stTriesMeta').textContent = ST.tries.length ? `${ST.tries.length} found · click one to hear it and choose it` : 'none found';
   $('stTries').innerHTML = ST.tries.map((t, i) => `<div class="st-try" data-i="${i}"><div class="st-row"><b class="st-nm" style="font-size:var(--fs-s)">${stEsc(t.label)}</b><span class="st-grow"></span><span class="st-meta">${t.seconds.toFixed(2)} s</span><button class="st-btn st-sm st-pickit" title="Add it to the sounds to make around">Pick it</button></div><div class="st-well"><canvas data-p="${stEsc(t.p)}" data-col="${col(t)}"></canvas></div></div>`).join('');
   for (const el of document.querySelectorAll('#stTries .st-try')) {
@@ -900,7 +992,7 @@ function stShowTries(keepMeta) {
       ST.pick = t;
       ST.made = null;
       for (const o of document.querySelectorAll('#stTries .st-try')) o.classList.toggle('sel', o === el);
-      $('stName').value = t.group === 'vary' ? t.label.replace(' · ', ' ').slice(0, 48) : t.group === 'words' ? $('stPrompt').value.trim().split(/[,.]/)[0].slice(0, 48) : `${ST.song?.name || 'sound'} ${t.group}`.trim();
+      $('stName').value = ST_LOCAL.includes(t.group) ? t.label.split(' · ').slice(0, 2).join(' ').slice(0, 48) : t.group === 'vary' ? t.label.replace(' · ', ' ').slice(0, 48) : t.group === 'words' ? $('stPrompt').value.trim().split(/[,.]/)[0].slice(0, 48) : `${ST.song?.name || 'sound'} ${t.group}`.trim();
       $('stKeep').disabled = false;
       $('stHearB').disabled = true;
       $('stSaved').textContent = '';
@@ -920,14 +1012,16 @@ async function stKeep() {
   const c = ST.chain;
   const body = {
     p: ST.pick.p,
-    folder: ST.pick.group === 'words' ? 'Words' : ST.pick.group === 'vary' ? 'Variations' : ST.pick.group === 'blend' ? 'Blends' : ST.pick.group === 'kit' ? 'Kits' : ST.kind === 'bass' ? 'Bass' : 'Drums',
+    folder: ST.pick.group === 'loop' ? 'Loops' : ST.pick.group === 'texture' ? 'Textures' : ST.pick.group === 'mutate' ? 'Mutations' : ST.pick.group === 'words' ? 'Words' : ST.pick.group === 'vary' ? 'Variations' : ST.pick.group === 'blend' ? 'Blends' : ST.pick.group === 'kit' ? 'Kits' : ST.kind === 'bass' ? 'Bass' : 'Drums',
     name: $('stName').value || ST.pick.group,
     rate: c.up ? c.rate : 0,
     air: c.up ? c.air : 0,
     above: c.above,
-    trimDb: c.clean ? c.trim : -120,
-    fadeOutMs: c.clean ? c.fade : 0,
+    // A loop keeps its length exactly, so it still loops.
+    trimDb: c.clean && ST.pick.group !== 'loop' ? c.trim : -120,
+    fadeOutMs: c.clean && ST.pick.group !== 'loop' ? c.fade : 0,
     peakDb: c.peak,
+    whole: ST.pick.group === 'loop',
   };
   $('stKeep').disabled = true;
   try {

@@ -387,6 +387,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/clone/keep") => api_clone_keep(app, req),
         ("POST", "/api/stems/blend") => api_stems_blend(app, req),
         ("POST", "/api/stems/kit") => api_stems_kit(app, req),
+        ("POST", "/api/stems/mutate") => api_stems_mutate(app, req),
+        ("POST", "/api/stems/texture") => api_stems_texture(app, req),
+        ("POST", "/api/stems/loop") => api_stems_loop(app, req),
         // The picture for a video export. See `docs/VIDEO-EXPORT.md`.
         ("POST", "/api/video") => api_video(app, req),
         ("GET", "/api/video") => api_video_status(app),
