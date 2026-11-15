@@ -117,7 +117,7 @@ process.on('SIGTERM', () => stop(0));
 
 const url = `http://127.0.0.1:${PORT}`;
 
-async function waitUp(ms = 8000) {
+async function waitUp(ms = 30000) { // 30 s: a loaded machine (other builds, the PC bridge) can take more than 8
   const until = Date.now() + ms;
   while (Date.now() < until) {
     try {

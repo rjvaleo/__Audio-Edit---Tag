@@ -261,3 +261,60 @@ test('Make from my sounds: picks from the drawer, Variations, and only with a GP
   await page.locator('#stPicks .st-pickc', { hasText: 'Pick Rim' }).locator('[data-x]').click();
   await expect(page.locator('#stPicks .st-pickc[data-i]')).toHaveCount(1);
 });
+
+test('Make from my sounds: Blend two needs A and B, Kit around takes parts', async ({ page, request }) => {
+  const st = await (await request.get('/api/state')).json();
+  const status = await (await request.get('/api/stems')).json();
+  mkdirSync(join(st.library, 'sounds'), { recursive: true });
+  wav(join(st.library, 'sounds', 'Pick Kick.wav'), 0.5, (t) => Math.sin(2 * Math.PI * (50 + 100 * Math.exp(-t * 30)) * t) * Math.exp(-t * 8));
+  wav(join(st.library, 'sounds', 'Pick Rim.wav'), 0.3, (t) => (Math.random() * 2 - 1) * Math.exp(-t * 40));
+  await request.post('/api/scan', { data: {} });
+  await expect.poll(async () => (await (await request.get('/api/files?folder=sounds')).json()).length, { timeout: 15_000 }).toBeGreaterThan(1);
+  await open(page);
+  await page.locator('#stTabs [role="radio"]', { hasText: 'Make a sound' }).click();
+  await page.locator('#stStart [role="radio"]', { hasText: 'My sounds' }).click();
+  await page.click('#stAddPick');
+  await page.locator('#leftPanel').getByText('sounds', { exact: true }).first().click();
+  await page.locator('#leftPanel').getByText('Pick Kick').first().dblclick();
+  // Blend: one pick is not enough.
+  await page.locator('#stAlgos .st-algo', { hasText: 'BLEND TWO' }).click();
+  await expect(page.locator('#stBlendCtl')).toBeVisible();
+  await expect(page.locator('#stVaryCtl')).toBeHidden();
+  await expect(page.locator('#stMakeGo')).toBeDisabled();
+  await expect(page.locator('#stBlendAB')).toContainText('needs two picks');
+  await page.click('#stAddPick');
+  await page.locator('#leftPanel').getByText('Pick Rim').first().dblclick();
+  await expect(page.locator('#stBlendAB')).toContainText('A · Pick Kick');
+  await expect(page.locator('#stMakeGo')).toHaveText(/Blend in 7/);
+  // Kit: its parts toggle, and no parts means nothing to make.
+  await page.locator('#stAlgos .st-algo', { hasText: 'KIT AROUND' }).click();
+  await expect(page.locator('#stKitCtl')).toBeVisible();
+  await expect(page.locator('#stMakeGo')).toHaveText('Make the kit · 8');
+  await page.locator('#stKitParts button', { hasText: 'clap' }).click();
+  await expect(page.locator('#stMakeGo')).toHaveText('Make the kit · 9');
+  // The ways not built yet do nothing.
+  await page.locator('#stAlgos .st-algo', { hasText: 'MUTATE' }).click();
+  expect(await page.evaluate(() => ST.algo)).toBe('kit');
+  if (!status.gpu) {
+    expect((await request.post('/api/stems/blend', { data: { a: 'sounds/Pick Kick.wav', b: 'sounds/Pick Rim.wav' } })).status()).toBe(503);
+    expect((await request.post('/api/stems/kit', { data: { picks: ['sounds/Pick Kick.wav'] } })).status()).toBe(503);
+  }
+});
+
+test('Make from words: the installed models can be chosen, and a guide sound keeps Stable Audio Open Small', async ({ page }) => {
+  await open(page);
+  await page.locator('#stTabs [role="radio"]', { hasText: 'Make a sound' }).click();
+  await page.locator('#stStart [role="radio"]', { hasText: 'Words' }).click();
+  await page.locator('#stModels .st-model[data-m="tangoflux"]').click();
+  await expect(page.locator('#stModels .st-model.on')).toContainText('TangoFlux');
+  await page.locator('#stModels .st-model[data-m="open1"]').click(); // not installed: nothing happens
+  await expect(page.locator('#stModels .st-model.on')).toContainText('TangoFlux');
+  await page.locator('#stModels .st-model[data-m="acestep"]').click();
+  await expect(page.locator('#stWordsBars .ui-bar').first()).toContainText(/\d+(\.\d)? s|\d+:\d\d/);
+  expect(await page.evaluate(() => ST.words.seconds)).toBeGreaterThanOrEqual(10);
+  // A guide sound needs Small: My sounds puts it back, and the others can't be chosen there.
+  await page.locator('#stStart [role="radio"]', { hasText: 'My sounds' }).click();
+  await expect(page.locator('#stModels .st-model.on')).toContainText('Stable Audio Open Small');
+  await page.locator('#stModels .st-model[data-m="tangoflux"]').click();
+  await expect(page.locator('#stModels .st-model.on')).toContainText('Stable Audio Open Small');
+});

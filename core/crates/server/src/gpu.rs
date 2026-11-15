@@ -168,9 +168,29 @@ pub fn tqdm_percent(line: &str) -> Option<f64> {
 
 // ------------------------------------------------------------ sounds from words
 
-/// Stable Audio Open Small, kept loaded on the GPU machine between requests and
-/// let go after ten idle minutes, so the GPU is free for anything else.
+/// The sound makers on the GPU machine: name, folder under the work folder,
+/// and its Python. All speak `make.py --serve`'s protocol (`tools/pc/`).
+pub const MAKERS: &[(&str, &str, &str)] = &[
+    ("sao", "sao", "venv\\Scripts\\python.exe"),
+    ("tangoflux", "tangoflux", "venv\\Scripts\\python.exe"),
+    ("acestep", "acestep", "ACE-Step-1.5\\.venv\\Scripts\\python.exe"),
+];
+
+/// A maker by name; anything else is refused rather than run.
+pub fn maker(name: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    MAKERS.iter().copied().find(|m| m.0 == name)
+}
+
+/// Where a request's tries land there, to tidy up after.
+pub fn tries_dir(gpu: &Gpu, model: &str, id: &str) -> String {
+    format!("{}/{}/tries/mgl/{id}", gpu.dir, maker(model).map_or("sao", |m| m.1))
+}
+
+/// One sound maker kept loaded on the GPU machine between requests, let go
+/// after ten idle minutes so the GPU is free for anything else. One at a time:
+/// the 3060's 12 GB holds one model, so asking for another ends this one.
 struct Words {
+    model: &'static str,
     child: Child,
     stdin: ChildStdin,
     out: BufReader<ChildStdout>,
@@ -192,16 +212,21 @@ pub struct Made {
 /// variations a guide's path there with a strength per try). Blocks; the first
 /// request loads the model.
 pub fn words(gpu: &Gpu, id: &str, req: Value) -> Result<Vec<Made>, String> {
+    let name = req.get("model").and_then(|m| m.as_str()).unwrap_or("sao").to_string();
+    let (model, folder, python) = maker(&name).ok_or_else(|| format!("no sound maker called {name}"))?;
     let mut guard = WORDS.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(w) = guard.as_mut() {
         if !matches!(w.child.try_wait(), Ok(None)) {
+            *guard = None;
+        } else if w.model != model {
+            let _ = w.child.kill();
             *guard = None;
         }
     }
     if guard.is_none() {
         gpu.free_gpu();
-        let dir = win(&format!("{}/sao", gpu.dir));
-        let mut child = gpu.spawn(&format!("cd /d {dir} & set \"HF_HUB_OFFLINE=1\"& venv\\Scripts\\python.exe make.py --serve"), true)?;
+        let dir = win(&format!("{}/{folder}", gpu.dir));
+        let mut child = gpu.spawn(&format!("cd /d {dir} & set \"HF_HUB_OFFLINE=1\"& {python} make.py --serve"), true)?;
         let stdin = child.stdin.take().ok_or("no stdin")?;
         let mut out = BufReader::new(child.stdout.take().ok_or("no stdout")?);
         if let Some(err) = child.stderr.take() {
@@ -218,7 +243,7 @@ pub fn words(gpu: &Gpu, id: &str, req: Value) -> Result<Vec<Made>, String> {
                 break;
             }
         }
-        *guard = Some(Words { child, stdin, out, used: Instant::now() });
+        *guard = Some(Words { model, child, stdin, out, used: Instant::now() });
         std::thread::spawn(|| loop {
             std::thread::sleep(Duration::from_secs(60));
             let mut g = WORDS.lock().unwrap_or_else(|e| e.into_inner());
@@ -265,7 +290,7 @@ pub fn words(gpu: &Gpu, id: &str, req: Value) -> Result<Vec<Made>, String> {
         if let Some(p) = v.get("path").and_then(|p| p.as_str()) {
             let num = |k: &str| if let Some(Value::Num(n)) = v.get(k) { *n } else { 0.0 };
             made.push(Made {
-                remote: format!("{}/sao/{}", gpu.dir, p.replace('\\', "/")),
+                remote: format!("{}/{folder}/{}", gpu.dir, p.replace('\\', "/")),
                 seed: num("seed") as u64,
                 seconds: num("seconds"),
                 near_far: if let Some(Value::Num(l)) = v.get("near_far") { Some(*l) } else { None },

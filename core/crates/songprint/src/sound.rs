@@ -121,8 +121,8 @@ pub fn find_hits(drums: &Path, per_kind: usize, gap: f32) -> Result<Vec<Hit>, St
         for h in k {
             if took.iter().all(|t| (t - h.t).abs() >= gap) {
                 took.push(h.t);
-                let next = onsets.iter().copied().find(|&o| o > h.t + 0.04).unwrap_or(f32::MAX);
-                let len = (next - h.t - 0.01).clamp(0.06, hit_length(kind));
+                let next = onsets.iter().copied().find(|&o| o > h.t + 0.08).unwrap_or(f32::MAX);
+                let len = (next - h.t - 0.01).clamp(0.1, hit_length(kind));
                 out.push(Hit { kind, t: h.t, purity: h.purity, strength: h.strength, len });
                 if took.len() >= per_kind {
                     break;
@@ -294,6 +294,58 @@ pub fn upsample(s: &Sound, to: u32, air: f32, above: f32) -> Sound {
     y
 }
 
+/// What a drum hit is like, for making a kit around it.
+#[derive(Clone, Copy, Debug)]
+pub struct Character {
+    /// Its pitch, as a MIDI note with cents, if it has one.
+    pub pitch: Option<f32>,
+    /// Seconds from its peak to 30 dB down.
+    pub decay: f32,
+    /// Zero crossings a second: a rough brightness.
+    pub zcr: f32,
+}
+
+fn mono(s: &Sound) -> Vec<f32> {
+    let ch = s.channels.max(1);
+    (0..s.frames()).map(|i| (0..ch).map(|c| s.x[i * ch + c]).sum::<f32>() / ch as f32).collect()
+}
+
+/// The pitch of a hit, read just after its attack (YIN, 30 Hz to 1 kHz).
+pub fn pitch_of(s: &Sound) -> Option<f32> {
+    let x = mono(s);
+    let r = s.rate as f32;
+    let peak = x.iter().enumerate().fold((0, 0.0f32), |m, (i, v)| if v.abs() > m.1 { (i, v.abs()) } else { m }).0;
+    let a = peak + (0.02 * r) as usize;
+    let z = (a + (0.18 * r) as usize).min(x.len());
+    if z <= a {
+        return None;
+    }
+    crate::pitch::yin(&x[a..z], r, 30.0, 1000.0).filter(|(_, ap)| *ap < 0.4).map(|(hz, _)| crate::pitch::midi(hz))
+}
+
+pub fn character(s: &Sound) -> Character {
+    let x = mono(s);
+    let r = s.rate as f32;
+    let w = ((0.01 * r) as usize).max(1);
+    let env: Vec<f32> = x.chunks(w).map(|c| (c.iter().map(|v| v * v).sum::<f32>() / c.len() as f32).sqrt()).collect();
+    let (pi, pk) = env.iter().enumerate().fold((0, 0.0f32), |m, (i, v)| if *v > m.1 { (i, *v) } else { m });
+    let floor = pk * 10f32.powf(-30.0 / 20.0);
+    let end = (pi..env.len()).find(|&i| env[i] < floor).unwrap_or(env.len());
+    let zc = x.windows(2).filter(|p| (p[0] <= 0.0) != (p[1] <= 0.0)).count() as f32;
+    Character { pitch: pitch_of(s), decay: (end - pi) as f32 * w as f32 / r, zcr: zc / (x.len().max(1) as f32 / r) }
+}
+
+/// Shift the pitch by `semitones`, the tape way: faster and shorter going up.
+pub fn shift(s: &Sound, semitones: f32) -> Sound {
+    if semitones.abs() < 0.01 {
+        return s.clone();
+    }
+    let f = 2f64.powf(semitones as f64 / 12.0);
+    let mut y = resample(s, ((s.rate as f64) / f).round().max(1000.0) as u32);
+    y.rate = s.rate;
+    y
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,6 +378,20 @@ mod tests {
         assert!(c.frames() < 11000, "{}", c.frames());
         assert!((c.peak() - 10f32.powf(-1.0 / 20.0)).abs() < 1e-3);
         assert!(c.x[0].abs() < 1e-3 && c.x[c.x.len() - 1].abs() < 1e-3);
+    }
+
+    #[test]
+    fn character_and_shift() {
+        // a 55 Hz (A1) hit decaying over about a quarter second
+        let rate = 44100;
+        let n = (rate as f32 * 0.6) as usize;
+        let s = Sound { rate, channels: 1, x: (0..n).map(|i| { let t = i as f32 / rate as f32; (2.0 * PI * 55.0 * t).sin() * (-t * 12.0).exp() }).collect() };
+        let c = character(&s);
+        assert!((c.pitch.unwrap() - 33.0).abs() < 0.3, "{:?}", c.pitch);
+        assert!(c.decay > 0.25 && c.decay < 0.34, "{}", c.decay); // e^-12t is 30 dB down at ln(31.6)/12 = 0.29 s
+        let up = shift(&s, 2.0);
+        assert!((pitch_of(&up).unwrap() - 35.0).abs() < 0.3);
+        assert!(up.frames() < s.frames());
     }
 
     #[test]

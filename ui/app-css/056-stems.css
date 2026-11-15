@@ -168,3 +168,6 @@ body.stemspage #overview { display: none; }
 .st-algo b { font: 700 var(--fs-m) var(--mono); letter-spacing: .12em; color: var(--look-text); }
 .st-algo span { font: 400 var(--fs-s)/1.35 var(--sans); color: var(--look-text-3); }
 #stVaryOf { font: 700 var(--fs-l) var(--mono); color: var(--look-f-pitch); min-width: 16px; }
+.st-algo:not(.off) { cursor: pointer; }
+.st-kitparts { display: flex; gap: 3px; flex-wrap: wrap; }
+.st-model:not(.off) { cursor: pointer; }

@@ -38,14 +38,21 @@ const ST_STEMS = ['drums', 'bass', 'vocals', 'other'];
 ST.start = 'sounds';
 ST.picks = [];
 ST.vary = { nearFar: 0.5, n: 6, of: 0 };
+ST.algo = 'vary';
+ST.blend = { n: 7, wander: 0 };
+ST.kit = { parts: new Set(['hat', 'ohat', 'shaker', 'rim', 'tomlo', 'tommid', 'conga', 'bass']) };
+const ST_KIT = [['hat', 'closed hat'], ['ohat', 'open hat'], ['shaker', 'shaker'], ['rim', 'rim'], ['clap', 'clap'], ['tomlo', 'low tom'], ['tommid', 'mid tom'], ['conga', 'conga'], ['bass', 'bass note']];
 /// The models (only Small is installed; the rest each need RJ's OK: MAKE-PLAN.md).
+/// The models. Installed ones can be chosen; a guide sound (My sounds) needs
+/// Stable Audio Open Small. Licences: page-mockups/MODELS.md.
 const ST_MODELS = [
-  { id: 'small', name: 'Stable Audio Open Small', a: '11 s · 0.4 s a sound · takes a guide', st: 'on the PC', cls: 'ok', title: 'Installed on the PC. Stability AI Community Licence, personal use.' },
-  { id: 'open1', name: 'Stable Audio Open 1.0', a: '47 s · fuller · takes a guide', st: 'needs your OK · 5 GB', cls: 'ask', title: 'Not installed: needs your OK and a 5 GB download.' },
-  { id: 'audiogen', name: 'AudioGen', a: '10 s · sound effects, foley', st: 'non-commercial · 4 GB', cls: 'nc', title: 'Not installed. Non-commercial: fine for your music, not to ship in MGL.' },
-  { id: 'musicgen', name: 'MusicGen melody', a: '30 s · loops that follow a tune', st: 'non-commercial · 6 GB', cls: 'nc', title: 'Not installed. Non-commercial: fine for your music, not to ship in MGL.' },
-  { id: 'mgl', name: "MGL's own synths", a: '808 kit, sine bass, pads', st: 'next', cls: 'ask', title: 'The Seq page synths, rendered here: next.' },
+  { id: 'sao', name: 'Stable Audio Open Small', a: 'up to 11 s · under a second a sound · takes a guide', st: 'on the PC', cls: 'ok', min: 0.5, max: 11, guide: true, title: 'On the PC. Stability AI Community Licence: personal use.' },
+  { id: 'tangoflux', name: 'TangoFlux', a: 'up to 30 s · ~15 s a sound · effects, textures', st: 'on the PC · personal use', cls: 'nc', min: 1, max: 30, title: 'On the PC. Non-commercial research licence: for your own music only.' },
+  { id: 'acestep', name: 'ACE-Step 1.5', a: '10 s to 10 min · music, loops, whole pieces', st: 'on the PC · first use ~10 GB', cls: 'ask', min: 10, max: 600, title: 'On the PC. MIT licence. Its weights (about 10 GB) download the first time it is used.' },
+  { id: 'open1', name: 'Stable Audio Open 1.0', a: 'up to 47 s · fuller · takes a guide', st: 'needs your OK', cls: 'ask', off: true, title: 'Not installed: needs its own Hugging Face gate accepted, and a download.' },
+  { id: 'mgl', name: "MGL's own synths", a: '808 kit, sine bass, pads', st: 'next', cls: 'ask', off: true, title: 'The Seq page synths, rendered here: next.' },
 ];
+ST.model = 'sao';
 const ST_ALGOS = [
   { k: 'vary', name: 'VARIATIONS', d: 'new takes of a pick, from close to far' },
   { k: 'blend', name: 'BLEND TWO', d: 'a row of sounds part way from A to B' },
@@ -154,7 +161,17 @@ function stBuild() {
       <section class="st-panel st-start st-start-sounds">
         <div class="st-ph"><b class="st-nm">MAKE AROUND THEM</b><span class="st-meta">pick a way · each makes a page of tries</span></div>
         <div class="st-algos" id="stAlgos"></div>
-        <div class="st-row" id="stVaryCtl">
+        <div class="st-row st-algoctl" id="stBlendCtl">
+          <span class="st-meta" id="stBlendAB"></span>
+          <span id="stBlendBars" class="st-wbars"></span>
+          <input class="st-field" id="stBlendWords" style="flex:1;min-width:180px" placeholder="words for the wander (optional): drum hit, metallic…" />
+        </div>
+        <div class="st-row st-algoctl" id="stKitCtl">
+          <span class="st-cap">Parts</span><span id="stKitParts" class="st-kitparts"></span>
+          <input class="st-field" id="stKitStyle" style="flex:1;min-width:160px" placeholder="style (optional): dub techno, 808…" />
+          <span class="st-meta" id="stKitHeard"></span>
+        </div>
+        <div class="st-row st-algoctl" id="stVaryCtl">
           <span class="st-cap">Of</span><span id="stVaryOf"></span>
           <span id="stVaryBars" class="st-wbars"></span>
           <input class="st-field" id="stVaryWords" style="flex:1;min-width:200px" placeholder="what it is, to steer it (optional): 808 kick, dub rim…" />
@@ -199,15 +216,30 @@ function stBuild() {
   if (ST.kind === 'words') ST.kind = 'drums';
   $('stKind').append(uiSeg({ h: 28, value: ST.kind, items: [{ k: 'drums', label: 'Drum hits' }, { k: 'bass', label: 'Bass notes' }], onPick: (k) => { ST.kind = k; } }));
   $('stStart').append(uiSeg({ h: 28, value: ST.start, items: [{ k: 'words', label: 'Words' }, { k: 'sounds', label: 'My sounds' }, { k: 'stems', label: 'My stems' }], onPick: (k) => { ST.start = k; stKindShow(); } }));
-  $('stModels').innerHTML = ST_MODELS.map((m) => `<div class="st-model${m.id === 'small' ? ' on' : ' off'}" title="${stEsc(m.title)}"><b>${m.name}</b><span>${m.a}</span><span class="st-mst ${m.cls}">${m.st}</span></div>`).join('');
-  $('stAlgos').innerHTML = ST_ALGOS.map((a) => `<div class="st-algo${a.k === 'vary' ? ' on' : ' off'}" title="${stEsc(a.k === 'vary' ? a.d : 'next: ' + a.d)}"><b>${a.name}</b><span>${a.k === 'vary' ? a.d : 'next'}</span></div>`).join('');
+  $('stModels').innerHTML = ST_MODELS.map((m) => `<div class="st-model" data-m="${m.id}" title="${stEsc(m.title)}"><b>${m.name}</b><span>${m.a}</span><span class="st-mst ${m.cls}">${m.st}</span></div>`).join('');
+  for (const el of $('stModels').querySelectorAll('.st-model')) el.onclick = () => {
+    const m = ST_MODELS.find((x) => x.id === el.dataset.m);
+    if (m.off || (ST.start === 'sounds' && !m.guide)) return;
+    ST.model = m.id;
+    ST.words.seconds = Math.min(m.max, Math.max(m.min, ST.words.seconds));
+    stKindShow();
+  };
+  const built = ['vary', 'blend', 'kit'];
+  $('stAlgos').innerHTML = ST_ALGOS.map((a) => `<div class="st-algo${built.includes(a.k) ? '' : ' off'}" data-k="${a.k}" title="${stEsc(built.includes(a.k) ? a.d : 'next: ' + a.d)}"><b>${a.name}</b><span>${built.includes(a.k) ? a.d : 'next'}</span></div>`).join('');
+  for (const el of document.querySelectorAll('#stAlgos .st-algo')) el.onclick = () => { if (built.includes(el.dataset.k)) { ST.algo = el.dataset.k; stKindShow(); } };
+  const B = ST.blend;
+  $('stBlendBars').append(
+    uiBar({ label: 'Steps', h: 24, w: 120, get: () => (B.n - 3) / 9, set: (u) => { B.n = Math.round(3 + u * 9); }, commit: () => {}, text: () => `${B.n}`, def: 4 / 9, col: 'var(--look-f-level)' }),
+    uiBar({ label: 'Wander', h: 24, w: 150, get: () => B.wander, set: (u) => { B.wander = Math.round(u * 100) / 100; }, commit: () => {}, text: () => (B.wander ? `${Math.round(B.wander * 100)} %` : 'off'), def: 0, col: 'var(--look-f-level)' }));
+  $('stKitParts').innerHTML = ST_KIT.map(([k, l]) => `<button class="st-btn st-sm${ST.kit.parts.has(k) ? ' on' : ''}" data-k="${k}">${l}</button>`).join('');
+  for (const b of $('stKitParts').querySelectorAll('button')) b.onclick = () => { ST.kit.parts.has(b.dataset.k) ? ST.kit.parts.delete(b.dataset.k) : ST.kit.parts.add(b.dataset.k); b.classList.toggle('on', ST.kit.parts.has(b.dataset.k)); stKindShow(); };
   const V = ST.vary;
   $('stVaryBars').append(
     uiBar({ label: 'Near ↔ far', h: 24, w: 170, get: () => V.nearFar, set: (u) => { V.nearFar = Math.round(u * 100) / 100; }, commit: () => {}, text: () => V.nearFar.toFixed(2), def: 0.5, col: 'var(--look-f-level)' }),
     uiBar({ label: 'How many', h: 24, w: 130, get: () => (V.n - 2) / 10, set: (u) => { V.n = Math.round(2 + u * 10); }, commit: () => {}, text: () => `${V.n}`, def: 0.4, col: 'var(--look-f-level)' }));
   const W = ST.words = { seconds: 1.5, n: 4 };
   $('stWordsBars').append(
-    uiBar({ label: 'Length', h: 24, w: 150, get: () => (W.seconds - 0.5) / 10.5, set: (u) => { W.seconds = Math.round((0.5 + u * 10.5) * 10) / 10; }, commit: () => {}, text: () => `${W.seconds.toFixed(1)} s`, def: 1 / 10.5, col: 'var(--look-f-time)' }),
+    uiBar({ label: 'Length', h: 24, w: 150, get: () => { const m = stModel(); return (W.seconds - m.min) / (m.max - m.min); }, set: (u) => { const m = stModel(); W.seconds = Math.round((m.min + u * (m.max - m.min)) * 10) / 10; }, commit: () => {}, text: () => (W.seconds >= 60 ? `${Math.floor(W.seconds / 60)}:${String(Math.round(W.seconds % 60)).padStart(2, '0')}` : `${W.seconds.toFixed(1)} s`), def: 0.1, col: 'var(--look-f-time)' }),
     uiBar({ label: 'Tries', h: 24, w: 120, get: () => (W.n - 1) / 7, set: (u) => { W.n = Math.round(1 + u * 7); }, commit: () => {}, text: () => `${W.n}`, def: 3 / 7, col: 'var(--look-f-level)' }));
   $('stPrompt').addEventListener('keydown', (e) => { if (e.key === 'Enter') stFindTries(); });
   $('stRate').append(uiSeg({ h: 24, value: ST.chain.rate, items: [{ k: 48000, label: '48 kHz' }, { k: 96000, label: '96 kHz' }], onPick: (k) => { ST.chain.rate = +k; } }));
@@ -696,18 +728,34 @@ function stFillFrom() {
   if (keep && ST.list.some((s) => s.p === keep)) sel.value = keep;
 }
 
+function stModel() {
+  return ST_MODELS.find((x) => x.id === ST.model) || ST_MODELS[0];
+}
+
 /// Make's controls for where it starts: words, your sounds, or a song's stems.
 function stKindShow() {
   if (!$('stMake')) return;
+  // A guide sound needs Stable Audio Open Small.
+  if (ST.start === 'sounds' && !stModel().guide) ST.model = 'sao';
+  for (const el of $('stModels').querySelectorAll('.st-model')) {
+    const m = ST_MODELS.find((x) => x.id === el.dataset.m);
+    el.classList.toggle('on', m.id === ST.model);
+    el.classList.toggle('off', !!m.off || (ST.start === 'sounds' && !m.guide));
+  }
+  for (const b of document.querySelectorAll('#stWordsBars .ui-bar')) b.sync?.();
   for (const el of document.querySelectorAll('#stMake .st-start')) el.classList.toggle('hidden', !el.classList.contains(`st-start-${ST.start}`));
   const model = ST.start !== 'stems';
   $('stModels').classList.toggle('st-dim', !model);
-  $('stMakeGo').textContent = { words: 'Make them', sounds: `Make ${ST.vary.n}`, stems: 'Find them' }[ST.start];
-  $('stMakeGo').disabled = (model && !ST.gpu) || (ST.start === 'sounds' && !ST.picks.length);
+  for (const a of document.querySelectorAll('#stAlgos .st-algo')) a.classList.toggle('on', a.dataset.k === ST.algo);
+  for (const id of ['vary', 'blend', 'kit']) $(`st${id[0].toUpperCase()}${id.slice(1)}Ctl`).classList.toggle('hidden', ST.algo !== id);
+  const need = ST.algo === 'blend' ? 2 : 1;
+  $('stMakeGo').textContent = { words: 'Make them', sounds: { vary: `Make ${ST.vary.n}`, blend: `Blend in ${ST.blend.n}`, kit: `Make the kit · ${ST.kit.parts.size}` }[ST.algo], stems: 'Find them' }[ST.start];
+  $('stMakeGo').disabled = (model && !ST.gpu) || (ST.start === 'sounds' && (ST.picks.length < need || (ST.algo === 'kit' && !ST.kit.parts.size)));
+  if ($('stBlendAB')) $('stBlendAB').textContent = ST.picks.length >= 2 ? `A · ${ST.picks[0].name}  →  B · ${ST.picks[1].name}` : 'Blend needs two picks: A and B';
   $('stModelNote').textContent = !model ? 'No model: cut from your own stems.'
     : !ST.gpu ? 'The model runs on the GPU machine: set AUDIOLAB_GPU_HOST (see docs/STEMS.md).'
-    : ST.start === 'sounds' && !ST.picks.length ? 'Pick a sound first: + pick a sound, from the library, or Pick it on a try below.'
-    : `Stable Audio Open Small on the ${ST.gpu}'s GPU · the first time it loads the model, up to a minute; then about a second a sound`;
+    : ST.start === 'sounds' && ST.picks.length < need ? (need === 2 ? 'Blend needs two picks.' : 'Pick a sound first: + pick a sound, from the library, or Pick it on a try below.')
+    : `${stModel().name} on the ${ST.gpu}'s GPU · ${ST.model === 'sao' ? 'the first time it loads the model, up to a minute; then about a second a sound' : ST.model === 'tangoflux' ? 'about 15 s a sound, after loading' : 'its first use downloads about 10 GB; then about a minute a piece'}`;
   stRenderPicks();
 }
 
@@ -736,6 +784,40 @@ function stAddPick(p, name) {
   stKindShow();
 }
 
+/// Run one of the ways on the GPU machine and show what came back.
+async function stMakeOn(what, url, body, done) {
+  $('stMakeGo').disabled = true;
+  $('stTriesMeta').textContent = `${what} on the ${ST.gpu}…`;
+  const t0 = performance.now();
+  try {
+    const r = await postJSON(url, body);
+    ST.tries = Array.isArray(r) ? r : r.tries;
+    $('stTriesMeta').textContent = `${done(r)} in ${((performance.now() - t0) / 1000).toFixed(1)} s · click to hear · Pick it to make around it`;
+  } catch (e) {
+    toast(e.message);
+    ST.tries = [];
+    $('stTriesMeta').textContent = 'none made';
+  } finally {
+    stKindShow();
+  }
+  ST.pick = null;
+  ST.made = null;
+  ST.peakCache?.clear();
+  stShowTries(true);
+}
+
+function stMakeBlend() {
+  const [a, b] = ST.picks;
+  return stMakeOn(`blending ${a.name} into ${b.name}`, '/api/stems/blend', { a: a.p, b: b.p, n: ST.blend.n, wander: ST.blend.wander, prompt: $('stBlendWords').value.trim() }, (r) => `${r.length} steps from ${a.name} to ${b.name}`);
+}
+
+function stMakeKit() {
+  return stMakeOn(`making a kit around ${ST.picks.map((x) => x.name).join(' and ')}`, '/api/stems/kit', { picks: ST.picks.map((x) => x.p), parts: [...ST.kit.parts], style: $('stKitStyle').value.trim() }, (r) => {
+    $('stKitHeard').textContent = `heard: key ${r.key} · ${r.words}`;
+    return `${r.tries.length} parts in ${r.key}`;
+  });
+}
+
 async function stMakeVary() {
   const pick = ST.picks[ST.vary.of];
   if (!pick) return;
@@ -760,7 +842,7 @@ async function stMakeVary() {
 
 async function stFindTries() {
   if (ST.start === 'words') return stMakeWords();
-  if (ST.start === 'sounds') return stMakeVary();
+  if (ST.start === 'sounds') return ST.algo === 'blend' ? stMakeBlend() : ST.algo === 'kit' ? stMakeKit() : stMakeVary();
   const p = $('stFrom').value;
   if (!p) { toast('Split a song first'); return; }
   $('stMakeGo').disabled = true;
@@ -786,7 +868,7 @@ async function stMakeWords() {
   $('stTriesMeta').textContent = `making on the ${ST.gpu}…`;
   const t0 = performance.now();
   try {
-    ST.tries = await postJSON('/api/stems/words', { prompt, seconds: ST.words.seconds, n: ST.words.n });
+    ST.tries = await postJSON('/api/stems/words', { prompt, seconds: ST.words.seconds, n: ST.words.n, model: ST.model });
     $('stTriesMeta').textContent = `${ST.tries.length} made in ${((performance.now() - t0) / 1000).toFixed(1)} s · click one to hear it and choose it`;
   } catch (e) {
     toast(e.message);
@@ -802,7 +884,7 @@ async function stMakeWords() {
 }
 
 function stShowTries(keepMeta) {
-  const col = (t) => (t.group === 'words' || t.group === 'vary' ? 'var(--look-f-pitch)' : t.group === 'kick' || t.group === 'snare' || t.group === 'hat' ? ST_COL.drums : ST_COL.bass);
+  const col = (t) => (t.group === 'kit' ? (t.note != null ? 'var(--look-f-tone)' : 'var(--look-f-time)') : t.group === 'blend' ? 'var(--look-f-space)' : t.group === 'words' || t.group === 'vary' ? 'var(--look-f-pitch)' : t.group === 'kick' || t.group === 'snare' || t.group === 'hat' ? ST_COL.drums : ST_COL.bass);
   if (!keepMeta) $('stTriesMeta').textContent = ST.tries.length ? `${ST.tries.length} found · click one to hear it and choose it` : 'none found';
   $('stTries').innerHTML = ST.tries.map((t, i) => `<div class="st-try" data-i="${i}"><div class="st-row"><b class="st-nm" style="font-size:var(--fs-s)">${stEsc(t.label)}</b><span class="st-grow"></span><span class="st-meta">${t.seconds.toFixed(2)} s</span><button class="st-btn st-sm st-pickit" title="Add it to the sounds to make around">Pick it</button></div><div class="st-well"><canvas data-p="${stEsc(t.p)}" data-col="${col(t)}"></canvas></div></div>`).join('');
   for (const el of document.querySelectorAll('#stTries .st-try')) {
@@ -838,7 +920,7 @@ async function stKeep() {
   const c = ST.chain;
   const body = {
     p: ST.pick.p,
-    folder: ST.pick.group === 'words' ? 'Words' : ST.pick.group === 'vary' ? 'Variations' : ST.kind === 'bass' ? 'Bass' : 'Drums',
+    folder: ST.pick.group === 'words' ? 'Words' : ST.pick.group === 'vary' ? 'Variations' : ST.pick.group === 'blend' ? 'Blends' : ST.pick.group === 'kit' ? 'Kits' : ST.kind === 'bass' ? 'Bass' : 'Drums',
     name: $('stName').value || ST.pick.group,
     rate: c.up ? c.rate : 0,
     air: c.up ? c.air : 0,
