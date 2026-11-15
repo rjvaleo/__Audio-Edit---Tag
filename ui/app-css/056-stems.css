@@ -142,3 +142,29 @@ body.stemspage #overview { display: none; }
 /* a stem on its way back from the GPU machine, then landed */
 .st-lane .st-come { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--sc); opacity: .8; transition: width .4s; }
 .st-lane.st-wait.st-in .st-well, .st-lane.st-wait.st-in .st-nm { opacity: 1; }
+
+/* make: start, models, picks, ways to make */
+.st-mktop { display: flex; gap: 14px; align-items: flex-start; }
+.st-models { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.st-models.st-dim { opacity: .4; }
+.st-model { border-radius: var(--r-m); background: var(--look-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8), 0 0 0 1px var(--look-line); padding: 5px 8px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.st-model.on { box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8), 0 0 0 1.5px var(--on); }
+.st-model.off { opacity: .55; }
+.st-model b { font: 600 var(--fs-m) var(--sans); color: var(--look-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-model span { font: 400 var(--fs-s) var(--mono); color: var(--look-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-model .st-mst { font: 600 var(--fs-xs) var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.st-mst.ok { color: var(--look-accent); } .st-mst.ask { color: var(--on); } .st-mst.nc { color: var(--look-bad); }
+.st-picks { display: flex; gap: 6px; }
+.st-pickc { flex: 1; min-width: 0; border-radius: var(--r-m); background: var(--look-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8), 0 0 0 1px var(--look-line); padding: 5px 8px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; }
+.st-pickc.on { box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8), 0 0 0 1.5px var(--on); }
+.st-pickc .st-nm { color: var(--look-f-pitch); overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.st-pickc .st-well { height: 40px; flex: none; }
+.st-pickc.st-add { flex: 0 0 170px; align-items: center; justify-content: center; color: var(--look-text-3); font: 500 var(--fs-m) var(--sans); background: transparent; border: 1px dashed var(--look-line); box-shadow: none; min-height: 64px; }
+.st-pickc.st-add span { font: 400 var(--fs-s) var(--sans); }
+.st-algos { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.st-algo { border-radius: var(--r-m); background: rgba(var(--black-rgb), .2); box-shadow: inset 0 0 0 1px var(--look-line); padding: 6px 9px; display: flex; flex-direction: column; gap: 2px; }
+.st-algo.on { background: color-mix(in srgb, var(--on) 8%, transparent); box-shadow: inset 0 0 0 1.5px var(--on); }
+.st-algo.off { opacity: .45; }
+.st-algo b { font: 700 var(--fs-m) var(--mono); letter-spacing: .12em; color: var(--look-text); }
+.st-algo span { font: 400 var(--fs-s)/1.35 var(--sans); color: var(--look-text-3); }
+#stVaryOf { font: 700 var(--fs-l) var(--mono); color: var(--look-f-pitch); min-width: 16px; }

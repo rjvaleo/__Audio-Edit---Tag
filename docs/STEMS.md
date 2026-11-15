@@ -84,6 +84,16 @@ page never talks to the PC. Configure it with `AUDIOLAB_GPU_HOST=pc` (and option
 - **Make → From words** runs Stable Audio Open Small (`sao\make.py --serve`, kept loaded,
   closed after ten idle minutes). The first request loads the model (about 15-50 s); then
   0.3-0.45 s a sound. Tries land in `Made/.words/`; kept ones in `Made/Words/`.
+- **Make → My sounds → Variations** (RJ: "build the Make page, start with Variations"): pick
+  up to four sounds (the library drawer adds them while on Make; **Pick it** on any try adds
+  it). Variations sends the chosen pick to the PC as the guide (`init_audio`), and Stable
+  Audio Open Small makes N new takes spread from a little closer to a little further than
+  **Near ↔ far**; the page's 0..1 maps onto the model's useful strengths 0.25..0.95 (measured:
+  0.1-0.3 nearly the same sound, 0.6 a clear variation, 0.9 mostly the words). An optional
+  phrase steers it; without one the file's name is used. `/api/stems/vary {p, n, nearFar,
+  prompt, seed}`. Kept ones go to `Made/Variations/`. Blend, Kit, Loop, Texture and Mutate
+  are shown as next (`WORK DIR/page-mockups/MAKE-PLAN.md`); the other models need RJ's OK.
+- The PC script is `tools/pc/make.py` in this repo, deployed to `C:\Users\rjval\agent-net\sao\make.py`.
 - Before either, Ollama's loaded model is stopped, to free the GPU.
 - `gpu.rs` holds the bridge; `/api/stems/words {prompt, seconds, n, seed}` is the route.
 

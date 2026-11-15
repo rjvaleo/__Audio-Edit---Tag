@@ -184,10 +184,14 @@ pub struct Made {
     pub remote: String,
     pub seed: u64,
     pub seconds: f64,
+    /// The guide strength it was made at (variations).
+    pub near_far: Option<f64>,
 }
 
-/// Make `n` sounds from `prompt` there. Blocks; the first request loads the model.
-pub fn words(gpu: &Gpu, id: &str, prompt: &str, seconds: f64, n: u32, seed: u64) -> Result<Vec<Made>, String> {
+/// Make sounds there from a request (prompt, seconds, n, seed, and for
+/// variations a guide's path there with a strength per try). Blocks; the first
+/// request loads the model.
+pub fn words(gpu: &Gpu, id: &str, req: Value) -> Result<Vec<Made>, String> {
     let mut guard = WORDS.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(w) = guard.as_mut() {
         if !matches!(w.child.try_wait(), Ok(None)) {
@@ -230,13 +234,7 @@ pub fn words(gpu: &Gpu, id: &str, prompt: &str, seconds: f64, n: u32, seed: u64)
         });
     }
     let w = guard.as_mut().unwrap();
-    let req = Value::obj()
-        .set("id", id)
-        .set("prompt", prompt)
-        .set("seconds", seconds)
-        .set("n", n)
-        .set("seed", seed as f64)
-        .set("out", format!("tries/mgl/{id}"));
+    let req = req.set("id", id).set("out", format!("tries/mgl/{id}"));
     let sent = w.stdin.write_all(format!("{}\n", req.to_string()).as_bytes()).and_then(|_| w.stdin.flush());
     if let Err(e) = sent {
         *guard = None;
@@ -266,7 +264,12 @@ pub fn words(gpu: &Gpu, id: &str, prompt: &str, seconds: f64, n: u32, seed: u64)
         }
         if let Some(p) = v.get("path").and_then(|p| p.as_str()) {
             let num = |k: &str| if let Some(Value::Num(n)) = v.get(k) { *n } else { 0.0 };
-            made.push(Made { remote: format!("{}/sao/{}", gpu.dir, p.replace('\\', "/")), seed: num("seed") as u64, seconds: num("seconds") });
+            made.push(Made {
+                remote: format!("{}/sao/{}", gpu.dir, p.replace('\\', "/")),
+                seed: num("seed") as u64,
+                seconds: num("seconds"),
+                near_far: if let Some(Value::Num(l)) = v.get("near_far") { Some(*l) } else { None },
+            });
         }
     }
     w.used = Instant::now();
