@@ -455,6 +455,14 @@ body.editing .transport { background: var(--surface); }
 .fx-picker-cat-name { display: flex; justify-content: space-between; align-items: baseline; }
 .fx-picker-cat-name b { font-size: var(--fs-m); font-weight: 650; }
 .fx-picker-cat-name i { font-style: normal; font-size: var(--fs-xs); color: var(--text-dimmer); }
+.fx-picker-search { width: 180px; height: 24px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: var(--r-s); background: var(--surface); color: var(--text-2); font: inherit; font-size: var(--fs-s); }
+.fx-picker-family { margin: 8px 0 4px; font-size: var(--fs-xs); font-weight: 650; letter-spacing: .12em; text-transform: uppercase; color: var(--text-dimmer); }
+.fx-picker-family:first-child { margin-top: 0; }
+/* The class badge: how exact a mode is, the original in its tooltip. */
+.fx-class-badge { align-self: flex-start; padding: 0 5px; border-radius: 999px; font-size: var(--fs-xs); font-weight: 600; line-height: 15px; white-space: nowrap;
+  color: var(--cls-c); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cls-c) 55%, transparent); background: color-mix(in srgb, var(--cls-c) 10%, transparent); }
+.fx-class-measured { --cls-c: var(--cls-measured); } .fx-class-static { --cls-c: var(--cls-static); } .fx-class-port { --cls-c: var(--cls-port); }
+.fx-class-paper { --cls-c: var(--cls-paper); } .fx-class-ours { --cls-c: var(--cls-ours); } .fx-class-partial { --cls-c: var(--cls-partial); }
 .fx-picker-group { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, 99px); }
 .fx-picker-item {
   display: flex; flex-direction: column; gap: 3px; padding: 5px;

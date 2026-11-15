@@ -231,4 +231,12 @@
   --chart-white:  oklch(84% 0.008 250);
   --chart-quiet:  oklch(30% 0.01 250);
   --chart-red:    oklch(65% 0.19 25);
+
+  /* Faces (SUITE-PLAN §4.1): the exactness class a module's mode carries. */
+  --cls-measured: oklch(88% 0.11 170);
+  --cls-static:   oklch(80% 0.10 245);
+  --cls-port:     oklch(78% 0.10 295);
+  --cls-paper:    oklch(82% 0.13 95);
+  --cls-ours:     oklch(77% 0.11 50);
+  --cls-partial:  oklch(82% 0.01 250);
 }

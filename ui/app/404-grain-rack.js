@@ -32,7 +32,10 @@ let gsFxGroups = null;
 function gsFxGroup(kind) {
   if (!gsFxGroups && Object.keys(state.shapers).length) {
     gsFxGroups = new Map();
-    for (const { group, items } of fxPickerCatalogue()) for (const it of items) gsFxGroups.set(it.kind, group);
+    // The page's own families (reverb & delay, chorus & phasing …), which its
+    // category labels, rack icons and knob pictures are keyed by: the picker
+    // files by module now (SUITE-PLAN §3.1), and this page keeps its look.
+    for (const { group, items } of fxPickerKinds()) for (const it of items) gsFxGroups.set(it.kind, group);
   }
   return gsFxGroups?.get(kind) || 'Utility & Shaping';
 }
@@ -45,6 +48,18 @@ const GS_GICON = {
   'Noise & Generators': 'M2 7 L3 4 L4 10 L5 3 L6 9 L7 5 L8 11 L9 4 L10 8 L11 6 L12 10 L13 3 L14 9 L16 7',
   Spectral: 'M2 12V8M5 12V4M8 12V6M11 12V2M14 12V9',
   'Utility & Shaping': 'M2 12 C4 12,5 3,8 3 H11 C13 3,13 12,16 12',
+  // the modules the add card lists (SUITE-PLAN §3.1), drawn with the family pictures
+  Reverb: 'M2 3 V11 M6 5 V9 M10 6 V8 M14 6.5 V7.5',
+  'Spectral Suite': 'M2 12V8M5 12V4M8 12V6M11 12V2M14 12V9',
+  Cassette: 'M2 4 H16 V11 H2 Z M6 7.5 m-1.5 0 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0 M12 7.5 m-1.5 0 a1.5 1.5 0 1 0 3 0 a1.5 1.5 0 1 0 -3 0',
+  Delay: 'M2 11 V3 M7 11 V6 M12 11 V8 M16 11 V9.5',
+  Modulation: 'M2 5 C5 1,7 1,9 5 S13 9,16 5 M2 10 C5 6,7 6,9 10 S13 14,16 10',
+  Pitch: 'M2 11 L6 7 L10 9 L16 3',
+  Dynamics: 'M2 12 L8 6 L16 3',
+  Saturation: 'M2 12 C6 12,6 2,10 2 H16',
+  Filter: 'M2 9 C5 9,6 3,9 3 S13 9,16 9',
+  Stereo: 'M2 7 H16 M5 4 L2 7 L5 10 M13 4 L16 7 L13 10',
+  Utility: 'M2 12 C4 12,5 3,8 3 H11 C13 3,13 12,16 12',
 };
 /// Each effect's own picture on its tile, or its family's when it has none.
 const GS_RACKI = [
