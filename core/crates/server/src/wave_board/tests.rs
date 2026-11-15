@@ -23,9 +23,10 @@ fn a_board_round_trips_through_json() {
 }
 
 #[test]
-fn the_fx_list_is_the_82_with_their_controls() {
+fn the_fx_list_is_the_83_with_their_controls() {
     let fx = fx_list();
-    assert_eq!(fx.len(), 82);
+    // 82, and Comb Hall (Freeverb) from SUITE-PLAN P4.
+    assert_eq!(fx.len(), 83);
     let find = |k: &str| fx.iter().find(|e| e.get("kind").and_then(Value::as_str) == Some(k)).unwrap();
     let hall = find("fx:lxp-hall");
     assert_eq!(hall.get("suite").and_then(Value::as_str), Some("Lexicon"));
