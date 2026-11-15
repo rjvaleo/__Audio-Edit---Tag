@@ -11,6 +11,7 @@ pub mod grain_lfos;
 pub mod grain_notes;
 pub mod http;
 pub mod live;
+pub mod log;
 pub mod make;
 /// MIDI in for the Wave synth. See `docs/WAVE-SYNTH.md`.
 pub mod midi;

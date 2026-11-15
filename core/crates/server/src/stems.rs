@@ -66,12 +66,21 @@ impl StemsJob {
         self.arrived.lock().unwrap().clear();
         self.incoming.lock().unwrap().clear();
         *self.started.lock().unwrap() = Some(Instant::now());
+        crate::log::line(&format!("split: {source} → {song}"));
         self.say("starting");
     }
+    /// What it is doing now, for the page; a new step is also a line in the
+    /// activity log (`log.rs`).
     pub fn say(&self, what: &str) {
+        if get(&self.phase) != what {
+            crate::log::line(&format!("split: {what}"));
+        }
         put(&self.phase, what);
     }
     pub fn fail(&self, what: &str) {
+        if !what.is_empty() {
+            crate::log::line(&format!("split: failed: {what}"));
+        }
         put(&self.error, what);
     }
     pub fn set_progress(&self, f: f64) {
@@ -316,10 +325,18 @@ fn separate_remote_in(job: &StemsJob, gpu: &crate::gpu::Gpu, input: &Path, out: 
     });
     if let Some(e) = err {
         let t3 = tail.clone();
+        // A line in the log at each quarter, and whatever else Demucs says.
+        let mut told = 0u32;
         lines_cr(e, |l| {
             if let Some(p) = tqdm_percent(l) {
                 job.set_progress((0.1 + 0.6 * p / 100.0) * share);
+                let q = (p / 25.0).floor() as u32;
+                if q > told {
+                    told = q;
+                    crate::log::line(&format!("split: {}% split on the {}", q * 25, gpu.host));
+                }
             } else if !l.trim().is_empty() {
+                crate::log::line(&format!("{}: {}", gpu.host, l.trim()));
                 *t3.lock().unwrap() = l.to_string();
             }
         });
@@ -372,6 +389,11 @@ fn separate_remote_in(job: &StemsJob, gpu: &crate::gpu::Gpu, input: &Path, out: 
         return Err(format!("Demucs made no stems on the {}", gpu.host));
     }
     stop(job)?;
+    crate::log::line(&format!(
+        "split: {} stems to bring back, {} in all",
+        packed.len(),
+        crate::log::mb(packed.iter().map(|(_, b)| b).sum())
+    ));
     job.say(&format!("bringing the stems back from the {}", gpu.host));
     // Each stem in its own transfer, unpacked the moment it lands, so the page
     // can fill its lane in then (RJ: "filling in as it comes in").
@@ -387,13 +409,14 @@ fn separate_remote_in(job: &StemsJob, gpu: &crate::gpu::Gpu, input: &Path, out: 
     let results: Vec<Result<(String, PathBuf), String>> = std::thread::scope(|sc| {
         let handles: Vec<_> = packed
             .iter()
-            .map(|(n, _)| {
+            .map(|(n, bytes)| {
                 let remote = format!("{}:{songdir}/{n}", gpu.host);
                 let part = out.join(format!("{n}.part"));
                 let flac = out.join(n);
                 let wav = out.join(n.replace(".flac", ".wav"));
                 let stem = n.trim_end_matches(".flac").to_string();
                 sc.spawn(move || -> Result<(String, PathBuf), String> {
+                    let t0 = Instant::now();
                     let ok = std::process::Command::new("scp")
                         .args(["-q", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR"])
                         .arg(&remote)
@@ -407,6 +430,7 @@ fn separate_remote_in(job: &StemsJob, gpu: &crate::gpu::Gpu, input: &Path, out: 
                     std::fs::rename(&part, &flac).map_err(|e| e.to_string())?;
                     crate::flac::to_wav(&flac, &wav)?;
                     let _ = std::fs::remove_file(&flac);
+                    crate::log::line(&format!("split: received {stem} ({}, {})", crate::log::mb(*bytes), crate::log::since(t0)));
                     job.arrived.lock().unwrap().push(stem.clone());
                     Ok((stem, wav))
                 })

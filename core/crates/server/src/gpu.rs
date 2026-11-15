@@ -271,7 +271,13 @@ pub fn words(gpu: &Gpu, id: &str, req: Value) -> Result<Vec<Made>, String> {
         let stdin = child.stdin.take().ok_or("no stdin")?;
         let mut out = BufReader::new(child.stdout.take().ok_or("no stdout")?);
         if let Some(err) = child.stderr.take() {
-            std::thread::spawn(move || lines_cr(err, |_| {}));
+            // What the sound maker says goes to the activity log (`log.rs`).
+            let host = gpu.host.clone();
+            std::thread::spawn(move || lines_cr(err, |l| {
+                if !l.trim().is_empty() && tqdm_percent(l).is_none() {
+                    crate::log::line(&format!("{host} (sound maker): {}", l.trim()));
+                }
+            }));
         }
         let mut line = String::new();
         loop {

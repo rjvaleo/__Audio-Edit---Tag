@@ -141,6 +141,7 @@ pub(super) fn api_stems_split(app: &Arc<App>, req: &Request) -> Response {
     }
     job(app).begin(&rel, &song_rel);
     let app2 = Arc::clone(app);
+    let told = song_rel.clone();
     std::thread::spawn(move || {
         let j = job(&app2);
         let t0 = std::time::Instant::now();
@@ -168,6 +169,7 @@ pub(super) fn api_stems_split(app: &Arc<App>, req: &Request) -> Response {
             Ok(()) => {
                 j.set_progress(1.0);
                 j.say("done");
+                crate::log::line(&format!("split: {told} done in {}", crate::log::since(t0)));
             }
             Err(e) => {
                 j.fail(&e);
