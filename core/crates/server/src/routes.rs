@@ -187,6 +187,10 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
             Response::ok("text/javascript; charset=utf-8", SEQ_ATMOS_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
+        ("GET" | "HEAD", "/sequencer/keys.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_KEYS_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
         ("GET" | "HEAD", "/sequencer/look.js") => {
             Response::ok("text/javascript; charset=utf-8", SEQ_LOOK_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
@@ -423,6 +427,8 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/engine/voice") => crate::grain_notes::post_voice(app, req),
         ("GET", "/api/engine/midi") => crate::grain_notes::get_midi(app),
         ("POST", "/api/engine/midi") => crate::grain_notes::post_midi(app, req),
+        ("GET", "/api/engine/midi/events") => crate::grain_notes::get_midi_events(app, req),
+        ("POST", "/api/engine/midi/inject") => crate::grain_notes::post_midi_inject(app, req),
         ("GET", "/api/engine/lfos") => crate::grain_lfos::get(app),
         ("POST", "/api/engine/lfos") => crate::grain_lfos::post(app, req),
         ("POST", "/api/engine/pad") => api_engine_pad(app, req),
