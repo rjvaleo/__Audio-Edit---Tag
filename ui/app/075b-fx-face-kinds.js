@@ -2,9 +2,30 @@
 
 /// Display, then the controls in their sections, packed into rows that each
 /// run the module's full width.
+/// A face's groups when its effect declares no panel: by each control's role
+/// (SUITE-PLAN §2.0), in the roles' order, so one layout serves every mode of a
+/// module while each keeps its own controls. One group where none has a role.
+const FX_ROLES = ['time', 'space', 'tone', 'motion', 'drive', 'noise', 'dynamics', 'pitch', 'stereo', 'output', 'engine'];
+function fxRoleGroups(specs) {
+  if (!specs.some((p) => p.role)) return [{ label: '', keys: specs.map((p) => p.key) }];
+  const by = new Map();
+  for (const p of specs) {
+    const r = FX_ROLES.includes(p.role) ? p.role : 'engine';
+    if (!by.has(r)) by.set(r, []);
+    by.get(r).push(p.key);
+  }
+  return FX_ROLES.filter((r) => by.has(r)).map((r) => ({ label: r[0].toUpperCase() + r.slice(1), keys: by.get(r) }));
+}
+
+/// The room a face's controls need, in px: a knob or a switch tile at its
+/// narrowest, a fader, a section's padding, the gap between sections, and the
+/// width the rows have inside a module (`.fx-module-controls` of a face).
+const FX_KNOB_MIN = 46, FX_FADER_MIN = 29, FX_SECT_PAD = 4, FX_ROW_GAP = 2;
+const FX_ROW_W = FX_FACE_W - 31;
+
 function fxDeckFace(box, m, el) {
   const panel = fxPanelOf(m.slot.kind, new Set(m.specs.map((p) => p.key)));
-  const groups = panel?.groups?.length ? panel.groups : [{ label: '', keys: m.specs.map((p) => p.key) }];
+  const groups = panel?.groups?.length ? panel.groups : fxRoleGroups(m.specs);
   const pad = panel?.pad && m.byKey[panel.pad.x] && m.byKey[panel.pad.y] ? panel.pad : null;
   const heroKey = FXP.heroFor(m.slot.kind);
   const controls = {};
@@ -73,23 +94,54 @@ function fxDeckFace(box, m, el) {
     }
     if (sec.querySelector('div').children.length) secs.push(sec);
   }
-  // Rows of up to seven controls, faders counting for less than a knob, each
-  // row stretched to the module's full width so none has an empty end.
+  // Rows packed by the room each control needs: a knob or a tile cannot be
+  // narrower than FX_KNOB_MIN, a fader than FX_FADER_MIN. Each row is then
+  // stretched to the module's full width so none has an empty end, and none
+  // runs past it. Packing by a count of controls instead let seven knobs and
+  // their padding run 27 px past the edge.
   const weight = (sec) => [...sec.querySelector('div').children].reduce((a, c) => a + (c.classList.contains('fxf') ? .7 : 1), 0);
-  const musical = secs.filter((s) => !s.classList.contains('tech'));
+  const need = (sec) => [...sec.querySelector('div').children].reduce((a, c) => a + (c.classList.contains('fxf') ? FX_FADER_MIN : FX_KNOB_MIN), 0) + FX_SECT_PAD;
+  // A group too wide for one row goes on in a second section, under its own
+  // name, its controls shared evenly between them.
+  const musical = [];
+  for (const sec of secs.filter((s) => !s.classList.contains('tech'))) {
+    if (need(sec) <= FX_ROW_W) { musical.push(sec); continue; }
+    const kids = [...sec.querySelector('div').children];
+    const parts = Math.ceil((need(sec) - FX_SECT_PAD) / (FX_ROW_W - FX_SECT_PAD));
+    const per = Math.ceil(kids.length / parts);
+    musical.push(sec);
+    for (let i = per; i < kids.length; i += per) {
+      const more = document.createElement('div');
+      more.className = sec.className;
+      more.innerHTML = '<b><span></span></b><div></div>';
+      more.querySelector('b span').textContent = sec.querySelector('b span')?.textContent || '';
+      if (!sec.querySelector('b')) more.querySelector('b').remove();
+      kids.slice(i, i + per).forEach((k) => more.querySelector('div').appendChild(k));
+      musical.push(more);
+    }
+  }
   let row = null, used = 0;
   for (const sec of musical) {
-    const w = weight(sec);
-    sec.style.setProperty('--n', w);
-    if (!row || used + w > 7.5) { row = document.createElement('div'); row.className = 'fx-row'; deck.appendChild(row); used = 0; }
+    const w = need(sec);
+    sec.style.setProperty('--n', weight(sec));
+    if (!row || used + FX_ROW_GAP + w > FX_ROW_W) { row = document.createElement('div'); row.className = 'fx-row'; deck.appendChild(row); used = -FX_ROW_GAP; }
     row.appendChild(sec);
-    used += w;
+    used += FX_ROW_GAP + w;
   }
-  // A last row of one control joins the row above rather than standing alone.
+  // A last row of one control joins the row above rather than standing alone,
+  // where there is room for it.
   const rows = [...deck.children];
-  if (rows.length > 1 && [...rows.at(-1).children].reduce((a, s) => a + weight(s), 0) <= 1.2) {
+  const rowNeed = (r) => [...r.children].reduce((a, s) => a + need(s) + FX_ROW_GAP, -FX_ROW_GAP);
+  if (rows.length > 1 && [...rows.at(-1).children].reduce((a, s) => a + weight(s), 0) <= 1.2
+      && rowNeed(rows.at(-2)) + FX_ROW_GAP + rowNeed(rows.at(-1)) <= FX_ROW_W) {
     [...rows.at(-1).children].forEach((s) => rows.at(-2).appendChild(s));
     rows.at(-1).remove();
+  }
+  // A row whose weights add to less than one — a single fader — would grow
+  // by only that share of its width and end short; scaled, it fills the row.
+  for (const r of deck.querySelectorAll(':scope > .fx-row')) {
+    const total = [...r.children].reduce((a, s) => a + weight(s), 0);
+    if (total > 0 && total < 1) [...r.children].forEach((s) => s.style.setProperty('--n', weight(s) / total));
   }
   for (const s of secs.filter((x) => x.classList.contains('tech'))) deck.appendChild(s);
   if (techRows.length) {

@@ -58,6 +58,10 @@ pub struct SlotModule {
     pub rev: Option<u16>,
     /// `{ "<mode>": { "<key>": value } }`, as the interface wrote it.
     pub memory: Option<Value>,
+    /// The look a Hyperprism, SoundHack or Lexicon mode is drawn in, when the
+    /// slot chose one: `"mgl"` or `"original"` (SUITE-PLAN §4.1, D6). None is
+    /// the mode's own look, so a document that never chose opens as it was.
+    pub face: Option<&'static str>,
 }
 
 /// A module's footer: 0..1, and dB.
@@ -442,6 +446,11 @@ impl RackSpec {
                         // rev 1 is what no rev means, so it is not kept apart
                         .filter(|n| n.is_finite() && *n >= 2.0 && *n <= u16::MAX as f64).map(|n| n as u16),
                     memory: it.get("memory").filter(|m| matches!(m, Value::Obj(_))).cloned(),
+                    face: match it.get("face").and_then(Value::as_str) {
+                        Some("mgl") => Some("mgl"),
+                        Some("original") => Some("original"),
+                        _ => None,
+                    },
                 };
                 if module != SlotModule::default() {
                     modules.insert(id.clone(), module);
@@ -515,6 +524,9 @@ impl RackSpec {
                 }
                 if let Some(mem) = module.and_then(|m| m.memory.clone()) {
                     base = base.set("memory", mem);
+                }
+                if let Some(face) = module.and_then(|m| m.face) {
+                    base = base.set("face", face);
                 }
                 match s {
                     SlotSpec::Gain { db, .. } => base.set("db", *db as f64),
