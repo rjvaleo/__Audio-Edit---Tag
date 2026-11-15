@@ -78,7 +78,7 @@ def main():
                 a.seed = int(req.get("seed", a.seed))
                 a.out = req.get("out", a.out)
                 os.makedirs(a.out, exist_ok=True)
-                make(model, rate, a, req, tag=req.get("id"))
+                (blend if req.get("blend") else make)(model, rate, a, req, tag=req.get("id"))
                 print(json.dumps({"id": req.get("id"), "done": True}), flush=True)
             except Exception as e:  # report, and keep serving
                 print(json.dumps({"id": req.get("id"), "error": str(e)}), flush=True)
@@ -103,9 +103,13 @@ def make(model, rate, a, job, tag=None):
             size = ((int(secs * rate) + 2047) // 2048) * 2048
     slug = job.get("name") or re.sub(r"[^a-z0-9]+", "-", prompt.lower()).strip("-")[:40] or "sound"
     levels = job.get("levels")  # one guide strength per try, near to far
+    prompts = job.get("prompts")  # one prompt per try (a kit: its parts)
     for i in range(int(job.get("n", a.n))):
         seed = a.seed + i
         level = float(levels[i % len(levels)]) if levels else float(job.get("near_far", 0.5))
+        if prompts:
+            prompt = prompts[i % len(prompts)]
+            slug = f"part{i:02d}"
         t1 = time.time()
         with torch.no_grad():
             out = generate_diffusion_cond(
@@ -124,6 +128,43 @@ def make(model, rate, a, job, tag=None):
         path = os.path.join(a.out, f"{slug}-{seed}.wav" if not init else f"{slug}-{i:02d}-{seed}.wav")
         sf.write(path, x / pk * 0.89, rate, subtype="FLOAT")
         print(json.dumps({"id": tag, "path": path, "prompt": prompt, "seed": seed, "seconds": round(len(x) / rate, 3), "took": round(time.time() - t1, 2), "guided": init is not None, "near_far": level if init else None}), flush=True)
+
+def blend(model, rate, a, job, tag=None):
+    """Two sounds into the model's own sound space (its autoencoder), points part
+    way between them back out: n sounds from A to B. With "wander" (0..1) each
+    in-between is also re-made by the model from there, that much loosened."""
+    from stable_audio_tools.inference.utils import prepare_audio
+    pt = model.pretransform
+    dtype = next(pt.parameters()).dtype
+    raw = [sf.read(path, dtype="float32", always_2d=True) for path in job["blend"][:2]]
+    secs = max(0.5, min(11.0, max(len(x) / r for x, r in raw)))
+    size = ((int(secs * rate) + 2047) // 2048) * 2048
+    lat = []
+    with torch.no_grad():
+        for x, r in raw:
+            t = prepare_audio(torch.from_numpy(x.T.copy()), in_sr=r, target_sr=rate, target_length=size, target_channels=2, device=a.device)
+            lat.append(pt.encode(t.to(dtype)))
+    n = max(2, int(job.get("n", 7)))
+    wander = float(job.get("wander", 0.0))
+    for i in range(n):
+        f = i / (n - 1)
+        t1 = time.time()
+        with torch.no_grad():
+            z = lat[0] * (1 - f) + lat[1] * f
+            audio = pt.decode(z).to(torch.float32)
+            if wander > 0.01:
+                audio = generate_diffusion_cond(
+                    model, steps=a.steps, cfg_scale=a.cfg,
+                    conditioning=[{"prompt": job.get("prompt", ""), "seconds_total": secs}],
+                    sample_size=size, sample_rate=rate, seed=a.seed + i, device=a.device,
+                    init_audio=(rate, audio[0].cpu()), init_noise_level=min(0.8, 0.15 + 0.55 * wander),
+                ).to(torch.float32)
+        x = audio[0].cpu().numpy().T[: int(secs * rate)]
+        pk = float(abs(x).max()) or 1.0
+        path = os.path.join(a.out, f"blend-{i:02d}.wav")
+        sf.write(path, x / pk * 0.89, rate, subtype="FLOAT")
+        print(json.dumps({"id": tag, "path": path, "seed": a.seed + i, "seconds": round(len(x) / rate, 3), "took": round(time.time() - t1, 2), "t": round(f, 3)}), flush=True)
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -434,11 +434,17 @@ pub(super) fn api_stems_words(app: &Arc<App>, req: &Request) -> Response {
         Some(Value::Num(n)) => *n,
         _ => d,
     };
-    let seconds = num("seconds", 2.0).clamp(0.5, 11.0);
+    // Each maker's own longest: Small 11 s, TangoFlux 30 s, ACE-Step 10 minutes.
+    let longest = match v.get("model").and_then(|m| m.as_str()) { Some("tangoflux") => 30.0, Some("acestep") => 600.0, _ => 11.0 };
+    let seconds = num("seconds", 2.0).clamp(0.5, longest);
     let n = num("n", 4.0).clamp(1.0, 8.0) as u32;
     let seed = num("seed", (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1) % 100_000) as f64) as u64;
     let id = format!("w{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0));
-    let req = Value::obj().set("prompt", prompt.clone()).set("seconds", seconds).set("n", n).set("seed", seed as f64);
+    let model = v.get("model").and_then(|m| m.as_str()).unwrap_or("sao").to_string();
+    if crate::gpu::maker(&model).is_none() {
+        return Response::error(400, "no such sound maker");
+    }
+    let req = Value::obj().set("prompt", prompt.clone()).set("seconds", seconds).set("n", n).set("seed", seed as f64).set("model", model.clone());
     let made = match crate::gpu::words(&gpu, &id, req) {
         Ok(m) => m,
         Err(e) => return Response::error(502, &e),
@@ -451,7 +457,7 @@ pub(super) fn api_stems_words(app: &Arc<App>, req: &Request) -> Response {
     if let Err(e) = gpu.get_many(&pairs) {
         return Response::error(502, &e);
     }
-    let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}'", crate::gpu::win(&format!("{}/sao/tries/mgl/{id}", gpu.dir))));
+    let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}'", crate::gpu::win(&crate::gpu::tries_dir(&gpu, &model, &id))));
     let short: String = prompt.chars().take(40).collect();
     let rows: Vec<Value> = made
         .iter()
@@ -536,6 +542,166 @@ pub(super) fn api_stems_vary(app: &Arc<App>, req: &Request) -> Response {
         })
         .collect();
     Response::json(Value::Arr(rows).to_string())
+}
+
+/// Send `guides` (library files) to the GPU machine, run `req` (built from
+/// their paths there), bring the tries back as `Made/.words/<id>-NN.wav`, and
+/// tidy up there. Each try comes back with its made record and library path.
+fn gpu_tries(gpu: &crate::gpu::Gpu, lib: &Path, id: &str, model: &str, guides: &[PathBuf], req: impl FnOnce(Vec<String>) -> Value) -> Result<Vec<(crate::gpu::Made, String)>, Response> {
+    let gdir = format!("{}/sao/guides", gpu.dir);
+    gpu.ps(&format!("New-Item -ItemType Directory -Force -Path '{}' | Out-Null", crate::gpu::win(&gdir))).map_err(|e| Response::error(502, &e))?;
+    let mut there = Vec::new();
+    for (k, g) in guides.iter().enumerate() {
+        let ext = g.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "wav".into());
+        let remote = format!("{gdir}/{id}-{k}.{ext}");
+        gpu.put(g, &remote).map_err(|e| Response::error(502, &e))?;
+        there.push(remote);
+    }
+    let made = crate::gpu::words(gpu, id, req(there.iter().map(|p| crate::gpu::win(p)).collect()).set("model", model));
+    for p in &there {
+        let _ = gpu.ps(&format!("Remove-Item -Force '{}' -ErrorAction SilentlyContinue", crate::gpu::win(p)));
+    }
+    let made = made.map_err(|e| Response::error(502, &e))?;
+    let dir = lib.join("Made").join(".words");
+    std::fs::create_dir_all(&dir).map_err(|e| Response::error(500, &e.to_string()))?;
+    let pairs: Vec<(String, PathBuf)> = made.iter().enumerate().map(|(i, m)| (m.remote.clone(), dir.join(format!("{id}-{i:02}.wav")))).collect();
+    gpu.get_many(&pairs).map_err(|e| Response::error(502, &e))?;
+    let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}'", crate::gpu::win(&crate::gpu::tries_dir(gpu, model, id))));
+    Ok(made.into_iter().enumerate().map(|(i, m)| (m, format!("Made/.words/{id}-{i:02}.wav"))).collect())
+}
+
+fn job_id(tag: &str) -> String {
+    format!("{tag}{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0))
+}
+
+/// POST {a, b, n, wander, prompt}: blend two library sounds. Both go into the
+/// model's own sound space on the GPU machine, and `n` sounds come back from A
+/// to B. `wander` (0..1) lets the model re-make each in-between, that loosely.
+pub(super) fn api_stems_blend(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let Some(gpu) = crate::gpu::config(&app.data_dir) else { return Response::error(503, "blending needs the GPU machine: set AUDIOLAB_GPU_HOST") };
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    let find = |k: &str| v.get(k).and_then(|p| p.as_str()).and_then(|p| resolve_within(&lib, p).map(|f| (p.to_string(), f)));
+    let (Some((_, a)), Some((_, b))) = (find("a"), find("b")) else { return Response::error(404, "pick two sounds in the library") };
+    let num = |k: &str, d: f64| match v.get(k) {
+        Some(Value::Num(n)) => *n,
+        _ => d,
+    };
+    let n = num("n", 7.0).clamp(3.0, 12.0) as usize;
+    let wander = num("wander", 0.0).clamp(0.0, 1.0);
+    let prompt: String = v.get("prompt").and_then(|p| p.as_str()).unwrap_or("").chars().filter(|c| !c.is_control()).take(300).collect();
+    let id = job_id("b");
+    let made = match gpu_tries(&gpu, &lib, &id, "sao", &[a.clone(), b.clone()], |g| {
+        Value::obj().set("blend", Value::Arr(g.into_iter().map(Value::from).collect())).set("n", n).set("wander", wander).set("prompt", prompt.clone()).set("seed", 1.0)
+    }) {
+        Ok(m) => m,
+        Err(r) => return r,
+    };
+    let name = |p: &Path| p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let (na, nb) = (name(&a), name(&b));
+    let rows: Vec<Value> = made
+        .iter()
+        .enumerate()
+        .map(|(i, (m, p))| {
+            let label = if i == 0 { format!("A · {na}") } else if i + 1 == made.len() { format!("B · {nb}") } else { format!("{i}/{} · {na} → {nb}", made.len() - 1) };
+            Value::obj().set("p", p.clone()).set("label", label).set("group", "blend").set("seconds", m.seconds).set("t", i as f64 / (made.len().max(2) - 1) as f64)
+        })
+        .collect();
+    Response::json(Value::Arr(rows).to_string())
+}
+
+/// The parts a kit can be made of: name, words for the model, for a tuned part
+/// (interval above the key, lowest octave, highest octave), and how long it is.
+const KIT_PARTS: [(&str, &str, &str, Option<(i32, i32, i32)>, f32); 9] = [
+    ("hat", "CLOSED HAT", "closed hi-hat", None, 0.5),
+    ("ohat", "OPEN HAT", "open hi-hat", None, 1.2),
+    ("shaker", "SHAKER", "shaker", None, 0.8),
+    ("rim", "RIM", "rimshot", None, 0.6),
+    ("clap", "CLAP", "clap", None, 0.9),
+    ("tomlo", "LOW TOM", "low tom drum", Some((0, 2, 3)), 1.2),
+    ("tommid", "MID TOM", "mid tom drum", Some((7, 3, 4)), 1.0),
+    ("conga", "CONGA", "conga drum", Some((12, 3, 4)), 0.9),
+    ("bass", "BASS NOTE", "deep sub bass note", Some((0, 1, 2)), 2.0),
+];
+
+/// POST {picks: [p, …], parts: [key, …], style, key?}: a kit around the picks.
+/// The picks are measured here (pitch, decay, brightness); each part is made on
+/// the GPU machine from words that carry those, guided loosely by the first
+/// pick; tuned parts (toms, conga, bass note) are retuned here to the picks' key.
+pub(super) fn api_stems_kit(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let Some(gpu) = crate::gpu::config(&app.data_dir) else { return Response::error(503, "a kit needs the GPU machine: set AUDIOLAB_GPU_HOST") };
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    let picks: Vec<PathBuf> = v.get("picks").and_then(|a| a.arr()).map(|a| a.iter().filter_map(|p| p.as_str()).filter_map(|p| resolve_within(&lib, p)).collect()).unwrap_or_default();
+    if picks.is_empty() {
+        return Response::error(400, "pick a sound or two first");
+    }
+    let keys: Vec<String> = v.get("parts").and_then(|a| a.arr()).map(|a| a.iter().filter_map(|p| p.as_str()).map(str::to_string).collect()).unwrap_or_default();
+    let parts: Vec<_> = KIT_PARTS.iter().filter(|p| keys.is_empty() || keys.iter().any(|k| k == p.0)).collect();
+    if parts.is_empty() {
+        return Response::error(400, "choose at least one part");
+    }
+    // What the picks are like.
+    let chars: Vec<songprint::sound::Character> = picks.iter().filter_map(|p| sound::read_span(p, 0.0, 3.0).ok()).map(|s| songprint::sound::character(&s)).collect();
+    let key_pc = match v.get("key") {
+        Some(Value::Num(n)) => Some(*n as i32),
+        _ => chars.iter().find_map(|c| c.pitch).map(|m| (m.round() as i32).rem_euclid(12)),
+    };
+    let decay = chars.iter().map(|c| c.decay).sum::<f32>() / chars.len().max(1) as f32;
+    let zcr = chars.iter().map(|c| c.zcr).sum::<f32>() / chars.len().max(1) as f32;
+    let length = if decay < 0.2 { "short, tight" } else if decay > 0.6 { "long, ringing" } else { "medium decay" };
+    let tone = if zcr < 1500.0 { "dark, warm" } else if zcr > 5000.0 { "bright, crisp" } else { "" };
+    let style: String = v.get("style").and_then(|p| p.as_str()).unwrap_or("").chars().filter(|c| !c.is_control()).take(120).collect();
+    let words = |w: &str| [w, length, tone, style.as_str(), "one shot"].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(", ");
+    let prompts: Vec<String> = parts.iter().map(|p| words(p.2)).collect();
+    let secs = parts.iter().map(|p| p.4).fold(0.5f32, f32::max);
+    let id = job_id("k");
+    // Stable Audio Open Small: the only maker that takes a prompt per try.
+    let made = match gpu_tries(&gpu, &lib, &id, "sao", &[], |_| {
+        Value::obj().set("prompts", Value::Arr(prompts.iter().cloned().map(Value::from).collect())).set("n", parts.len()).set("seconds", secs as f64).set("seed", (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1) % 100_000) as f64)
+    }) {
+        Ok(m) => m,
+        Err(r) => return r,
+    };
+    let mut rows = Vec::new();
+    for ((m, p), part) in made.iter().zip(&parts) {
+        let file = lib.join(p);
+        let mut label = part.1.to_string();
+        let mut note = Value::Null;
+        if let Ok(mut s) = sound::read_span(&file, 0.0, part.4 + 0.3) {
+            // Each part trimmed to its own length.
+            let keep = ((part.4 * s.rate as f32) as usize).min(s.frames()) * s.channels;
+            s.x.truncate(keep);
+            if let (Some((iv, lo, hi)), Some(pc)) = (part.3, key_pc) {
+                if let Some(now) = songprint::sound::pitch_of(&s) {
+                    // Only the note's name is set, never more than six semitones: a
+                    // low drum's pitch is often read an octave or more out, and a
+                    // bigger move sounds sped up. The octave named is the part's own.
+                    let want = (pc + iv).rem_euclid(12) as f32;
+                    let d = (want - now).rem_euclid(12.0);
+                    let d = if d > 6.0 { d - 12.0 } else { d };
+                    let t = now + d;
+                    let shown = ((pc + iv).rem_euclid(12) + 12 * (lo + 1)) as f32;
+                    let _ = hi;
+                    s = songprint::sound::shift(&s, t - now);
+                    let n = shown.round() as i32;
+                    label = format!("{label} · {}{} · tuned {:+.1} st", songprint::pitch::NAMES[n.rem_euclid(12) as usize], n / 12 - 1, t - now);
+                    note = Value::from(n as f64);
+                }
+            }
+            let c = sound::clean(&s, &sound::Clean { trim_db: -60.0, fade_in_ms: 1.0, fade_out_ms: 30.0, peak_db: Some(-1.0) });
+            let _ = sound::write_wav(&file, &c);
+        }
+        rows.push(Value::obj().set("p", p.clone()).set("label", label).set("group", "kit").set("part", part.0).set("note", note).set("seconds", m.seconds.min(part.4 as f64)));
+    }
+    let key = key_pc.map(|k| songprint::pitch::NAMES[k.rem_euclid(12) as usize]).unwrap_or("none");
+    Response::json(
+        Value::obj()
+            .set("tries", Value::Arr(rows))
+            .set("key", key)
+            .set("words", format!("{length}{}{}", if tone.is_empty() { "" } else { ", " }, tone))
+            .to_string(),
+    )
 }
 
 /// POST {p: a try, rate, air, above, trimDb, fadeOutMs, peakDb, folder, name}:

@@ -60,9 +60,8 @@ Click a try to hear it and choose it. Then the chain:
 
 **Save to the library** writes 24-bit WAV to `Made/Drums/` or `Made/Bass/`.
 
-Sounds from words (Stable Audio Open Small) are not installed: its licence (Stability AI
-Community Licence: free under US$1M a year in revenue, registration, "Powered by
-Stability AI") needs RJ's OK first. See `WORK DIR/page-mockups/MODELS.md`.
+Sounds from words and from my sounds run on the PC; see below. Licences (RJ OK'd personal
+use) are in `WORK DIR/page-mockups/MODELS.md`.
 
 ## The GPU machine (the PC)
 
@@ -91,11 +90,28 @@ page never talks to the PC. Configure it with `AUDIOLAB_GPU_HOST=pc` (and option
   **Near ↔ far**; the page's 0..1 maps onto the model's useful strengths 0.25..0.95 (measured:
   0.1-0.3 nearly the same sound, 0.6 a clear variation, 0.9 mostly the words). An optional
   phrase steers it; without one the file's name is used. `/api/stems/vary {p, n, nearFar,
-  prompt, seed}`. Kept ones go to `Made/Variations/`. Blend, Kit, Loop, Texture and Mutate
-  are shown as next (`WORK DIR/page-mockups/MAKE-PLAN.md`); the other models need RJ's OK.
-- The PC script is `tools/pc/make.py` in this repo, deployed to `C:\Users\rjval\agent-net\sao\make.py`.
+  prompt, seed}`. Kept ones go to `Made/Variations/`.
+- **Blend two** (RJ: "I don't think that would be an either or. I think I can do both"): picks
+  A and B are encoded by Small's autoencoder, mixed in steps from A to B and decoded, with
+  **Wander** letting the model move away from the straight mix. Measured: likeness to A falls
+  cleanly 1.00 to 0.42 across the steps. `/api/stems/blend {blend:[a,b], n, wander, prompt}`;
+  kept ones in `Made/Blends/`.
+- **Kit around:** the picks are measured (pitch, decay, brightness), and Small makes the
+  chosen parts (kick, snare, hats, toms, conga, bass…) in one batch, each with its own words.
+  Tuned parts are moved to the song's key: low tom on the key note, mid tom a fifth up, conga
+  an octave up, bass on the key note; at most 6 semitones, so a part keeps its own range. About
+  5 s for eight parts. `/api/stems/kit`; kept ones in `Made/Kits/`. Loop, Texture and Mutate are
+  shown as next (`WORK DIR/page-mockups/MAKE-PLAN.md`).
+- **Models** on Make → From words: Stable Audio Open Small (up to 11 s), TangoFlux (up to 30 s;
+  non-commercial licence, personal use only) and ACE-Step 1.5 (songs up to 10 min; MIT; its first
+  use downloads about 10 GB to the PC). Each has its own folder and venv on the PC
+  (`sao`, `tangoflux`, `acestep\ACE-Step-1.5\.venv`); one is loaded at a time, and choosing
+  another closes it. TangoFlux checked: two 4 s tries in 47 s, model load included. ACE-Step is
+  wired but not yet run. My sounds always uses Small, the only one that takes a guide sound.
+- The PC scripts are `tools/pc/make.py`, `make_tangoflux.py` and `make_acestep.py` in this repo,
+  deployed as `make.py` in each model's folder (`C:\Users\rjval\agent-net\sao\make.py` …).
 - Before either, Ollama's loaded model is stopped, to free the GPU.
-- `gpu.rs` holds the bridge; `/api/stems/words {prompt, seconds, n, seed}` is the route.
+- `gpu.rs` holds the bridge; `/api/stems/words {prompt, seconds, n, seed, model}` is the route.
 
 Without a GPU machine, Split falls back to the local helper below, and From words is off.
 
