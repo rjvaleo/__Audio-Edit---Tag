@@ -665,5 +665,29 @@ pub(super) fn api_seq_kits(app: &Arc<App>) -> Response {
             }
         }
     }
+    // A split song's own kit (`stem_kits.rs`): `Stems/<song>/kit/`, first in the
+    // list, named for the song.
+    if let Ok(songs) = std::fs::read_dir(lib.join("Stems")) {
+        let mut own: Vec<Value> = Vec::new();
+        for s in songs.flatten() {
+            let d = s.path().join("kit");
+            let Ok(fs) = std::fs::read_dir(&d) else { continue };
+            let mut files: Vec<String> = fs.flatten().filter(|f| f.path().is_file()).map(|f| f.file_name().to_string_lossy().to_string()).filter(|n| audio(n)).collect();
+            if files.len() < 3 {
+                continue;
+            }
+            files.sort();
+            let Ok(rel) = d.strip_prefix(&lib) else { continue };
+            own.push(
+                Value::obj()
+                    .set("name", format!("{} (its own)", s.file_name().to_string_lossy().replace('_', " ")))
+                    .set("path", rel.to_string_lossy().to_string())
+                    .set("own", true)
+                    .set("files", Value::Arr(files.into_iter().map(Value::from).collect())),
+            );
+        }
+        own.extend(out);
+        out = own;
+    }
     Response::json(Value::Arr(out).to_string())
 }
