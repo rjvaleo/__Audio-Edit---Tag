@@ -685,11 +685,24 @@ function clMake(verb, ctx = {}) {
   CL.gen = CL.family.length - 1;
   CL.picked = 0;
   CL.verb = null; CL.leans = [];
+  CL.saved = null; CL.keepError = null;
+  CL.made4 = clHeadline(verb, ctx);
   clSetFrom(takes[0]);
   // Playing: the first new take carries on playing.
   if (isPlaying) clUseTake(takes[0]);
   clSave(); clPaintAll(true);
-  clToast(`Four takes · ${clSaid(verb, ctx).split(";")[0]}`);
+  clToast(`${CL.made4} · press ▶ to hear one`);
+  // The takes, in view: below the fold they would arrive unseen.
+  requestAnimationFrame(() => { const el = document.getElementById("clTakesHead"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); });
+}
+/// The line over new takes: what the button made, from what.
+function clHeadline(verb, ctx) {
+  const song = clSongName(CL.from), far = `${CL.dial < 20 ? "very close" : CL.dial < 45 ? "close" : CL.dial < 70 ? "loose" : "far"} ${CL.dial}`;
+  if (verb === "mix") return `4 new takes mixing ${song} with ${CL.mixing.map(clSongName).join(", ")} · ${far}`;
+  if (verb === "lean") return `4 new takes leaning ${[...ctx.leans.map((l) => { const x = /^the (bass|drums) of (.+)$/.exec(l); return x ? `the ${x[1]} of ${clSongName(x[2])}` : l; }), ...(ctx.text ? [`“${ctx.text}”`] : [])].join(", ")}`;
+  if (verb === "surprise") return `4 surprise takes from ${song}`;
+  if (verb === "more") return `4 new takes like ${ctx.name} · ${far}`;
+  return `4 new takes like ${song} · ${far}`;
 }
 /// Less like this: that take, replaced by one further from it.
 function clLess(i) {
@@ -714,6 +727,7 @@ function clSetFrom(t) {
 /// The take, written into the Band's controls.
 function clUseTake(t) { initAudio(); clSetFrom(t); cloneApply(); CL.playingId = t.id; }
 function clPlay(i) {
+  if (CL.keeping) { clToast("The Band is rendering a take for Keep; it plays again when that's done"); return; }
   const t = CL.family[CL.gen].takes[i];
   if (isPlaying && CL.playingId === t.id) { stopSeq(); clPaintTakes(); return; }
   CL.picked = i;
@@ -726,30 +740,52 @@ function clPlay(i) {
 async function clKeep(i) {
   const t = CL.family[CL.gen].takes[i];
   if (t.kept) { clToast(`${t.name} is kept: ${t.kept}`); return; }
-  if (CL.keeping) return;
+  if (CL.keeping) { clToast("One take is rendering; wait for it to finish"); return; }
   // The render runs through the frame's bridge, which is there only in the app.
   if (!window.seqBridge) { clToast("Keep works in the app: open the Clone page there"); return; }
-  CL.keeping = t.id; clPaintTakes();
+  CL.keeping = t.id; CL.keepFrac = 0; CL.keepT0 = performance.now(); CL.saved = null; CL.keepError = null;
+  clPaintTakes(); clPaintHead();
   try {
     if (isPlaying) stopSeq();
     clUseTake(t);
     const bars = t.plan.secs.reduce((a, s) => a + s.b, 0);
     const seconds = (bars * 4 * 60) / t.made.bpm + 3;
-    const r = await window.seqBridge.renderFilm({ seconds, rate: 48000, fps: 2, bands: 8, liss: 16, at0: 0 });
+    let shown = 0;
+    const onProgress = (f) => { CL.keepFrac = f; const now = performance.now(); if (now - shown > 150) { shown = now; clPaintKeeping(); } };
+    const r = await window.seqBridge.renderFilm({ seconds, rate: 48000, fps: 2, bands: 8, liss: 16, at0: 0, onProgress });
+    CL.keepFrac = 1; clPaintKeeping("Saving the file…");
     const n = r.left.length, inter = new Float32Array(n * 2);
     for (let k = 0; k < n; k++) { inter[k * 2] = r.left[k]; inter[k * 2 + 1] = (r.right || r.left)[k]; }
     const name = `${clSongName(t.recipe.snap.sel[0])} - ${t.name}`;
-    const res = await fetch(`/api/clone/keep?rate=48000&name=${encodeURIComponent(name)}`, { method: "POST", body: inter.buffer });
+    // A whole piece is a big upload; one that hangs says so rather than sitting there.
+    const ab = new AbortController(), cut = setTimeout(() => ab.abort(), 180000);
+    let res;
+    try { res = await fetch(`/api/clone/keep?rate=48000&name=${encodeURIComponent(name)}`, { method: "POST", body: inter.buffer, signal: ab.signal }); }
+    catch (e) { throw new Error(e.name === "AbortError" ? "the save took over three minutes" : "the server didn't take the file"); }
+    finally { clearTimeout(cut); }
     if (!res.ok) throw new Error((await res.text()) || res.statusText);
     t.kept = (await res.json()).p;
     t.peaks = clPeaks(r.left, r.right || r.left, 160);
     clLog(`Kept ${t.name}`, t.kept);
-    clToast(`${t.name} kept in ${t.kept}: open it in Edit, Grain or Chop`);
+    CL.saved = { id: t.id, p: t.kept, name: t.name, secs: Math.round((performance.now() - CL.keepT0) / 1000) };
+    clToast(`Saved: ${t.kept}`);
   } catch (e) {
-    clToast(`Could not keep ${t.name}: ${e.message || e}`);
+    CL.keepError = `Couldn't keep ${t.name}: ${e.message || e}`;
+    clToast(CL.keepError);
   } finally {
-    CL.keeping = null; clSave(); clPaintTakes(); clPaintHood();
+    CL.keeping = null; clSave(); clPaintTakes(); clPaintHood(); clPaintHead();
+    const el = document.querySelector(`.cl-take[data-id="${t.id}"]`);
+    if (el && t.kept) { el.classList.add("just-saved"); el.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
   }
+}
+/// The take being kept: its bar, how far, and about how long is left.
+function clPaintKeeping(say) {
+  const el = document.querySelector(".cl-take.keeping");
+  if (!el) return;
+  const f = Math.max(0, Math.min(1, CL.keepFrac || 0)), took = (performance.now() - CL.keepT0) / 1000;
+  const left = f > 0.03 ? Math.max(0, Math.round((took / f) * (1 - f))) : null;
+  el.querySelector(".kp-bar i").style.width = `${(f * 100).toFixed(1)}%`;
+  el.querySelector(".kp-say").textContent = say || `Rendering the whole take · ${Math.round(f * 100)} %${left != null ? ` · about ${left >= 60 ? Math.floor(left / 60) + " min " : ""}${left % 60} s left` : ""}`;
 }
 function clPeaks(L, R, n) {
   const out = [], w = Math.max(1, Math.floor(L.length / n));
@@ -790,6 +826,7 @@ function cloneBuildUI() {
   <div class="cl-hint" id="clHint"></div>
   <div class="cl-chips" id="clChips"></div>
   <div class="cl-trail" id="clTrail"></div>
+  <div class="cl-takes-head" id="clTakesHead"></div>
   <div class="cl-takes" id="clTakes"></div>
   <details class="cl-hood" id="clHood"><summary>UNDER THE HOOD <span>the blueprint of the take you picked, and what every button did</span></summary>
     <div class="cl-hood-in">
@@ -855,6 +892,9 @@ function cloneBuildUI() {
     else if (a === "keep") clKeep(i);
     else if (a === "open" && t.kept) clOpenIn(t.kept, b.dataset.page);
     else if (a === "pick") { CL.picked = i; clSetFrom(t); clSave(); clPaintTakes(); clPaintHood(); }
+  });
+  document.getElementById("clTakesHead").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-open]"); if (b && CL.saved) clOpenIn(CL.saved.p, b.dataset.open);
   });
   document.getElementById("clTrail").addEventListener("click", (e) => {
     const b = e.target.closest("b[data-g]"); if (!b) return;
@@ -932,7 +972,19 @@ function clPlanChanged(msg) {
 }
 
 // ─── PAINTING ────────────────────────────────────────────────────────────────
-function clPaintAll(fresh) { clPaintCrate(); clPaintVerbs(); clPaintDial(); clPaintTrail(); clPaintTakes(fresh); clPaintHood(); }
+function clPaintAll(fresh) { clPaintCrate(); clPaintVerbs(); clPaintDial(); clPaintTrail(); clPaintHead(fresh); clPaintTakes(fresh); clPaintHood(); }
+/// Over the takes: what was just made, what a take is, and what was just saved.
+function clPaintHead(fresh) {
+  const el = document.getElementById("clTakesHead"), g = CL.family[CL.gen];
+  if (!el) return;
+  if (!g) { el.innerHTML = ""; return; }
+  const what = CL.made4 && CL.gen === CL.family.length - 1 ? CL.made4 : `${g.label}: four takes`;
+  let h = `<div class="tk-line${fresh ? " flash" : ""}"><b>${clEsc(what)}</b><span>Press ▶ and the Band plays a take now. Nothing is saved until you press <em>Keep</em>, which renders it into a WAV in Made/Clones.</span></div>`;
+  if (CL.saved) h += `<div class="tk-saved"><b>✓ Saved</b><span>${clEsc(CL.saved.p)}</span><button type="button" class="btn" data-open="wave">Open in Edit</button><button type="button" class="btn" data-open="grain">Open in Grain</button><button type="button" class="btn" data-open="chop">Open in Chop</button></div>`;
+  else if (CL.keepError) h += `<div class="tk-error">${clEsc(CL.keepError)}. Nothing was saved; press Keep to try again.</div>`;
+  else if (CL.keeping) { const t = g.takes.find((x) => x.id === CL.keeping); h += `<div class="tk-saving">Keeping ${clEsc(t ? t.name : "a take")}: rendering it into a WAV · the bar is on its card</div>`; }
+  el.innerHTML = h;
+}
 function clPaintCrate() {
   const box = document.getElementById("clCrate");
   const cards = CL.songs.map((s) => {
@@ -989,16 +1041,20 @@ function clPaintTakes(fresh) {
     clEnsure(t);
     const d = clDistance(t.recipe), w = clBadge(d), keeping = CL.keeping === t.id;
     const key = t.made.scale ? t.made.scale.name.replace(/ \(learned\)$/, "") : "";
-    return `<div class="cl-take${i === CL.picked ? " picked" : ""}${t.kept ? " kept" : ""}${fresh ? " fresh" : ""}" data-i="${i}" style="--d:${i * 70}ms">`
+    return `<div class="cl-take${i === CL.picked ? " picked" : ""}${t.kept ? " kept" : ""}${keeping ? " keeping" : ""}${fresh ? " fresh" : ""}" data-i="${i}" data-id="${t.id}" style="--d:${i * 90}ms">`
       + `<div class="top"><button type="button" class="pb" data-a="play" aria-label="Play ${clEsc(t.name)}">▶</button><b class="tn" data-a="pick">${clEsc(t.name)}</b><span class="badge ${w}">${w}</span></div>`
       + `<div class="cl-shape" data-a="pick">${t.peaks ? clWave(t.peaks) : clShape(t.plan)}</div>`
       + `<span class="src">${Math.round(t.made.bpm)} BPM · ${t.plan.secs.length} sections · ${clTime(t)}${key ? " · in " + clEsc(clShort(t.recipe.snap.sel[0])) + "'s tuning" : ""}</span>`
-      + `<span class="pc">${t.kept ? `kept · <b>${clEsc(t.kept.split("/").pop())}</b>` : "the Band now · the PC's version: not connected yet"}</span>`
-      + `<div class="acts"><button type="button" class="btn" data-a="more">More like this</button><button type="button" class="btn" data-a="less">Less like this</button><button type="button" class="btn${t.kept ? " on" : ""}" data-a="keep"${keeping ? " disabled" : ""}>${keeping ? "Rendering…" : t.kept ? "Kept" : "Keep"}</button></div>`
-      + (t.kept ? `<div class="opens"><button type="button" class="btn" data-a="open" data-page="wave">Open in Edit</button><button type="button" class="btn" data-a="open" data-page="grain">Grain</button><button type="button" class="btn" data-a="open" data-page="chop">Chop</button></div>` : "")
+      + `<span class="pc" title="Clone doesn't call the PC yet: every take here is MGL's Band">Band only · the PC isn't connected to Clone yet</span>`
+      + (keeping ? `<div class="kp"><span class="kp-bar"><i></i></span><span class="kp-say">Starting the render…</span><span class="kp-note">The whole take, offline, into a WAV. The Band is busy until it's done.</span></div>`
+        : t.kept ? `<div class="saved"><b>✓ Saved</b><span>${clEsc(t.kept)}</span></div>`
+          + `<div class="opens"><button type="button" class="btn" data-a="open" data-page="wave">Open in Edit</button><button type="button" class="btn" data-a="open" data-page="grain">Open in Grain</button><button type="button" class="btn" data-a="open" data-page="chop">Open in Chop</button></div>`
+          + `<div class="acts"><button type="button" class="btn" data-a="more">More like this</button><button type="button" class="btn" data-a="less">Less like this</button></div>`
+        : `<div class="acts"><button type="button" class="btn" data-a="more">More like this</button><button type="button" class="btn" data-a="less">Less like this</button><button type="button" class="btn keep" data-a="keep"${CL.keeping ? " disabled" : ""}>Keep</button></div>`)
       + `</div>`;
   }).join("");
   clPaintPlaying();
+  if (CL.keeping) clPaintKeeping();
 }
 /// A take, before it is kept: its plan, part by part, section by section.
 function clShape(plan) {

@@ -45,7 +45,9 @@ const MAX_MEDIA_BODY: usize = 2 * 1024 * 1024 * 1024;
 pub fn body_cap(path: &str) -> usize {
     match path {
         // and a song from the computer for the stem splitter, a whole file.
-        "/api/export/stem" | "/api/export/film" | "/api/stems/upload" => MAX_MEDIA_BODY,
+        // and the Clone page's kept take, a whole piece rendered as floats
+        // (four minutes of stereo is about ninety megabytes).
+        "/api/export/stem" | "/api/export/film" | "/api/stems/upload" | "/api/clone/keep" => MAX_MEDIA_BODY,
         _ => MAX_BODY,
     }
 }
@@ -457,7 +459,7 @@ mod body_cap_tests {
 
     #[test]
     fn a_stem_or_a_film_may_carry_more_than_a_settings_body() {
-        for path in ["/api/export/stem", "/api/export/film"] {
+        for path in ["/api/export/stem", "/api/export/film", "/api/clone/keep"] {
             let raw = request(path, MAX_BODY + 1);
             let req = parse_request(&raw[..]).expect("a media body over eight megabytes was refused");
             assert_eq!(req.body.len(), MAX_BODY + 1, "{path} was cut short");

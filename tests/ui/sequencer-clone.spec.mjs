@@ -215,7 +215,10 @@ test('the page: each song in a line; Make similar makes four takes; one plays on
   expect(takes.map((t) => t[0])).toEqual(['Similar A', 'Similar B', 'Similar C', 'Similar D']);
   expect(takes.every((t) => t[1] === 'Stems/Test Song' && t[2] === 'clone')).toBe(true);
   expect(await page.locator('.cl-take .badge').first().textContent()).toMatch(/close|near|loose|far/);
-  expect(await page.locator('.cl-take .pc').first().textContent()).toContain('not connected yet');
+  expect(await page.locator('.cl-take .pc').first().textContent()).toContain("the PC isn't connected to Clone yet");
+  // What the button made, over the takes, and what a take is.
+  await expect(page.locator('#clTakesHead .tk-line b')).toHaveText('4 new takes like Test Song · close 35');
+  await expect(page.locator('#clTakesHead .tk-line')).toContainText('Nothing is saved until you press Keep');
   // ▶ plays it on the Band, in the song's tuning, on its plan.
   await page.click('.cl-take[data-i="1"] .pb');
   const playing = await page.evaluate(() => ({ playing: isPlaying, mode: BAND.arrangeMode, scale: SCALES[selectedScaleIdx].name, picked: CL.picked, cls: document.querySelector('.cl-take[data-i="1"]').className }));
@@ -299,7 +302,7 @@ test('the same recipe makes the same take; the takes come back after a reload', 
 });
 
 test('in the app, Keep renders the take into Made/Clones, and Open in Grain opens it there', async ({ page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
   await page.route('**/api/stems/list', (r) => r.fulfill({ json: [{ p: 'Stems/Test Song', name: 'Test Song', analysed: true, card: { title: ONE.title } }] }));
   await page.route('**/api/stems/info**', (r) => r.fulfill({ json: { p: 'Stems/Test Song', analysis: ONE } }));
   await page.addInitScript(() => { try { localStorage.removeItem('mglClone'); } catch (e) { /* none */ } });
@@ -310,22 +313,30 @@ test('in the app, Keep renders the take into Made/Clones, and Open in Grain open
   await expect.poll(() => !!frame()).toBe(true);
   await frame().waitForFunction(() => typeof clKeep === 'function' && document.querySelectorAll('.cl-song[data-p] .fp').length === 1, null, { timeout: 15000 });
   await frame().click('.cl-verb[data-v="similar"]');
-  // A short take, so the render is quick: two bars.
+  // A short take, so the render is quick.
   await frame().evaluate(() => { const t = CL.family[0].takes[0]; t.plan.secs = [{ ...t.plan.secs[t.plan.secs.length - 1], b: 2, fill: 0 }]; });
+  // A longer one, to watch the bar: six bars.
+  await frame().evaluate(() => { const t = CL.family[0].takes[0]; t.plan.secs[0].b = 6; });
   await frame().click('.cl-take[data-i="0"] [data-a="keep"]');
-  await frame().waitForSelector('.cl-take[data-i="0"] .opens', { timeout: 30000 });
+  await frame().waitForSelector('.cl-take.keeping .kp-bar', { timeout: 5000 });
+  await expect(frame().locator('#clTakesHead .tk-saving')).toContainText('Keeping Similar A');
+  // The bar moves while it renders: a percentage and the time left.
+  await expect.poll(() => frame().evaluate(() => { const el = document.querySelector('.cl-take.keeping .kp-say'); return el ? el.textContent : 'done'; }), { timeout: 30000 }).toMatch(/Rendering the whole take · [1-9]\d? %/);
+  await frame().waitForSelector('.cl-take[data-i="0"] .opens', { timeout: 60000 });
+  await expect(frame().locator('#clTakesHead .tk-saved')).toContainText(/Made\/Clones\/Test Song - Similar A( \(\d+\))?\.wav/);
+  await expect(frame().locator('.cl-take[data-i="0"] .saved')).toContainText('✓ Saved');
   const kept = await frame().evaluate(() => ({ p: CL.family[0].takes[0].kept, bpm: CL.family[0].takes[0].made.bpm, peaks: CL.family[0].takes[0].peaks.length }));
-  expect(kept.p).toBe('Made/Clones/Test Song - Similar A.wav');
+  // A second keep of the same name gets a number, never overwrites.
+  expect(kept.p).toMatch(/^Made\/Clones\/Test Song - Similar A( \(\d+\))?\.wav$/);
   expect(kept.peaks).toBe(160);
   const files = await page.evaluate(() => fetch('/api/files?folder=Made').then((r) => r.json()));
   const f = files.find((x) => x.path === kept.p);
   expect(f.sampleRate).toBe(48000);
   expect(f.channels).toBe(2);
-  // Two bars at the take's tempo and a 3 s tail.
-  expect(Math.abs(f.duration - ((2 * 240) / kept.bpm + 3))).toBeLessThan(0.1);
-  await expect(frame().locator('.cl-take[data-i="0"] .pc')).toContainText('Test Song - Similar A.wav');
+  // Six bars at the take's tempo and a 3 s tail.
+  expect(Math.abs(f.duration - ((6 * 240) / kept.bpm + 3))).toBeLessThan(0.1);
   await frame().click('.cl-take[data-i="0"] [data-a="open"][data-page="grain"]');
-  await expect.poll(() => page.evaluate(() => [state.mode, editPage, state.selectedFile && state.selectedFile.path])).toEqual(['edit', 'grain', 'Made/Clones/Test Song - Similar A.wav']);
+  await expect.poll(() => page.evaluate(() => [state.mode, editPage, state.selectedFile && state.selectedFile.path])).toEqual(['edit', 'grain', kept.p]);
 });
 
 test('on the page by itself, Keep says it works in the app', async ({ page }) => {
