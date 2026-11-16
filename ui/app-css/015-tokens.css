@@ -233,6 +233,12 @@
   --chart-red:    oklch(65% 0.19 25);
 
   /* Faces (SUITE-PLAN §4.1): the exactness class a module's mode carries. */
+  /* the Reverb window (077-fx-reverb-window.js): its family colour, Freeze's
+     ice, the sound's own colour, and Place off */
+  --rv-rgb: 47,212,194;
+  --rv-ice-rgb: 207,234,255;
+  --rv-on-rgb: 255,181,71;
+  --rv-off-rgb: 150,160,175;
   --cls-measured: oklch(88% 0.11 170);
   --cls-static:   oklch(80% 0.10 245);
   --cls-port:     oklch(78% 0.10 295);

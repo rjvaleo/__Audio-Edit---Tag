@@ -533,6 +533,16 @@ function renderRack() {
       slot.bypassed = !slot.bypassed;
       pushRack({ immediate: true });
     };
+    // A Reverb module opens its own window (`077-fx-reverb-window.js`).
+    if (fxSlotMode(slot)?.suite.id === 'reverb') {
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'ghost fx-open';
+      open.textContent = 'Open';
+      open.title = 'Open the Reverb window';
+      open.onclick = () => reverbOpen(slot.id);
+      el.querySelector('.fx-module-actions')?.prepend(open);
+    }
     el.querySelector('.fx-remove')?.addEventListener('click', () => {
       state.rack.slots.splice(i, 1);
       pushRack({ immediate: true });
@@ -543,6 +553,7 @@ function renderRack() {
     renderFxModuleControls(el.querySelector('.fx-module-controls'), slot, shaper, i);
     rail.appendChild(el);
   });
+  rvAfterRack();
 }
 
 function moveFxModule(from, to) {
@@ -563,8 +574,12 @@ function renderVuMeter(box, label) {
     <i class="vu-bar vu-left"></i><i class="vu-bar vu-right"></i></span>`;
 }
 
+/// The latest levels either side of every slot, for the Reverb window.
+var REVERB_LEVELS = [];
+
 function paintRackMeters(levels) {
   if (!levels.length) return;
+  REVERB_LEVELS = levels;
   const height = (v) => `${Math.max(0, Math.min(100, (20 * Math.log10(Math.max(v, 1e-4)) + 60) / 60 * 100))}%`;
   const paint = (box, pair) => {
     if (!box || !pair) return;
