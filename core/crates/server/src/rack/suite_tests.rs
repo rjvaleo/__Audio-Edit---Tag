@@ -165,3 +165,33 @@ fn one_slot_built_alone_is_the_slot_the_whole_rack_builds() {
         assert_eq!(a.iter().map(|x| x.to_bits()).collect::<Vec<_>>(), b.iter().map(|x| x.to_bits()).collect::<Vec<_>>(), "slot {i}");
     }
 }
+
+#[test]
+fn a_reverb_slot_carries_place_off_and_other_modules_none() {
+    let spec = rack_of(r#"{"kind":"schroeder_reverb","id":"a"},{"kind":"prism:echo","id":"b"}"#);
+    let mut rack = spec.build(48_000, 2);
+    assert_eq!(rack.get_param(0, "place.on"), Some(0.0), "a reverb has Place, off");
+    assert_eq!(rack.get_param(1, "place.on"), None, "an echo has none");
+    assert!(rack.set_param(0, "place.on", 1.0));
+}
+
+#[test]
+fn place_is_kept_with_the_slot_and_built_as_saved() {
+    let mut spec = rack_of(r#"{"kind":"schroeder_reverb","id":"a"}"#);
+    assert!(spec.set_param(0, "place.on", 1.0));
+    assert!(spec.set_param(0, "place.dist", 70.0));
+    assert!(spec.set_param(0, "place.shape", 2.0));
+    assert_eq!(spec.get_param(0, "place.dist"), Some(70.0));
+    let saved = spec.to_json();
+    let text = saved.to_string();
+    assert!(text.contains(r#""place""#), "{text}");
+    let back = RackSpec::from_json(&saved);
+    assert_eq!(back, spec);
+    let rack = back.build(48_000, 2);
+    assert_eq!(rack.get_param(0, "place.on"), Some(1.0));
+    assert_eq!(rack.get_param(0, "place.dist"), Some(70.0));
+    assert_eq!(rack.get_param(0, "place.shape"), Some(2.0));
+    // not on an echo
+    let mut echo = rack_of(r#"{"kind":"prism:echo","id":"b"}"#);
+    assert!(!echo.set_param(0, "place.on", 1.0));
+}

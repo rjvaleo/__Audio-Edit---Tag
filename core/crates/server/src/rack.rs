@@ -62,6 +62,42 @@ pub struct SlotModule {
     /// slot chose one: `"mgl"` or `"original"` (SUITE-PLAN §4.1, D6). None is
     /// the mode's own look, so a document that never chose opens as it was.
     pub face: Option<&'static str>,
+    /// Where a Reverb slot's sound sits (prism-fx `place`), once it has been
+    /// touched. None is Place off at its defaults: the mode exactly as measured.
+    pub place: Option<fx::prism::prism_fx::place::PlaceSettings>,
+}
+
+/// Whether a slot of this kind is a mode of the Reverb module, and so carries
+/// Place.
+pub fn is_reverb(kind: &str) -> bool {
+    fx::suite::mode_of_kind(kind).is_some_and(|(s, _)| s.id == "reverb")
+}
+
+/// Place's settings as a document keeps them, and back.
+fn place_json(p: &fx::prism::prism_fx::place::PlaceSettings) -> Value {
+    Value::obj()
+        .set("on", p.on)
+        .set("shape", p.shape as f64)
+        .set("sizeM", p.size_m as f64)
+        .set("pos", p.pos as f64)
+        .set("dist", p.dist as f64)
+        .set("height", p.height as f64)
+        .set("spread", p.spread as f64)
+}
+fn place_from(v: &Value) -> Option<fx::prism::prism_fx::place::PlaceSettings> {
+    if !matches!(v, Value::Obj(_)) {
+        return None;
+    }
+    let mut p = fx::prism::prism_fx::place::PlaceSettings { on: false, ..Default::default() };
+    for (key, field) in [("on", "place.on"), ("shape", "place.shape"), ("sizeM", "place.sizeM"), ("pos", "place.pos"), ("dist", "place.dist"), ("height", "place.height"), ("spread", "place.spread")] {
+        let x = match v.get(key) {
+            Some(Value::Num(n)) => *n as f32,
+            Some(Value::Bool(b)) => if *b { 1.0 } else { 0.0 },
+            _ => continue,
+        };
+        fx::place_set(&mut p, field, x);
+    }
+    Some(p)
 }
 
 /// A module's footer: 0..1, and dB.
@@ -451,6 +487,7 @@ impl RackSpec {
                         Some("original") => Some("original"),
                         _ => None,
                     },
+                    place: it.get("place").and_then(place_from).filter(|_| slots.last().is_some_and(|s: &SlotSpec| is_reverb(s.kind()))),
                 };
                 if module != SlotModule::default() {
                     modules.insert(id.clone(), module);
@@ -527,6 +564,9 @@ impl RackSpec {
                 }
                 if let Some(face) = module.and_then(|m| m.face) {
                     base = base.set("face", face);
+                }
+                if let Some(place) = module.and_then(|m| m.place.as_ref()) {
+                    base = base.set("place", place_json(place));
                 }
                 match s {
                     SlotSpec::Gain { db, .. } => base.set("db", *db as f64),
@@ -715,6 +755,13 @@ impl RackSpec {
             // a switch nowhere near it. `Rack::process` already skips bypassed
             // slots, so this costs one construction and no audio.
             rack.push_slot(effect, s.bypassed());
+            // A Reverb slot carries Place: off unless the document turned it on.
+            if is_reverb(s.kind()) {
+                let settings = self.slot_ids.get(i).and_then(|id| self.modules.get(id)).and_then(|m| m.place).unwrap_or(fx::prism::prism_fx::place::PlaceSettings { on: false, ..Default::default() });
+                let mut place = Box::new(fx::prism::prism_fx::place::Place::new(sample_rate as f32));
+                place.set(settings);
+                rack.set_slot_place(rack.slots.len() - 1, Some(place));
+            }
         }
         // Slot *n* is spec slot *n*: the same reason a bypassed one is kept.
         for (i, id) in self.slot_ids.iter().enumerate() {
@@ -740,6 +787,19 @@ impl RackSpec {
     pub fn set_param(&mut self, slot: usize, key: &str, value: f32) -> bool {
         if key == fx::SLOT_WET || key == fx::SLOT_LEVEL {
             return self.set_mix(slot, key, value);
+        }
+        if key.starts_with("place.") {
+            let (Some(s), Some(id)) = (self.slots.get(slot), self.slot_ids.get(slot).cloned()) else { return false };
+            if !is_reverb(s.kind()) {
+                return false;
+            }
+            let module = self.modules.entry(id).or_default();
+            let mut p = module.place.unwrap_or(fx::prism::prism_fx::place::PlaceSettings { on: false, ..Default::default() });
+            if !fx::place_set(&mut p, key, value) {
+                return false;
+            }
+            module.place = Some(p);
+            return true;
         }
         let Some(s) = self.slots.get_mut(slot) else {
             return false;
@@ -796,6 +856,13 @@ impl RackSpec {
 
     /// Read one control back, after clamping.
     pub fn get_param(&self, slot: usize, key: &str) -> Option<f32> {
+        if key.starts_with("place.") {
+            if !is_reverb(self.slots.get(slot)?.kind()) {
+                return None;
+            }
+            let p = self.slot_ids.get(slot).and_then(|id| self.modules.get(id)).and_then(|m| m.place).unwrap_or(fx::prism::prism_fx::place::PlaceSettings { on: false, ..Default::default() });
+            return fx::place_get(&p, key);
+        }
         if key == fx::SLOT_WET || key == fx::SLOT_LEVEL {
             let m = self.slot_ids.get(slot).and_then(|id| self.mixes.get(id)).copied().unwrap_or_default();
             return Some(if key == fx::SLOT_WET { m.wet } else { m.level });
