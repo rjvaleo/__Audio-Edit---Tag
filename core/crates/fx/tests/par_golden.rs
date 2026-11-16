@@ -147,7 +147,7 @@ fn render_all() -> String {
 
 #[test]
 fn every_rack_kind_renders_as_recorded() {
-    assert_eq!(kinds().len(), 125, "33 shape kinds + eq, comp, gain + 89 prism entries (P4 adds Freeverb, JCRev, Ambient FDN)");
+    assert_eq!(kinds().len(), 137, "33 shape kinds + eq, comp, gain + 101 prism entries (P4 adds Freeverb, JCRev, Ambient FDN and the 12 Network modes)");
     let now = render_all();
     if std::env::var_os("PAR_RECORD").is_some() {
         std::fs::write(GOLDEN, &now).unwrap();

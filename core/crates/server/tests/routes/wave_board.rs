@@ -156,8 +156,9 @@ fn the_fx_catalogue_state_and_board_mod_rows() {
     let s = Scratch::new("wave-board-fx");
     let app = s.app();
     let fx = ok(&app, get("/api/wave/fx", &[]));
-    // 82, and Comb Hall (Freeverb), JC Reverb and Ambient FDN from SUITE-PLAN P4.
-    assert_eq!(arr(&fx).len(), 85);
+    // 82, and from SUITE-PLAN P4 Comb Hall (Freeverb), JC Reverb, Ambient FDN
+    // and the 12 Network modes.
+    assert_eq!(arr(&fx).len(), 97);
     let chorus = arr(&fx).into_iter().find(|e| text(e, &["kind"]) == "fx:hp-chorus").unwrap();
     assert_eq!(text(&chorus, &["suite"]), "Hyperprism");
     assert_eq!(text(&chorus, &["category"]), "modulation");
