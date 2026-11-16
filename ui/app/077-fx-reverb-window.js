@@ -386,13 +386,17 @@ function rvPlace(slot) {
 }
 /// Place as a face model, so the app's own controls drive it: each move goes
 /// to the running effect (`place.<key>`), a release saves the rack.
+///
+/// Each read and write finds the slot's Place again: a save replaces the
+/// slot's \`place\` with the server's copy, and a model holding the old object
+/// would go on writing where the drawing no longer looks.
 function rvPlaceModel(slot) {
-  const pl = rvPlace(slot);
+  const pl = () => rvPlace(rvSlot() || slot);
   return {
-    slot, specs: RV_PLACE, byKey: Object.fromEntries(RV_PLACE.map((p) => [p.key, p])), get: (k) => pl[k],
-    set(k, v) { pl[k] = v; liveParam(slot.id, `place.${k}`, v); },
+    slot, specs: RV_PLACE, byKey: Object.fromEntries(RV_PLACE.map((p) => [p.key, p])), get: (k) => pl()[k],
+    set(k, v) { pl()[k] = v; liveParam(slot.id, `place.${k}`, v); },
     commit() { commitRack(); },
-    values() { return { ...pl }; },
+    values() { return { ...pl() }; },
   };
 }
 function rvPad(at) {
@@ -400,6 +404,20 @@ function rvPad(at) {
   const p = shaper?.panel?.pad || RV_NEW_PADS[at.mode.id];
   const keys = new Set((shaper?.params || []).map((q) => q.key));
   return p && keys.has(p.x) && keys.has(p.y) ? p : null;
+}
+/// A mode's network as a small picture, for the dropdowns: drawn once.
+const RV_PICS = new Map();
+function rvPicUrl(m) {
+  if (RV_PICS.has(m.id)) return RV_PICS.get(m.id);
+  const cv = document.createElement('canvas');
+  cv.width = 192; cv.height = 72;
+  const ctx = cv.getContext('2d');
+  ctx.scale(3, 3);
+  const v = Object.fromEntries((state.shapers[m.kind]?.params || []).map((p) => [p.key, p.default]));
+  rvDrawNet(ctx, 64, 24, rvNet(m, v), { e: 0.6, t: 0.6, small: true });
+  const url = cv.toDataURL();
+  RV_PICS.set(m.id, url);
+  return url;
 }
 function rvFit(cv) {
   const r = cv.getBoundingClientRect();
@@ -453,7 +471,6 @@ function rvBuild() {
   el.setAttribute('aria-label', 'Reverb');
   el.hidden = true;
   el.innerHTML = `<div class="rv-bar"><b class="rv-title">Reverb</b><span class="rv-modes"></span><span class="rv-badge"></span><span class="rv-src"></span><button class="rv-pwr" type="button"></button><button class="rv-x" type="button" aria-label="Close">×</button></div>
-    <div class="rv-strip" aria-label="Every Reverb mode"></div>
     <div class="rv-views"><div class="rv-disp rv-net"><canvas></canvas><span class="rv-cap"></span><span class="rv-cap r"></span></div><div class="rv-disp rv-room"><canvas></canvas><span class="rv-cap">the room</span><span class="rv-cap r">drag the sound · drag to turn · double-click to reset</span><span class="rv-cap b"></span></div><div class="rv-meters"><i class="rv-vu"><b></b></i><i class="rv-vu"><b></b></i></div></div>
     <div class="rv-band"></div>`;
   document.body.appendChild(el);
@@ -560,35 +577,14 @@ function rvRender() {
   mode.value = at.mode.id;
   mode.onchange = () => { const m = at.suite.families.flatMap((f) => f.modes).find((x) => x.id === mode.value); if (m) fxSwitchMode(rvSlotIndex(), m, at.suite.id); };
   modes.append(fam, mode);
-  uiDrop(fam, { h: 24, cls: 'rv-fam' });
-  uiDrop(mode, { h: 24, cls: 'rv-mode' });
+  // Each choice shows its network, so its size is seen before it is picked.
+  const pic = (m, inMenu) => (m ? `<img class="rv-ddpic${inMenu ? ' big' : ''}" src="${rvPicUrl(m)}" alt="">` : '');
+  const byMode = (id) => at.suite.families.flatMap((f) => f.modes).find((x) => x.id === id);
+  uiDrop(fam, { h: 24, w: 170, cls: 'rv-fam', pic: (v, inMenu) => pic(listed(fams.find((f) => f.label === v) || at.family)[0], inMenu) });
+  uiDrop(mode, { h: 24, w: 260, cls: 'rv-mode', pic: (v, inMenu) => pic(byMode(v), inMenu) });
   const badge = el.querySelector('.rv-badge'); badge.innerHTML = ''; badge.appendChild(fxClassBadge(at.mode));
   el.querySelector('.rv-src').textContent = at.mode.source;
   rvPaintPower();
-  // every network along the top
-  const strip = el.querySelector('.rv-strip'); strip.innerHTML = '';
-  for (const f of fams) {
-    const tag = document.createElement('span'); tag.className = 'rv-tag'; tag.textContent = f.label; strip.appendChild(tag);
-    for (const m of listed(f)) {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'rv-mini'; b.dataset.mode = m.id;
-      b.classList.toggle('on', m.id === at.mode.id);
-      b.title = `${m.label}: ${m.source}`;
-      b.innerHTML = '<canvas></canvas><span></span>';
-      b.querySelector('span').textContent = m.label;
-      b.onclick = () => { if (m.id !== at.mode.id) fxSwitchMode(rvSlotIndex(), m, at.suite.id); };
-      strip.appendChild(b);
-    }
-  }
-  requestAnimationFrame(() => {
-    for (const b of strip.querySelectorAll('.rv-mini')) {
-      const m = at.suite.families.flatMap((f) => f.modes).find((x) => x.id === b.dataset.mode);
-      const v = Object.fromEntries((state.shapers[m.kind]?.params || []).map((p) => [p.key, p.default]));
-      const { ctx, w, h } = rvFit(b.querySelector('canvas'));
-      rvDrawNet(ctx, w, h, rvNet(m, v), { e: 0.55, t: 0.6, small: true });
-    }
-    const on = strip.querySelector('.rv-mini.on');
-    if (on) strip.scrollLeft = Math.max(0, on.offsetLeft - strip.clientWidth / 2 + on.offsetWidth / 2);
-  });
   el.querySelector('.rv-net').classList.toggle('pad', !!rvPad(at));
   rvBand(slot);
   void index;
@@ -639,25 +635,80 @@ function rvBand(slot) {
   }
 }
 
+/// What the mode's other controls do, drawn over its network: its tone (the
+/// cuts, damping, brightness) as a response curve, its width at the outputs,
+/// and its mix as the dry path beside the network and the network's own glow.
+function rvOverlay(ctx, w, h, v, e) {
+  const has = (k) => v[k] !== undefined;
+  const col = (a) => `rgba(${RV_COL.accent},${a})`;
+  // tone: a high-pass at the low cut, a low-pass at the high cut
+  let lo = has('lowCutHz') ? v.lowCutHz : has('crossoverHz') && has('bassRatio') ? null : null;
+  let hi = has('highCutHz') ? v.highCutHz : has('rtHiCutHz') ? v.rtHiCutHz : has('rolloffHz') ? v.rolloffHz : has('highDampHz') ? v.highDampHz : null;
+  if (hi === null && has('damping')) hi = 20000 * Math.pow(0.05, Math.min(1, v.damping > 1 ? v.damping / 100 : v.damping));
+  if (hi === null && has('brightness')) hi = 1500 + 18500 * (v.brightness / 100);
+  if (lo !== null || hi !== null) {
+    const bw = 132, bh = 34, x0 = w - bw - 10, y0 = h - bh - 18;
+    ctx.fillStyle = `rgba(${RV_COL.white},0.03)`; ctx.fillRect(x0, y0, bw, bh);
+    ctx.strokeStyle = col(0.35 + 0.6 * e); ctx.lineWidth = 1.4; ctx.beginPath();
+    for (let i = 0; i <= 60; i++) {
+      const f = 20 * Math.pow(1000, i / 60);
+      let g = 1;
+      if (lo) g *= 1 / Math.sqrt(1 + Math.pow(lo / f, 2));
+      if (hi) g *= 1 / Math.sqrt(1 + Math.pow(f / hi, 2));
+      const y = y0 + bh - 3 - (bh - 6) * Math.max(0, 1 + Math.log10(Math.max(g, 1e-3)) / 2);
+      if (i) ctx.lineTo(x0 + (bw * i) / 60, y); else ctx.moveTo(x0, y);
+    }
+    ctx.stroke();
+    ctx.fillStyle = RV_COL.text; ctx.font = '9px JetBrains Mono, monospace';
+    ctx.fillText(`tone${lo ? ` · lo ${lo < 1000 ? Math.round(lo) : (lo / 1000).toFixed(1) + 'k'}` : ''}${hi ? ` · hi ${hi < 1000 ? Math.round(hi) : (hi / 1000).toFixed(1) + 'k'}` : ''}`, x0, y0 - 3);
+  }
+  // width: the spread of the outputs, as an arc at the right
+  let width = null;
+  if (has('width')) width = v.width >= -1.001 && v.width <= 1.001 && !has('mix') ? v.width : (v.width + 100) / 200;
+  else if (has('wide')) width = v.wide / 200;
+  else if (has('spread')) width = v.spread > 1.001 ? v.spread / 100 : v.spread * 4;
+  if (width !== null) {
+    const cx = w - 12, cy = h / 2, r = Math.min(46, h * 0.22), span = Math.max(0.04, Math.min(1, width)) * Math.PI * 0.9;
+    ctx.strokeStyle = col(0.3 + 0.6 * e); ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI - span / 2, Math.PI + span / 2); ctx.stroke(); ctx.lineCap = 'butt';
+  }
+  // mix: the dry path beside the network, as bright as the dry is
+  let dry = null;
+  if (has('mix')) dry = Math.cos((v.mix > 1.001 ? v.mix / 100 : v.mix) * Math.PI / 2);
+  else if (has('dry')) dry = v.dry > 1.001 ? v.dry / 2 : Math.min(1, v.dry);
+  else if (has('dryDb')) dry = v.dryDb < -90 ? 0 : Math.pow(10, v.dryDb / 20);
+  if (dry !== null) {
+    ctx.strokeStyle = `rgba(${RV_COL.white},${0.08 + 0.55 * dry})`; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(18, 10); ctx.lineTo(w - 18, 10); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = RV_COL.text; ctx.font = '9px JetBrains Mono, monospace'; ctx.fillText(`dry ${Math.round(dry * 100)}%`, w / 2 - 18, 21);
+  }
+}
+
 /// Each frame: the network and the room, moved by the module's own sound.
 function rvFrame() {
   RV.raf = 0;
   const slot = rvSlot();
   if (!RV.el || RV.el.hidden || !slot) return;
   const at = fxSlotMode(slot), i = rvSlotIndex();
-  const pin = REVERB_LEVELS[i] || [0, 0], pout = REVERB_LEVELS[i + 1] || [0, 0];
+  // The engine's own levels, every poll, whichever page or dock is showing
+  // (the rail's meters are painted only while the Effects dock is open).
+  const levels = (typeof engine !== 'undefined' && engine.rackLevels?.length) ? engine.rackLevels : REVERB_LEVELS;
+  const pin = levels[i] || [0, 0], pout = levels[i + 1] || [0, 0];
   const peakIn = Math.max(pin[0] || 0, pin[1] || 0), peakOut = Math.max(pout[0] || 0, pout[1] || 0);
   const t = rvNow();
-  // A hit on the way in: the direct sound, the reflections and the tail start.
-  if (peakIn > 0.02 && peakIn > RV.inPeak * 1.6) RV.pingAt = t;
-  RV.inPeak += (peakIn - RV.inPeak) * 0.2;
+  // A hit on the way in — a rise of 3 dB over the recent level, no closer
+  // than 90 ms to the last — starts the direct sound, the reflections and the
+  // tail again, so they fire on every beat of what is playing.
+  if (peakIn > 0.01 && peakIn > RV.inPeak * 1.41 && t - RV.pingAt > 0.09) RV.pingAt = t;
+  RV.inPeak += (peakIn - RV.inPeak) * (peakIn > RV.inPeak ? 0.5 : 0.06);
   const target = Math.max(0, Math.min(1, (20 * Math.log10(Math.max(peakOut, 1e-4)) + 60) / 60));
   RV.e += (target - RV.e) * 0.12;
-  const e = Math.max(0.06, RV.e), moving = RV.e > 0.08;
+  const e = Math.max(0.06, RV.e), moving = RV.e > 0.03;
   const v = { ...(slot.params || {}) };
   const net = RV.el.querySelector('.rv-net');
   const n = rvFit(net.querySelector('canvas'));
   rvDrawNet(n.ctx, n.w, n.h, rvNet(at.mode, v), { e, t: moving ? t : 0, ice: v.freeze >= 0.5, mod: moving ? (v.modDepth !== undefined ? Math.sqrt(v.modDepth / 100) : v.spinHz !== undefined ? 0.4 : 0.15) : 0, rate: v.modRateHz ?? v.spinHz ?? 0.5 });
+  rvOverlay(n.ctx, n.w, n.h, v, e);
   const pad = rvPad(at), [cl, cr] = net.querySelectorAll('.rv-cap');
   if (pad) {
     const m = fxModel(slot), px = m.byKey[pad.x], py = m.byKey[pad.y];

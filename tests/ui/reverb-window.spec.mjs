@@ -48,9 +48,8 @@ test('a Reverb module opens one fixed 1280 × 640 window; other modules have no 
   expect(size).toEqual([1280, 640]);
   await expect(win.locator('.rv-mode .ui-dd')).toContainText('Mesh 16');
   await expect(win.locator('.rv-badge .fx-class-badge')).toHaveText(/measured/);
-  const listed = await page.evaluate(() => state.suites.find((s) => s.id === 'reverb').families.flatMap((f) => f.modes).filter((m) => m.listed).length);
-  await expect(win.locator('.rv-mini')).toHaveCount(listed);
-  await expect(win.locator('.rv-mini.on')).toHaveCount(1);
+  // no strip of modes: the dropdowns show their networks instead (RJ, 16 Nov)
+  await expect(win.locator('.rv-strip, .rv-mini')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(win).toBeHidden();
 });
@@ -63,8 +62,8 @@ test('every Reverb mode wears the window: its own controls and Place, all inside
   const modes = await page.evaluate(() => state.suites.find((s) => s.id === 'reverb').families.flatMap((f) => f.modes).filter((m) => m.listed).map((m) => [m.id, m.kind]));
   const bad = [];
   for (const [id, kind] of modes) {
-    await page.locator(`#reverbWindow .rv-mini[data-mode="${id}"]`).click();
-    await page.waitForFunction((m) => state.rack.slots.at(-1)?.mode === m && document.querySelector('#reverbWindow .rv-mini.on')?.dataset.mode === m, id);
+    await page.evaluate((m) => { const mo = state.suites.find((s) => s.id === 'reverb').families.flatMap((f) => f.modes).find((x) => x.id === m); fxSwitchMode(state.rack.slots.length - 1, mo, 'reverb'); }, id);
+    await page.waitForFunction((m) => state.rack.slots.at(-1)?.mode === m && document.querySelector('#reverbWindow .rv-mode select')?.value === m, id);
     const r = await page.evaluate((k) => {
       const win = document.getElementById('reverbWindow');
       const band = win.querySelector('.rv-band');
@@ -114,11 +113,89 @@ test('switching the mode in the window keeps it open on the new mode, Place and 
   await addMode(page, 'reverb', 'freeverb');
   await page.locator('.fx-module').last().locator('.fx-open').click();
   await page.locator('#reverbWindow .rv-led').click();
-  await page.locator('#reverbWindow .rv-mini[data-mode="sm-lyra"]').click();
+  // through the dropdowns: Network, then Mesh 4 (Lyra)
+  await page.locator('#reverbWindow .rv-fam .ui-dd').click();
+  await page.locator('.ui-menu .ui-mi .ui-mt').getByText('Network', { exact: true }).click();
+  await page.waitForFunction(() => state.rack.slots.at(-1)?.mode === 'sm-gemini');
+  await page.locator('#reverbWindow .rv-mode .ui-dd').click();
+  await page.locator('.ui-menu .ui-mi .ui-mt').getByText('Mesh 4', { exact: true }).click();
   await page.waitForFunction(() => state.rack.slots.at(-1)?.mode === 'sm-lyra');
   await expect(page.locator('#reverbWindow')).toBeVisible();
   await expect(page.locator('#reverbWindow .rv-mode .ui-dd')).toContainText('Mesh 4');
   const s = await stored(page);
   expect(s.mode).toBe('sm-lyra');
   expect(s.place.on).toBe(true);
+});
+
+test('moving a Place control moves the room, every time, also after the move before it was saved', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openRack(page);
+  await addMode(page, 'reverb', 'schroeder-reverb');
+  await page.locator('.fx-module').last().locator('.fx-open').click();
+  await page.locator('#reverbWindow .rv-led').click();
+  await page.waitForTimeout(500);
+  const caption = () => page.locator('#reverbWindow .rv-room .rv-cap.b').textContent();
+  const sound = () => page.evaluate(() => RV_ROOM.W.src.slice());
+  const turn = async (label, pixels) => {
+    const knob = page.locator('#reverbWindow .rv-sect.ours .fxk').filter({ hasText: label });
+    const b = await knob.locator('.ui-ring').boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2 - pixels, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(600);
+  };
+  const s0 = await sound();
+  await turn('Distance', 40);
+  const s1 = await sound();
+  expect(s1[1]).not.toBeCloseTo(s0[1], 3);
+  // the move above was saved; the next must still move the room
+  await turn('Distance', 40);
+  const s2 = await sound();
+  expect(s2[1]).not.toBeCloseTo(s1[1], 3);
+  const c2 = await caption();
+  await turn('Position', 50);
+  expect((await sound())[0]).not.toBeCloseTo(s2[0], 3);
+  await turn('Height', 40);
+  expect((await sound())[2]).not.toBeCloseTo(s2[2], 3);
+  await turn('Room size', 40);
+  expect(await caption()).not.toEqual(c2);
+});
+
+test('the Family and Mode dropdowns show each mode\'s network', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openRack(page);
+  await addMode(page, 'reverb', 'sm-gemini');
+  await page.locator('.fx-module').last().locator('.fx-open').click();
+  await expect(page.locator('#reverbWindow .rv-mode .ui-dd img.rv-ddpic')).toHaveCount(1);
+  await page.locator('#reverbWindow .rv-mode .ui-dd').click();
+  const items = page.locator('.ui-menu .ui-mi');
+  const n = await items.count();
+  expect(n).toBe(12);
+  await expect(page.locator('.ui-menu .ui-mi img.rv-ddpic.big')).toHaveCount(n);
+  await page.keyboard.press('Escape');
+  await page.locator('#reverbWindow .rv-fam .ui-dd').click();
+  await expect(page.locator('.ui-menu .ui-mi img.rv-ddpic.big')).toHaveCount(await page.locator('.ui-menu .ui-mi').count());
+});
+
+test('the window follows the engine\'s levels on any page: every hit lights the room again', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openRack(page);
+  await addMode(page, 'reverb', 'sm-gemini');
+  await page.locator('.fx-module').last().locator('.fx-open').click();
+  // the Effects dock hidden, as on the Grain page; levels only from the engine
+  await page.evaluate(() => { document.getElementById('dockEffects')?.classList.add('hidden'); REVERB_LEVELS = []; });
+  const e0 = await page.evaluate(() => RV.e);
+  const hits = await page.evaluate(async () => {
+    const seen = new Set();
+    for (let k = 0; k < 60; k++) {
+      const hit = k % 15 === 0 ? 0.8 : 0.05;
+      engine.rackLevels = [[hit, hit], [0.5, 0.5]];
+      await new Promise((r) => setTimeout(r, 30));
+      seen.add(RV.pingAt.toFixed(3));
+    }
+    return seen.size;
+  });
+  expect(await page.evaluate(() => RV.e)).toBeGreaterThan(Math.max(0.3, e0));
+  expect(hits).toBeGreaterThanOrEqual(4);
 });
