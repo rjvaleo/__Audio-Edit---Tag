@@ -116,7 +116,7 @@
             </section>
 
             <section class="panel syn-filter">
-              <div class="ph"><b class="nm">FILTER</b></div>
+              <div class="ph"><b class="nm">FILTER</b><span class="meta shared-note">shared with Seq</span></div>
               <div class="filter-body">
                 <div class="filter-main">
                   <div class="knob-group"><span class="knob-label">Cutoff</span><div class="knob" onmousedown="knobDown(event, 'cutoffSlider')" ontouchstart="knobTouchStart(event,'cutoffSlider')"></div><input type="range" class="knob-hidden" min="0" max="100" value="67" id="cutoffSlider" oninput="updateFilter()" /><span class="knob-val" id="cutoffVal">2.0kHz</span></div>
@@ -194,7 +194,7 @@
             </section>
             <!-- DELAY: the fourth module of the row (RJ, 16 Nov 2026) -->
             <section class="panel fx-delay">
-              <div class="ph"><b class="nm">DELAY</b><span class="grow"></span><span class="cap">Ping-pong</span><div class="well pp"><canvas id="ppCanvas" width="140" height="34"></canvas></div></div>
+              <div class="ph"><b class="nm">DELAY</b><span class="meta shared-note">shared with Seq</span><span class="grow"></span><span class="cap">Ping-pong</span><div class="well pp"><canvas id="ppCanvas" width="140" height="34"></canvas></div></div>
               <div class="fx-row">
                 <div class="stacked-selects">
                   <div class="select-row"><span class="cap">Time</span><select id="delayTimeSelect" onchange="updateDelay()"><option value="0.125">1/32</option><option value="0.25">1/16</option><option value="0.33333">1/8T</option><option value="0.5" selected>1/8</option><option value="0.75">D 1/8</option><option value="1">1/4</option><option value="1.33333">1/4T</option><option value="1.5">D 1/4</option><option value="2">1/2</option><option value="3">D 1/2</option><option value="4">1 bar</option></select><span class="meta" id="delayTimeVal">250ms</span></div>

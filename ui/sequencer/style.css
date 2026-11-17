@@ -1001,14 +1001,27 @@ body.only-atmos .at-r3,
 body.only-atmos .r3 { display: contents !important; }
 body.only-atmos .at-r1 { grid-column: 1 / -1; order: 1; }
 body.only-atmos .at-r2 { grid-column: 1 / -1; order: 2; grid-template-columns: auto minmax(0, 1fr); }
-body.only-atmos .at-char { order: 3; }
-body.only-atmos .at-sym { order: 4; }
-body.only-atmos .fx-space { order: 5; }
-body.only-atmos .scope-out { order: 6; }
-body.only-atmos .ky-panel { grid-column: 1 / -1; order: 7; }
+/* Seq's Filter and Delay, which Atmosphere plays through, shown here too
+   (RJ, 16 Nov 2026: "show the shared ones"); a knob turned here is Seq's knob.
+   In the order the sound goes: Character, Sympathy, Filter; Delay, Space, Output. */
+body.only-atmos .r1,
+body.only-atmos .r2 { display: contents !important; }
+body.only-atmos #classicPanel,
+body.only-atmos .lfo-unit { display: none !important; }
+body.only-atmos .fx-delay { display: flex !important; }
+body.only-atmos .at-char { order: 3; grid-column: 1; }
+body.only-atmos .at-sym { order: 4; grid-column: 2; }
+body.only-atmos .syn-filter { order: 5; grid-column: 3 / 5; }
+body.only-atmos .fx-delay { order: 6; grid-column: 1; }
+body.only-atmos .fx-space { order: 7; grid-column: 2 / 4; }
+body.only-atmos .scope-out { order: 8; grid-column: 4; }
+body.only-atmos .ky-panel { grid-column: 1 / -1; order: 9; }
+.shared-note { display: none; }
+body.only-atmos .shared-note { display: inline; }
 body.only-atmos .at-sym .select-row { width: 100%; }
 /* Amp: its picture beside its knobs, not above them. */
 body.only-atmos .at-ampp { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; }
 body.only-atmos .at-ampp > .ph { grid-column: 1 / -1; }
 body.only-atmos .at-ampp .well.pic { order: 2; height: 64px; }
 body.only-atmos .at-voice .at-knobs { flex-wrap: nowrap; }
+body.only-atmos .fx-delay .ph .cap { display: none; }
