@@ -192,10 +192,7 @@
                 <div class="lfo-knob"><span class="knob-label">Depth</span><div class="knob" onmousedown="knobDown(event, 'lfo3DepthSlider')" ontouchstart="knobTouchStart(event,'lfo3DepthSlider')"></div><input type="range" class="knob-hidden" min="0" max="100" value="0" id="lfo3DepthSlider" oninput="updateLFO(2)" /><span class="knob-val" id="lfo3DepthVal">0%</span></div>
               </div>
             </section>
-          </div>
-
-          <!-- DELAY, and SPACE (atmos.js fills it), for both synths -->
-          <div class="r3 synth-row-scroll">
+            <!-- DELAY: the fourth module of the row (RJ, 16 Nov 2026) -->
             <section class="panel fx-delay">
               <div class="ph"><b class="nm">DELAY</b><span class="grow"></span><span class="cap">Ping-pong</span><div class="well pp"><canvas id="ppCanvas" width="140" height="34"></canvas></div></div>
               <div class="fx-row">
@@ -211,6 +208,10 @@
                 </div>
               </div>
             </section>
+          </div>
+
+          <!-- SPACE (atmos.js fills it), shown on the Atmosphere page -->
+          <div class="r3 synth-row-scroll">
             <section class="panel fx-space" id="spaceHost"></section>
           </div>
 
