@@ -74,13 +74,16 @@ test('Atmosphere is served and on the page: its power, eight kinds twice, Space,
   }));
   expect(got).toEqual({ cards: 16, space: 7, targets: ['at-detune', 'at-pan', 'at-air', 'at-blend', 'at-vowel', 'at-fit'] });
   expect(await state()).toEqual({ mode: 'classic', classic: true, atmos: false, lit: ['classic'], shown: 'none' });
-  // Atmosphere on: both play.
-  await page.click('.power[data-syn="atmos"]');
+  // Atmosphere on: both play. The powers are not shown on either page since
+  // 16 Nov (RJ: no Atmosphere bar; Seq is the sequencer as it was); pressed here
+  // as they would be.
+  await page.evaluate(() => atPowerClick('atmos'));
   expect(await state()).toEqual({ mode: 'both', classic: true, atmos: true, lit: ['classic', 'atmos'], shown: 'grid' });
   // Classic off: Atmosphere alone; and the last one on cannot be turned off.
-  await page.click('.power[data-syn="classic"]');
-  await page.click('.power[data-syn="atmos"]');
+  await page.evaluate(() => atPowerClick('classic'));
+  await page.evaluate(() => atPowerClick('atmos'));
   expect(await state()).toEqual({ mode: 'atmos', classic: false, atmos: true, lit: ['atmos'], shown: 'grid' });
+  await page.evaluate(() => document.body.classList.add('only-atmos'));
   await page.click('.at-oscbox[data-osc="A"] .at-osc[data-kind="glass"]');
   expect(await page.evaluate(() => [AT.kindA, document.getElementById('atA1Label').textContent])).toEqual(['glass', 'Material']);
 });

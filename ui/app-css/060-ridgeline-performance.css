@@ -316,7 +316,7 @@
    same frame showing only its canvas. The page is the instrument, not the open
    sound, so the sound's overview strip goes, as on Wave, and the page has the
    whole height. */
-body.atmospage #overview, body.drawpage #overview, body.clonepage #overview { display: none; }
+body.atmospage #overview, body.drawpage #overview, body.clonepage #overview, body.bandpage #overview { display: none; }
 
 /* ── PERFORMANCE ─────────────────────────────────────────────────────────────
    The scale sequencer's panel, on the grain page. These are its rules and

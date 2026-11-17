@@ -291,6 +291,8 @@ test('a film renders the accompaniment, the same notes twice', async ({ page }) 
 
 test('the panel: six parts, an editor for each, and a mixer channel for each', async ({ page }) => {
   await openSeq(page);
+  // The Band is its own page since 16 Nov (RJ: "move that into its own tab").
+  await page.evaluate(() => document.body.classList.add('only-band'));
   const got = await page.evaluate(() => ({
     parts: [...document.querySelectorAll('.bd-card')].map((c) => c.querySelector('.ac-pt b').textContent),
     editors: [...document.querySelectorAll('.bd-ed')].map((e) => e.dataset.p),

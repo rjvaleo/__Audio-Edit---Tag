@@ -27,7 +27,7 @@
 const KY_PARTS = { atmos: 3, classic: 4 };
 const KY = {
   held: new Map(), // "part:key" -> a voice to let go
-  oct: 4, // the strip's lowest C: C4
+  oct: 2, // the strip's lowest C: C2, five octaves up to C7 (RJ, 16 Nov: "2 to 3 times as many keys")
   n: null, // the last MIDI event seen; none yet is "from now"
   polling: false,
 };
@@ -145,12 +145,15 @@ function kyAllOff(part) {
 }
 
 // ─── THE STRIP ───────────────────────────────────────────────────────────────
-// Two octaves from a C, on Atmosphere's panel. Pressed and held with the
-// mouse or a finger; sliding across plays the keys it crosses.
+// Five octaves from a C (61 keys), on Atmosphere's page, laid as a piano: the
+// white keys side by side, the black ones over them. Pressed and held with the
+// mouse or a finger; sliding across plays the keys it crosses. The computer's
+// keys play it too (`kyQwerty`).
 const KY_BLACK = [1, 3, 6, 8, 10];
+const KY_KEYS = 61;
 
 function kyStripHtml() {
-  return `<section class="panel ky-panel at-only"><div class="ph"><b class="nm">KEYS</b><span class="meta">held as long as a key is down · the scale's true pitch · MIDI on its own channel</span><span class="grow"></span>`
+  return `<section class="panel ky-panel at-only"><div class="ph"><b class="nm">KEYS</b><span class="meta">held as long as a key is down · the scale's true pitch · MIDI on its own channel · computer keys A–; (Z X octave)</span><span class="grow"></span>`
     + `<div class="seg ky-oct"><button type="button" data-o="-1" title="Octave down">−</button><span id="kyOctRo" class="mono">C4</span><button type="button" data-o="1" title="Octave up">+</button></div>`
     + kyPickerHtml("atmos") + `</div><div class="ky-strip" id="kyStrip"></div></section>`;
 }
@@ -159,8 +162,17 @@ function kyBuildStrip() {
   const strip = document.getElementById("kyStrip");
   if (!strip) return;
   const lo = (KY.oct + 1) * 12;
+  const whites = [];
+  for (let k = lo; k < lo + KY_KEYS; k++) if (!KY_BLACK.includes(k % 12)) whites.push(k);
+  const w = 100 / whites.length;
   let html = "";
-  for (let k = lo; k < lo + 25; k++) html += `<div class="ky-key${KY_BLACK.includes(k % 12) ? " blk" : ""}" data-k="${k}"></div>`;
+  for (const k of whites) html += `<div class="ky-key" data-k="${k}"></div>`;
+  // Each black key sits over the line after the white key below it.
+  for (let k = lo; k < lo + KY_KEYS; k++) {
+    if (!KY_BLACK.includes(k % 12)) continue;
+    const at = whites.indexOf(k - 1) + 1;
+    html += `<div class="ky-key blk" data-k="${k}" style="left:${(at * w - w * 0.3).toFixed(3)}%;width:${(w * 0.6).toFixed(3)}%"></div>`;
+  }
   strip.innerHTML = html;
   document.getElementById("kyOctRo").textContent = "C" + KY.oct;
   kyPaintKeys();
@@ -202,9 +214,42 @@ function kyWireStrip() {
   document.querySelector(".ky-oct").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
-    KY.oct = Math.max(0, Math.min(7, KY.oct + +b.dataset.o));
+    KY.oct = Math.max(0, Math.min(4, KY.oct + +b.dataset.o));
     kyBuildStrip();
   });
+}
+
+// ─── THE COMPUTER'S KEYS ─────────────────────────────────────────────────────
+// On the Atmosphere page, the letters play it as a piano does in most DAWs:
+// A W S E D F T G Y H U J K O L P ; from a C, Z and X an octave down and up.
+// That C is the strip's middle one. Held as long as the key is down.
+const KY_QWERTY = "awsedftgyhujkolp;";
+const KY_QHELD = new Map(); // key letter -> MIDI key
+let kyQOct = 2; // octaves above the strip's lowest C
+
+function kyQwerty() {
+  const typing = (e) => e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== "range";
+  document.addEventListener("keydown", (e) => {
+    if (!document.body.classList.contains("only-atmos") || e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
+    const l = e.key.toLowerCase();
+    if (l === "z" || l === "x") { kyQOct = Math.max(0, Math.min(4, kyQOct + (l === "z" ? -1 : 1))); e.preventDefault(); return; }
+    const i = KY_QWERTY.indexOf(l);
+    if (i < 0) return;
+    e.preventDefault();
+    if (e.repeat || KY_QHELD.has(l)) return;
+    const k = (KY.oct + 1 + kyQOct) * 12 + i;
+    KY_QHELD.set(l, k);
+    kyNoteOn("atmos", k, 0.8);
+  });
+  document.addEventListener("keyup", (e) => {
+    const l = e.key.toLowerCase();
+    const k = KY_QHELD.get(l);
+    if (k == null) return;
+    KY_QHELD.delete(l);
+    kyNoteOff("atmos", k);
+  });
+  // Keys let go when the page loses the keyboard, so nothing hangs.
+  window.addEventListener("blur", () => { for (const [l, k] of KY_QHELD) kyNoteOff("atmos", k); KY_QHELD.clear(); });
 }
 
 // ─── MIDI ────────────────────────────────────────────────────────────────────
@@ -248,6 +293,7 @@ function keysInit() {
   }
   kySendChannels();
   kyPoll();
+  kyQwerty();
 }
 
 keysInit();

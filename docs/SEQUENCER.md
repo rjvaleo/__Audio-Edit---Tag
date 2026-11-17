@@ -916,3 +916,21 @@ readings, the settings and the seed: the same seed makes the same piece.
 
 Tests: `tests/ui/sequencer-clone.spec.mjs` (the Stems routes stood in for with a
 small song's reading).
+
+## The pages, as RJ set them (16 Nov 2026)
+
+- **Seq** is the scale sequencer as it was built (September): the synth, the
+  filter, three LFOs, the delay, the scale, the steps, the performance and the
+  88 keys, in the app's look. Atmosphere, its Space, the Output scope, the
+  Journey and the Band are not shown there (`style.css`, "THE SEQ PAGE"); none
+  of them is removed.
+- **Band** is a rail page of its own: the same frame with `seq:only` `band`
+  (`body.only-band`), the Band panel as it was, with Play, Stop and the tempo.
+  Clone's "Open" goes there.
+- **Atmosphere** has no file overview, transport line or Atmosphere bar; it
+  starts with the oscillators. Voice and Amp sit tight; Character, Sympathy,
+  Space and Output are one line; the keys are a 61-key piano, which the
+  computer's letters play too (A–; from the strip's middle C, Z and X for the
+  octave).
+- **Stems** (and every page that plays a plain file): Play is that file alone;
+  `seqSync` starts the sequencer only where `playsDocument()`.

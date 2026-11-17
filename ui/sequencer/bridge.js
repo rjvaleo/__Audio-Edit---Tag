@@ -1091,6 +1091,9 @@ async function flush() {
       document.body.classList.toggle('only-draw', m.only === 'draw');
       // The host's Clone page: only the Clone panel (clone.js), which drives the Band.
       document.body.classList.toggle('only-clone', m.only === 'clone');
+      // The host's Band page: only the Band panel (band.js), as it was on Seq.
+      document.body.classList.toggle('only-band', m.only === 'band');
+      if (m.only === 'band') document.querySelector('.right-panel')?.scrollTo(0, 0);
       if (m.only === 'clone' && typeof cloneShown === 'function') cloneShown();
       // Its envelope's picture is measured from its box, which has just moved.
       if (typeof atmosDrawAmp === 'function') requestAnimationFrame(atmosDrawAmp);

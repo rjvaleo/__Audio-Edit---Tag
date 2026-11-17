@@ -101,6 +101,12 @@ const COMPOSE_LISTED = false;
       icon: 'draw', label: 'Draw', mode: 'draw',
       title: 'Draw — draw on a canvas and it plays: across is time, up is pitch in the scale\'s true pitch, the ink is the instrument',
     },
+    // The Band: the Band panel that sat at the bottom of Seq, on a page of its
+    // own (the Seq frame again, showing only it). RJ, 16 Nov 2026.
+    {
+      icon: 'band', label: 'Band', mode: 'band',
+      title: 'The Band — drums, bass, chords, arp and drone from the scale, with its mixer; Clone writes it',
+    },
     {
       icon: 'stems', label: 'Stems', mode: 'stems',
       title: 'Stems — split a song into drums, bass, vocals and other, read what is in it, and make sounds from it',
@@ -232,6 +238,9 @@ const COMPOSE_LISTED = false;
     // A pen drawing a curve: the canvas that plays.
     draw:
       '<path d="M3 19c3.2-.2 4.6-6.4 7.6-6.6 2.6-.2 2.7 3.2 5 3"/><path d="m15.6 15.4 5.2-8.7a1.3 1.3 0 0 0-.46-1.78l-.2-.12a1.3 1.3 0 0 0-1.78.46l-5.2 8.7-.3 2.5z"/><path d="m17.5 7.6 2 1.2" stroke-width="1"/>',
+    // Three parts of a band: a drum, a bass string, a chord.
+    band:
+      '<circle cx="7" cy="15.5" r="4"/><path d="M3 15.5h8"/><path d="M14 20V5.5l6-1.5v14"/><circle cx="12.6" cy="20" r="1.5"/><circle cx="18.6" cy="18" r="1.5"/>',
     // A song pulled into four lanes.
     stems:
       '<path d="M3.5 12h3"/><path d="M6.5 12 9 6.5h11.5"/><path d="M6.5 12 9 10h11.5"/><path d="M6.5 12 9 14h11.5"/><path d="M6.5 12 9 17.5h11.5"/>',

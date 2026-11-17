@@ -16,6 +16,8 @@ async function openSeq(page) {
   await page.goto('/sequencer/');
   await page.waitForFunction(() => typeof keysInit === 'function' && !!document.getElementById('kyStrip') && KY.n !== null);
   await page.evaluate(() => { try { localStorage.removeItem('midiChannel.atmos'); localStorage.removeItem('midiChannel.classic'); } catch {} });
+  // The keys are on the Atmosphere page (RJ, 16 Nov: Seq is the sequencer as it was).
+  await page.evaluate(() => document.body.classList.add('only-atmos'));
 }
 
 const held = (page) => page.evaluate(() => [...KY.held.keys()].sort());
