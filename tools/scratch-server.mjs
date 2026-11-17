@@ -16,7 +16,7 @@
 // in the same place a person would look: open the URL it prints.
 
 import { spawnSync, spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,7 +25,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.SCRATCH_PORT || 8791);
 // `CARGO_TARGET_DIR` when set, as cargo itself does: `npm run test:map` builds
 // a clean copy of the commit into a build folder of its own.
-const binary = join(process.env.CARGO_TARGET_DIR || join(root, 'core/target'), 'release/audiolab');
+// `.exe` on Windows: the PC runs the suite too (`tools/pc/run-tests.cmd`).
+const binary = join(process.env.CARGO_TARGET_DIR || join(root, 'core/target'), 'release', process.platform === 'win32' ? 'audiolab.exe' : 'audiolab');
 
 // ------------------------------------------------------------- a library
 
@@ -83,7 +84,7 @@ if (built.status !== 0) {
   console.error('the build failed — the suite would have run against the last one');
   process.exit(1);
 }
-if (spawnSync('test', ['-x', binary]).status !== 0) {
+if (!existsSync(binary)) {
   console.error(`no binary at ${binary} after a successful build`);
   process.exit(1);
 }

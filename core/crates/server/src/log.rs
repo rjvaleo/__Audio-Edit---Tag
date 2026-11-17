@@ -11,8 +11,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 fn clock() -> String {
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as libc::time_t).unwrap_or(0);
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    // SAFETY: both pointers are to locals that outlive the call.
+    // SAFETY: both pointers are to locals that outlive the call. Windows (the
+    // PC runs the tests) has `localtime_s`, its arguments the other way round.
+    #[cfg(unix)]
     unsafe { libc::localtime_r(&secs, &mut tm) };
+    #[cfg(windows)]
+    unsafe { libc::localtime_s(&mut tm, &secs) };
     format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
 }
 
