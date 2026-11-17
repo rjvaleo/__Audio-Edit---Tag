@@ -959,3 +959,27 @@ insert effects … all the effects … like I can on the grain page".
 - **Kept** in the hidden field `#atFxChain` (JSON) among Atmosphere's
   switches, so presets and morphs carry it, and in this browser
   (`atmos.fx`). A film's offline render does not run the chain yet.
+
+## Atmosphere: a synth of its own (16 Nov 2026, later)
+
+RJ: "completely its own synth … its own MIDI channel, its own filter section,
+its own amplitude section, its own effects section … its own volume … nothing
+to do with anything else", with its own LFOs and its own tuning.
+
+- **The sound:** voice (its oscillators) → its filter (one per voice) → its
+  Amp → Character → Sympathy → its FX line → `atOut` (trim 0.7, its old level)
+  → `atTrem` (its volume LFO) → the master. Never Seq's filter, delay, Space,
+  Vol (`seqVol`, now before the master) or LFOs. Seq's steps no longer play it
+  (`playNote`); its keys and its MIDI channel do.
+- **Its own LFOs**, three: shape, rate, depth, and a target — cutoff (every
+  voice's filter, through the `cutoff` bus), pitch, volume, pan, blend, air,
+  vowel, fit. Seq's LFOs no longer offer Atmosphere's targets.
+- **Its own tuning:** every scale in the library, its own root and octave;
+  each "Same as Seq" until set (`atKeyHz`). Its keys, Sympathy and the Scale
+  spectrum oscillator use it.
+- **The page**, in signal order: oscillators; Voice, Amp; Filter, Character,
+  Sympathy; LFO 1–3, Tuning; FX, Output; keys. No Delay or Space panel.
+- `melBus` is stereo by its own settings: it used to become stereo only
+  because Atmosphere joined it, and the Band's melody channel takes 3 dB off a
+  mono input.
+- Tests: `tests/ui/sequencer-atfx.spec.mjs`.

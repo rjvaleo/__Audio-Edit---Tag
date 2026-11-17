@@ -72,7 +72,8 @@ test('Atmosphere is served and on the page: its power, eight kinds twice, Space,
     space: document.querySelectorAll('.at-space .knob-group').length,
     targets: [...document.getElementById('lfo1TargetSelect').options].map((o) => o.value).filter((v) => v.startsWith('at-')),
   }));
-  expect(got).toEqual({ cards: 16, space: 7, targets: ['at-detune', 'at-pan', 'at-air', 'at-blend', 'at-vowel', 'at-fit'] });
+  // Seq's LFOs offer none of Atmosphere's targets: it has LFOs of its own (16 Nov 2026).
+  expect(got).toEqual({ cards: 16, space: 7, targets: [] });
   expect(await state()).toEqual({ mode: 'classic', classic: true, atmos: false, lit: ['classic'], shown: 'none' });
   // Atmosphere on: both play. The powers are not shown on either page since
   // 16 Nov (RJ: no Atmosphere bar; Seq is the sequencer as it was); pressed here
@@ -88,7 +89,9 @@ test('Atmosphere is served and on the page: its power, eight kinds twice, Space,
   expect(await page.evaluate(() => [AT.kindA, document.getElementById('atA1Label').textContent])).toEqual(['glass', 'Material']);
 });
 
-test('with both synths on, a note plays both: louder than either alone', async ({ page }) => {
+test('Seq\'s steps play Seq\'s synth alone, whatever the old switch says: Atmosphere is a synth of its own', async ({ page }) => {
+  // RJ, 16 Nov 2026: "completely separate from everything else". It was: with
+  // both on, a note played both.
   await openSeq(page);
   const got = await page.evaluate(async () => {
     const at = async (mode) => {
@@ -97,11 +100,8 @@ test('with both synths on, a note plays both: louder than either alone', async (
     };
     return { classic: await at('classic'), atmos: await at('atmos'), both: await at('both') };
   });
-  expect(got.classic.voices, 'Classic alone made Atmosphere voices').toBe(0);
-  expect(got.atmos.voices).toBeGreaterThan(0);
-  expect(got.both.voices).toBeGreaterThan(0);
-  expect(got.both.db).toBeGreaterThan(got.classic.db + 1);
-  expect(got.both.db).toBeGreaterThan(got.atmos.db + 1);
+  expect([got.classic.voices, got.atmos.voices, got.both.voices]).toEqual([0, 0, 0]);
+  expect(Math.abs(got.both.db - got.classic.db)).toBeLessThan(0.5);
 });
 
 test('true pitch: a note on a degree of a just scale is exactly the frequency the scale gives it', async ({ page }) => {
@@ -121,7 +121,7 @@ test('Scale spectrum puts its partials on the scale by Fit: the 7th harmonic mov
   const got = await page.evaluate(async () => {
     selectScale(SCALES.findIndex((s) => s.name === 'Major Pentatonic'));
     const at = async (fit) => {
-      const r = await __atRender(() => { __base(); __set('atKindASelect', 'spectrum'); __set('atA1Slider', fit); __set('atA2Slider', 100); __set('atA3Slider', 30); atmosRead(); playNote(110, 0.05); });
+      const r = await __atRender(() => { __base(); __set('atKindASelect', 'spectrum'); __set('atA1Slider', fit); __set('atA2Slider', 100); __set('atA3Slider', 30); atmosRead(); atmosPlay(110, 0.05, atmosNoteDur(0.5)); });
       return __peakCents(r.x, r.rate, 0.5, 1.9, 770, 100, 0.5);
     };
     return { fit0: await at(0), fit100: await at(100), expected: 3300 - 1200 * Math.log2(7) };

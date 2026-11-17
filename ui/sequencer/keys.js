@@ -122,11 +122,13 @@ function kyNoteOn(part, key, vel = 0.8) {
   if (!audioCtx) return false;
   if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
   kyNoteOff(part, key);
-  const hz = kyHz(key);
+  // Atmosphere in its own tuning (atmos.js, `atKeyHz`), Seq's synth in Seq's.
+  const hz = part === "atmos" && typeof atKeyHz === "function" ? atKeyHz(key) : kyHz(key);
   const voice = part === "atmos" ? kyAtmosOn(hz, vel) : kyClassicOn(hz, vel);
   if (!voice) return false;
   if (typeof scopeNote === "function") scopeNote(hz);
-  noteFilterEnv(hz, audioCtx.currentTime, (60 / bpm) * stepBeats);
+  // Seq's filter envelope is Seq's synth's: Atmosphere has a filter of its own.
+  if (part !== "atmos") noteFilterEnv(hz, audioCtx.currentTime, (60 / bpm) * stepBeats);
   KY.held.set(`${part}:${key}`, voice);
   kyPaintKeys();
   return true;
@@ -153,7 +155,7 @@ const KY_BLACK = [1, 3, 6, 8, 10];
 const KY_KEYS = 61;
 
 function kyStripHtml() {
-  return `<section class="panel ky-panel at-only"><div class="ph"><b class="nm">KEYS</b><span class="meta">held as long as a key is down · the scale's true pitch · MIDI on its own channel · computer keys A–; (Z X octave)</span><span class="grow"></span>`
+  return `<section class="panel ky-panel at-only"><div class="ph"><b class="nm">KEYS</b><span class="meta">held as long as a key is down · its own tuning · MIDI on its own channel · computer keys A–; (Z X octave)</span><span class="grow"></span>`
     + `<div class="seg ky-oct"><button type="button" data-o="-1" title="Octave down">−</button><span id="kyOctRo" class="mono">C4</span><button type="button" data-o="1" title="Octave up">+</button></div>`
     + kyPickerHtml("atmos") + `</div><div class="ky-strip" id="kyStrip"></div></section>`;
 }

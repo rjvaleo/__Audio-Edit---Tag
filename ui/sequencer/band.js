@@ -174,7 +174,7 @@ function bandInit() {
     x.meter.fftSize = 512;
     x.in.connect(x.fader); x.fader.connect(x.pan);
     // The melody's dry goes where it always went: the delay's dry side.
-    x.pan.connect(ch.c === "Mel" ? delayDryGain : masterGain);
+    x.pan.connect(ch.c === "Mel" ? delayDryGain : seqVol);
     x.pan.connect(x.dly); x.pan.connect(x.spc); x.pan.connect(x.meter);
     if (dlyIn) { x.dly.connect(dlyIn); x.extraDly.connect(dlyIn); }
     if (spcIn) { x.spc.connect(spcIn); x.extraSpc.connect(spcIn); }

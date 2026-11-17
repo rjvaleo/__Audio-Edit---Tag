@@ -14,6 +14,9 @@ async function openAtmos(page) {
   await page.goto('/sequencer/');
   await page.waitForFunction(() => typeof atfxBuild === 'function' && !!document.getElementById('atFxLine'));
   await page.evaluate(() => { try { localStorage.removeItem('atmos.fx'); } catch {} document.body.classList.add('only-atmos'); });
+  // A still voice, so a level read twice reads the same: one oscillator, no
+  // drift, air, ensemble, wow, sub or sympathy.
+  await page.evaluate(() => { for (const [k, v] of Object.entries({ atUnison: 1, atDrift: 0, atAir: 0, atEns: 0, atWow: 0, atSym: 0, atSub: 0, atWidth: 0 })) document.getElementById(k + 'Slider').value = v; atmosRead(); });
   await page.waitForFunction(() => ATFX.suites.length > 5);
 }
 
@@ -83,14 +86,14 @@ test('the effect runs on Atmosphere\'s sound: a reverb leaves a tail the dry voi
     await new Promise((r) => setTimeout(r, 200));
     const an = audioCtx.createAnalyser();
     an.fftSize = 2048;
-    melBus.connect(an);
+    atOut.connect(an);
     const t = audioCtx.currentTime + 0.05;
     atmosPlay(440, t, 0.15, { atk: 0.002, rel: 0.02 });
     // Well after the note and its release: what is left.
     await new Promise((r) => setTimeout(r, 900));
     const d = new Float32Array(an.fftSize);
     an.getFloatTimeDomainData(d);
-    melBus.disconnect(an);
+    atOut.disconnect(an);
     return Math.sqrt(d.reduce((a, x) => a + x * x, 0) / d.length);
   }, chain);
   const dry = await tail([]);
@@ -109,12 +112,12 @@ test('Atmosphere\'s filter is its own: Seq\'s cutoff leaves it alone, its own cl
     atmosRead();
     const an = audioCtx.createAnalyser();
     an.fftSize = 4096;
-    melBus.connect(an);
+    atOut.connect(an);
     atmosPlay(880, audioCtx.currentTime + 0.02, 0.6, { atk: 0.002 });
     await new Promise((r) => setTimeout(r, 350));
     const d = new Float32Array(an.fftSize);
     an.getFloatTimeDomainData(d);
-    melBus.disconnect(an);
+    atOut.disconnect(an);
     for (const v of atVoices) atStealOldest(v, audioCtx.currentTime);
     await new Promise((r) => setTimeout(r, 300));
     return Math.sqrt(d.reduce((a, x) => a + x * x, 0) / d.length);
@@ -127,4 +130,138 @@ test('Atmosphere\'s filter is its own: Seq\'s cutoff leaves it alone, its own cl
   expect(seqShut).toBeGreaterThan(open * 0.7);
   // Its own shut: far quieter.
   expect(ownShut).toBeLessThan(open * 0.3);
+});
+
+// ─── A SYNTH OF ITS OWN ──────────────────────────────────────────────────────
+// RJ, 16 Nov 2026: "completely its own synth … its own MIDI channel, its own
+// filter section, its own amplitude section, its own effects section … its own
+// volume … nothing to do with anything else", with its own LFOs and tuning.
+
+/// Atmosphere's level where everything meets (the master), during a note and
+/// in its tail, after `setup` has run.
+async function atLevel(page, setup) {
+  return page.evaluate(async (setup) => {
+    initAudio();
+    await audioCtx.resume();
+    for (let k = 0; k < 60 && !ATFX.nodes.some((n) => n.context === audioCtx); k++) await new Promise((r) => setTimeout(r, 50));
+    new Function(setup)();
+    atmosRead();
+    const an = audioCtx.createAnalyser();
+    an.fftSize = 4096;
+    masterGain.connect(an);
+    const rms = () => { const d = new Float32Array(an.fftSize); an.getFloatTimeDomainData(d); return Math.sqrt(d.reduce((a, x) => a + x * x, 0) / d.length); };
+    atmosPlay(440, audioCtx.currentTime + 0.02, 0.6, { atk: 0.002, rel: 0.02 });
+    let during = 0;
+    await new Promise((r) => setTimeout(r, 150));
+    for (let k = 0; k < 5; k++) { during += rms() / 5; await new Promise((r) => setTimeout(r, 60)); }
+    await new Promise((r) => setTimeout(r, 900));
+    const tail = rms();
+    masterGain.disconnect(an);
+    return { during, tail };
+  }, setup);
+}
+const SEQ_RESET = "updateVol(70); document.getElementById('cutoffSlider').value = 67; updateFilter(); document.getElementById('delayWetSlider').value = 0; document.getElementById('delayFbSlider').value = 0; updateDelay(); document.getElementById('atRevWetSlider').value = 0; document.getElementById('atVolSlider').value = 70;";
+
+test('nothing of Seq\'s synth reaches it: Seq\'s volume, filter, delay and Space leave Atmosphere as it is', async ({ page }) => {
+  await openAtmos(page);
+  const base = await atLevel(page, SEQ_RESET);
+  expect(base.during).toBeGreaterThan(0.002);
+  const cases = {
+    'Seq volume 0': SEQ_RESET + "updateVol(0);",
+    'Seq cutoff shut': SEQ_RESET + "document.getElementById('cutoffSlider').value = 0; updateFilter();",
+    'Seq delay full': SEQ_RESET + "document.getElementById('delayWetSlider').value = 100; document.getElementById('delayFbSlider').value = 90; updateDelay();",
+    'Space full': SEQ_RESET + "document.getElementById('atRevWetSlider').value = 100;",
+  };
+  for (const [name, setup] of Object.entries(cases)) {
+    const got = await atLevel(page, setup);
+    expect(got.during / base.during, `${name}: during the note`).toBeGreaterThan(0.8);
+    expect(got.during / base.during, `${name}: during the note`).toBeLessThan(1.25);
+    // No echo, no reverb tail from Seq's effects.
+    expect(got.tail, `${name}: its tail`).toBeLessThan(Math.max(base.tail * 1.5, 0.002));
+  }
+  // Its own Volume is what sets its level.
+  const quiet = await atLevel(page, SEQ_RESET + "document.getElementById('atVolSlider').value = 0;");
+  expect(quiet.during).toBeLessThan(base.during * 0.02);
+});
+
+test('Seq\'s steps never play it, and Seq\'s LFOs cannot reach it', async ({ page }) => {
+  await openAtmos(page);
+  const got = await page.evaluate(async () => {
+    initAudio();
+    await audioCtx.resume();
+    atmosSet('atModeSelect', 'both');
+    const before = atVoices.length;
+    playNote(440, audioCtx.currentTime + 0.02, 1);
+    const targets = [1, 2, 3].flatMap((n) => [...document.getElementById(`lfo${n}TargetSelect`).options].map((o) => o.value));
+    return { made: atVoices.length - before, at: targets.filter((v) => v.startsWith('at-')) };
+  });
+  expect(got.made, 'a step played Atmosphere').toBe(0);
+  expect(got.at).toEqual([]);
+});
+
+test('its own LFOs move its own sound', async ({ page }) => {
+  await openAtmos(page);
+  const got = await page.evaluate(async () => {
+    initAudio();
+    await audioCtx.resume();
+    const set = (id, v) => { const el = document.getElementById(id); el.value = v; };
+    set('atL1ShapeSelect', 'square'); set('atL1TargetSelect', 'volume'); set('atL1RateSlider', 65); set('atL1DepthSlider', 100);
+    set('atL2TargetSelect', 'cutoff'); set('atL2DepthSlider', 60);
+    atmosRead();
+    const an = audioCtx.createAnalyser();
+    an.fftSize = 256;
+    masterGain.connect(an);
+    atmosPlay(330, audioCtx.currentTime + 0.02, 1.5, { atk: 0.002 });
+    const seen = [];
+    for (let k = 0; k < 40; k++) {
+      await new Promise((r) => setTimeout(r, 25));
+      const d = new Float32Array(an.fftSize); an.getFloatTimeDomainData(d);
+      seen.push(Math.sqrt(d.reduce((a, x) => a + x * x, 0) / d.length));
+    }
+    masterGain.disconnect(an);
+    const mid = seen.slice(8);
+    return { to: atLfos[0].to === atTrem.gain, cut: atLfos[1].to === atBus.cutoff.offset, lo: Math.min(...mid), hi: Math.max(...mid) };
+  });
+  expect(got.to).toBe(true);
+  expect(got.cut).toBe(true);
+  // A square LFO at full depth on its volume: loud and quiet by turns.
+  expect(got.hi).toBeGreaterThan(got.lo * 2);
+});
+
+test('its own tuning: its scale and root, or Seq\'s when it says Same as Seq', async ({ page }) => {
+  await openAtmos(page);
+  const got = await page.evaluate(() => {
+    const set = (id, v) => { const el = document.getElementById(id); el.value = v; };
+    selectScale(SCALES.findIndex((s) => /Ionian/.test(s.name)));
+    document.getElementById('rootSelect').value = '9'; document.getElementById('octaveSelect').value = '4'; updateRoot();
+    set('atTuneScaleSelect', 'seq'); set('atTuneRootSelect', 'seq'); set('atTuneOctSelect', 'seq');
+    atmosRead();
+    const same = [atKeyHz(69), kyHz(69), atKeyHz(61), kyHz(61)];
+    // Its own: C, octave 4, a just scale.
+    set('atTuneRootSelect', '0'); set('atTuneOctSelect', '4');
+    set('atTuneScaleSelect', String(SCALES.findIndex((s) => /Ptolemy/.test(s.name))));
+    atmosRead();
+    return { same, c4: atKeyHz(60), seqC4: kyHz(60), seqRoot: rootHz, name: atScale().name };
+  });
+  expect(got.same[0]).toBeCloseTo(got.same[1], 3);
+  expect(got.same[2]).toBeCloseTo(got.same[3], 3);
+  expect(got.c4).toBeCloseTo(261.63, 1);
+  expect(got.name).toMatch(/Ptolemy/);
+  // Seq's tuning is untouched by it.
+  expect(got.seqRoot).toBeCloseTo(440, 3);
+});
+
+test('on its page, in the order its sound goes: Amp, Filter, then its effects; no delay or Space of Seq\'s', async ({ page }) => {
+  await openAtmos(page);
+  const got = await page.evaluate(() => {
+    const top = (s) => document.querySelector(s).getBoundingClientRect().top;
+    const shown = (s) => [...document.querySelectorAll(s)].some((e) => e.getClientRects().length > 0);
+    return { amp: top('.at-ampp'), filt: top('.at-filt'), lfo: top('.at-lfo'), fx: top('#atFxLine'), delay: shown('.fx-delay'), space: shown('.fx-space'), seqFilter: shown('.syn-filter'), tune: shown('.at-tune'), lfos: document.querySelectorAll('.at-lfo').length };
+  });
+  expect(got.amp).toBeLessThan(got.filt);
+  expect(got.filt).toBeLessThan(got.fx);
+  expect(got.lfo).toBeLessThan(got.fx);
+  expect([got.delay, got.space, got.seqFilter]).toEqual([false, false, false]);
+  expect(got.tune).toBe(true);
+  expect(got.lfos).toBe(3);
 });

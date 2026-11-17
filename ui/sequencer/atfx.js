@@ -5,7 +5,7 @@
 //
 // **The sound.** Every effect the Grain page has (the app's suites, `/api/fx`)
 // runs here on Atmosphere alone: its voice, character and sympathy go through
-// this chain, then on to the delay and Space. The effects are the engine's own
+// this chain and out, its only effects: never Seq's delay or Space. The effects are the engine's own
 // — the `fx` crate's rack built for the browser (`atfx.wasm`) and run in an
 // AudioWorklet (`atfx-worklet.js`) — so a mode sounds here as it does there,
 // and the keys stay as quick as they were: nothing goes to the engine and back.
@@ -143,7 +143,7 @@ function atfxBuild() {
   sec.className = "panel at-fx at-only";
   sec.id = "atFxLine";
   sec.innerHTML = `<div class="atfx-lab"><b class="nm">FX</b><span class="meta">Atmosphere only</span><span class="meta">right-click to insert</span></div>`
-    + `<span class="atfx-end">VOICE ›</span><div class="atfx-chain" id="atFxChainRow"></div><span class="atfx-end">› DELAY · SPACE</span>`;
+    + `<span class="atfx-end">VOICE ›</span><div class="atfx-chain" id="atFxChainRow"></div><span class="atfx-end">› OUT</span>`;
   body.append(sec);
   sec.addEventListener("contextmenu", atfxContext);
   const row = document.getElementById("atFxChainRow");
