@@ -88,8 +88,22 @@ const AT_KNOBS = [
   ["atRevShim", "Shimmer", 0, 100, 30, atPct],
   ["atRevSpread", "Spread", 0, 100, 80, atPct],
   ["atMacro", "ATMOSPHERE", 0, 100, 60, atPct],
+  // Its own filter, one per voice (RJ, 16 Nov 2026: "it should have its own
+  // filter … it's its own synth"). Open, with no envelope, it is not there.
+  ["atFltType", "Type", 0, 2, 0, (v) => ["Low-pass", "Band", "High-pass"][Math.round(v)]],
+  ["atFltCut", "Cutoff", 0, 100, 100, (v) => atHz(atFltHz(v))],
+  ["atFltRes", "Reso", 0, 100, 10, (v) => "Q " + atFltQ(v).toFixed(1)],
+  ["atFltKey", "Key follow", 0, 100, 0, atPct],
+  ["atFltAmt", "Env amt", -100, 100, 0, (v) => (v > 0 ? "+" : "") + Math.round(v) + "%"],
+  ["atFltAtk", "F·Atk", 0, 100, 40, (v) => atMs(atExp(v, 1, 10000))],
+  ["atFltDec", "F·Dec", 0, 100, 60, (v) => atMs(atExp(v, 1, 10000))],
+  ["atFltSus", "F·Sus", 0, 100, 50, atPct],
+  ["atFltRel", "F·Rel", 0, 100, 70, (v) => atMs(atExp(v, 10, 20000))],
 ];
-const AT_SELECTS = ["atModeSelect", "atKindASelect", "atKindBSelect", "atSymTuneSelect"];
+const atFltHz = (v) => atExp(v, 30, 20000);
+const atFltQ = (v) => 0.5 + (v / 100) * 14.5;
+const atHz = (f) => (f >= 1000 ? (f / 1000).toFixed(f >= 10000 ? 0 : 1) + "kHz" : Math.round(f) + "Hz");
+const AT_SELECTS = ["atModeSelect", "atKindASelect", "atKindBSelect", "atSymTuneSelect", "atFxChain"];
 // What presets, morphs and the Performance recorder carry.
 const ATMOS_SLIDER_IDS = AT_KNOBS.map((k) => k[0] + "Slider");
 const ATMOS_SELECT_IDS = AT_SELECTS.slice();
@@ -162,6 +176,8 @@ function atmosBuildUI() {
     + atPanel("at-voice", "VOICE", "how A and B become one sound", atKnobs(["atBlend", "atUnison", "atDetune", "atWidth", "atDrift", "atSub", "atAir", "atHold", "atGlide"]))
     + atPanel("at-ampp", "AMP", "long swells: attack to 10 s, release to 20 s", `<div class="well pic"><canvas id="atAmpCanvas" width="300" height="64" class="at-amp"></canvas></div>${atKnobs(["atAtk", "atDec", "atSus", "atRel", "atVol"])}`)
     + `</div><div class="at-r3 at-row at-only">`
+    + atPanel("at-filt", "FILTER", "its own, one per voice", `<div class="at-filt-body"><div class="well pic"><canvas id="atFltCanvas" width="300" height="64"></canvas></div>`
+      + atKnobs(["atFltType", "atFltCut", "atFltRes", "atFltKey", "atFltAmt", "atFltAtk", "atFltDec", "atFltSus", "atFltRel"]) + `</div>`)
     + atPanel("at-char", "CHARACTER", "after the voice", atKnobs(["atWarm", "atWow", "atEns", "atEnsRate"]))
     + atPanel("at-sym", "SYMPATHY", "strings tuned to the scale, ringing along", `<div class="at-knobs">${["atSym", "atSymRing", "atSymMat"].map(atK).join("")}`
       + `<div class="select-row"><span class="cap">Tuned to</span><select id="atSymTuneSelect" onchange="atmosRead()"><option value="degrees">Degrees</option><option value="fifths">Root + 5th</option><option value="root">Root</option></select></div></div>`)
@@ -256,6 +272,7 @@ function atmosRead() {
   atmosPaintSegs();
   atmosApplyGlobal();
   atmosDrawAmp();
+  atmosDrawFilter();
 }
 
 /// What a per-oscillator knob reads, for its kind.
@@ -377,6 +394,8 @@ const AT_MAX_VOICES = 16;
 // passing the melody's filter, and from a pool of their own, so a chord never
 // takes a melody note's place.
 let atAc = null, atAcVoices = [];
+/// Where Atmosphere's voice, character and sympathy meet, on the way into its effects.
+let atFxIn = null;
 const AT_AC_MAX_VOICES = 24;
 
 /// Built once per context, by `initAudio`.
@@ -391,7 +410,12 @@ function atmosInit() {
   atWaveCache = new Map();
   const ch = atCharChain(c);
   ({ inp: atIn, shaper: atShaper, wow: atWow, wowLfo: atWowLfo, flutLfo: atFlutLfo, ensDry: atEnsDry, ensWet: atEnsWet, ensLfos: atEnsLfos, post: atPost } = ch);
-  atPost.connect(filterNode);
+  // Its own effects (atfx.js), then the melody's bus: after Seq's filter, not
+  // through it (RJ, 16 Nov 2026).
+  atFxIn = c.createGain();
+  atFxIn.connect(melBus);
+  if (typeof atfxAttach === "function") atfxAttach(c, atFxIn, melBus);
+  atPost.connect(atFxIn);
   // Accompany's chain: the same character, its output left for accompany.js
   // to take to the delay and Space.
   atAc = atCharChain(c);
@@ -400,7 +424,7 @@ function atmosInit() {
   atSymIn = c.createGain();
   atSymOut = c.createGain();
   atPost.connect(atSymIn);
-  atSymOut.connect(filterNode);
+  atSymOut.connect(atFxIn);
   atSymBank = [];
   atSymKey = "";
   // Space: its own reverb, for both synths (see the top of this file).
@@ -510,7 +534,7 @@ function atSpaceBuild(c) {
   r.dry = c.createGain();
   r.shim = c.createGain(); r.shim.gain.value = 0;
   r.wet = c.createGain(); r.wet.gain.value = 0;
-  filterNode.connect(r.gate);
+  melBus.connect(r.gate);
   r.gate.connect(r.pre); r.pre.connect(r.low); r.low.connect(r.conv); r.conv.connect(r.damp); r.damp.connect(r.lim);
   // The freeze loop.
   r.frzIn = c.createGain(); r.frzIn.gain.value = 0;
@@ -673,7 +697,7 @@ function atmosPlay(freq, time, dur, o = null) {
   env.gain.setTargetAtTime(0, time + dur, Math.max(0.004, r / 5));
   v.end = time + dur + r * 1.25 + 0.05;
   v.env = env;
-  env.connect(o && o.into ? o.into : ac ? atAc.inp : atIn);
+  atVoiceFilter(c, env, freq, time, dur).connect(o && o.into ? o.into : ac ? atAc.inp : atIn);
   // Blend: equal power, and the bus an LFO can sweep it with.
   const b = AT.atBlend / 100, gA = c.createGain(), gB = c.createGain(), inv = c.createGain();
   gA.gain.value = Math.cos(b * Math.PI / 2);
@@ -741,6 +765,50 @@ function atLink(v, src, dest) {
   src.connect(dest);
   v.links.push([src, dest]);
 }
+/// The voice's own filter: its type, cutoff and resonance, the key it follows
+/// and its envelope, for this note alone. Open and still, it is left out, so a
+/// voice sounds exactly as it did before there was one.
+function atVoiceFilter(c, env, freq, time, dur) {
+  const cut = atFltHz(AT.atFltCut ?? 100), amt = (AT.atFltAmt ?? 0) / 100, type = Math.round(AT.atFltType ?? 0);
+  if (type === 0 && (AT.atFltCut ?? 100) >= 100 && amt === 0) return env;
+  const f = c.createBiquadFilter();
+  f.type = ["lowpass", "bandpass", "highpass"][type];
+  f.Q.value = atFltQ(AT.atFltRes ?? 10);
+  const key = Math.pow(2, ((AT.atFltKey ?? 0) / 100) * (69 + 12 * Math.log2(freq / 440) - 60) / 12);
+  const base = Math.min(20000, Math.max(20, cut * key));
+  // Up to four octaves either way, as Seq's.
+  const to = (x) => Math.min(20000, Math.max(20, base * Math.pow(2, 4 * amt * x)));
+  const a = atExp(AT.atFltAtk ?? 40, 1, 10000) / 1000, d = atExp(AT.atFltDec ?? 60, 1, 10000) / 1000;
+  const s = (AT.atFltSus ?? 50) / 100, r = atExp(AT.atFltRel ?? 70, 10, 20000) / 1000;
+  const fr = f.frequency;
+  fr.setValueAtTime(base, time);
+  if (amt !== 0) {
+    fr.setTargetAtTime(to(1), time, Math.max(0.001, a / 3));
+    fr.setTargetAtTime(to(s), time + a, Math.max(0.001, d / 3));
+    if (fr.cancelAndHoldAtTime) fr.cancelAndHoldAtTime(time + dur);
+    fr.setTargetAtTime(base, time + dur, Math.max(0.004, r / 5));
+  }
+  env.connect(f);
+  return f;
+}
+
+/// The filter's picture: its envelope, as the Amp's is drawn.
+function atmosDrawFilter() {
+  const cv = document.getElementById("atFltCanvas");
+  if (!cv) return;
+  const g = cv.getContext("2d"), w = cv.width, h = cv.height;
+  g.clearRect(0, 0, w, h);
+  const a = AT.atFltAtk ?? 40, d = AT.atFltDec ?? 60, s = (AT.atFltSus ?? 50) / 100, r = AT.atFltRel ?? 70, amt = (AT.atFltAmt ?? 0) / 100;
+  const base = 1 - (AT.atFltCut ?? 100) / 100;
+  const y = (lvl) => h - 6 - (h - 12) * Math.max(0, Math.min(1, (1 - base) * 0.6 + lvl * amt * 0.4 + 0.2));
+  const tot = a + d + 60 + r, X = (t) => 4 + (w - 8) * (t / tot);
+  g.strokeStyle = getComputedStyle(document.body).getPropertyValue("--f-tone").trim() || "#79bfc3";
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(X(0), y(0)); g.lineTo(X(a), y(1)); g.lineTo(X(a + d), y(s)); g.lineTo(X(a + d + 60), y(s)); g.lineTo(X(tot), y(0));
+  g.stroke();
+}
+
 function atCleanup(v) {
   for (const [src, dest] of v.links) { try { src.disconnect(dest); } catch (e) { /* gone */ } }
   v.links = [];

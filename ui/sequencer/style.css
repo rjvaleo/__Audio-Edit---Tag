@@ -999,7 +999,7 @@ body.only-atmos .at-group,
 body.only-atmos .at-body,
 body.only-atmos .at-r3,
 body.only-atmos .r3 { display: contents !important; }
-body.only-atmos .at-r1 { grid-column: 1 / -1; order: 1; }
+body.only-atmos .at-r1 { grid-column: 1 / -1; order: 0; }
 body.only-atmos .at-r2 { grid-column: 1 / -1; order: 2; grid-template-columns: auto minmax(0, 1fr); }
 /* Seq's Filter and Delay, which Atmosphere plays through, shown here too
    (RJ, 16 Nov 2026: "show the shared ones"); a knob turned here is Seq's knob.
@@ -1007,11 +1007,17 @@ body.only-atmos .at-r2 { grid-column: 1 / -1; order: 2; grid-template-columns: a
 body.only-atmos .r1,
 body.only-atmos .r2 { display: contents !important; }
 body.only-atmos #classicPanel,
+body.only-atmos .syn-filter,
 body.only-atmos .lfo-unit { display: none !important; }
 body.only-atmos .fx-delay { display: flex !important; }
+/* Its own effects line, under Voice and Amp (atfx.js). */
+body.only-atmos .at-fx { order: 2; grid-column: 1 / -1; display: flex !important; flex-direction: row; }
+body.only-atmos .ky-strip { height: 78px; }
+body.only-atmos .at-r2 { order: 1; }
 body.only-atmos .at-char { order: 3; grid-column: 1; }
 body.only-atmos .at-sym { order: 4; grid-column: 2; }
-body.only-atmos .syn-filter { order: 5; grid-column: 3 / 5; }
+/* Its own filter, one per voice (RJ, 16 Nov 2026), not Seq's. */
+body.only-atmos .at-filt { order: 5; grid-column: 3 / 5; }
 body.only-atmos .fx-delay { order: 6; grid-column: 1; }
 body.only-atmos .fx-space { order: 7; grid-column: 2 / 4; }
 body.only-atmos .scope-out { order: 8; grid-column: 4; }
@@ -1025,3 +1031,48 @@ body.only-atmos .at-ampp > .ph { grid-column: 1 / -1; }
 body.only-atmos .at-ampp .well.pic { order: 2; height: 64px; }
 body.only-atmos .at-voice .at-knobs { flex-wrap: nowrap; }
 body.only-atmos .fx-delay .ph .cap { display: none; }
+
+/* ─── ATMOSPHERE'S OWN FILTER AND EFFECTS ─────────────────────────────────────
+   The filter (atmos.js) and the FX line, its menu and its windows (atfx.js). */
+.at-filt-body { display: flex; gap: 10px; align-items: center; }
+.at-filt-body .well.pic { width: 180px; height: 64px; flex: none; }
+.at-filt-body .well.pic canvas { width: 100%; height: 100%; }
+.at-fx { display: flex !important; flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; }
+.atfx-lab { display: flex; flex-direction: column; gap: 2px; width: 140px; flex: none; }
+.atfx-lab .meta { font-size: 10px; }
+.atfx-end { font: 600 9px var(--mono); letter-spacing: 0.12em; color: var(--look-text-3); white-space: nowrap; flex: none; }
+.atfx-chain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; padding: 2px; min-height: 48px; }
+.atfx-ar { color: var(--look-text-3); font: 400 13px var(--mono); }
+.atfx-tile {
+  height: 44px; min-width: 128px; padding: 0 10px 0 8px; display: flex; align-items: center; gap: 8px; border-radius: var(--r-m); cursor: pointer; flex: none;
+  background: linear-gradient(180deg, var(--look-panel-hi), var(--look-panel)); border: 1px solid var(--look-line);
+}
+.atfx-tile:hover { border-color: color-mix(in srgb, var(--on) 40%, var(--look-line)); }
+.atfx-tile.open { border-color: var(--on); }
+.atfx-tile.off { opacity: 0.45; }
+.atfx-led { width: 9px; height: 9px; border-radius: 50%; background: var(--on); box-shadow: 0 0 6px var(--on); flex: none; cursor: pointer; }
+.atfx-tile.off .atfx-led, .atfx-led.off { background: var(--look-line); box-shadow: none; }
+.atfx-tx { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.atfx-tx b { font: 600 11px var(--ui); color: var(--look-text); white-space: nowrap; }
+.atfx-tx span { font: 400 9px var(--mono); color: var(--sc); white-space: nowrap; }
+.atfx-mini { width: 40px; height: 22px; border-radius: 4px; background: var(--look-well); flex: none; }
+.atfx-plus { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border-radius: var(--r-m); border: 1px dashed var(--look-line); color: var(--look-text-3); font: 400 16px var(--ui); background: none; cursor: pointer; }
+.atfx-plus:hover { color: var(--on); border-color: var(--on); }
+.atfx-menu { position: fixed; z-index: 60; min-width: 190px; padding: 4px; border-radius: 8px; background: var(--look-panel-hi); border: 1px solid var(--look-line); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7); font: 500 11px var(--ui); color: var(--look-text-2); }
+.atfx-mi { height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+.atfx-mi.hot { background: color-mix(in srgb, var(--on) 16%, transparent); color: var(--look-text); }
+.atfx-k { margin-left: auto; padding-left: 14px; color: var(--look-text-3); }
+.atfx-sep { height: 1px; margin: 4px 6px; background: var(--look-line); }
+.atfx-hd { padding: 5px 10px 3px; font: 600 9px var(--mono); letter-spacing: 0.14em; color: var(--look-text-3); text-transform: uppercase; }
+.atfx-win { position: fixed; z-index: 50; width: 600px; max-width: calc(100vw - 16px); border-radius: var(--r-l); display: flex; flex-direction: column;
+  background: linear-gradient(180deg, var(--look-panel-hi), var(--look-panel) 40px); border: 1px solid var(--look-line); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.75); }
+.atfx-bar { height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--look-line); cursor: move; touch-action: none; }
+.atfx-bar b { font: 600 13px var(--ui); color: var(--look-text); }
+.atfx-bar .btn { height: 24px; }
+.atfx-x { width: 24px; height: 24px; border-radius: var(--r-m); display: grid; place-items: center; color: var(--look-text-3); background: none; border: 0; cursor: pointer; }
+.atfx-x:hover { color: var(--look-text); }
+.atfx-vis { margin: 10px 12px 0; height: 90px; }
+.atfx-vis canvas { width: 100%; height: 100%; }
+.atfx-knobs { padding: 10px 12px 12px; gap: 6px 4px; }
+.atfx-vsep { width: 1px; align-self: stretch; margin: 0 6px; background: var(--look-line); }
+.atfx-none { padding: 0 12px 12px; }

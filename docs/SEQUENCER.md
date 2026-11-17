@@ -934,3 +934,28 @@ small song's reading).
   octave).
 - **Stems** (and every page that plays a plain file): Play is that file alone;
   `seqSync` starts the sequencer only where `playsDocument()`.
+
+## Atmosphere's own filter and effects (16 Nov 2026)
+
+RJ: "It should have its own filter … it's its own synth", and "right click,
+insert effects … all the effects … like I can on the grain page".
+
+- **Its own filter, one per voice** (`atVoiceFilter`, atmos.js): low-pass,
+  band or high-pass, cutoff, resonance, key follow and an envelope of its own
+  (amount, attack, decay, sustain, release). Open and still, it is not built,
+  so a voice sounds as it did. Seq's filter no longer touches Atmosphere:
+  Seq's filter leaves through `melBus` (app.js) to the delay and Space, and
+  Atmosphere joins there, after it. The Band's mixer takes `melBus` too.
+- **Its own effects** (atfx.js): the FX line, after its voice, character and
+  sympathy and before the delay and Space. Right-click (or ＋) inserts any
+  effect the app's suites list; a module's right-click opens, switches,
+  inserts before or after, replaces or removes it; a module drags to move;
+  a click opens its window with every control, Mix and Level.
+- **The same effects as the engine.** `core/crates/fx-wasm` is the `fx` crate's
+  `Rack` built for wasm32 (`tools/build-fx-wasm.sh` writes
+  `ui/sequencer/atfx.wasm`), run in an AudioWorklet (`atfx-worklet.js`). No
+  lead, no round trip: the keys stay quick. Run the script after changing an
+  effect, then rebuild the binary.
+- **Kept** in the hidden field `#atFxChain` (JSON) among Atmosphere's
+  switches, so presets and morphs carry it, and in this browser
+  (`atmos.fx`). A film's offline render does not run the chain yet.

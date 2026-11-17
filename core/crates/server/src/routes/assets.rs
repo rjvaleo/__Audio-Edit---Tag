@@ -37,7 +37,7 @@ pub fn ui_build_id() -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for part in [UI_HTML, UI_CSS, UI_JS, RAIL_JS, RAIL_CSS, WAVE_CSS, GRAIN_CSS, EDIT_CSS, SOUND_MAP_JS, SOUND_MAP_CSS, CHOP_JS, CHOP_CSS,
                  SETTINGS_JS, SECTION_PRESETS_JS,
-                 SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS, SEQ_ATMOS_JS, SEQ_KEYS_JS, SEQ_LOOK_JS, SEQ_JOURNEY_JS, SEQ_SCOPES_JS, SEQ_ACCOMPANY_JS, SEQ_DRUMS_JS, SEQ_BAND_JS, SEQ_DRAW_JS, SEQ_CLONE_JS,
+                 SEQ_HTML, SEQ_APP_JS, SEQ_PERF_JS, SEQ_CSS, SEQ_PRESETS, SEQ_BRIDGE_JS, SEQ_ATMOS_JS, SEQ_KEYS_JS, SEQ_LOOK_JS, SEQ_JOURNEY_JS, SEQ_SCOPES_JS, SEQ_ACCOMPANY_JS, SEQ_DRUMS_JS, SEQ_BAND_JS, SEQ_DRAW_JS, SEQ_CLONE_JS, SEQ_ATFX_JS, SEQ_ATFX_WORKLET_JS,
                  PERF_PANEL_JS, PRISM_PAD_JS, COMPOSE_JS, VISUAL_LANES_JS,
                  SHAPES_4D_JS, PANEL_4D_JS, CONTROL_PICTURES_JS,
                  STAGE_JS, VIS_REGISTRY_JS, ROOM_TEXT_JS,
@@ -130,6 +130,11 @@ pub const SEQ_BAND_JS: &str = include_str!("../../../../../ui/sequencer/band.js"
 pub const SEQ_DRAW_JS: &str = include_str!("../../../../../ui/sequencer/draw.js");
 /// Ours: Clone a song, the host's Clone page, which writes the Band (14 Nov 2026).
 pub const SEQ_CLONE_JS: &str = include_str!("../../../../../ui/sequencer/clone.js");
+/// Atmosphere's own effects: the page's side, the audio thread's, and the effect
+/// rack built for the browser (`tools/build-fx-wasm.sh`).
+pub const SEQ_ATFX_JS: &str = include_str!("../../../../../ui/sequencer/atfx.js");
+pub const SEQ_ATFX_WORKLET_JS: &str = include_str!("../../../../../ui/sequencer/atfx-worklet.js");
+pub const SEQ_ATFX_WASM: &[u8] = include_bytes!("../../../../../ui/sequencer/atfx.wasm");
 /// The sequencer's performance panel, carried over to the grain page's
 /// Automation tab. See `docs/AUTOMATION-CAPTURE.md`.
 pub const PERF_PANEL_JS: &str = include_str!("../../../../../ui/perf-panel.js");

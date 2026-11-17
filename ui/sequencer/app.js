@@ -566,6 +566,9 @@ let playingStepIdx = -1;
 let filterCutoff = 2046; // Hz (log-scale, slider default=67)
 let filterRes = 2.09; // Q factor
 let filterNode = null;
+/// Where Seq's filter leaves for the delay and Space: the melody's bus. Atmosphere,
+/// which has its own filter (RJ, 16 Nov 2026), joins here, after Seq's.
+let melBus = null;
 // Base cutoff and per-note filter envelope live on separate ConstantSource
 // nodes summed into filterNode.frequency, so the knob and the ADSR never
 // cancel each other's automation (soft takeover — no jump on grab/release).
@@ -726,7 +729,9 @@ function initAudio() {
   // Dry path: filter → dryGain → masterGain
   delayDryGain = audioCtx.createGain();
   delayDryGain.gain.value = 1 - delayWet;
-  filterNode.connect(delayDryGain);
+  melBus = audioCtx.createGain();
+  filterNode.connect(melBus);
+  melBus.connect(delayDryGain);
   delayDryGain.connect(masterGain);
 
   // Ping-pong delay wet path — a tape-echo model: ONE feedback loop, and the
@@ -759,7 +764,7 @@ function initAudio() {
   // Graph: input → delayL → panL → wetOut
   //               delayL → hiCut → fbGain → delayR → panR → wetOut
   //               delayR → hiCut → fbGain → delayL  (ping-pong loop)
-  filterNode.connect(delayL);
+  melBus.connect(delayL);
   delayL.connect(delayPanL);
   delayPanL.connect(delayWetGain);
   delayL.connect(delayHiCutLR);
@@ -780,7 +785,7 @@ function initAudio() {
   // Shimmer: single slow LFO on the OUTPUT allpass only (not in any feedback loop).
   reverbPreDelayNode = audioCtx.createDelay(0.15);
   reverbPreDelayNode.delayTime.value = reverbPreDelay * 0.15;
-  filterNode.connect(reverbPreDelayNode);
+  melBus.connect(reverbPreDelayNode);
 
   reverbSendGain = audioCtx.createGain();
   reverbSendGain.gain.value = 1.0; // parallel send — full level, doesn't affect dry path

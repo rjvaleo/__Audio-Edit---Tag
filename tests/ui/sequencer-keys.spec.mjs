@@ -45,6 +45,7 @@ test('a key on the strip sounds Atmosphere for as long as it is held', async ({ 
   await openSeq(page);
   await mode(page, 'atmos');
   const key = page.locator('.ky-key[data-k="60"]');
+  await key.scrollIntoViewIfNeeded();
   const box = await key.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height - 4);
   await page.mouse.down();
@@ -55,6 +56,7 @@ test('a key on the strip sounds Atmosphere for as long as it is held', async ({ 
   // Its own instrument: the sequencer not playing it does not silence its keys.
   await mode(page, 'classic');
   await page.evaluate(() => { document.body.classList.add('only-atmos'); });
+  await key.scrollIntoViewIfNeeded();
   const b2 = await key.boundingBox();
   await page.mouse.move(b2.x + b2.width / 2, b2.y + b2.height - 4);
   await page.mouse.down();

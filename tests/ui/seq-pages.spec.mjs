@@ -55,10 +55,11 @@ test('Atmosphere starts with its oscillators, and the computer\'s keys play it',
   expect(top).toContain('A');
   expect(await f.evaluate(() => document.querySelectorAll('.ky-key').length)).toBe(61);
   // Seq's Filter and Delay, which it plays through, are shown here too.
-  for (const s of ['.syn-filter', '.fx-delay', '.fx-space', '.scope-out']) expect(await shown(f, s), `${s} on Atmosphere`).toBe(true);
-  expect(await shown(f, '#classicPanel')).toBe(false);
-  // One line: Character, Sympathy and the Filter share a top.
-  const tops = await f.evaluate(() => ['.at-char', '.at-sym', '.syn-filter'].map((s) => Math.round(document.querySelector(s).getBoundingClientRect().top)));
+  // Its own filter and its own effects; Seq's delay, which it still goes through.
+  for (const s of ['.at-filt', '#atFxLine', '.fx-delay', '.fx-space', '.scope-out']) expect(await shown(f, s), `${s} on Atmosphere`).toBe(true);
+  for (const s of ['#classicPanel', '.syn-filter']) expect(await shown(f, s), `${s} on Atmosphere`).toBe(false);
+  // One line: Character, Sympathy and its Filter share a top.
+  const tops = await f.evaluate(() => ['.at-char', '.at-sym', '.at-filt'].map((s) => Math.round(document.querySelector(s).getBoundingClientRect().top)));
   expect(new Set(tops).size).toBe(1);
   await f.locator('body').click({ position: { x: 5, y: 5 } });
   await f.evaluate(() => document.body.focus());
