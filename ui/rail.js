@@ -117,6 +117,12 @@ const COMPOSE_LISTED = false;
       icon: 'clone', label: 'Clone', mode: 'clone',
       title: 'Clone a song — a new piece from your songs: what the reading found, how near or far, played by the Band (and the PC\'s model, when it is connected)',
     },
+    // The Library: the PC's own sounds, every one its models made (RJ, 16 Nov
+    // 2026: "after clone, let's do library").
+    {
+      icon: 'pclib', label: 'Library', mode: 'pclib',
+      title: 'Library — every sound the PC\'s models made, by the words that made them: hear one, open it on a page, or copy it into your library',
+    },
     {
       icon: 'theme', label: 'Theme', mode: 'theme',
       title: 'Palettes, colours, the waveform and the Look',
@@ -244,6 +250,9 @@ const COMPOSE_LISTED = false;
     // A song pulled into four lanes.
     stems:
       '<path d="M3.5 12h3"/><path d="M6.5 12 9 6.5h11.5"/><path d="M6.5 12 9 10h11.5"/><path d="M6.5 12 9 14h11.5"/><path d="M6.5 12 9 17.5h11.5"/>',
+    // Shelves of sounds: the PC's library.
+    pclib:
+      '<rect x="3.5" y="4" width="17" height="16" rx="1.6"/><path d="M3.5 9.3h17M3.5 14.7h17"/><path d="M7 6v1.6M10 6v1.6M7 11.2v1.8M13 11.2v1.8M16 11.2v1.8M8.5 16.6v1.6M12 16.6v1.6"/>',
     // One shape becoming two: a song and the new piece grown from it.
     clone:
       '<path d="M4 15.5c2.2-3.6 4.4-3.6 6.6 0"/><path d="M13.4 15.5c2.2-3.6 4.4-3.6 6.6 0" opacity=".7"/><path d="M7.3 12V6.5"/><path d="M16.7 12V8.5"/><path d="M7.3 6.5c3 0 5 1 9.4 2"/>',
@@ -494,7 +503,7 @@ const COMPOSE_LISTED = false;
     // `.hidden`. Two mechanisms, so this says which one a destination uses
     // rather than assuming.
     const tray = (item) => {
-      if (item.dataset.mode === 'theme') return null;
+      if (item.dataset.mode === 'theme' || item.dataset.mode === 'pclib') return null;
       if (item.dataset.panel || item.dataset.mode === 'overview') {
         return document.getElementById('leftPanel');
       }

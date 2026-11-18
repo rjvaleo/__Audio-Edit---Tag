@@ -418,6 +418,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/stems/mutate") => api_stems_mutate(app, req),
         ("POST", "/api/stems/texture") => api_stems_texture(app, req),
         ("POST", "/api/stems/loop") => api_stems_loop(app, req),
+        ("GET", "/api/pc/library") => api_pc_library(app, req),
+        ("POST", "/api/pc/fetch") => api_pc_fetch(app, req),
+        ("GET", "/api/pc/audio") => api_pc_audio(app, req),
         // The picture for a video export. See `docs/VIDEO-EXPORT.md`.
         ("POST", "/api/video") => api_video(app, req),
         ("GET", "/api/video") => api_video_status(app),

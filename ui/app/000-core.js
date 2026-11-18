@@ -258,7 +258,7 @@ const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 
 /// The Wave page too: it plays no document, but it is a page of its own at
 /// full width, and the library slides over it rather than squeezing it. And
 /// the Theme page, for the same reason.
-const drawerMode = () => playsDocument() || state.mode === 'synth' || state.mode === 'theme' || state.mode === 'stems';
+const drawerMode = () => playsDocument() || state.mode === 'synth' || state.mode === 'theme' || state.mode === 'stems' || state.mode === 'pclib';
 
 function openDrawer() {
   state.drawerOpen = true;

@@ -912,6 +912,88 @@ pub(super) fn api_stems_loop(app: &Arc<App>, req: &Request) -> Response {
     }
 }
 
+/// GET: the PC's own library (the PC Controller's `pc-sounds`), newest first:
+/// every sound made there, with its words, model and length. For the FX page.
+pub(super) fn api_pc_library(app: &Arc<App>, _req: &Request) -> Response {
+    let Some(gpu) = crate::gpu::config(&app.data_dir) else { return Response::error(503, "no GPU machine: set AUDIOLAB_GPU_HOST, or GPU.json in the data folder") };
+    let idx = crate::gpu::win(&format!("{}/pc-sounds/index.jsonl", gpu.dir));
+    let text = match gpu.run(&format!("type \"{idx}\"")) {
+        Ok(t) => t,
+        Err(e) => return Response::error(502, &e),
+    };
+    let mut rows: Vec<Value> = text
+        .lines()
+        .filter_map(|l| json::parse(l.trim()))
+        .filter(|m| m.get("kind").and_then(|k| k.as_str()) == Some("sounds"))
+        .filter(|m| m.get("file").and_then(|f| f.as_str()).is_some_and(pc_file_ok))
+        .collect();
+    rows.reverse();
+    Response::json(Value::Arr(rows).to_string())
+}
+
+/// A file the PC's library holds: `sounds/<day>/<name>.wav` or `.flac` (the
+/// library went to FLAC on 14 Nov), nothing else.
+fn pc_file_ok(f: &str) -> bool {
+    f.starts_with("sounds/") && (f.ends_with(".wav") || f.ends_with(".flac")) && !f.contains("..") && f.chars().all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c))
+}
+
+/// POST {file}: bring one of the PC library's sounds here, to `Made/PC/`, and
+/// say where it is. Already here, it is not fetched again.
+pub(super) fn api_pc_fetch(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let Some(gpu) = crate::gpu::config(&app.data_dir) else { return Response::error(503, "no GPU machine") };
+    let Some(lib) = app.library_path() else { return Response::error(400, "no library chosen") };
+    let file = v.get("file").and_then(|f| f.as_str()).unwrap_or("");
+    if !pc_file_ok(file) {
+        return Response::error(400, "not a sound from the PC's library");
+    }
+    let name = file.rsplit('/').next().unwrap_or("sound.flac").to_string();
+    let dir = lib.join("Made").join("PC");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return Response::error(500, &e.to_string());
+    }
+    let local = dir.join(&name);
+    if !local.is_file() {
+        if let Err(e) = gpu.get_many(&[(format!("{}/pc-sounds/{file}", gpu.dir), local.clone())]) {
+            return Response::error(502, &e);
+        }
+        reindex_for(app, "Made/");
+    }
+    Response::json(Value::obj().set("p", format!("Made/PC/{name}")).to_string())
+}
+
+/// GET ?file=: one of the PC library's sounds, to hear and to draw, without
+/// putting it in the library (the Library page: "nothing is copied until you
+/// ask"). Kept in the data folder's `pc-cache/`, so it is fetched once.
+pub(super) fn api_pc_audio(app: &Arc<App>, req: &Request) -> Response {
+    let file = req.param("file").unwrap_or("");
+    if !pc_file_ok(file) {
+        return Response::error(400, "not a sound from the PC's library");
+    }
+    let local = pc_cache_path(&app.data_dir, file);
+    if !local.is_file() {
+        let Some(gpu) = crate::gpu::config(&app.data_dir) else { return Response::error(503, "no GPU machine") };
+        if let Some(dir) = local.parent() {
+            if let Err(e) = std::fs::create_dir_all(dir) {
+                return Response::error(500, &e.to_string());
+            }
+        }
+        if let Err(e) = gpu.get_many(&[(format!("{}/pc-sounds/{file}", gpu.dir), local.clone())]) {
+            return Response::error(502, &e);
+        }
+    }
+    match std::fs::read(&local) {
+        Ok(bytes) => Response::ok(if file.ends_with(".wav") { "audio/wav" } else { "audio/flac" }, bytes).with("Cache-Control", "private, max-age=86400"),
+        Err(e) => Response::error(500, &e.to_string()),
+    }
+}
+
+/// Where a PC sound is kept here to be heard: its day and its name, flat, so
+/// two days' sounds of one name do not meet.
+fn pc_cache_path(data_dir: &Path, file: &str) -> PathBuf {
+    data_dir.join("pc-cache").join(file.trim_start_matches("sounds/").replace('/', "_"))
+}
+
 /// POST {p: a try, rate, air, above, trimDb, fadeOutMs, peakDb, folder, name}:
 /// clean it, upsample it, and save it to `Made/<folder>/`.
 pub(super) fn api_stems_keep(app: &Arc<App>, req: &Request) -> Response {
@@ -1009,4 +1091,24 @@ pub(super) fn api_clone_keep(app: &Arc<App>, req: &Request) -> Response {
             .set("seconds", ((samples.len() / 2) as f64 / rate as f64 * 1000.0).round() / 1000.0)
             .to_string(),
     )
+}
+
+#[cfg(test)]
+mod pc_library_tests {
+    use super::*;
+
+    #[test]
+    fn only_the_pc_librarys_own_sounds_are_asked_for() {
+        assert!(pc_file_ok("sounds/2026-11-16/random-field-recording-22068.flac"));
+        assert!(pc_file_ok("sounds/2026-11-10/kick_1.wav"));
+        for bad in ["", "sounds/../secrets.flac", "stems/2026-11-18/x/other.flac", "sounds/a b.flac", "sounds/x.flac;del", "sounds/x.mp3", "C:/Users/x.flac", "sounds/x.flac\"\""] {
+            assert!(!pc_file_ok(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_heard_sound_is_kept_under_its_day_and_name() {
+        let p = pc_cache_path(Path::new("/d"), "sounds/2026-11-16/kick-1.flac");
+        assert_eq!(p, Path::new("/d/pc-cache/2026-11-16_kick-1.flac"));
+    }
 }
