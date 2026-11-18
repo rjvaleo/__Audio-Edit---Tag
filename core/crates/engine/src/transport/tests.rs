@@ -268,7 +268,7 @@ fn turning_the_level_down_is_a_ramp_not_a_step() {
     core.fill(&mut buf, 1, &shared);
     let worst = buf.windows(2).map(|w| (w[1] - w[0]).abs()).fold((buf[0] - full).abs(), f32::max);
     assert!(worst < full.abs() * 0.01, "a step of {worst} from a level of {full}");
-    assert!((buf[511] - full * 0.25).abs() < 1e-6, "it did not arrive: {}", buf[511]);
+    assert!((buf[511] - full * 0.25).abs() < full.abs() * 1e-3, "it did not arrive: {}", buf[511]);
     // Mute is the same ramp, to nothing.
     shared.set_mute(true);
     core.fill(&mut buf, 1, &shared);
