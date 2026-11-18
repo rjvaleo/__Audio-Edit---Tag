@@ -44,9 +44,9 @@ function wvBuild() {
     <div class="wv-wheels"><canvas class="wv-well wv-wheel" id="wvBend" data-w="30" data-h="100" title="Pitch bend: drag up and down. Springs back when let go"></canvas><canvas class="wv-well wv-wheel" id="wvModw" data-w="30" data-h="100" title="Mod wheel: drag up and down. Stays where you leave it"></canvas></div>
     <div class="wv-kbinfo"><div class="wv-seg" id="wvOct"><span data-oct="-1" title="An octave down (Z)">−</span><span class="on wv-mono" id="wvOctRo"></span><span data-oct="1" title="An octave up (X)">+</span></div>
      <div class="wv-hint" title="Playing: drag across the keys to glide from note to note. Hold Shift while you drag and every key you cross keeps sounding, a strummed chord.">Keys: A–K, W–U<br>Drag to glide<br>⇧ drag holds</div><span class="wv-ro" id="wvVelRo">vel —</span></div>
-    <div class="wv-keys"><canvas id="wvKeys" data-w="604" data-h="100" title="Keys: click to play, lower on a key is louder. Drag to glide; Shift-drag keeps every key you cross sounding"></canvas></div>
+    <div class="wv-keys"><canvas id="wvKeys" data-w="812" data-h="100" title="Keys: click to play, lower on a key is louder. Drag to glide; Shift-drag keeps every key you cross sounding"></canvas></div>
     <div class="wv-well" title="Morph: drag. Osc A's position across, Filter 1's brightness up"><canvas id="wvPuck" data-w="100" data-h="100"></canvas></div>
-    <div class="wv-macrodock" id="wvMacros">${WV_MACRO_NAMES.map((n, i) => `<div class="wv-cell c">${wvKnobEl(`wvMac${i}`, 44, 1, `macro${i}`)}<div class="wv-lab"><span id="wvMacn${i}"></span><b id="wvMacr${i}"></b></div></div>`).join('')}</div>
+    <div class="wv-macrodock" id="wvMacros">${WV_MACRO_NAMES.map((n, i) => `<div class="wv-cell c">${wvKnobEl(`wvMac${i}`, 32, 1, `macro${i}`)}<div class="wv-lab"><span id="wvMacn${i}"></span><b id="wvMacr${i}"></b></div></div>`).join('')}</div>
    </div>
    <div class="wv-menu" id="wvMenu" hidden></div>
    <div class="wv-pmenu" id="wvPmenu" hidden></div>
@@ -126,7 +126,9 @@ function wvFit() {
   if (!app) return;
   const cw = host.clientWidth, ch = host.clientHeight;
   if (!cw || !ch) return;
-  const s = Math.min(cw / WV_W, ch / WV_H, 1.3);
+  // One size, never scaled to the window: it scrolls (RJ, 17 Nov 2026: "it's a
+  // fixed size… we scroll around on the page to get to it").
+  const s = 1;
   WV.scale = s;
   app.style.transform = `scale(${s})`;
 }
@@ -262,65 +264,19 @@ function wvFrame(ts) {
 
 const wvIsBlack = (n) => [1, 3, 6, 8, 10].includes(((n % 12) + 12) % 12);
 
-function wvKeyLayout(g) {
-  const lo = WV.kbLo, whites = [];
-  for (let n = lo; n < lo + 37; n++) if (!wvIsBlack(n)) whites.push(n);
-  const ww = g.w / whites.length, pos = {};
-  whites.forEach((n, i) => { pos[n] = [i * ww, ww, false]; });
-  for (let n = lo; n < lo + 37; n++) if (wvIsBlack(n)) pos[n] = [pos[n - 1][0] + ww * 0.68, ww * 0.64, true];
-  return pos;
+function wvKeyLayout() {
+  return kb1Layout(WV.kbLo);
 }
 
 function wvKeyAt(g, x, y) {
-  const L = wvKeyLayout(g);
-  for (const n in L) { const [k, w, b] = L[n]; if (b && x >= k && x < k + w && y < g.h * 0.6) return +n; }
-  for (const n in L) { const [k, w, b] = L[n]; if (!b && x >= k && x < k + w) return +n; }
-  return null;
+  return kb1At(WV.kbLo, x, y);
 }
 
 function wvDrawKeys() {
-  const g = WVW.wvKeys, { c, w, h } = g, cl = wvCl(), L = wvKeyLayout(g);
+  const g = WVW.wvKeys;
+  if (!g) return;
   const on = new Set([...WV.held.keys(), ...wvVoices().filter((v) => wvStage(v) !== 'r').map((v) => +v.note)]);
-  const hue = 205 - 175 * wvClamp(wvG('osc0.pos'));
-  c.clearRect(0, 0, w, h);
-  for (const n in L) {
-    const [x, ww, b] = L[n];
-    if (b) continue;
-    const lit = on.has(+n), gr = c.createLinearGradient(0, 0, 0, h);
-    gr.addColorStop(0, lit ? `hsl(${hue},35%,30%)` : '#2b2e34');
-    gr.addColorStop(1, lit ? `hsl(${hue},45%,22%)` : '#1d1f23');
-    c.fillStyle = gr;
-    c.beginPath(); c.roundRect(x + 1, 0, ww - 2, h - 1, [0, 0, 4, 4]); c.fill();
-    c.fillStyle = 'rgba(255,255,255,.07)';
-    c.fillRect(x + 1, 0, ww - 2, 1);
-    c.fillStyle = 'rgba(0,0,0,.45)';
-    c.fillRect(x + ww - 2, 0, 1, h - 1);
-    if (lit) {
-      c.fillStyle = `hsl(${hue},70%,62%)`;
-      c.shadowBlur = 10;
-      c.shadowColor = c.fillStyle;
-      c.fillRect(x + 3, h - 9, ww - 6, 4);
-      c.shadowBlur = 0;
-    }
-    if (+n % 12 === 0) {
-      c.fillStyle = cl.t3;
-      c.font = `9px ${cl.sans}`;
-      c.fillText('C' + (Math.floor(+n / 12) - 1), x + 4, h - 12);
-    }
-  }
-  for (const n in L) {
-    const [x, ww, b] = L[n];
-    if (!b) continue;
-    const lit = on.has(+n), gr = c.createLinearGradient(0, 0, 0, h * 0.6);
-    gr.addColorStop(0, lit ? '#2c3038' : '#131417');
-    gr.addColorStop(1, lit ? '#1d2026' : '#060708');
-    c.fillStyle = gr;
-    c.shadowBlur = 4;
-    c.shadowColor = 'rgba(0,0,0,.7)';
-    c.beginPath(); c.roundRect(x, 0, ww, h * 0.6, [0, 0, 3, 3]); c.fill();
-    c.shadowBlur = 0;
-    if (lit) { c.fillStyle = `hsl(${hue},70%,62%)`; c.fillRect(x + 2, h * 0.6 - 7, ww - 4, 3); }
-  }
+  kb1Draw(g.c, WV.kbLo, (n) => on.has(n), 205 - 175 * wvClamp(wvG('osc0.pos')), wvCl());
 }
 
 function wvDrawWheel(g, v, bip) {

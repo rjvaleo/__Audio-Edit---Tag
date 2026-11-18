@@ -221,9 +221,9 @@ function atmosBuildUI() {
     + `<section class="panel at-macro">${atK("atMacro")}<small>one knob that opens the whole voice: width, drift, hold, air and ensemble together</small></section></div>`
     + `<div class="at-r2 at-row at-only">`
     + atPanel("at-voice", "VOICE", "how A and B become one sound", atKnobs(["atBlend", "atUnison", "atDetune", "atWidth", "atDrift", "atSub", "atAir", "atHold", "atGlide"]))
-    + atPanel("at-ampp", "AMP", "long swells: attack to 10 s, release to 20 s", `<div class="well pic"><canvas id="atAmpCanvas" width="300" height="64" class="at-amp"></canvas></div>${atKnobs(["atAtk", "atDec", "atSus", "atRel", "atVol"])}`)
+    + atPanel("at-ampp", "AMP", "long swells: attack to 10 s, release to 20 s", `<div class="well pic"><canvas id="atAmpCanvas" width="300" height="110" class="at-amp"></canvas></div>${atKnobs(["atAtk", "atDec", "atSus", "atRel", "atVol"])}`)
     + `</div><div class="at-r3 at-row at-only">`
-    + atPanel("at-filt", "FILTER", "its own, one per voice", `<div class="at-filt-body"><div class="well pic"><canvas id="atFltCanvas" width="300" height="64"></canvas></div>`
+    + atPanel("at-filt", "FILTER", "its own, one per voice", `<div class="at-filt-body"><div class="well pic"><canvas id="atFltCanvas" width="300" height="110"></canvas></div>`
       + atKnobs(["atFltType", "atFltCut", "atFltRes", "atFltKey", "atFltAmt", "atFltAtk", "atFltDec", "atFltSus", "atFltRel"]) + `</div>`)
     + atPanel("at-char", "CHARACTER", "after the voice", atKnobs(["atWarm", "atWow", "atEns", "atEnsRate"]))
     + [1, 2, 3].map(atLfoHtml).join("")
@@ -239,6 +239,15 @@ function atmosBuildUI() {
     + `<button type="button" class="btn at-freeze" id="atFreeze" title="Freeze: the space takes nothing new and holds what it has">❄ Freeze</button></div>`
     + atKnobs(["atRevWet", "atRevSize", "atRevPre", "atRevDamp", "atRevShim", "atRevSpread", "atLowCut"]);
 
+  // The LFOs behind tabs, as Wave's are: one shows, 1 2 3 pick it.
+  body.addEventListener("click", (e) => {
+    const t = e.target.closest(".at-lfo-tabs [data-lt]");
+    if (!t) return;
+    for (const p of document.querySelectorAll(".at-lfo")) p.classList.toggle("at-lfo-on", p.dataset.l === t.dataset.lt);
+  });
+  // The big knob opens the whole voice, so it sits in Voice.
+  const macro = body.querySelector(".at-macro"), voice = body.querySelector(".at-voice");
+  if (macro && voice) voice.append(macro);
   // Clicks.
   for (const b of document.querySelectorAll(".power[data-syn]")) b.addEventListener("click", () => atPowerClick(b.dataset.syn));
   // The host's Atmosphere page has no Classic panel, so the bar carries
@@ -398,6 +407,9 @@ function atmosDrawAmp() {
   g.stroke();
   g.closePath();
   g.fill();
+  g.font = "9px " + (getComputedStyle(document.body).getPropertyValue("--mono").trim() || "monospace");
+  g.fillStyle = getComputedStyle(document.body).getPropertyValue("--look-text-3").trim() || "#858b94";
+  g.fillText("AMP · A and B together", 6, 10);
 }
 
 /// The big knob: everything that makes it wider, longer and further away.
@@ -878,21 +890,31 @@ function atVoiceFilter(c, env, freq, time, dur, v) {
   return f;
 }
 
-/// The filter's picture: its envelope, as the Amp's is drawn.
+/// The filter's picture: its envelope, A D S R, drawn as the Amp's is, whatever
+/// its amount (RJ, 17 Nov 2026: "I don't see an ADSR for the filter" — with the
+/// amount at 0 it was a flat line). The amount sets how bright it is drawn and
+/// says so; at 0 the envelope is there to set, and moves nothing yet.
 function atmosDrawFilter() {
   const cv = document.getElementById("atFltCanvas");
   if (!cv) return;
+  const cssW = cv.offsetWidth;
+  if (cssW > 0 && cv.width !== cssW) cv.width = cssW;
   const g = cv.getContext("2d"), w = cv.width, h = cv.height;
   g.clearRect(0, 0, w, h);
-  const a = AT.atFltAtk ?? 40, d = AT.atFltDec ?? 60, s = (AT.atFltSus ?? 50) / 100, r = AT.atFltRel ?? 70, amt = (AT.atFltAmt ?? 0) / 100;
-  const base = 1 - (AT.atFltCut ?? 100) / 100;
-  const y = (lvl) => h - 6 - (h - 12) * Math.max(0, Math.min(1, (1 - base) * 0.6 + lvl * amt * 0.4 + 0.2));
-  const tot = a + d + 60 + r, X = (t) => 4 + (w - 8) * (t / tot);
-  g.strokeStyle = getComputedStyle(document.body).getPropertyValue("--f-tone").trim() || "#79bfc3";
-  g.lineWidth = 2;
+  const a = atExp(AT.atFltAtk ?? 40, 1, 10000), d = atExp(AT.atFltDec ?? 60, 1, 10000), s = (AT.atFltSus ?? 50) / 100, r = atExp(AT.atFltRel ?? 70, 10, 20000);
+  const amt = (AT.atFltAmt ?? 0) / 100;
+  const hold = Math.max(a + d, 1500), tot = a + d + hold * 0.4 + r, X = (t) => 4 + (t / tot) * (w - 8), Y = (v) => h - 12 - v * (h - 22);
+  const ink = getComputedStyle(document.body).getPropertyValue("--f-tone").trim() || "#79bfc3";
+  g.globalAlpha = Math.abs(amt) > 0.005 ? 1 : 0.45;
+  g.strokeStyle = ink; g.fillStyle = ink; g.lineWidth = 1.5;
   g.beginPath();
-  g.moveTo(X(0), y(0)); g.lineTo(X(a), y(1)); g.lineTo(X(a + d), y(s)); g.lineTo(X(a + d + 60), y(s)); g.lineTo(X(tot), y(0));
+  g.moveTo(X(0), Y(0)); g.lineTo(X(a), Y(1)); g.lineTo(X(a + d), Y(s)); g.lineTo(X(a + d + hold * 0.4), Y(s)); g.lineTo(X(tot), Y(0));
   g.stroke();
+  g.globalAlpha = 0.12; g.closePath(); g.fill(); g.globalAlpha = 1;
+  g.font = "9px " + (getComputedStyle(document.body).getPropertyValue("--mono").trim() || "monospace");
+  g.fillStyle = getComputedStyle(document.body).getPropertyValue("--look-text-3").trim() || "#858b94";
+  g.fillText(`ENV → CUTOFF ${amt >= 0 ? "+" : ""}${Math.round(amt * 100)}%`, 6, 10);
+  [["A", a / 2], ["D", a + d / 2], ["S", a + d + hold * 0.2], ["R", a + d + hold * 0.4 + r / 2]].forEach(([l, t]) => g.fillText(l, X(t) - 3, h - 2));
 }
 
 function atCleanup(v) {
@@ -1145,7 +1167,8 @@ function atmosLfoGain(lfo) {
 // the volume, the pan, the blend of A and B, the air, the vowel or the fit.
 function atLfoHtml(n) {
   const opt = (list) => list.map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
-  return `<section class="panel at-lfo" data-l="${n}"><div class="ph"><b class="nm">LFO ${n}</b><span class="meta">its own</span></div>`
+  return `<section class="panel at-lfo${n === 1 ? " at-lfo-on" : ""}" data-l="${n}"><div class="ph"><b class="nm">LFOS</b><span class="meta">its own</span><span class="grow"></span>`
+    + `<div class="seg at-lfo-tabs">${[1, 2, 3].map((k) => `<button type="button" data-lt="${k}" class="${k === n ? "on" : ""}">${k}</button>`).join("")}</div></div>`
     + `<div class="at-lfo-body"><div class="stacked-selects"><div class="select-row"><span class="cap">Shape</span><select id="atL${n}ShapeSelect" onchange="atmosRead()">${opt([["sine", "Sine"], ["triangle", "Tri"], ["sawtooth", "Saw"], ["square", "Square"]])}</select></div>`
     + `<div class="select-row"><span class="cap">Target</span><select id="atL${n}TargetSelect" onchange="atmosRead()">${opt(AT_LFO_TARGETS)}</select></div></div>`
     + atKnobs([`atL${n}Rate`, `atL${n}Depth`]) + `</div></section>`;

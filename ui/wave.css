@@ -22,7 +22,7 @@ body.synthpage #overview { display: none; }
   --wv-wave: var(--look-wave); --wv-bloom: var(--look-bloom); --wv-acc: var(--look-accent); --wv-on: var(--on); --wv-mod: var(--look-mod);
   --wv-arc: var(--look-arc); --wv-track: var(--look-track); --wv-glow: var(--look-glow);
   --wv-grain: var(--look-grain);
-  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: hidden;
+  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: auto; /* one size; it scrolls */
   color: var(--wv-t); font: var(--fs-m)/1.3 var(--sans); user-select: none;
   background: var(--wv-grain), radial-gradient(120% 80% at 30% 0%, var(--wv-panel), var(--wv-chassis) 60%);
   background-blend-mode: soft-light, normal;
@@ -164,7 +164,10 @@ body.synthpage #overview { display: none; }
 #waveView .wv-wheels { display: flex; gap: 6px; }
 #waveView .wv-wheel { border-radius: var(--r-m); cursor: ns-resize; }
 #waveView .wv-keys { position: relative; flex: none; }
-#waveView .wv-macrodock { display: grid; grid-template-columns: repeat(8, 56px); gap: 2px; align-content: center; }
+#waveView .wv-macrodock { display: grid; grid-template-columns: repeat(4, 56px); grid-auto-rows: 56px; gap: 2px; align-content: center; }
+/* Two rows of four beside the 812 px keys: the dock gives them its height. */
+#waveView .wv-dock:has(.wv-macrodock) { padding-top: 3px; padding-bottom: 3px; }
+#waveView .wv-macrodock .wv-cell { gap: 0; }
 #waveView .wv-kbinfo { width: 96px; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
 #waveView .wv-kbinfo .wv-hint { white-space: normal; }
 
@@ -392,7 +395,8 @@ body.synthpage #overview { display: none; }
 #waveView .wv-bnote { display: flex; align-items: center; gap: 5px; }
 #waveView .wv-bnote svg { width: 16px; height: 12px; fill: none; stroke: var(--wv-t3); stroke-width: 1.5; stroke-linecap: round; }
 #waveView .wv-fxmain { flex: 1; min-height: 0; display: flex; gap: 10px; }
-#waveView .wv-flib { width: 206px; flex: none; padding: 8px; gap: 6px; }
+/* The list of effects down the left is gone (RJ, 17 Nov 2026: "I want that space back. Have a right click to add"): the canvas takes its width. Kept, unlisted. */
+#waveView .wv-flib { display: none !important; width: 206px; flex: none; padding: 8px; gap: 6px; }
 #waveView .wv-fsearch { height: 26px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 8px; }
 #waveView .wv-fsearch svg { width: 12px; height: 12px; fill: none; stroke: var(--wv-t3); stroke-width: 1.6; flex: none; }
 #waveView .wv-fsearch input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--wv-t); font: 500 var(--fs-s) var(--sans); }
@@ -415,7 +419,7 @@ body.synthpage #overview { display: none; }
 #waveView .wv-fit em { font-style: normal; color: var(--wv-acc); }
 #waveView .wv-fnone { white-space: normal; padding: 6px 4px; }
 #waveView .wv-fghost { position: fixed; z-index: 95; pointer-events: none; transform: translate(-50%, -50%); padding: 0 10px; height: 24px; }
-#waveView .wv-fcan { width: 944px; flex: none; padding: 8px; gap: 6px; }
+#waveView .wv-fcan { width: 1082px; flex: none; padding: 8px; gap: 6px; }
 #waveView .wv-fstrip { height: 30px; flex: none; display: flex; align-items: center; }
 #waveView .wv-gxc { width: 38px; height: var(--h-l); margin: 0 1px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; position: relative; padding: 0; cursor: grab;
   box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--c) 70%, transparent), inset 0 1px 0 rgba(var(--white-rgb), .08), 0 1px 2px rgba(var(--black-rgb), .6); }
@@ -526,7 +530,7 @@ body.synthpage #overview { display: none; }
 #waveView .wv-fchain .chi.insL { box-shadow: -4px 0 0 -1px var(--wv-acc), inset 0 -2px 0 var(--cc); }
 #waveView .wv-fchain .chi.insR { box-shadow: 4px 0 0 -1px var(--wv-acc), inset 0 -2px 0 var(--cc); }
 #waveView .wv-fchain .cha { color: var(--wv-t3); font-size: var(--fs-m); flex: none; }
-#waveView .wv-finsp { width: 262px; flex: none; padding: 8px 10px 10px; gap: 6px; }
+#waveView .wv-finsp { width: 340px; flex: none; padding: 8px 10px 10px; gap: 6px; }
 #waveView .wv-finsp .wv-mh .ce { width: 3px; height: 16px; border-radius: var(--r-s); background: var(--cc); flex: none; box-shadow: 0 0 6px var(--cc); }
 #waveView .wv-finsp .wv-mh .wv-nm { overflow: hidden; flex-shrink: 1; }
 #waveView .wv-finsp .sub { display: flex; gap: 6px; align-items: center; height: 12px; font: 600 var(--fs-xs) var(--mono); letter-spacing: .06em; color: color-mix(in srgb, var(--cc) 75%, var(--wv-t3)); white-space: nowrap; }
@@ -580,3 +584,10 @@ body.synthpage #overview { display: none; }
 #waveView .wv-cmcol .cm-it span + svg { margin-left: auto; }
 #waveView .wv-cmcol .cm-it.on, #waveView .wv-cmcol .cm-it:hover { background: color-mix(in srgb, var(--cc) 16%, transparent); color: var(--wv-t); }
 #waveView .wv-cmcol .cm-it.dis { opacity: .35; cursor: default; background: none; }
+
+/* A rack face worn by a board node, in the inspector (397, wvMountRackFace). */
+#waveView .wv-rackface { flex: none; background: none; border: 0; box-shadow: none; padding: 0; }
+#waveView .wv-rackface .fx-module-controls { width: 100%; }
+
+/* The keys stay on screen while the page, one size, scrolls. */
+#waveView .wv-dock { position: sticky; bottom: 0; z-index: 6; background: var(--wv-chassis); }

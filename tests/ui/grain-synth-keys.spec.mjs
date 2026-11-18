@@ -55,7 +55,7 @@ const notes = (sent) => posted(sent, '/api/engine/note');
 async function keyPoint(page, n, frac = 0.8) {
   const box = await page.locator('#gsKeys').boundingBox();
   return page.evaluate(([n, frac, box]) => {
-    const g = GS_CV.gsKeys, L = gsKeyLayout(g), [x, w, b] = L[n], h = b ? g.h * 0.3 : g.h * frac;
+    const g = GS_CV.gsKeys, L = gsKeyLayout(), [x, w, b] = L[n], h = b ? g.h * 0.3 : g.h * frac;
     return [box.x + (x + w / 2) / g.w * box.width, box.y + h / g.h * box.height];
   }, [n, frac, box]);
 }
@@ -302,6 +302,8 @@ async function openEffects(page) {
 test('the L and R faders are the engine\'s own two gains', async ({ page }) => {
   const sent = await openEffects(page);
   expect(await page.locator('#gsFxView .gs-fd.gs-inert').count()).toBe(0);
+  // One size, so a short window scrolls to the faders; the keys stay over the bottom.
+  await page.evaluate(() => { $('grainView').scrollTop = 1e6; });
   const box = await page.locator('#gsFdL').boundingBox();
   await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.4);
   await page.waitForTimeout(100);

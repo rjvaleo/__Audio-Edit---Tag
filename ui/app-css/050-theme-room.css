@@ -71,7 +71,7 @@ body.themepage #overview { display: none; }
    what is worn, on its own element, so it holds still while the page behind
    it changes. */
 .tp-dock {
-  flex: none; width: 340px; min-height: 0; margin-top: 48px; display: flex; flex-direction: column; gap: 8px; padding: 8px;
+  flex: none; width: 340px; min-height: 0; margin-bottom: 48px; display: flex; flex-direction: column; gap: 8px; padding: 8px;
   color: var(--look-text); font: var(--fs-m)/1.3 var(--sans); overflow: hidden;
   background: var(--look-grain), radial-gradient(120% 80% at 30% 0%, var(--look-panel), var(--look-chassis) 60%);
   background-blend-mode: soft-light, normal; border-left: 1px solid var(--look-line);

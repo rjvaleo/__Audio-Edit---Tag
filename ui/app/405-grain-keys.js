@@ -12,7 +12,7 @@
 // AMP and the voice settings are kept per sound, the way Prism keeps its LFOs
 // (`387-prism-lfo.js`). Leaving the page puts the engine back as it was found.
 
-const GS_KB = { lo: 36, n: 61 };
+const GS_KB = { lo: 36, n: KB1.n }; // the one keyboard's 49 keys (389-one-keyboard.js)
 const gsIsBlack = (n) => [1, 3, 6, 8, 10].includes(((n % 12) + 12) % 12);
 
 /// How the keys play. Kept per sound.
@@ -219,21 +219,14 @@ function gsKeyUp(e) {
 // ────────────────────────────────────────────────────────────────── the drawing
 
 /// Where each drawn key is, for this octave.
-function gsKeyLayout(g) {
+function gsKeyLayout() {
   // The drawn keys stop at the ends of MIDI; the row can go further than they can.
-  const lo = wvClamp(GS_KB.lo + 12 * GS_N.oct, 0, 127 - GS_KB.n + 1), whites = [], pos = {};
-  for (let n = lo; n < lo + GS_KB.n; n++) if (!gsIsBlack(n)) whites.push(n);
-  const ww = g.w / whites.length;
-  whites.forEach((n, i) => { pos[n] = [i * ww, ww, false]; });
-  for (let n = lo; n < lo + GS_KB.n; n++) if (gsIsBlack(n)) pos[n] = [pos[n - 1][0] + ww * 0.68, ww * 0.64, true];
-  return pos;
+  return kb1Layout(gsKeyLo());
 }
+const gsKeyLo = () => wvClamp(GS_KB.lo + 12 * GS_N.oct, 0, 127 - GS_KB.n + 1);
 
 function gsKeyAt(g, x, y) {
-  const L = gsKeyLayout(g);
-  for (const n in L) { const [k, w, b] = L[n]; if (b && x >= k && x < k + w && y < g.h * 0.6) return +n; }
-  for (const n in L) { const [k, w, b] = L[n]; if (!b && x >= k && x < k + w) return +n; }
-  return null;
+  return kb1At(gsKeyLo(), x, y);
 }
 
 const gsKeyLit = (n) => GS_N.held.has(n) || GS_N.midi.has(n);
@@ -241,35 +234,7 @@ const gsKeyLit = (n) => GS_N.held.has(n) || GS_N.midi.has(n);
 function gsDrawKeys() {
   const g = GS_CV.gsKeys;
   if (!g) return;
-  const { c, w, h } = g, cl = gsCl(), pos = gsKeyLayout(g), hue = 165;
-  c.clearRect(0, 0, w, h);
-  for (const n in pos) {
-    const [x, kw, b] = pos[n], on = gsKeyLit(+n);
-    if (b) continue;
-    const gr = c.createLinearGradient(0, 0, 0, h);
-    gr.addColorStop(0, on ? `hsl(${hue},35%,30%)` : '#2b2e34'); gr.addColorStop(1, on ? `hsl(${hue},45%,22%)` : '#1d1f23');
-    c.fillStyle = gr;
-    c.beginPath(); c.roundRect(x + 1, 0, kw - 2, h - 1, [0, 0, 4, 4]); c.fill();
-    c.fillStyle = 'rgba(255,255,255,.07)'; c.fillRect(x + 1, 0, kw - 2, 1);
-    c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(x + kw - 2, 0, 1, h - 1);
-    if (on) { c.fillStyle = `hsl(${hue},70%,62%)`; c.shadowBlur = 10; c.shadowColor = c.fillStyle; c.fillRect(x + 3, h - 9, kw - 6, 4); c.shadowBlur = 0; }
-    if (((+n % 12) + 12) % 12 === 0) {
-      c.fillStyle = cl.t3;
-      c.font = `9px ${cl.sans}`;
-      c.fillText('C' + (Math.floor(+n / 12) - 1), x + 4, h - 12);
-    }
-  }
-  for (const n in pos) {
-    const [x, kw, b] = pos[n], on = gsKeyLit(+n);
-    if (!b) continue;
-    const gr = c.createLinearGradient(0, 0, 0, h * 0.6);
-    gr.addColorStop(0, on ? '#2c3038' : '#131417'); gr.addColorStop(1, on ? '#1d2026' : '#060708');
-    c.fillStyle = gr;
-    c.shadowBlur = 4; c.shadowColor = 'rgba(0,0,0,.7)';
-    c.beginPath(); c.roundRect(x, 0, kw, h * 0.6, [0, 0, 3, 3]); c.fill();
-    c.shadowBlur = 0;
-    if (on) { c.fillStyle = `hsl(${hue},70%,62%)`; c.fillRect(x + 2, h * 0.6 - 7, kw - 4, 3); }
-  }
+  kb1Draw(g.c, gsKeyLo(), gsKeyLit, 165, gsCl());
 }
 
 function gsDrawWheel() {
@@ -321,7 +286,7 @@ function gsDockHtml() {
     <div class="gs-kbr"><div class="gs-well" title="Glide: how long a new note takes to arrive at its pitch. Drag across"><canvas id="gsGlide" data-w="150" data-h="22"></canvas></div><span class="gs-lab gs-btnlab" id="gsBendLab" style="width:auto;gap:6px" title="Bend range: click to change"><span>Bend</span><b>±2</b></span></div>
     <div class="gs-kbr"><span class="gs-ro" id="gsVelRo">vel —</span><span class="gs-hint" title="Keys: A W S E D F T G Y H U J K O L P ; ' play from the tonic; with a scale chosen, each key is the next degree. Drag across the keys to glide; hold Shift while you drag and every key you cross keeps sounding">A–' play · Z X octave · ⇧ drag holds</span></div>
    </div>
-   <div class="gs-keys"><canvas id="gsKeys" data-w="1000" data-h="100"></canvas></div>
+   <div class="gs-keys"><canvas id="gsKeys" data-w="812" data-h="100"></canvas></div>
   </div>`;
 }
 

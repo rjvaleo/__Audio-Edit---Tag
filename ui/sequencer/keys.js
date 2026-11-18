@@ -283,6 +283,9 @@ async function kyPoll() {
 }
 
 function keysInit() {
+  // In the app the Atmosphere page has the app's keyboard along its bottom
+  // (ui/app/212-atmos-dock.js); the frame's own strip stands down there.
+  if (window.parent !== window) document.body.classList.add('in-app');
   const body = document.getElementById("atBody");
   if (body && !document.getElementById("kyStrip")) {
     body.insertAdjacentHTML("beforeend", kyStripHtml());

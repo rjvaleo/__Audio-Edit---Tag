@@ -562,6 +562,11 @@ const COMPOSE_LISTED = false;
       // `app.js`'s own guard, kept: Grain with nothing open has nothing to
       // show, and it says so rather than arriving empty.
       if (mode === 'edit' && !state.selectedFile && !state.tabs.length) {
+        // Grain opens its own sound, a pulse wave, and goes on (406-grain-page.js).
+        if (item.dataset.page === 'grain' && typeof gsOpenStartSound === 'function') {
+          gsOpenStartSound().then((ok) => { if (!ok) toast('Open a sound first — double-click one in the library'); else if (go(item)) sync(); });
+          return false;
+        }
         toast('Open a sound first — double-click one in the library');
         return false;
       }

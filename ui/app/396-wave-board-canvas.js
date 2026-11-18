@@ -458,8 +458,21 @@ function wvStartCable(e, pin) {
 
 const WV_CHEV = '<svg viewBox="0 0 8 8"><path d="M2.5 1 L5.5 4 L2.5 7"/></svg>';
 
-/// Everything that can be added, as menu items: routing, then each category.
+/// Everything that can be added, as menu items: routing, then the rack's own
+/// catalogue — Prism's FX tab, suite by suite, family by family, each mode by
+/// its rack name — so the board offers the same effects the rack does. The
+/// board's older list stands in only until the rack's catalogue has arrived.
 function wvAddItems(pick) {
+  const routing = { l: 'Routing', cc: 'var(--wv-t2)', right: 5, sub: () => Object.entries(WV_ROUTING).map(([k, r]) => ({ l: r.n, cc: 'var(--wv-t2)', act: () => pick(k) })) };
+  if (state.suites?.length) {
+    const runs = (m) => !!WV_FXCAT.by['fx:' + m.kernel];
+    const suites = state.suites.filter((s) => s.offered).map((s) => ({ s, fams: s.families.map((f) => ({ f, modes: f.modes.filter((m) => m.listed && runs(m)) })).filter((x) => x.modes.length) })).filter((x) => x.fams.length);
+    return [routing, { sep: 1 }, ...suites.map(({ s, fams }) => ({
+      l: s.label, cc: fxFamilyColour(fams[0].modes[0].kind), right: fams.reduce((a, x) => a + x.modes.length, 0),
+      sub: () => fams.map(({ f, modes }) => ({ l: f.label, cc: fxFamilyColour(modes[0].kind), right: modes.length,
+        sub: () => modes.map((m) => ({ l: m.label, cc: fxFamilyColour(m.kind), act: () => pick('fx:' + m.kernel) })) })),
+    }))];
+  }
   return [{ l: 'Routing', cc: 'var(--wv-t2)', right: 5, sub: () => Object.entries(WV_ROUTING).map(([k, r]) => ({ l: r.n, cc: 'var(--wv-t2)', act: () => pick(k) })) }, { sep: 1 },
     ...WV_CAT_ORDER.map((c) => [c, WV_FXCAT.list.filter((f) => f.category === c)]).filter(([, l]) => l.length)
       .map(([c, l]) => ({ l: wvCatName(c), cc: wvCatCol(c, 64), right: l.length, sub: () => l.map((f) => ({ l: f.label, cc: wvCatCol(c, 64), act: () => pick(f.kind) })) }))];

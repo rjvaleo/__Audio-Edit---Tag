@@ -22,14 +22,17 @@
 /* ─────────────────────────────────────────────────────── Now Playing */
 
 .shell { position: relative; }
-/* Across the top of the page from the rail's edge, over the library column too,
-   so the play button is in the same place on every page (`nbPlace`). */
-.shell > .centre, .shell > .panel { margin-top: 48px; }
+/* Across the BOTTOM of the page from the rail's edge, under the library column
+   too, so the play button is in the same place on every page (`nbPlace`). RJ,
+   17 Nov 2026: "take our transport and move that to the bottom", with OUT and
+   the volume, "across all the pages". It was across the top until then; the
+   page's own tabs and its overview now start at the very top. */
+.shell > .centre, .shell > .panel { margin-bottom: 48px; }
 .nowbar {
-  position: absolute; top: 0; left: var(--nb-left, 62px); right: 0; height: 48px; display: flex; align-items: center; gap: 6px; padding: 0 12px;
+  position: absolute; bottom: 0; left: var(--nb-left, 62px); right: 0; height: 48px; display: flex; align-items: center; gap: 6px; padding: 0 12px;
   z-index: 31; min-width: 0;
   background: linear-gradient(180deg, color-mix(in srgb, var(--m-panel-hi) 70%, var(--black)), color-mix(in srgb, var(--m-panel) 80%, var(--black)));
-  border-bottom: 1px solid var(--m-line); box-shadow: 0 4px 14px rgba(var(--black-rgb), .45);
+  border-top: 1px solid var(--m-line); box-shadow: 0 -4px 14px rgba(var(--black-rgb), .45);
   color: var(--m-t); font: 11px/1.3 var(--mgl-ui);
 }
 .nowbar .nb-group { display: flex; align-items: center; gap: 4px; flex: none; }
@@ -68,6 +71,11 @@
 .nowbar .nb-name em { font: 400 9px var(--mgl-mono); font-style: normal; color: var(--m-t3); }
 .nowbar .nb-name .no-audio { color: #ff7a70; font: 500 9px var(--mgl-ui); }
 .nowbar .nb-name .rec-label, .nowbar .nb-name .loop-label { font: 400 9px var(--mgl-mono); color: var(--m-t3); }
+/* The white overview of the whole sound is gone (RJ, 17 Nov 2026: "we don't
+   need three overviews"): the coloured one at the top of the page is the one.
+   Kept, unlisted: 410-now-bar.js still draws into it. */
+.nowbar .nb-strip { display: none !important; }
+.nowbar .nb-now { justify-content: center; }
 .nowbar .nb-strip { position: relative; height: 18px; border-radius: 5px; overflow: hidden; cursor: pointer; background: var(--m-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); --nb-wave: color-mix(in srgb, #9aa6d6 70%, var(--m-wave)); }
 .nowbar .nb-strip canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .nowbar .nb-head { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--mgl-acc); box-shadow: 0 0 5px var(--mgl-acc); pointer-events: none; }
@@ -271,4 +279,4 @@ body.wavepage .ed-side .ed-meters { flex: none; display: flex; flex-direction: c
 :root[data-mgl-look="C"] body.wavepage :is(.wave-tools, #edMeters, #edCounters) { border-radius: 16px; background: var(--mgl-grain), linear-gradient(180deg, var(--m-panel-hi), var(--m-panel)); background-blend-mode: soft-light, normal; }
 :root[data-mgl-look="C"] :is(.nowbar .tbtn, .ed-chip button, #edCmdK) { border-radius: 20px; }
 :root[data-mgl-look="D"] body.wavepage :is(.wave-tools, #edMeters, #edCounters) { border: 1px solid transparent; background: linear-gradient(165deg, var(--look-acrylic), var(--look-acrylic-lo)) padding-box, conic-gradient(from 210deg, var(--look-edge-1), var(--look-edge-2), var(--look-edge-3), var(--look-edge-4), var(--look-edge-1)) border-box; }
-:root[data-mgl-look="D"] .nowbar { border-bottom: 1px solid transparent; background: linear-gradient(180deg, #171922, #101118) padding-box, linear-gradient(90deg, var(--look-edge-1), var(--look-edge-2), var(--look-edge-3), var(--look-edge-4)) border-box; }
+:root[data-mgl-look="D"] .nowbar { border-top: 1px solid transparent; background: linear-gradient(180deg, #171922, #101118) padding-box, linear-gradient(90deg, var(--look-edge-1), var(--look-edge-2), var(--look-edge-3), var(--look-edge-4)) border-box; }

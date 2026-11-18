@@ -270,8 +270,10 @@ test('on its page, in the order its sound goes: Amp, Filter, then its effects; n
     const shown = (s) => [...document.querySelectorAll(s)].some((e) => e.getClientRects().length > 0);
     return { amp: top('.at-ampp'), filt: top('.at-filt'), lfo: top('.at-lfo'), fx: top('#atFxLine'), delay: shown('.fx-delay'), space: shown('.fx-space'), seqFilter: shown('.syn-filter'), tune: shown('.at-tune'), lfos: document.querySelectorAll('.at-lfo').length };
   });
-  expect(got.amp).toBeLessThan(got.filt);
-  expect(got.filt).toBeLessThan(got.fx);
+  // Laid out as Wave is (17 Nov 2026): the Filter beside the oscillators, the
+  // Amp under it, the effects after both.
+  expect(got.filt).toBeLessThan(got.amp);
+  expect(got.amp).toBeLessThan(got.fx);
   expect(got.lfo).toBeLessThan(got.fx);
   expect([got.delay, got.space, got.seqFilter]).toEqual([false, false, false]);
   expect(got.tune).toBe(true);

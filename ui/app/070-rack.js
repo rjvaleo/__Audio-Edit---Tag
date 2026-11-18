@@ -312,6 +312,9 @@ let liveTimer = null;
 
 function liveParam(slotId, key, value) {
   if (!slotId) return;
+  // A rack face worn by a node of Wave's board (397-wave-board-inspector.js):
+  // the move is the board's, not the rack's.
+  if (slotId.startsWith('board:')) { wvBoardParam(slotId.slice(6), key, value, true); return; }
   pendingLive.set(`${slotId}\u0000${key}`, { id: slotId, key, value });
   if (liveTimer) return;
   liveTimer = setTimeout(async () => {
@@ -337,6 +340,8 @@ function liveParam(slotId, key, value) {
 /// rack, because there is nothing to rebuild it for and doing so would cut
 /// every tail in the chain at the moment you let go of a slider.
 async function commitRack() {
+  // The end of a drag on a board node's rack face: the board keeps it, the rack has nothing to keep.
+  if (typeof wvBoardLive !== 'undefined' && wvBoardLive.touched.size) { wvBoardCommitTouched(); return; }
   const f = state.selectedFile;
   if (!f || !state.rack) return;
   try {

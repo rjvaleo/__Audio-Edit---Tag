@@ -434,6 +434,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/usertags") => api_user_tags_set(app, req),
         ("GET", "/api/usertag") => api_user_tag_members(app, req),
         ("POST", "/api/engine/load") => api_engine_load(app, req),
+        ("POST", "/api/start-sound") => api_start_sound(app),
         ("GET", "/api/engine/state") => api_engine_state(app),
         ("POST", "/api/engine/transport") => api_engine_transport(app, req),
         ("POST", "/api/engine/seq") => api_engine_seq(app, req),

@@ -1023,6 +1023,7 @@ body.only-atmos .at-tune { order: 6; grid-column: 4; }
 body.only-atmos .at-fx { order: 7; grid-column: 1 / 4; display: flex !important; flex-direction: row; }
 body.only-atmos .scope-out { order: 8; grid-column: 4; }
 body.only-atmos .ky-panel { grid-column: 1 / -1; order: 9; }
+body.in-app .ky-panel, body.in-app.only-atmos .ky-panel.at-only { display: none !important; } /* the app's keyboard plays it (ui/app/212-atmos-dock.js) */
 .at-lfo-body { display: flex; gap: 8px; align-items: flex-start; }
 .at-lfo-body .stacked-selects { flex: 1; min-width: 0; }
 .at-tune .select-row { grid-template-columns: 40px minmax(0, 1fr); }
@@ -1090,3 +1091,46 @@ body.only-atmos .fx-delay .ph .cap { display: none; }
 .at-pic canvas { width: 100%; height: 100%; display: block; }
 .at-oscbox .at-osc-row .at-knobs { display: grid; grid-template-columns: repeat(3, auto); gap: 4px 2px; align-content: center; }
 .at-hidden { display: none !important; }
+
+/* ─── ONLY ATMOSPHERE, 17 Nov 2026: ONE FIXED SIZE ──────────────────────────
+   RJ: "It's a fixed width. It's a fixed size… we scroll around on the page to
+   get to it", and "look at how the other instruments were laid out… just copy
+   that". Wave's layout, at fixed pixel sizes: three columns of 490, 490 and
+   480 px; nothing grows or shrinks with the window, and the page scrolls.
+     OSC A · OSC B · FILTER (its own ADSR, drawn)
+     AMP (drawn) · LFOS (1 2 3, one at a time) · VOICE (with the big knob)
+     CHARACTER · SYMPATHY · TUNING
+     FX (two columns) · OUTPUT
+   The keys are the app's, along the bottom of the page (ui/app/212-atmos-dock.js). */
+html:has(body.only-atmos), body.only-atmos { overflow: auto; }
+body.only-atmos .page, body.only-atmos .main { width: 1500px; min-width: 1500px; }
+body.only-atmos .right-panel {
+  grid-template-columns: 490px 490px 480px !important; grid-auto-rows: auto; gap: 10px !important;
+  width: 1480px; overflow: visible;
+}
+body.only-atmos .at-r1, body.only-atmos .at-r2 { display: contents !important; }
+body.only-atmos .at-oscbox[data-osc="A"] { grid-column: 1; grid-row: 1; order: 0; }
+body.only-atmos .at-oscbox[data-osc="B"] { grid-column: 2; grid-row: 1; order: 0; }
+body.only-atmos .at-filt { grid-column: 3; grid-row: 1; order: 0; }
+body.only-atmos .at-ampp { grid-column: 1; grid-row: 2; order: 0; }
+body.only-atmos .at-lfo { grid-column: 2; grid-row: 2; order: 0; display: none !important; }
+body.only-atmos .at-lfo.at-lfo-on { display: flex !important; }
+body.only-atmos .at-voice { grid-column: 3; grid-row: 2; order: 0; }
+body.only-atmos .at-char { grid-column: 1; grid-row: 3; order: 0; }
+body.only-atmos .at-sym { grid-column: 2; grid-row: 3; order: 0; }
+body.only-atmos .at-tune { grid-column: 3; grid-row: 3; order: 0; }
+body.only-atmos .at-fx { grid-column: 1 / 3; grid-row: 4; order: 0; }
+body.only-atmos .scope-out { grid-column: 3; grid-row: 4; order: 0; }
+body.only-atmos .at-oscs, body.only-atmos .at-models { grid-template-columns: repeat(10, 44px) !important; }
+body.only-atmos .at-osc-row .scope-osc { height: 150px; }
+body.only-atmos .at-voice .at-knobs { flex-wrap: wrap; }
+body.only-atmos .at-voice .at-macro { border: 0; box-shadow: none; background: none; padding: 0; flex-direction: row; gap: 10px; }
+body.only-atmos .at-voice .at-macro small { width: 200px; text-align: left; }
+/* The two envelopes, drawn the same size, A D S R named. */
+body.only-atmos .at-ampp { display: flex; flex-direction: column; }
+body.only-atmos .at-ampp .well.pic { order: 0; height: 110px; }
+body.only-atmos .at-filt-body { flex-direction: column; align-items: stretch; }
+body.only-atmos .at-filt-body .well.pic { width: 100%; height: 110px; }
+body.only-atmos #atAmpCanvas, body.only-atmos #atFltCanvas { height: 110px; width: 100%; }
+.at-lfo-tabs button { height: 20px; min-width: 22px; padding: 0 6px; font-size: 11px; }
+body:not(.only-atmos) .at-lfo-tabs { display: none; }

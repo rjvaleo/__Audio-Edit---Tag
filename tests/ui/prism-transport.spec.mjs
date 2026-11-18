@@ -68,7 +68,6 @@ test('on Prism the bar plays, stops, loops and seeks the Prism deck', async ({ p
   await expect(page.locator('#playBtn')).toHaveAttribute('aria-label', 'Pause');
   await page.locator('#nowBar #loopBtn').click();
   await expect(page.locator('#loopBtn')).toHaveClass(/\bon\b/);
-  await stripAt(page, 0.25);
   await page.locator('#nowBar #playBtn').click();
   await expect(page.locator('#playBtn')).toHaveAttribute('aria-label', 'Play');
   await page.locator('#nowBar #stopBtn').click();
@@ -78,9 +77,8 @@ test('on Prism the bar plays, stops, loops and seeks the Prism deck', async ({ p
   expect(sent.every((b) => b.deck === 'prism'), JSON.stringify(sent)).toBe(true);
   expect(sent.some((b) => b.play === true)).toBe(true);
   expect(sent.some((b) => b.loop?.on === true)).toBe(true);
-  // A quarter of the way through the sound, in the deck's output frames.
-  const seek = sent.find((b) => b.seek > 0);
-  expect(Math.abs(seek.seek - 24000)).toBeLessThan(1200);
+  // No seeking from the bar: its white overview is gone (RJ, 17 Nov 2026);
+  // the page's own coloured overview is where the sound is found.
   // Pause stays where it is; stop goes back to the start.
   expect(sent.some((b) => b.play === false && b.seek === undefined)).toBe(true);
   expect(sent.at(-1)).toMatchObject({ play: false, seek: 0 });
@@ -91,7 +89,6 @@ test('on Prism the bar plays, stops, loops and seeks the Prism deck', async ({ p
   deck.playing = true; deck.position = 48000;
   await expect(page.locator('#timeNow')).toHaveText(/00:01\.000/);
   await expect(page.locator('#playBtn')).toHaveAttribute('aria-label', 'Pause');
-  expect(await page.locator('#nbHead').evaluate((e) => e.style.left)).toBe('50%');
   deck.playing = false;
 
   // The main sound's GRAIN, SEQ and tempo are out of the bar here.
@@ -115,9 +112,6 @@ test('on Grain, after Prism, the bar is the main sound\'s again', async ({ page 
   await page.locator('#nowBar #loopBtn').click();
   await expect(page.locator('#loopBtn')).toHaveClass(/\bon\b/);
   expect(await page.evaluate(() => state.loopOn)).toBe(true);
-  const cue = await page.evaluate(() => state.cue);
-  await stripAt(page, 0.5);
-  expect(await page.evaluate(() => state.cue)).not.toBe(cue);
   await page.locator('#nowBar #playBtn').click();
   // The engine may stop itself at once: the scratch server is playing nothing.
   await expect.poll(() => sent.some((b) => b.play === true)).toBe(true);

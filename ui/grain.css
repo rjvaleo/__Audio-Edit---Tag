@@ -31,7 +31,7 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
   --gs-f-time: var(--look-f-time); --gs-f-pitch: var(--look-f-pitch); --gs-f-tone: var(--look-f-tone);
   --gs-f-attack: var(--look-f-attack); --gs-f-space: var(--look-f-space); --gs-f-level: var(--look-f-level);
   --gs-noise: var(--look-grain);
-  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: hidden;
+  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: auto; /* one size; it scrolls */
   color: var(--gs-t); font: var(--fs-m)/1.3 var(--sans); user-select: none;
   background: var(--gs-noise), radial-gradient(120% 80% at 30% 0%, var(--gs-panel), var(--gs-chassis) 60%);
   background-blend-mode: soft-light, normal;
@@ -452,3 +452,7 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
    every mode by family, so the family tabs are not needed to reach one. */
 .gs-fxview .fx-modebar { margin-bottom: 2px; }
 .gs-fxview .fx-modebar .fx-mode-families { display: none; }
+
+/* The keys stay on screen while the page, one size, scrolls (RJ, 17 Nov 2026:
+   "we want that keyboard to be persistent"). */
+#grainView .gs-dock { position: sticky; bottom: 0; z-index: 6; background: var(--gs-chassis); }

@@ -1075,6 +1075,11 @@ async function flush() {
       } else if (perfArmed && !perfRec && typeof perfRecStop === 'function') {
         perfRecStop();
       }
+    } else if (m.type === 'seq:note') {
+      // A key of the app's Atmosphere keyboard (ui/app/212-atmos-dock.js),
+      // played on Atmosphere's own voice in its own tuning (keys.js).
+      if (m.on) kyNoteOn(m.part || 'atmos', m.key, m.vel ?? 0.8);
+      else kyNoteOff(m.part || 'atmos', m.key);
     } else if (m.type === 'seq:compact') {
       // The host's Compose workspace: this page in a cell. The layout is the
       // page's own — see the COMPACT block at the end of style.css.
