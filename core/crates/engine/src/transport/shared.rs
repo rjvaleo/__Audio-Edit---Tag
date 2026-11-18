@@ -7,11 +7,37 @@ use super::*;
 
 impl Shared {
     pub fn new(params: StreamParams, source: Arc<Source>) -> Self {
+        let shared = Shared::unlocked(params, source);
+        // On macOS a lock makes its system lock the first time it is locked,
+        // which is an allocation. The audio thread only ever tries these
+        // locks, and it must not be the first to: lock each once, here.
+        drop(shared.params.lock());
+        drop(shared.source.lock());
+        drop(shared.events.lock());
+        drop(shared.pitch_time.lock());
+        drop(shared.pending_rack.lock());
+        drop(shared.pending_swaps.lock());
+        drop(shared.retired_effects.lock());
+        drop(shared.retired.lock());
+        drop(shared.pending_map.lock());
+        drop(shared.pending_parts.lock());
+        drop(shared.pending_bank.lock());
+        drop(shared.automation.lock());
+        drop(shared.manual.lock());
+        drop(shared.spectrum.lock());
+        drop(shared.waveform.lock());
+        drop(shared.scope.lock());
+        drop(shared.pre_rack.lock());
+        drop(shared.capture.lock());
+        shared
+    }
+
+    fn unlocked(params: StreamParams, source: Arc<Source>) -> Self {
         Shared {
             voices: crate::voices::VoiceFeed::new(),
             params: Mutex::new(params),
             source: Mutex::new(source),
-            events: Mutex::new(Vec::new()),
+            events: Mutex::new(Vec::with_capacity(EVENTS_ROOM)),
             playing: AtomicBool::new(false),
             position: AtomicU64::new(0),
             seek: AtomicI64::new(-1),
@@ -45,6 +71,7 @@ impl Shared {
             pending_rack: Mutex::new(None),
             pending_swaps: Mutex::new(Vec::with_capacity(RETIRED_ROOM)),
             retired_effects: Mutex::new(Vec::with_capacity(RETIRED_ROOM)),
+            retired: Mutex::new(Vec::with_capacity(RETIRED_THINGS)),
             pending_map: Mutex::new(None),
             pending_parts: Mutex::new(None),
             pending_bank: Mutex::new(None),
@@ -52,8 +79,10 @@ impl Shared {
             rack_meters: Arc::new(fx::RackMeters::new()),
             automation: Mutex::new(Vec::new()),
             manual: Mutex::new(Vec::new()),
-            spectrum: Mutex::new(Vec::new()),
-            waveform: Mutex::new(Vec::new()),
+            // Their full size from the start: the audio thread fills them and
+            // must never grow them.
+            spectrum: Mutex::new(Vec::with_capacity(FFT_SIZE / 2 + 1)),
+            waveform: Mutex::new(Vec::with_capacity(WAVE_POINTS)),
             scope: Mutex::new(Scope::new()),
             pre_rack: Mutex::new(Scope::new()),
             pre_rack_left: AtomicU32::new(0),
@@ -125,6 +154,7 @@ impl Shared {
     }
 
     pub fn set_source(&self, s: Arc<Source>) {
+        self.collect();
         if let Ok(mut g) = self.source.lock() {
             *g = s;
         }
@@ -380,10 +410,11 @@ impl Shared {
     /// one is fine: only the newest settings matter.
     /// Leave a bank of extra layers for the audio thread to pick up.
     pub fn set_bank(&self, bank: crate::stretcher::LayerBank) {
+        self.collect();
         self.bank_layers.store(bank.layers.max(1), Ordering::Release);
-        if let Ok(mut g) = self.pending_bank.lock() {
-            *g = Some(bank);
-        }
+        // One not yet taken is replaced, and freed here, outside the lock.
+        let unclaimed = self.pending_bank.lock().ok().and_then(|mut g| g.replace(bank));
+        drop(unclaimed);
     }
 
     /// How many layers the bank the engine has been given was built for.
@@ -400,6 +431,9 @@ impl Shared {
 
     /// Leave a transient map for the audio thread to pick up.
     pub fn set_map(&self, map: Option<fx::transient::TimeMap>) {
+        self.collect();
+        // Shared from here on, so the audio thread only ever moves a pointer.
+        let map = map.map(Arc::new);
         if let Ok(mut g) = self.pending_map.lock() {
             *g = Some(map);
         }
@@ -412,7 +446,7 @@ impl Shared {
         // A whole new chain supersedes any one slot still waiting to switch.
         let stale: Vec<_> = self.pending_swaps.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
         drop(stale);
-        self.drop_retired();
+        self.collect();
         if let Ok(mut g) = self.manual.lock() {
             g.clear();
         }
@@ -439,6 +473,32 @@ impl Shared {
             if g.len() < g.capacity() {
                 g.push((slot, effect));
             }
+        }
+    }
+
+    /// Free, here, everything the audio thread has finished with: sounds,
+    /// racks, banks, maps, effects and voices it has replaced. Call it from
+    /// any thread but the audio one.
+    pub fn collect(&self) {
+        // Drained, not taken, so the list keeps its room for the callback;
+        // and dropped outside the lock, so the callback is never kept from
+        // the list while megabytes are freed.
+        let gone: Vec<Retired> = self.retired.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
+        drop(gone);
+        self.drop_retired();
+        self.voices.collect();
+    }
+
+    /// Put something the audio thread has finished with on the list to be
+    /// freed. Handed straight back if the list is busy or full: the caller
+    /// keeps it and tries again.
+    pub(crate) fn retire(&self, thing: Retired) -> Result<(), Retired> {
+        match self.retired.try_lock() {
+            Ok(mut g) if g.len() < g.capacity() => {
+                g.push(thing);
+                Ok(())
+            }
+            _ => Err(thing),
         }
     }
 
@@ -650,10 +710,14 @@ impl Shared {
     /// Take the grains reported since the last call. The visualiser drains
     /// this; nothing else should.
     pub fn drain_events(&self) -> Vec<GrainEvent> {
-        match self.events.lock() {
-            Ok(mut g) => std::mem::take(&mut *g),
-            Err(_) => Vec::new(),
+        // The audio thread is left a list with its room already made, by
+        // this thread: taking the list and leaving an empty one made the
+        // callback allocate again after every visit.
+        let mut list = Vec::with_capacity(EVENTS_ROOM);
+        if let Ok(mut g) = self.events.lock() {
+            std::mem::swap(&mut *g, &mut list);
         }
+        list
     }
 
     /// `end` is the document's length under the current ratio, used when the

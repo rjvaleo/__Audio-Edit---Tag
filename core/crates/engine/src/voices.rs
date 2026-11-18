@@ -225,7 +225,28 @@ pub struct VoiceFeed {
 }
 
 impl VoiceFeed {
+    /// Free the voices and separations the audio thread has retired. True if
+    /// there were any. Never the audio thread.
+    pub fn collect(&self) -> bool {
+        // Dropped out here so no lock is held across a free of many megabytes.
+        // Drained rather than taken: the lists keep their capacity for the callback.
+        let retired: Vec<_> = self.retired.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
+        let parts: Vec<_> = self.retired_parts.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
+        !retired.is_empty() || !parts.is_empty()
+    }
+
     pub fn new() -> VoiceFeed {
+        let feed = VoiceFeed::unlocked();
+        // See `Shared::new`: every lock is locked once here, so that the
+        // audio thread is never the first to.
+        drop(feed.ready.lock());
+        drop(feed.retired.lock());
+        drop(feed.retired_parts.lock());
+        drop(feed.heads.lock());
+        feed
+    }
+
+    fn unlocked() -> VoiceFeed {
         VoiceFeed {
             ready: Mutex::new(Vec::with_capacity(POOL_SLOTS)),
             retired: Mutex::new(Vec::with_capacity(POOL_SLOTS)),
@@ -297,13 +318,11 @@ pub fn cap_for(block_load: f32, voice_load: f32, per_voice: f32) -> u32 {
 /// if there is more to do straight away. Allocates; never the audio thread.
 pub fn feed(shared: &Shared, max_block: usize, channels: usize) -> bool {
     let f = &shared.voices;
-    // Dropped out here so no lock is held across a free of many megabytes.
-    // Drained rather than taken: the lists keep their capacity for the callback.
-    let retired: Vec<_> = f.retired.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
-    let parts: Vec<_> = f.retired_parts.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
-    let dropped = !retired.is_empty() || !parts.is_empty();
-    drop(retired);
-    drop(parts);
+    let dropped = f.collect();
+    // And what the deck itself has finished with: old sounds, racks, banks
+    // and maps. This thread comes round every few milliseconds, so nothing
+    // retired waits long.
+    shared.collect();
     if !f.want.load(Ordering::Relaxed) {
         return false;
     }

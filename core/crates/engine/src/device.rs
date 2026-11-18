@@ -71,6 +71,8 @@ impl Engine {
         // audio callback. It is 32 KB and once per process, but "once" inside a
         // callback is still one block that missed its deadline.
         audio_core::fft::prime();
+        // The engines have a table of their own (prism-grain), built the same way.
+        prism_grain::fft::prime();
 
         let host = cpal::default_host();
         let device = host
