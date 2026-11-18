@@ -15,6 +15,7 @@
 
 pub mod basics;
 mod engine;
+pub mod guard;
 mod module;
 mod plan;
 pub mod rt;

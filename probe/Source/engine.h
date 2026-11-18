@@ -17,6 +17,7 @@ NeEngine* ne_new (float rate, uint32_t max_block, uint32_t log_applied, uint32_t
 void ne_free (NeEngine*);
 void ne_render (NeEngine*, float* l, float* r, uint32_t n);
 uint64_t ne_frame (NeEngine*);
+uint64_t ne_bad_blocks (NeEngine*);
 int32_t ne_add (NeEngine*, uint32_t id, uint32_t kind, float a, float b);
 // One of prism-fx's effects by its catalogue id, e.g. "dattorro-plate".
 int32_t ne_add_fx (NeEngine*, uint32_t id, const char* name);

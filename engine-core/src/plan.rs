@@ -13,6 +13,7 @@
 //! alone, takes its place.
 
 use crate::engine::PatchError;
+use crate::guard::all_finite;
 use crate::module::{EventKind, Inputs, Io, Module, Outputs, Thing};
 use crate::sound::Sounds;
 use crate::types::{Buf, Cable, Kind, ModuleId, NoteEvent, PortRef};
@@ -338,6 +339,9 @@ pub(crate) struct Plan {
     /// Frames until every fade is certainly over.
     fade_left: usize,
     generation: u64,
+    /// Pieces of a module's output silenced because they were not all numbers,
+    /// since the engine last asked.
+    tripped: u64,
 }
 
 const NOWHERE: u32 = u32::MAX;
@@ -371,6 +375,7 @@ impl Plan {
             step: 1.0,
             fade_left: 0,
             generation: 0,
+            tripped: 0,
         }
     }
 
@@ -548,7 +553,13 @@ impl Plan {
             step: if spec.fade_frames == 0 { 1.0 } else { 1.0 / spec.fade_frames as f32 },
             fade_left: spec.fade_frames + 2,
             generation: spec.generation,
+            tripped: 0,
         })
+    }
+
+    /// How many pieces were silenced since this was last asked.
+    pub(crate) fn take_tripped(&mut self) -> u64 {
+        std::mem::take(&mut self.tripped)
     }
 
     pub(crate) fn piece(&self) -> usize {
@@ -626,7 +637,7 @@ impl Plan {
         left: &mut [f32],
         right: &mut [f32],
     ) {
-        let Plan { nodes, ops, pool, out, step, fade_left, .. } = self;
+        let Plan { nodes, ops, pool, out, step, fade_left, tripped, .. } = self;
         let step = *step;
         for op in ops.iter() {
             let (index, takes_in, gives_out) = match *op {
@@ -663,6 +674,29 @@ impl Plan {
                 Op::Process(_) => module.process(&mut io),
                 Op::Emit(_) => module.emit(&mut io),
                 Op::Absorb(_) => module.absorb(&mut io),
+            }
+            // A sample that is not a number goes no further than the module
+            // that made it: one in a reverb's tank is every sample after, in
+            // everything downstream. Its output is silenced for this piece and
+            // the module told to clear its memory.
+            let mut bad = false;
+            for buf in outs.iter_mut() {
+                match buf {
+                    Buf::Audio { l, r } if !(all_finite(&l[..n]) && all_finite(&r[..n])) => {
+                        l[..n].fill(0.0);
+                        r[..n].fill(0.0);
+                        bad = true;
+                    }
+                    Buf::Control(values) if !all_finite(&values[..n]) => {
+                        values[..n].fill(0.0);
+                        bad = true;
+                    }
+                    _ => {}
+                }
+            }
+            if bad {
+                module.recover();
+                *tripped += 1;
             }
         }
         let mut any = false;

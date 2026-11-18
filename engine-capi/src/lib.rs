@@ -128,7 +128,22 @@ pub unsafe extern "C" fn ne_render(e: *mut NeEngine, l: *mut f32, r: *mut f32, n
         return;
     }
     let audio = &mut *ptr::addr_of_mut!((*e).audio);
-    audio.render(slice::from_raw_parts_mut(l, n as usize), slice::from_raw_parts_mut(r, n as usize));
+    let (l, r) = (slice::from_raw_parts_mut(l, n as usize), slice::from_raw_parts_mut(r, n as usize));
+    audio.render(l, r);
+    // This is the sound card's side: nothing that is not a number, and
+    // nothing past full scale, leaves here.
+    audio.finish(l, r);
+}
+
+/// How many times something that was not a number was caught and silenced:
+/// a module's output, or a whole block on its way out. It should stay at 0.
+///
+/// # Safety
+/// `e` came from `ne_new`.
+#[no_mangle]
+pub unsafe extern "C" fn ne_bad_blocks(e: *mut NeEngine) -> u64 {
+    let Some(ctl) = ctl(e) else { return 0 };
+    ctl.bad_blocks()
 }
 
 /// Frames made so far. Audio thread.

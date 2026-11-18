@@ -12,6 +12,7 @@ use crate::spsc::{self, Consumer, Producer};
 use crate::types::{Cable, Kind, ModuleId, PortRef, SoundRef};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug)]
@@ -96,7 +97,9 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
     let queue = config.queue.max(16);
     let (tx, rx) = spsc::channel(queue);
     let (back_tx, back_rx) = spsc::channel(queue);
+    let bad = Arc::new(AtomicU64::new(0));
     let controller = Controller {
+        bad: Arc::clone(&bad),
         rate,
         max_block,
         tx,
@@ -113,6 +116,7 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
         versions: BTreeMap::new(),
     };
     let audio = AudioEngine {
+        bad,
         rate,
         max_block,
         frame: 0,
@@ -132,6 +136,8 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
 
 /// The app's side. Holds the patch and sends everything across.
 pub struct Controller {
+    /// See [`Controller::bad_blocks`].
+    bad: Arc<AtomicU64>,
     rate: f32,
     max_block: usize,
     tx: Producer<Stamped>,
@@ -337,6 +343,13 @@ impl Controller {
         Ok(SoundRef { id, version })
     }
 
+    /// How many times a module's output, or a whole block on its way out,
+    /// was silenced because it held something that was not a number. It
+    /// should stay at zero: anything else is a fault in a module, to find.
+    pub fn bad_blocks(&self) -> u64 {
+        self.bad.load(Ordering::Relaxed)
+    }
+
     /// The number of the last message sent.
     pub fn last_seq(&self) -> u64 {
         self.seq
@@ -395,6 +408,7 @@ impl Controller {
 
 /// The sound card's side. `render` is the audio callback.
 pub struct AudioEngine {
+    bad: Arc<AtomicU64>,
     rate: f32,
     max_block: usize,
     frame: u64,
@@ -426,6 +440,7 @@ impl AudioEngine {
     /// Make the next block. Any length; the two sides are filled alike.
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         let _guard = rt::enter();
+        let _no_denormals = crate::guard::NoDenormals::new();
         let total = left.len().min(right.len());
         self.flush_held();
         self.take_messages();
@@ -452,6 +467,18 @@ impl AudioEngine {
             pos += n;
             self.frame += n as u64;
             self.gather();
+        }
+        let tripped = self.plan.take_tripped();
+        if tripped > 0 {
+            self.bad.fetch_add(tripped, Ordering::Relaxed);
+        }
+    }
+
+    /// The last stage, for a host about to hand a rendered block to the sound
+    /// card: see [`crate::guard::finish`]. Counted with the modules' own.
+    pub fn finish(&self, left: &mut [f32], right: &mut [f32]) {
+        if crate::guard::finish(left, right) {
+            self.bad.fetch_add(1, Ordering::Relaxed);
         }
     }
 

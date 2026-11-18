@@ -101,6 +101,9 @@ impl Module for Fx {
         }
         place.set(s);
     }
+    fn recover(&mut self) {
+        self.kernel.reset();
+    }
     fn process(&mut self, io: &mut Io) {
         let (in_l, in_r) = io.ins.audio(0);
         let (l, r) = io.outs.audio(0);

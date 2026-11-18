@@ -176,6 +176,12 @@ pub trait Module: Send {
         None
     }
 
+    /// The module gave a sample that was not a number (a NaN or an infinity),
+    /// and the engine has silenced that piece of its output. Clear whatever
+    /// memory could hold it: left there, every piece after is the same. Audio
+    /// thread; nothing may be made or freed.
+    fn recover(&mut self) {}
+
     /// More than zero for a module that can close a loop of cables: its
     /// output never depends on input less than this many samples old. In a
     /// loop the engine calls `emit` then `absorb` in place of `process`, with
