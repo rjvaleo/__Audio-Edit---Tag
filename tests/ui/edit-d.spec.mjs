@@ -93,6 +93,9 @@ test('the level pill sends one gain, by how far it was dragged', async ({ page }
   await openEdit(page);
   const ops = edits(page);
   await select(page, 4000, 30000);
+  // The pill is drawn a frame after the selection: wait for it, or its box is
+  // null on a busy machine (seen once in a full run, 18 Nov 2026).
+  await expect(page.locator('.ed-gg')).toBeVisible();
   const g = await page.locator('.ed-gg').boundingBox();
   await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
   await page.mouse.down();
