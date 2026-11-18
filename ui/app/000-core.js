@@ -92,7 +92,7 @@ const state = {
   spec: null,
   stats: null,
   showSpec: false,
-  fftSize: 1024,
+  fftSize: 4096, // the sonogram's resolution: 4096 for the detail (RJ, 17 Nov 2026)
   view: { from: 0, to: 0, frames: 0, sampleRate: 44100 },
 
   /// Whether the library lists files that have no audio header. Off, and the
