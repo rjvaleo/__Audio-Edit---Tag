@@ -59,6 +59,19 @@ impl OctaveSlot {
         }
     }
 
+    /// [`Self::clear`] for the audio thread of a host that hands the new
+    /// sound over itself: never waits, and says whether it was done.
+    pub fn try_clear(&self) -> bool {
+        match self.pending.try_lock() {
+            Ok(mut g) => {
+                // Every set handed over is also in `kept`, so this frees none.
+                *g = Some(None);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
     /// Hand a set over and keep a hold on it.
     fn deliver(&self, o: Arc<Octaves>) {
         if let Ok(mut k) = self.kept.lock() {
