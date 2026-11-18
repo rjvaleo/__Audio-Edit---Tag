@@ -176,12 +176,12 @@ fn play(put: bool) -> (Vec<f32>, usize) {
                 handed_back.push(Change::Source(old));
             }
             (Change::Rack(r), true) => {
-                if let Some(unclaimed) = counted(|| shared.put_rack(r)) {
+                if let Some(unclaimed) = counted(|| shared.put_rack(r)).ok().expect("the slot was free") {
                     handed_back.push(Change::Rack(unclaimed));
                 }
             }
             (Change::Bank(b), true) => {
-                if let Some(unclaimed) = counted(|| shared.put_bank(b)) {
+                if let Some(unclaimed) = counted(|| shared.put_bank(b)).ok().expect("the slot was free") {
                     handed_back.push(Change::Bank(unclaimed));
                 }
             }
@@ -194,7 +194,7 @@ fn play(put: bool) -> (Vec<f32>, usize) {
             (Change::Map(m), true) => {
                 // The host shares the map before it hands it over.
                 let m = m.map(Arc::new);
-                let _ = counted(|| shared.put_map(m));
+                let _ = counted(|| shared.put_map(m)).ok().expect("the slot was free");
             }
         }
         blocks(after, &mut out);

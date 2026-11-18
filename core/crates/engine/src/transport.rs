@@ -675,3 +675,5 @@ fn fade_in(block: &mut [f32], channels: usize, n: usize) {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod put_tests;

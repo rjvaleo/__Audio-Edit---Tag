@@ -5,6 +5,16 @@ const RETIRED_ROOM: usize = 16;
 
 use super::*;
 
+/// The slot if nobody is in it, without waiting. A slot whose last holder
+/// panicked is still taken: what it holds is only ever replaced whole.
+fn free<T>(slot: &Mutex<T>) -> Option<std::sync::MutexGuard<'_, T>> {
+    match slot.try_lock() {
+        Ok(g) => Some(g),
+        Err(std::sync::TryLockError::Poisoned(p)) => Some(p.into_inner()),
+        Err(std::sync::TryLockError::WouldBlock) => None,
+    }
+}
+
 impl Shared {
     pub fn new(params: StreamParams, source: Arc<Source>) -> Self {
         let shared = Shared::unlocked(params, source);
@@ -426,8 +436,10 @@ impl Shared {
     /// one is fine: only the newest settings matter.
     /// Leave a bank of extra layers for the audio thread to pick up.
     pub fn set_bank(&self, bank: crate::stretcher::LayerBank) {
+        self.bank_layers.store(bank.layers.max(1), Ordering::Release);
         // One not yet taken is replaced, and freed here, outside the lock.
-        drop(self.put_bank(bank));
+        let unclaimed = self.pending_bank.lock().ok().and_then(|mut g| g.replace(bank));
+        drop(unclaimed);
     }
 
     /// How many layers the bank the engine has been given was built for.
@@ -448,7 +460,9 @@ impl Shared {
     /// Leave a transient map for the audio thread to pick up.
     pub fn set_map(&self, map: Option<fx::transient::TimeMap>) {
         // Shared from here on, so the audio thread only ever moves a pointer.
-        drop(self.put_map(map.map(Arc::new)));
+        let map = map.map(Arc::new);
+        let unclaimed = self.pending_map.lock().ok().and_then(|mut g| g.replace(map));
+        drop(unclaimed);
     }
 
     pub fn set_rack(&self, rack: Option<fx::Rack>) {
@@ -459,7 +473,12 @@ impl Shared {
         if let Ok(mut g) = self.manual.lock() {
             g.clear();
         }
-        drop(self.put_rack(rack));
+        let mut rack = rack;
+        if let Some(r) = rack.as_mut() {
+            r.set_meters(Arc::clone(&self.rack_meters));
+        }
+        let unclaimed = self.pending_rack.lock().ok().and_then(|mut g| g.replace(rack));
+        drop(unclaimed);
     }
 
     /// Switch one slot to a new effect, live, fading over 20 ms while the rest
@@ -521,21 +540,30 @@ impl Shared {
         }
     }
 
-    /// [`Shared::set_rack`]'s other form: `Some(unclaimed)` if a rack (or
+    /// [`Shared::set_rack`]'s other form: `Ok(Some(unclaimed))` if a rack (or
     /// "no rack") was still waiting. It does not let go of controls held by
     /// hand or of slots waiting to switch; a host that uses those calls
-    /// `set_rack` from its control thread instead.
-    pub fn put_rack(&self, mut rack: Option<fx::Rack>) -> Option<Option<fx::Rack>> {
+    /// `set_rack` from its control thread instead. Like the sound's form it
+    /// never waits: `Err` is the rack back, another thread being in the slot
+    /// at that instant, for the host to offer again.
+    #[allow(clippy::type_complexity)]
+    pub fn put_rack(&self, mut rack: Option<fx::Rack>) -> Result<Option<Option<fx::Rack>>, Option<fx::Rack>> {
+        let Some(mut g) = free(&self.pending_rack) else { return Err(rack) };
         if let Some(r) = rack.as_mut() {
             r.set_meters(Arc::clone(&self.rack_meters));
         }
-        self.pending_rack.lock().ok().and_then(|mut g| g.replace(rack))
+        Ok(g.replace(rack))
     }
 
-    /// [`Shared::set_bank`]'s other form.
-    pub fn put_bank(&self, bank: crate::stretcher::LayerBank) -> Option<crate::stretcher::LayerBank> {
+    /// [`Shared::set_bank`]'s other form. `Err` is the bank back, as for
+    /// [`Shared::put_rack`].
+    pub fn put_bank(
+        &self,
+        bank: crate::stretcher::LayerBank,
+    ) -> Result<Option<crate::stretcher::LayerBank>, crate::stretcher::LayerBank> {
+        let Some(mut g) = free(&self.pending_bank) else { return Err(bank) };
         self.bank_layers.store(bank.layers.max(1), Ordering::Release);
-        self.pending_bank.lock().ok().and_then(|mut g| g.replace(bank))
+        Ok(g.replace(bank))
     }
 
     /// [`Shared::set_parts`]'s other form. Hands back two holds, either of
@@ -554,12 +582,15 @@ impl Shared {
     }
 
     /// [`Shared::set_map`]'s other form. The map comes already shared:
-    /// sharing it is an allocation.
+    /// sharing it is an allocation. `Err` is the map back, as for
+    /// [`Shared::put_rack`].
+    #[allow(clippy::type_complexity)]
     pub fn put_map(
         &self,
         map: Option<Arc<fx::transient::TimeMap>>,
-    ) -> Option<Option<Arc<fx::transient::TimeMap>>> {
-        self.pending_map.lock().ok().and_then(|mut g| g.replace(map))
+    ) -> Result<Option<Option<Arc<fx::transient::TimeMap>>>, Option<Arc<fx::transient::TimeMap>>> {
+        let Some(mut g) = free(&self.pending_map) else { return Err(map) };
+        Ok(g.replace(map))
     }
 
     /// Free, here, everything the audio thread has finished with: sounds,
