@@ -23,7 +23,7 @@ cargo build --release -p audiolab -p fx-wasm 2> %ROOT%\results\build.log
 if errorlevel 1 (echo build failed, see results\build.log & exit /b 1)
 if "%1"=="rust" (
   echo [%time%] rust tests
-  cargo test --release -p fx -p fx-wasm -p server > %ROOT%\results\rust.log 2>&1
+  cargo test --release --no-fail-fast -p fx -p fx-wasm -p atmos -p server > %ROOT%\results\rust.log 2>&1
   set CODE=!errorlevel!
   findstr /c:"test result" /c:"FAILED" /c:"panicked" %ROOT%\results\rust.log
   exit /b !CODE!

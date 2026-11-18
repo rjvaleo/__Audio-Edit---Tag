@@ -68,12 +68,13 @@ test('Atmosphere is served and on the page: its power, eight kinds twice, Space,
     shown: getComputedStyle(document.querySelector('.at-row')).display,
   }));
   const got = await page.evaluate(() => ({
-    cards: document.querySelectorAll('.at-osc').length,
+    // Ten physical models a side since 17 Nov (the old eight kinds kept, hidden).
+    cards: document.querySelectorAll('.at-osc[data-model]').length,
     space: document.querySelectorAll('.at-space .knob-group').length,
     targets: [...document.getElementById('lfo1TargetSelect').options].map((o) => o.value).filter((v) => v.startsWith('at-')),
   }));
   // Seq's LFOs offer none of Atmosphere's targets: it has LFOs of its own (16 Nov 2026).
-  expect(got).toEqual({ cards: 16, space: 7, targets: [] });
+  expect(got).toEqual({ cards: 20, space: 7, targets: [] });
   expect(await state()).toEqual({ mode: 'classic', classic: true, atmos: false, lit: ['classic'], shown: 'none' });
   // Atmosphere on: both play. The powers are not shown on either page since
   // 16 Nov (RJ: no Atmosphere bar; Seq is the sequencer as it was); pressed here
@@ -85,8 +86,8 @@ test('Atmosphere is served and on the page: its power, eight kinds twice, Space,
   await page.evaluate(() => atPowerClick('atmos'));
   expect(await state()).toEqual({ mode: 'atmos', classic: false, atmos: true, lit: ['atmos'], shown: 'grid' });
   await page.evaluate(() => document.body.classList.add('only-atmos'));
-  await page.click('.at-oscbox[data-osc="A"] .at-osc[data-kind="glass"]');
-  expect(await page.evaluate(() => [AT.kindA, document.getElementById('atA1Label').textContent])).toEqual(['glass', 'Material']);
+  await page.click('.at-oscbox[data-osc="A"] .at-osc[data-model="glass"]');
+  expect(await page.evaluate(() => [AT.modelA, document.getElementById('atMA1Label').textContent])).toEqual(['glass', 'Bow ↔ strike']);
 });
 
 test('Seq\'s steps play Seq\'s synth alone, whatever the old switch says: Atmosphere is a synth of its own', async ({ page }) => {

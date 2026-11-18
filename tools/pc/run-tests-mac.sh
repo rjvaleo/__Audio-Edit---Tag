@@ -11,7 +11,7 @@ echo "[$(date +%T)] build"
 (cd core && cargo build --release -p audiolab -p fx-wasm 2> $R/results/build.log) || { echo "build failed, see results/build.log"; tail -20 $R/results/build.log; exit 1; }
 if [ "$1" = rust ]; then
   echo "[$(date +%T)] rust tests"
-  (cd core && cargo test --release -p fx -p fx-wasm -p server > $R/results/rust.log 2>&1); code=$?
+  (cd core && cargo test --release --no-fail-fast -p fx -p fx-wasm -p atmos -p server > $R/results/rust.log 2>&1); code=$?
   grep -E "test result|FAILED|panicked" $R/results/rust.log | sort | uniq -c
   exit $code
 fi
