@@ -215,3 +215,84 @@ fn what_the_grain_deck_costs() {
         }
     }
 }
+
+// ---- For a profiler: one thing, played for a set time (PROFILE_SECONDS,
+// 12 if not set). `tools/profile-on-mbp.sh <name>` runs one of these on the
+// MacBook under macOS's `sample` and prints where the time went.
+
+fn profile_seconds() -> f64 {
+    std::env::var("PROFILE_SECONDS").ok().and_then(|s| s.parse().ok()).unwrap_or(12.0)
+}
+
+fn keep_rendering(audio: &mut AudioEngine) {
+    let mut l = [0.0f32; BLOCK];
+    let mut r = [0.0f32; BLOCK];
+    let until = Instant::now() + std::time::Duration::from_secs_f64(profile_seconds());
+    let mut blocks = 0u64;
+    while Instant::now() < until {
+        for _ in 0..64 {
+            audio.render(&mut l, &mut r);
+        }
+        blocks += 64;
+    }
+    println!("{blocks} blocks of {BLOCK} in {} s: {:.1} times real time", profile_seconds(), blocks as f64 * BLOCK as f64 / 48_000.0 / profile_seconds());
+}
+
+#[test]
+#[ignore = "for a profiler"]
+fn profile_wave_32() {
+    let (mut ctl, mut audio) = engine(RATE, exact());
+    ctl.add(1, Box::new(synth())).unwrap();
+    ctl.connect_out(port(1, 0)).unwrap();
+    ctl.commit().unwrap();
+    for i in 0..32 {
+        ctl.send(1, EventKind::Note(NoteEvent::on(36 + (i as u8 * 5) % 48, 0.8))).unwrap();
+    }
+    keep_rendering(&mut audio);
+}
+
+fn profile_deck(engine_number: u32, keys: u8) {
+    let mut deck = engine_mgl::demo::grain(48_000, engine_number, BLOCK, keys as usize);
+    // Round and round the whole sound, so it never runs out.
+    let _ = &mut deck;
+    let (mut ctl, mut audio) = engine(RATE, exact());
+    ctl.add(1, Box::new(deck)).unwrap();
+    ctl.connect_out(port(1, 0)).unwrap();
+    ctl.commit().unwrap();
+    if keys == 0 {
+        ctl.give(1, 0, Box::new(engine_mgl::GrainThing::Loop { on: true, a: 0, b: 190_000 })).unwrap();
+        ctl.send(1, EventKind::Param { index: grain::RUN, value: 1.0 }).unwrap();
+        ctl.send(1, EventKind::Param { index: grain::PLAY, value: 1.0 }).unwrap();
+    } else {
+        ctl.send(1, EventKind::Param { index: grain::RUN, value: 0.0 }).unwrap();
+        ctl.send(1, EventKind::Param { index: grain::KEY_MODE, value: 2.0 }).unwrap();
+        for i in 0..keys {
+            ctl.send(1, EventKind::Note(NoteEvent::on(48 + i * 3, 0.8))).unwrap();
+        }
+    }
+    keep_rendering(&mut audio);
+}
+
+#[test]
+#[ignore = "for a profiler"]
+fn profile_wsola_poly_8() {
+    profile_deck(1, 8);
+}
+
+#[test]
+#[ignore = "for a profiler"]
+fn profile_vocoder() {
+    profile_deck(2, 0);
+}
+
+#[test]
+#[ignore = "for a profiler"]
+fn profile_pvsola() {
+    profile_deck(3, 0);
+}
+
+#[test]
+#[ignore = "for a profiler"]
+fn profile_pvsola_poly_8() {
+    profile_deck(3, 8);
+}

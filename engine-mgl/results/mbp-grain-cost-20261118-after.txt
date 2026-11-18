@@ -1,0 +1,8 @@
+Grain Granular, playing      median 0.0038 ms   99th 0.0505 ms (1.9% of the slot)   longest 0.2036 ms
+Grain Granular, Poly, 8 keys median 0.0245 ms   99th 0.0550 ms (2.1% of the slot)   longest 0.1251 ms
+Grain Wsola, playing         median 0.0018 ms   99th 0.3323 ms (12.5% of the slot)   longest 0.5513 ms
+Grain Wsola, Poly, 8 keys    median 0.2966 ms   99th 1.3820 ms (51.8% of the slot)   longest 1.8225 ms
+Grain Vocoder, playing       median 0.0017 ms   99th 0.4792 ms (18.0% of the slot)   longest 0.5806 ms
+Grain Vocoder, Poly, 8 keys  median 0.0233 ms   99th 1.4540 ms (54.5% of the slot)   longest 2.2833 ms
+Grain Pvsola, playing        median 0.0035 ms   99th 0.5682 ms (21.3% of the slot)   longest 0.8461 ms
+Grain Pvsola, Poly, 8 keys   median 0.5243 ms   99th 2.0320 ms (76.2% of the slot)   longest 2.2378 ms
