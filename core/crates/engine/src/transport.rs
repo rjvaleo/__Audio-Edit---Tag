@@ -250,6 +250,10 @@ pub struct Shared {
     /// It does not depend on the ratio, so it survives every parameter move —
     /// only opening a file or changing the separation itself rebuilds it.
     pending_parts: Mutex<Option<Arc<fx::hstream::Parts>>>,
+    /// The parts last handed over, for the copies an octave up to be made of.
+    parts_now: Mutex<Option<Arc<fx::hstream::Parts>>>,
+    /// The sound an octave or more up, for keys above C8 (`octaves.rs`).
+    pub octaves: Arc<crate::octaves::OctaveSlot>,
 
     /// Extra engine instances for the layers past the first, waiting to be
     /// adopted. Handed over for the usual reason: sixteen of anything here is

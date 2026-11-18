@@ -411,6 +411,7 @@ pub struct Poly {
     channels: usize,
     parts: Arc<Parts>,
     map: Option<Arc<TimeMap>>,
+    octaves: Option<Arc<prism_grain::octave::Octaves>>,
     /// Keeping a dropped `Parts` for the feeder when its lock was taken.
     parted: Option<Arc<Parts>>,
     cost: [f32; 6],
@@ -442,6 +443,7 @@ impl Poly {
             channels: channels.max(1),
             parts: Arc::new(Parts::default()),
             map: None,
+            octaves: None,
             parted: None,
             cost: SEED_COST,
             spent: 0.0,
@@ -554,6 +556,18 @@ impl Poly {
             }
             let old = std::mem::replace(&mut self.parts, parts);
             self.retire_parts(old, shared);
+        }
+        let same = match (&self.octaves, renderer.octaves()) {
+            (None, None) => true,
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        };
+        if !same {
+            // Dropped here and never freed here: see `octaves.rs`.
+            self.octaves = renderer.octaves().cloned();
+            for v in self.active.iter_mut().chain(self.free.iter_mut()) {
+                drop(v.engine.set_octaves(self.octaves.clone()));
+            }
         }
         let map = renderer.map();
         let same = match (&self.map, map) {
@@ -692,6 +706,7 @@ impl Poly {
         v.semis = keys.key_semitones(key) + keys.bend_now();
         v.engine.set_parts(Arc::clone(&self.parts));
         v.engine.adopt_map(self.map.clone());
+        drop(v.engine.set_octaves(self.octaves.clone()));
         let vp = voice_params(doc, v.shape, key, v.semis);
         v.engine.seek(at, &vp);
     }
@@ -736,9 +751,14 @@ impl Poly {
         let started = Instant::now();
         let mut scratch = std::mem::take(&mut self.buf);
         let mut mix = std::mem::take(&mut self.mix);
+        let mut wants = false;
         for v in &mut self.active {
             v.semis = keys.key_semitones(v.key) + keys.bend_now();
             render_voice(v, &mut mix[..span], &mut scratch, &b, self.max_block, shared, events);
+            wants |= v.engine.take_wants_octaves();
+        }
+        if wants {
+            shared.octaves.want();
         }
         self.buf = scratch;
         self.mix = mix;

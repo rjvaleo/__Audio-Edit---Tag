@@ -122,6 +122,8 @@ fn playing_the_keys_does_not_allocate() {
         if alg == fx::stretch::Algorithm::Hybrid {
             shared.set_parts(Arc::new(fx::hstream::Parts::separate(&src.samples, 1, sp.hybrid)));
         }
+        // And the sound an octave or more up, which keys above C8 read.
+        shared.build_octaves();
         let keys = Arc::new(GrainKeys::new());
         keys.set_run(false);
         keys.set_mode(KeyMode::Poly);
@@ -132,6 +134,7 @@ fn playing_the_keys_does_not_allocate() {
         // seam and the page's read-back have each happened at least once.
         keys.note_on(60, 0.8);
         keys.note_on(64, 0.8);
+        keys.note_on(120, 0.8);
         for _ in 0..1600 {
             core.fill(&mut buf, 1, &shared);
         }
@@ -149,12 +152,15 @@ fn playing_the_keys_does_not_allocate() {
                 core.fill(&mut buf, 1, &shared);
             }
             keys.note_on(67 + round, 0.7);
+            // Above C8, on a copy of the sound up an octave or two.
+            keys.note_on(110 + 3 * round, 0.7);
             for _ in 0..8 {
                 core.fill(&mut buf, 1, &shared);
             }
             keys.note_off(60 + round);
             keys.note_off(64 + round);
             keys.note_off(67 + round);
+            keys.note_off(110 + 3 * round);
             for _ in 0..12 {
                 core.fill(&mut buf, 1, &shared);
             }

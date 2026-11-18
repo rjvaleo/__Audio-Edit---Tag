@@ -30,6 +30,7 @@ pub mod glide;
 #[cfg(feature = "device")]
 pub mod input;
 pub mod keys;
+pub mod octaves;
 pub mod seqbus;
 pub mod synth;
 pub mod transport;

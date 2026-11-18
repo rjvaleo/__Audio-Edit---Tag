@@ -70,6 +70,11 @@ fn deck(base: &[f32], channels: usize, sample_rate: u32, stretch: &fx::Stretch, 
     if stretch.algorithm == fx::stretch::Algorithm::Hybrid {
         shared.set_parts(Arc::new(fx::hstream::Parts::separate(base, channels, stretch.hybrid)));
     }
+    // A key above C8 plays live from a copy of the sound an octave or more up
+    // (engine `octaves.rs`); the file is made the same way.
+    if !matches!(stretch.algorithm, fx::stretch::Algorithm::Granular) {
+        shared.build_octaves();
+    }
     if stretch.wsola.preserve_transients {
         let hop = sp.plan().hop.max(1);
         shared.set_map(fx::stream::WsolaStream::build_map(base, channels, sample_rate, stretch.ratio, hop, &stretch.wsola));

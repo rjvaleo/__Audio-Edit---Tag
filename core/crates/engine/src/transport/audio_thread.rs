@@ -430,6 +430,11 @@ impl Core {
                 self.renderer.set_parts(next);
             }
         }
+        // The old copies are not freed here: the slot keeps a hold on every
+        // set it hands over until nobody else has one (`octaves.rs`).
+        if let Some(next) = shared.octaves.take() {
+            drop(self.renderer.set_octaves(next));
+        }
         let mut old_bank = None;
         if let Ok(mut g) = shared.pending_bank.try_lock() {
             if let Some(next) = g.take() {
@@ -724,6 +729,9 @@ impl Core {
                     self.renderer.render(slice, ch, &self.source, &self.params, &mut self.scratch)
                 };
                 report(shared, &self.scratch[..n]);
+                if self.renderer.take_wants_octaves() {
+                    shared.octaves.want();
+                }
 
                 if let Some((a, b)) = bounds.filter(|_| !gated) {
                     if self.renderer.position() >= b {
