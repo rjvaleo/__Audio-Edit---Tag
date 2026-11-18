@@ -331,6 +331,8 @@ mod tests {
         assert_eq!(w.cpu_max, 30.0);
     }
 
+    // `usage` reads nothing off Unix (the PC's Windows runs leave it at zero).
+    #[cfg(unix)]
     #[test]
     fn this_process_has_cpu_time_and_memory() {
         let (cpu, rss) = usage();
