@@ -44,7 +44,7 @@ use fx::transient::TimeMap;
 use crate::keys::KeyPlayer;
 use crate::render::Source;
 use crate::stretcher::Stretcher;
-use crate::transport::{loop_fade, report, Shared};
+use crate::transport::{loop_fade, report, Retired, Shared};
 
 /// How many voices the pool can list. A slot is a pointer, so this is not a
 /// polyphony: it is only so that the lists are sized once.
@@ -122,6 +122,9 @@ enum Stage {
 
 struct Voice {
     engine: Stretcher,
+    /// The separation this voice held before the deck's, until the deck
+    /// can send it back to be freed (see `Poly::let_go`).
+    old_parts: Option<Arc<Parts>>,
     shape: Shape,
     key: u8,
     id: u32,
@@ -151,6 +154,7 @@ impl Voice {
         engine.seek(0, sp);
         Box::new(Voice {
             engine,
+            old_parts: None,
             shape,
             key: 0,
             id: 0,
@@ -410,6 +414,10 @@ pub struct Poly {
     max_block: usize,
     channels: usize,
     parts: Arc<Parts>,
+    /// Separations the voices have let go of, on their way to be freed
+    /// elsewhere: a voice is built holding an empty one of its own, and the
+    /// first one it is given replaces the last hold on that.
+    let_go: Vec<Retired>,
     map: Option<Arc<TimeMap>>,
     octaves: Option<Arc<prism_grain::octave::Octaves>>,
     /// Keeping a dropped `Parts` for the feeder when its lock was taken.
@@ -442,6 +450,8 @@ impl Poly {
             max_block: max_block.max(1),
             channels: channels.max(1),
             parts: Arc::new(Parts::default()),
+            // One for every voice the pool can list: never grown here.
+            let_go: Vec::with_capacity(POOL_SLOTS),
             map: None,
             octaves: None,
             parted: None,
@@ -546,13 +556,30 @@ impl Poly {
     /// Take the deck's latest separation and map; a voice reads what the
     /// transport reads.
     pub fn adopt(&mut self, renderer: &Stretcher, shared: &Shared) {
+        // What the voices let go of last block goes back to be freed.
+        for v in self.active.iter_mut().chain(self.free.iter_mut()) {
+            if let Some(old) = v.old_parts.take() {
+                if self.let_go.len() < self.let_go.capacity() {
+                    self.let_go.push(Retired::Parts(old));
+                }
+            }
+        }
+        while let Some(thing) = self.let_go.pop() {
+            if let Err(thing) = shared.retire(thing) {
+                self.let_go.push(thing);
+                break;
+            }
+        }
         if let Some(old) = self.parted.take() {
             self.retire_parts(old, shared);
         }
         if !Arc::ptr_eq(&self.parts, renderer.parts()) {
             let parts = Arc::clone(renderer.parts());
             for v in self.active.iter_mut().chain(self.free.iter_mut()) {
-                v.engine.set_parts(Arc::clone(&parts));
+                let old = v.engine.replace_parts(Arc::clone(&parts));
+                if self.let_go.len() < self.let_go.capacity() {
+                    self.let_go.push(Retired::Parts(old));
+                }
             }
             let old = std::mem::replace(&mut self.parts, parts);
             self.retire_parts(old, shared);
@@ -704,7 +731,12 @@ impl Poly {
         v.fade_left = v.fade_len;
         v.scan = doc.grain.scan;
         v.semis = keys.key_semitones(key) + keys.bend_now();
-        v.engine.set_parts(Arc::clone(&self.parts));
+        let old = v.engine.replace_parts(Arc::clone(&self.parts));
+        // Its own, from when it was built: this was the last hold on it.
+        // It rides in the voice until `adopt` sends it back.
+        if !Arc::ptr_eq(&old, &self.parts) {
+            v.old_parts = Some(old);
+        }
         v.engine.adopt_map(self.map.clone());
         drop(v.engine.set_octaves(self.octaves.clone()));
         let vp = voice_params(doc, v.shape, key, v.semis);

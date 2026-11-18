@@ -1,6 +1,6 @@
 //! The deck's setters have a second form for a host that delivers changes on
-//! its own audio thread: `put_source`, `put_rack`, `put_bank`, `put_parts`
-//! and `put_map` leave the new thing for the deck and hand back whatever was
+//! its own audio thread: `put_params`, `put_source`, `put_rack`, `put_bank`,
+//! `put_parts` and `put_map` leave the new thing for the deck and hand back whatever was
 //! still waiting there, freeing nothing, allocating nothing and never
 //! waiting for a lock another thread holds.
 //!
@@ -93,6 +93,7 @@ enum Change {
     Bank(LayerBank),
     Parts(Arc<Parts>),
     Map(Option<TimeMap>),
+    Params(StreamParams),
 }
 
 /// The changes, each with how many blocks are played after it. Two racks
@@ -111,6 +112,7 @@ fn script(sp: &StreamParams) -> Vec<(Change, usize)> {
         (Change::Parts(parts), 4),
         (Change::Map(Some(TimeMap::linear(FILE, 3.0))), 4),
         (Change::Map(None), 4),
+        (Change::Params(StreamParams { ratio: 1.5, ..*sp }), 6),
     ]
 }
 
@@ -146,7 +148,7 @@ fn play(put: bool) -> (Vec<f32>, usize) {
     shared.play();
 
     let changes = script(&sp);
-    let mut out = Vec::with_capacity((8 + 44) * BLOCK * 2);
+    let mut out = Vec::with_capacity((8 + 50) * BLOCK * 2);
     let mut buf = vec![0f32; BLOCK * 2];
     // Whatever a put hands back is kept, with room made beforehand, and
     // freed after the counting is over.
@@ -166,6 +168,8 @@ fn play(put: bool) -> (Vec<f32>, usize) {
             (Change::Bank(b), false) => shared.set_bank(b),
             (Change::Parts(p), false) => shared.set_parts(p),
             (Change::Map(m), false) => shared.set_map(m),
+            (Change::Params(p), false) => shared.set_params(p),
+            (Change::Params(p), true) => assert!(counted(|| shared.put_params(p)), "the settings were free to take"),
             (Change::Source(s), true) => {
                 // Nothing else holds the lock in this test, so it is taken.
                 let old = counted(|| shared.put_source(s)).ok().expect("the slot was free");

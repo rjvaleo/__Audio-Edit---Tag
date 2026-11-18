@@ -414,6 +414,7 @@ pub(crate) enum Retired {
     Rack(fx::Rack),
     Bank(crate::stretcher::LayerBank),
     Map(Arc<fx::transient::TimeMap>),
+    Parts(Arc<fx::hstream::Parts>),
 }
 
 /// Room for things on their way back, in [`Shared`]'s list and in the deck's

@@ -493,6 +493,19 @@ impl Shared {
     // for it: if it holds the lock at that instant they hand the new thing
     // straight back (`Err`), for the host to offer again at its next block.
 
+    /// [`Shared::set_params`]'s other form. The voice feeder reads the
+    /// settings too, so this never waits for it: `false` means it was
+    /// reading at that instant and the host should offer them again.
+    pub fn put_params(&self, p: StreamParams) -> bool {
+        match self.params.try_lock() {
+            Ok(mut g) => {
+                *g = p;
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
     /// [`Shared::set_source`]'s other form. Hands back the sound that was in
     /// the slot (which the deck may still be playing: it is a second hold).
     pub fn put_source(&self, s: Arc<Source>) -> Result<Arc<Source>, Arc<Source>> {

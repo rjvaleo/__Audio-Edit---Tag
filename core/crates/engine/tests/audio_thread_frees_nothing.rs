@@ -13,7 +13,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use engine::stretcher::LayerBank;
-use engine::{Core, GrainKeys, Shared, Source};
+use engine::voices::stock;
+use engine::{Core, GrainKeys, KeyMode, Shared, Source};
 use fx::grain::{Grain, StreamParams};
 use fx::stretch::Algorithm;
 use fx::transient::TimeMap;
@@ -179,6 +180,25 @@ fn replacing_what_the_deck_plays_costs_the_callback_no_memory() {
     shared.set_map(None);
     maps += blocks(&mut core, &shared, 4);
     found.push(("a new map, then none", maps));
+
+    // Poly: each key takes a voice, and a voice's first use must free nothing
+    // (a voice is built holding an empty separation of its own, which the
+    // deck's replaces). Then a new separation reaches every voice at once.
+    shared.pause();
+    keys.set_run(false);
+    keys.set_mode(KeyMode::Poly);
+    shared.voices.set_offline(true);
+    stock(&shared, 6, BLOCK, 2);
+    let mut poly = blocks(&mut core, &shared, 2);
+    for key in [48u8, 55, 60, 64] {
+        keys.note_on(key, 0.8);
+        poly += blocks(&mut core, &shared, 3);
+    }
+    found.push(("four keys in Poly, each voice's first use", poly));
+    shared.set_parts(Arc::new(fx::hstream::Parts::separate(&source(5).samples, 2, sp.hybrid)));
+    found.push(("a new separation under held Poly keys", blocks(&mut core, &shared, 4)));
+    keys.all_off();
+    found.push(("the Poly keys let go", blocks(&mut core, &shared, 8)));
 
     let costly: Vec<String> =
         found.iter().filter(|(_, n)| *n > 0).map(|(what, n)| format!("{what}: {n}")).collect();
