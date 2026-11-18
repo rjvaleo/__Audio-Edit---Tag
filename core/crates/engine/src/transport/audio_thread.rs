@@ -282,7 +282,10 @@ impl Core {
         // What a voice is pitched from: the keys' own pitch is its own.
         let voiced = self.params.semitones;
         if detune != 0.0 {
-            self.params.semitones = (self.params.semitones + detune).clamp(-48.0, 48.0);
+            // As far as the engines go, not as far as the Pitch knob: a key
+            // above C8 is more than 48 up (see `voices::voice_params`).
+            let top = fx::stream::MAX_SEMITONES;
+            self.params.semitones = (self.params.semitones + detune).clamp(-top, top);
         }
         {
             // A new stretch keeps the playhead on the same moment of the file

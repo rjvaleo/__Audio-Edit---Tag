@@ -826,7 +826,10 @@ impl Voice {
 fn voice_params(doc: &StreamParams, shape: Shape, key: u8, semis: f32) -> StreamParams {
     let mut p = *doc;
     p.algorithm = shape.algorithm;
-    p.semitones = (doc.semitones + semis).clamp(-48.0, 48.0);
+    // The key's pitch rides on the document's: Pitch's own ±48 plus a key as
+    // far as G9 (+67 from middle C) is wider than ±48, which is where the
+    // keys used to stop, at C8 (RJ, 16 Nov 2026). The engines' own limit.
+    p.semitones = (doc.semitones + semis).clamp(-fx::stream::MAX_SEMITONES, fx::stream::MAX_SEMITONES);
     // Two voices on one key are the same note twice; different keys are
     // different notes and should not throw the same grains.
     p.grain.seed = doc.grain.seed.wrapping_add((key as u32).wrapping_mul(0x9E37_79B9));
