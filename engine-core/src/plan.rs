@@ -13,7 +13,7 @@
 //! alone, takes its place.
 
 use crate::engine::PatchError;
-use crate::module::{EventKind, Inputs, Io, Module, Outputs};
+use crate::module::{EventKind, Inputs, Io, Module, Outputs, Thing};
 use crate::sound::Sounds;
 use crate::types::{Buf, Cable, Kind, ModuleId, NoteEvent, PortRef};
 use std::collections::{BTreeMap, BTreeSet};
@@ -600,6 +600,20 @@ impl Plan {
                 module.handle(event);
             }
         }
+    }
+
+    /// Hand a module something. What comes back must be freed elsewhere:
+    /// what the module returns, or the thing itself if no module took it.
+    pub(crate) fn give(&mut self, id: ModuleId, slot: u32, thing: Thing) -> Option<Thing> {
+        match self.node_of(id).and_then(|node| self.nodes[node].module.as_mut()) {
+            Some(module) => module.take(slot, thing),
+            None => Some(thing),
+        }
+    }
+
+    /// The next thing any module has finished with, if there is one.
+    pub(crate) fn finished(&mut self) -> Option<Thing> {
+        self.nodes.iter_mut().filter_map(|node| node.module.as_mut()).find_map(|module| module.finished())
     }
 
     /// Make `n` samples, and put what the sound card hears into the outputs.

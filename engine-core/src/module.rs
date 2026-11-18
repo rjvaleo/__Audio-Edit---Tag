@@ -2,6 +2,12 @@
 
 use crate::sound::Sounds;
 use crate::types::{Buf, ClockState, Kind, NoteBuf, NoteEvent, SoundRef};
+use std::any::Any;
+
+/// Something built on another thread and handed to a module whole: a sound
+/// in the module's own layout, a rack of effects, a table. The module finds
+/// out what it is by its type.
+pub type Thing = Box<dyn Any + Send>;
 
 /// A message for one module, landing on a set frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -154,6 +160,21 @@ pub trait Module: Send {
     fn handle(&mut self, _event: &EventKind) {}
 
     fn process(&mut self, io: &mut Io);
+
+    /// Take something handed over ([`crate::Controller::give`]), on the sample
+    /// it was sent for. Whatever is returned goes back to the app's thread to
+    /// be freed there: the thing this one replaces, or the thing itself when
+    /// the module has no use for it. Nothing may be freed here.
+    fn take(&mut self, _slot: u32, thing: Thing) -> Option<Thing> {
+        Some(thing)
+    }
+
+    /// Something more the module has finished with (an effect that has faded
+    /// out, say), to be freed on the app's thread. Asked after every piece
+    /// of audio until it answers `None`.
+    fn finished(&mut self) -> Option<Thing> {
+        None
+    }
 
     /// More than zero for a module that can close a loop of cables: its
     /// output never depends on input less than this many samples old. In a

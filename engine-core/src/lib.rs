@@ -23,7 +23,7 @@ pub mod spsc;
 mod types;
 
 pub use engine::{engine, AudioEngine, Collected, Config, Controller, PatchError};
-pub use module::{EventKind, Inputs, Io, Module, Outputs};
+pub use module::{EventKind, Inputs, Io, Module, Outputs, Thing};
 pub use sound::{SoundData, Sounds, MAX_SOUNDS};
 pub use types::{
     port, Buf, Cable, ClockState, Kind, ModuleId, NoteBuf, NoteEvent, NoteKind, PortRef, SoundRef,

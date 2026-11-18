@@ -12,6 +12,8 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 LAB="${LAB:-$HOME/Documents/GitHub/M Clone}"
 FX="${FX:-$HOME/Documents/GitHub/prism-fx}"
 MGL="${MGL:-$HOME/Documents/MultiGrainLive}"
+# Which of MGL's commits to build from: main, or a branch being tried.
+MGL_REF="${MGL_REF:-main}"
 Q='post-quantum|store now|be upgraded'
 R='D:\\mgl-test\\idmlab-check'
 U='D:/mgl-test/idmlab-check'
@@ -30,5 +32,5 @@ COPYFILE_DISABLE=1 tar -C "$LAB/rust" --exclude target -cf - . \
 fresh 'GitHub\\prism-fx'
 git -C "$FX" archive --format=tar HEAD | ssh pc "tar -x -f - -C $U/GitHub/prism-fx" 2>&1 | quiet
 fresh 'MultiGrainLive'
-git -C "$MGL" archive --format=tar main core | ssh pc "tar -x -f - -C $U/MultiGrainLive" 2>&1 | quiet
+git -C "$MGL" archive --format=tar "$MGL_REF" core | ssh pc "tar -x -f - -C $U/MultiGrainLive" 2>&1 | quiet
 ssh pc "cd /d $R\\native && cargo test --workspace --features engine-core/rt-check $*" 2>&1 | grep -Ev "$Q"

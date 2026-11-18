@@ -1,7 +1,7 @@
 //! The two halves: the controller on the app's thread and the audio engine
 //! on the sound card's.
 
-use crate::module::{EventKind, Module};
+use crate::module::{EventKind, Module, Thing};
 use crate::plan::{Ghosts, Info, PatchState, Plan, Spec, MAX_MODULE_ID};
 use crate::rt;
 use crate::sound::{SoundData, Sounds, MAX_SOUNDS};
@@ -53,6 +53,8 @@ pub enum PatchError {
 pub struct Collected {
     pub plans: usize,
     pub sounds: usize,
+    /// Things modules were handed and have finished with.
+    pub things: usize,
 }
 
 enum Msg {
@@ -63,6 +65,8 @@ enum Msg {
     /// That second plan, waiting for its frame on the audio thread.
     After(Box<Plan>),
     Sound { id: u32, version: u32, data: Option<Arc<SoundData>> },
+    /// Something built on the app's thread, for one module to take.
+    Thing { module: ModuleId, slot: u32, thing: Thing },
 }
 
 /// A message, the frame it lands on (0: as soon as possible) and its number.
@@ -76,6 +80,7 @@ struct Stamped {
 enum Back {
     Plan(Box<Plan>),
     Sound(Arc<SoundData>),
+    Thing(Thing),
     Applied { seq: u64, frame: u64 },
     /// The fades of this patch change are over and its second plan is in place.
     Settled { generation: u64 },
@@ -296,6 +301,23 @@ impl Controller {
         self.push(frame, Msg::Event { module, kind })
     }
 
+    /// Hand a module something built on this thread, to take at the next
+    /// block. What the module returns for it, and the thing itself if the
+    /// module is not there, comes back to be freed by `collect`. A module
+    /// not yet committed takes it at once.
+    pub fn give(&mut self, module: ModuleId, slot: u32, thing: Thing) -> Result<u64, PatchError> {
+        if let Some(staged) = self.staged.get_mut(&module) {
+            drop(staged.take(slot, thing));
+            return Ok(self.seq);
+        }
+        self.push(0, Msg::Thing { module, slot, thing })
+    }
+
+    /// Hand a module something to take on `frame`.
+    pub fn give_at(&mut self, frame: u64, module: ModuleId, slot: u32, thing: Thing) -> Result<u64, PatchError> {
+        self.push(frame, Msg::Thing { module, slot, thing })
+    }
+
     /// Put a sound in the bank under `id`, replacing any there. The version
     /// returned is the one modules must ask for.
     pub fn load_sound(&mut self, id: u32, data: SoundData) -> Result<SoundRef, PatchError> {
@@ -331,6 +353,10 @@ impl Controller {
                 Back::Sound(sound) => {
                     drop(sound);
                     collected.sounds += 1;
+                }
+                Back::Thing(thing) => {
+                    drop(thing);
+                    collected.things += 1;
                 }
                 Back::Applied { seq, frame } => self.applied.push((seq, frame)),
                 Back::Settled { generation } => {
@@ -408,6 +434,19 @@ impl AudioEngine {
             );
             pos += n;
             self.frame += n as u64;
+            self.gather();
+        }
+    }
+
+    /// Ask the modules what they have finished with, and send it back to be
+    /// freed. Only while there is somewhere to put it: a module keeps what
+    /// it isn't asked for.
+    fn gather(&mut self) {
+        while self.held.len() < self.room {
+            match self.plan.finished() {
+                Some(thing) => self.give_back(Back::Thing(thing)),
+                None => break,
+            }
         }
     }
 
@@ -450,6 +489,11 @@ impl AudioEngine {
                 Msg::Sound { id, version, data } => {
                     if let Some(old) = self.sounds.set(id, version, data) {
                         self.give_back(Back::Sound(old));
+                    }
+                }
+                Msg::Thing { module, slot, thing } => {
+                    if let Some(done) = self.plan.give(module, slot, thing) {
+                        self.give_back(Back::Thing(done));
                     }
                 }
             }

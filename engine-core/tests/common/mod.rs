@@ -341,3 +341,78 @@ pub fn live_session(probe: fn() -> usize) -> Live {
     let landed = ctl.take_applied().into_iter().collect();
     Live { l, r, ops, landed, probe, collected }
 }
+
+/// A level in a box, for handing to a [`Holder`]. It counts when it is
+/// freed, and whether that was inside a render.
+pub struct Level {
+    pub value: f32,
+    freed: Arc<Freed>,
+}
+
+#[derive(Default)]
+pub struct Freed {
+    pub total: std::sync::atomic::AtomicUsize,
+    pub in_audio: std::sync::atomic::AtomicUsize,
+}
+
+impl Freed {
+    pub fn total(&self) -> usize {
+        self.total.load(Ordering::SeqCst)
+    }
+    pub fn in_audio(&self) -> usize {
+        self.in_audio.load(Ordering::SeqCst)
+    }
+}
+
+pub fn level(value: f32, freed: &Arc<Freed>) -> Thing {
+    Box::new(Level { value, freed: Arc::clone(freed) })
+}
+
+impl Drop for Level {
+    fn drop(&mut self) {
+        self.freed.total.fetch_add(1, Ordering::SeqCst);
+        if engine_core::rt::in_audio() {
+            self.freed.in_audio.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+}
+
+/// Plays the level it holds, on both sides. Handed a new one in slot 0, it
+/// returns the old one at once; in slot 1, it returns the old one when next
+/// asked what it has finished with. Anything that isn't a level it refuses.
+#[derive(Default)]
+pub struct Holder {
+    level: Option<Box<Level>>,
+    done: Option<Thing>,
+}
+
+impl Module for Holder {
+    fn inputs(&self) -> Vec<Kind> {
+        vec![]
+    }
+    fn outputs(&self) -> Vec<Kind> {
+        vec![Kind::Audio]
+    }
+    fn process(&mut self, io: &mut Io) {
+        let value = self.level.as_ref().map_or(0.0, |level| level.value);
+        let (l, r) = io.outs.audio(0);
+        l.fill(value);
+        r.fill(value);
+    }
+    fn take(&mut self, slot: u32, thing: Thing) -> Option<Thing> {
+        let new = match thing.downcast::<Level>() {
+            Ok(new) => new,
+            Err(other) => return Some(other),
+        };
+        let old = self.level.replace(new).map(|old| old as Thing);
+        if slot == 1 {
+            // Never two waiting: the test hands slot 1 one thing at a time.
+            std::mem::replace(&mut self.done, old)
+        } else {
+            old
+        }
+    }
+    fn finished(&mut self) -> Option<Thing> {
+        self.done.take()
+    }
+}

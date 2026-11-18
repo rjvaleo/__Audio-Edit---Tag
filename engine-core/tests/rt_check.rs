@@ -72,3 +72,24 @@ fn a_module_that_allocates_is_caught() {
     render(&mut audio, 256, 64);
     assert!(counted() >= before + 8, "four blocks, an allocation and a free each");
 }
+
+#[test]
+fn handing_things_over_frees_nothing_on_the_audio_thread() {
+    let (mut ctl, mut audio) = engine(RATE, exact());
+    let freed = std::sync::Arc::new(Freed::default());
+    ctl.add(1, Box::new(Holder::default())).unwrap();
+    ctl.connect_out(port(1, 0)).unwrap();
+    ctl.commit().unwrap();
+    for i in 0..40u64 {
+        ctl.give_at(10 + 50 * i, 1, (i % 2) as u32, level(i as f32, &freed)).unwrap();
+        ctl.give_at(11 + 50 * i, 99, 0, level(0.0, &freed)).unwrap();
+    }
+    let before = counted();
+    let (l, _) = render(&mut audio, 4_000, 64);
+    assert_eq!(counted(), before, "allocations or frees inside a render");
+    assert_eq!(l[3_999], 39.0, "the last level handed over is playing");
+    assert_eq!(freed.total(), 0);
+    assert_eq!(ctl.collect().things, 79, "39 replaced and 40 nobody took");
+    assert_eq!(freed.total(), 79);
+    assert_eq!(freed.in_audio(), 0);
+}
