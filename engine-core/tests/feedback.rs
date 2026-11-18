@@ -7,7 +7,7 @@ use engine_core::*;
 
 #[test]
 fn a_loop_without_a_delay_is_refused() {
-    let (mut ctl, mut audio) = engine(RATE, Config::default());
+    let (mut ctl, mut audio) = engine(RATE, exact());
     ctl.add(1, Box::new(Dc(1.0))).unwrap();
     ctl.add(2, Box::new(Gain::new(0.5))).unwrap();
     ctl.add(3, Box::new(Gain::new(0.5))).unwrap();
@@ -26,7 +26,7 @@ fn a_loop_without_a_delay_is_refused() {
 }
 
 fn echo(block: usize) -> Vec<f32> {
-    let (mut ctl, mut audio) = engine(RATE, Config::default());
+    let (mut ctl, mut audio) = engine(RATE, exact());
     ctl.add(1, Box::new(Impulse::new())).unwrap();
     ctl.add(2, Box::new(Delay::new(64))).unwrap();
     ctl.add(3, Box::new(Gain::new(0.5))).unwrap();
@@ -57,7 +57,7 @@ fn a_loop_sounds_the_same_at_any_block_size() {
 
 #[test]
 fn a_delay_can_feed_itself() {
-    let (mut ctl, mut audio) = engine(RATE, Config::default());
+    let (mut ctl, mut audio) = engine(RATE, exact());
     ctl.add(1, Box::new(Impulse::new())).unwrap();
     ctl.add(2, Box::new(Delay::new(10))).unwrap();
     ctl.connect(port(1, 0), port(2, 0)).unwrap();
@@ -72,7 +72,7 @@ fn a_delay_can_feed_itself() {
 
 #[test]
 fn a_delay_outside_a_loop_just_delays() {
-    let (mut ctl, mut audio) = engine(RATE, Config::default());
+    let (mut ctl, mut audio) = engine(RATE, exact());
     ctl.add(1, Box::new(Impulse::new())).unwrap();
     ctl.add(2, Box::new(Delay::new(100))).unwrap();
     ctl.connect(port(1, 0), port(2, 0)).unwrap();

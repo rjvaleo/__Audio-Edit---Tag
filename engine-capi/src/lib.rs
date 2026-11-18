@@ -74,11 +74,13 @@ unsafe fn ctl<'a>(e: *mut NeEngine) -> Option<&'a mut Controller> {
 }
 
 /// Make an engine. `log_applied` not 0: it reports where every message landed.
+/// `fade_frames`: how long a cable fades when the patch changes (0: instant).
 #[no_mangle]
-pub extern "C" fn ne_new(rate: f32, max_block: u32, log_applied: u32) -> *mut NeEngine {
+pub extern "C" fn ne_new(rate: f32, max_block: u32, log_applied: u32, fade_frames: u32) -> *mut NeEngine {
     let config = Config {
         max_block: max_block.max(1) as usize,
         log_applied: log_applied != 0,
+        fade_frames: fade_frames as usize,
         ..Config::default()
     };
     let (ctl, audio) = engine(rate, config);

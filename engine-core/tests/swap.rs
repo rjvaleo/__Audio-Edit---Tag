@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, ThreadId};
 
 fn one_sine(hz: f32, frames: usize) -> Vec<f32> {
-    let (mut ctl, mut audio) = engine(RATE, Config::default());
+    let (mut ctl, mut audio) = engine(RATE, exact());
     ctl.add(1, Box::new(Sine::new(hz, 0.25))).unwrap();
     ctl.connect_out(port(1, 0)).unwrap();
     ctl.commit().unwrap();
@@ -17,7 +17,7 @@ fn one_sine(hz: f32, frames: usize) -> Vec<f32> {
 
 #[test]
 fn a_module_in_both_patches_carries_on_where_it_was() {
-    let (mut ctl, mut audio) = engine(RATE, Config::default());
+    let (mut ctl, mut audio) = engine(RATE, exact());
     ctl.add(1, Box::new(Sine::new(220.0, 0.25))).unwrap();
     ctl.connect_out(port(1, 0)).unwrap();
     ctl.commit().unwrap();
@@ -36,7 +36,7 @@ fn a_module_in_both_patches_carries_on_where_it_was() {
 
 #[test]
 fn a_stamped_patch_change_lands_on_its_sample() {
-    let (mut ctl, mut audio) = engine(RATE, Config::default());
+    let (mut ctl, mut audio) = engine(RATE, exact());
     ctl.commit().unwrap();
     ctl.add(1, Box::new(Dc(1.0))).unwrap();
     ctl.connect_out(port(1, 0)).unwrap();
@@ -48,7 +48,7 @@ fn a_stamped_patch_change_lands_on_its_sample() {
 
 #[test]
 fn old_plans_come_back_to_be_freed() {
-    let (mut ctl, mut audio) = engine(RATE, Config::default());
+    let (mut ctl, mut audio) = engine(RATE, exact());
     ctl.add(1, Box::new(Dc(1.0))).unwrap();
     ctl.connect_out(port(1, 0)).unwrap();
     ctl.commit().unwrap();
@@ -84,7 +84,7 @@ impl Module for DropProbe {
 #[test]
 fn a_removed_module_is_freed_on_the_apps_thread() {
     let dropped_on = Arc::new(Mutex::new(None));
-    let (mut ctl, audio) = engine(RATE, Config::default());
+    let (mut ctl, audio) = engine(RATE, exact());
     ctl.add(1, Box::new(DropProbe(dropped_on.clone()))).unwrap();
     ctl.commit().unwrap();
     let on_audio_thread = |mut audio: AudioEngine| {
@@ -106,7 +106,7 @@ fn a_removed_module_is_freed_on_the_apps_thread() {
 
 #[test]
 fn a_replaced_sound_comes_back_to_be_freed() {
-    let (mut ctl, mut audio) = engine(RATE, Config::default());
+    let (mut ctl, mut audio) = engine(RATE, exact());
     ctl.add(1, Box::new(SoundSource::new())).unwrap();
     ctl.add(2, Box::new(Player::new(1.0))).unwrap();
     ctl.connect(port(1, 0), port(2, 0)).unwrap();

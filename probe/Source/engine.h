@@ -10,7 +10,7 @@ typedef struct NeEngine NeEngine;
 
 enum { NE_SINE = 1, NE_GAIN, NE_DELAY, NE_LFO, NE_CLOCK, NE_PULSE, NE_VOICE, NE_KEYS, NE_SOUND_SOURCE, NE_PLAYER };
 
-NeEngine* ne_new (float rate, uint32_t max_block, uint32_t log_applied);
+NeEngine* ne_new (float rate, uint32_t max_block, uint32_t log_applied, uint32_t fade_frames);
 void ne_free (NeEngine*);
 void ne_render (NeEngine*, float* l, float* r, uint32_t n);
 uint64_t ne_frame (NeEngine*);

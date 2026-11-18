@@ -6,7 +6,7 @@ use engine_core::basics::*;
 use engine_core::*;
 
 fn dc_through_gain() -> (Controller, AudioEngine) {
-    let (mut ctl, audio) = engine(RATE, Config::default());
+    let (mut ctl, audio) = engine(RATE, exact());
     ctl.add(1, Box::new(Dc(1.0))).unwrap();
     ctl.add(2, Box::new(Gain::new(1.0))).unwrap();
     ctl.connect(port(1, 0), port(2, 0)).unwrap();
@@ -48,7 +48,7 @@ fn a_knob_set_before_the_patch_is_sent_is_heard_from_the_first_sample() {
 
 #[test]
 fn a_stamped_note_lands_on_its_sample() {
-    let (mut ctl, mut audio) = engine(RATE, Config::default());
+    let (mut ctl, mut audio) = engine(RATE, exact());
     ctl.add(1, Box::new(Keys::new())).unwrap();
     ctl.add(2, Box::new(NoteProbe)).unwrap();
     ctl.connect(port(1, 0), port(2, 0)).unwrap();
@@ -73,7 +73,7 @@ fn messages_stamped_for_one_sample_land_in_the_order_sent() {
 
 #[test]
 fn a_plug_into_the_wrong_kind_of_socket_is_refused() {
-    let (mut ctl, _audio) = engine(RATE, Config::default());
+    let (mut ctl, _audio) = engine(RATE, exact());
     ctl.add(1, Box::new(Keys::new())).unwrap();
     ctl.add(2, Box::new(Gain::new(1.0))).unwrap();
     assert_eq!(

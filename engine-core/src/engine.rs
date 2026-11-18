@@ -2,12 +2,13 @@
 //! on the sound card's.
 
 use crate::module::{EventKind, Module};
-use crate::plan::{Info, Plan, MAX_MODULE_ID};
+use crate::plan::{Ghosts, Info, PatchState, Plan, Spec, MAX_MODULE_ID};
 use crate::rt;
 use crate::sound::{SoundData, Sounds, MAX_SOUNDS};
 use crate::spsc::{self, Consumer, Producer};
 use crate::types::{Cable, Kind, ModuleId, PortRef, SoundRef};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug)]
@@ -19,11 +20,14 @@ pub struct Config {
     pub queue: usize,
     /// Report the frame every message landed on, for a replay.
     pub log_applied: bool,
+    /// How long a cable takes to fade in or out when the patch changes, in
+    /// frames. 0: changes are instant.
+    pub fade_frames: usize,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { max_block: 1024, queue: 4096, log_applied: false }
+        Self { max_block: 1024, queue: 4096, log_applied: false, fade_frames: 480 }
     }
 }
 
@@ -53,7 +57,11 @@ pub struct Collected {
 
 enum Msg {
     Event { module: ModuleId, kind: EventKind },
-    Plan(Box<Plan>),
+    /// A patch change. `after` is the plan that takes over once the change's
+    /// fades are done, when it leaves anything fading out.
+    Plan { plan: Box<Plan>, after: Option<Box<Plan>> },
+    /// That second plan, waiting for its frame on the audio thread.
+    After(Box<Plan>),
     Sound { id: u32, version: u32, data: Option<Arc<SoundData>> },
 }
 
@@ -69,6 +77,8 @@ enum Back {
     Plan(Box<Plan>),
     Sound(Arc<SoundData>),
     Applied { seq: u64, frame: u64 },
+    /// The fades of this patch change are over and its second plan is in place.
+    Settled { generation: u64 },
 }
 
 /// Make an engine: its controller for the app's thread and its audio half
@@ -83,10 +93,12 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
         max_block,
         tx,
         rx: back_rx,
-        infos: BTreeMap::new(),
+        now: PatchState::default(),
+        sent: PatchState::default(),
+        lingering: Ghosts::default(),
         staged: BTreeMap::new(),
-        cables: BTreeSet::new(),
-        outs: BTreeSet::new(),
+        fade: config.fade_frames,
+        generation: 0,
         seq: 0,
         last_plan_frame: 0,
         applied: Vec::new(),
@@ -101,6 +113,7 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
         pending: Vec::with_capacity(queue),
         held: Vec::with_capacity(queue),
         room: queue,
+        fade: config.fade_frames as u64,
         plan: Box::new(Plan::empty(max_block)),
         sounds: Sounds::new(),
         log_applied: config.log_applied,
@@ -115,11 +128,15 @@ pub struct Controller {
     max_block: usize,
     tx: Producer<Stamped>,
     rx: Consumer<Back>,
-    infos: BTreeMap<ModuleId, Info>,
+    /// The patch as edited, and as it was when last sent.
+    now: PatchState,
+    sent: PatchState,
+    /// What the last change left fading out, as far as this thread knows.
+    lingering: Ghosts,
     /// Modules added since the last plan, still on this thread.
     staged: BTreeMap<ModuleId, Box<dyn Module>>,
-    cables: BTreeSet<Cable>,
-    outs: BTreeSet<PortRef>,
+    fade: usize,
+    generation: u64,
     seq: u64,
     last_plan_frame: u64,
     applied: Vec<(u64, u64)>,
@@ -132,11 +149,11 @@ impl Controller {
         if id > MAX_MODULE_ID {
             return Err(PatchError::BadModuleId(id));
         }
-        if self.infos.contains_key(&id) {
+        if self.now.infos.contains_key(&id) {
             return Err(PatchError::DuplicateModule(id));
         }
         module.prepare(self.rate, self.max_block);
-        self.infos.insert(
+        self.now.infos.insert(
             id,
             Info {
                 inputs: module.inputs(),
@@ -150,17 +167,17 @@ impl Controller {
 
     /// Take a module and its cables out of the patch.
     pub fn remove(&mut self, id: ModuleId) -> bool {
-        if self.infos.remove(&id).is_none() {
+        if self.now.infos.remove(&id).is_none() {
             return false;
         }
         self.staged.remove(&id);
-        self.cables.retain(|cable| cable.from.module != id && cable.to.module != id);
-        self.outs.retain(|port| port.module != id);
+        self.now.cables.retain(|cable| cable.from.module != id && cable.to.module != id);
+        self.now.outs.retain(|port| port.module != id);
         true
     }
 
     fn output_kind(&self, port: PortRef) -> Result<Kind, PatchError> {
-        self.infos
+        self.now.infos
             .get(&port.module)
             .and_then(|info| info.outputs.get(port.port as usize))
             .copied()
@@ -168,7 +185,7 @@ impl Controller {
     }
 
     fn input_kind(&self, port: PortRef) -> Result<Kind, PatchError> {
-        self.infos
+        self.now.infos
             .get(&port.module)
             .and_then(|info| info.inputs.get(port.port as usize))
             .copied()
@@ -180,12 +197,12 @@ impl Controller {
         if self.output_kind(from)? != self.input_kind(to)? {
             return Err(PatchError::KindMismatch { from, to });
         }
-        self.cables.insert(Cable { from, to });
+        self.now.cables.insert(Cable { from, to });
         Ok(())
     }
 
     pub fn disconnect(&mut self, from: PortRef, to: PortRef) -> bool {
-        self.cables.remove(&Cable { from, to })
+        self.now.cables.remove(&Cable { from, to })
     }
 
     /// Send an audio output to the sound card. Several are summed.
@@ -193,12 +210,12 @@ impl Controller {
         if self.output_kind(from)? != Kind::Audio {
             return Err(PatchError::NotAudio(from));
         }
-        self.outs.insert(from);
+        self.now.outs.insert(from);
         Ok(())
     }
 
     pub fn disconnect_out(&mut self, from: PortRef) -> bool {
-        self.outs.remove(&from)
+        self.now.outs.remove(&from)
     }
 
     fn push(&mut self, frame: u64, msg: Msg) -> Result<u64, PatchError> {
@@ -224,11 +241,44 @@ impl Controller {
         if self.tx.is_full() {
             return Err(PatchError::QueueFull);
         }
-        let plan =
-            Plan::compile(&self.infos, &self.cables, &self.outs, &mut self.staged, self.max_block)?;
+        // A number given to a different module since the last plan.
+        let replaced: BTreeSet<ModuleId> = self
+            .staged
+            .keys()
+            .filter(|id| self.sent.infos.contains_key(id) || self.lingering.infos.contains_key(id))
+            .copied()
+            .collect();
+        let generation = self.generation + 1;
+        let spec = |settled: bool| {
+            Spec::of(&self.now, &self.sent, &replaced, self.fade, generation, self.max_block, settled)
+        };
+        // First choice: the new patch with what was taken away fading out
+        // beside it, then the new patch alone once the fades are over.
+        let mut plan = None;
+        let mut after = None;
+        let mut lingering = Ghosts::default();
+        let mut fading = spec(false);
+        let ghosts = fading.add_ghosts(&self.now, &self.sent, &self.lingering, &replaced);
+        if ghosts.fading() {
+            if let Ok(first) = Plan::compile(&fading, &mut self.staged) {
+                after = Plan::compile(&spec(true), &mut BTreeMap::new()).ok().map(Box::new);
+                plan = Some(first);
+                lingering = ghosts;
+            }
+        }
+        // Nothing to fade out, or the old cables and the new would make a
+        // loop together: the new patch alone, its new cables fading in.
+        let plan = match plan {
+            Some(plan) => plan,
+            None => Plan::compile(&spec(false), &mut self.staged)?,
+        };
         let frame = frame.max(self.last_plan_frame);
+        let seq = self.push(frame, Msg::Plan { plan: Box::new(plan), after })?;
         self.last_plan_frame = frame;
-        self.push(frame, Msg::Plan(Box::new(plan)))
+        self.generation = generation;
+        self.sent = self.now.clone();
+        self.lingering = lingering;
+        Ok(seq)
     }
 
     /// Send a module a message, to land at the next block. A module not yet
@@ -283,6 +333,11 @@ impl Controller {
                     collected.sounds += 1;
                 }
                 Back::Applied { seq, frame } => self.applied.push((seq, frame)),
+                Back::Settled { generation } => {
+                    if generation == self.generation {
+                        self.lingering = Ghosts::default();
+                    }
+                }
             }
         }
         collected
@@ -307,6 +362,7 @@ pub struct AudioEngine {
     /// Things to free that the queue back had no room for yet.
     held: Vec<Back>,
     room: usize,
+    fade: u64,
     plan: Box<Plan>,
     sounds: Sounds,
     log_applied: bool,
@@ -373,10 +429,23 @@ impl AudioEngine {
             let Stamped { seq, msg, .. } = self.pending.remove(0);
             match msg {
                 Msg::Event { module, kind } => self.plan.handle(module, &kind),
-                Msg::Plan(mut plan) => {
-                    plan.adopt(&mut self.plan);
-                    let old = std::mem::replace(&mut self.plan, plan);
-                    self.give_back(Back::Plan(old));
+                Msg::Plan { plan, after } => {
+                    self.land(plan);
+                    if let Some(after) = after {
+                        self.follow_with(after);
+                    }
+                }
+                Msg::After(plan) => {
+                    // Only if the change it follows is still the newest.
+                    if plan.generation() == self.plan.generation() {
+                        let generation = plan.generation();
+                        self.land(plan);
+                        // If there is no room to say so, the controller only
+                        // carries finished fades along a little longer.
+                        let _ = self.tx.push(Back::Settled { generation });
+                    } else {
+                        self.give_back(Back::Plan(plan));
+                    }
                 }
                 Msg::Sound { id, version, data } => {
                     if let Some(old) = self.sounds.set(id, version, data) {
@@ -384,9 +453,28 @@ impl AudioEngine {
                     }
                 }
             }
-            if self.log_applied && self.tx.push(Back::Applied { seq, frame: self.frame }).is_err() {
+            if seq != 0 && self.log_applied && self.tx.push(Back::Applied { seq, frame: self.frame }).is_err() {
                 self.lost += 1;
             }
+        }
+    }
+
+    /// Put a plan in place, keeping the modules and cable levels it shares
+    /// with the one before.
+    fn land(&mut self, mut plan: Box<Plan>) {
+        plan.adopt(&mut self.plan);
+        let old = std::mem::replace(&mut self.plan, plan);
+        self.give_back(Back::Plan(old));
+    }
+
+    /// Line up the plan that takes over when the fades just started are done.
+    fn follow_with(&mut self, after: Box<Plan>) {
+        if self.pending.len() < self.room {
+            let frame = self.frame + self.fade + 2;
+            let at = self.pending.partition_point(|waiting| waiting.frame <= frame);
+            self.pending.insert(at, Stamped { frame, seq: 0, msg: Msg::After(after) });
+        } else {
+            self.give_back(Back::Plan(after));
         }
     }
 

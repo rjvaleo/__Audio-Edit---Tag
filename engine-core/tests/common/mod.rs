@@ -12,6 +12,16 @@ use std::time::Duration;
 
 pub const RATE: f32 = 48_000.0;
 
+/// No fades: a patch change is heard whole from its first sample.
+pub fn exact() -> Config {
+    Config { fade_frames: 0, ..Config::default() }
+}
+
+/// Patch changes fade over this many frames.
+pub fn fading(frames: usize) -> Config {
+    Config { fade_frames: frames, ..Config::default() }
+}
+
 pub fn render(audio: &mut AudioEngine, frames: usize, block: usize) -> (Vec<f32>, Vec<f32>) {
     let mut l = vec![0.0; frames];
     let mut r = vec![0.0; frames];

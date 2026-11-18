@@ -254,7 +254,7 @@ int main (int argc, char* argv[])
     const double slot = (double) block / rate;
 
     // Live.
-    NeEngine* live = ne_new ((float) rate, 1024, 1);
+    NeEngine* live = ne_new ((float) rate, 1024, 1, (uint32_t) (rate / 100.0));
     buildPatch (live, (float) rate);
     Live callback;
     callback.engine = live;
@@ -285,7 +285,7 @@ int main (int argc, char* argv[])
     const int liveMistakes = mistakes;
 
     // Offline: the same messages, stamped with where they landed.
-    NeEngine* offline = ne_new ((float) rate, 1024, 0);
+    NeEngine* offline = ne_new ((float) rate, 1024, 0, (uint32_t) (rate / 100.0));
     buildPatch (offline, (float) rate);
     size_t replayed = 0, patchChanges = 0;
     std::vector<uint64_t> where;
