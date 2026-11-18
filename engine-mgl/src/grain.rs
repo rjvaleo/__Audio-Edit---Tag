@@ -56,6 +56,16 @@ pub const SIDE_RIGHT: u32 = 16;
 /// note past it. 0: as many as there are.
 pub const VOICES: u32 = 17;
 
+/// The kinds of thing that can be kept waiting for the deck, in the order
+/// they are offered again.
+const PARAMS: usize = 0;
+const SOUND: usize = 1;
+const PARTS: usize = 2;
+const RACK: usize = 3;
+const BANK: usize = 4;
+const MAP: usize = 5;
+const KINDS: usize = 6;
+
 /// What the deck is handed while it plays, built on the app's thread
 /// (`Controller::give`, slot 0).
 pub enum GrainThing {
@@ -171,13 +181,11 @@ pub struct Grain {
     /// A hold of this module's own on the sound last handed to the deck, so
     /// that replacing a sound here never drops the last hold on one.
     source: Arc<Source>,
-    /// A sound and a separation that could not be handed to the deck yet
-    /// (MGL's housekeeping thread was reading the old one at that instant),
-    /// each still in its box, offered again at every line until taken.
-    waiting_sound: Option<Box<GrainThing>>,
-    waiting_parts: Option<Box<GrainThing>>,
-    /// The same for new settings, which the app's `stock_voices` reads.
-    waiting_params: Option<Box<GrainThing>>,
+    /// What could not be handed to the deck yet (another thread was in its
+    /// slot at that instant: MGL's housekeeping thread reads the sound and
+    /// the separation, the app's `stock_voices` the settings), one of each
+    /// kind, still in its box, offered again at every line until taken.
+    waiting: [Option<Box<GrainThing>>; KINDS],
     /// Boxes finished with after a second offer, on their way back.
     done: [Option<Box<GrainThing>>; 8],
     amp: [f32; 4],
@@ -212,9 +220,7 @@ impl Grain {
             shared,
             keys,
             source,
-            waiting_sound: None,
-            waiting_parts: None,
-            waiting_params: None,
+            waiting: [const { None }; KINDS],
             done: Default::default(),
             amp: [attack, decay, sustain, release],
             sides: [1.0; 2],
@@ -226,7 +232,7 @@ impl Grain {
 
     /// Start with this rack after the engines.
     pub fn rack(self, rack: mgl_fx::Rack) -> Grain {
-        drop(self.shared.put_rack(Some(rack)));
+        self.shared.set_rack(Some(rack));
         self
     }
 
@@ -238,20 +244,18 @@ impl Grain {
 
     /// Offer the deck what is in the box. The box comes back when it is
     /// finished with; `None` means the deck could not take it this instant
-    /// and it waits here for the next line. A newer sound (or separation)
+    /// and it waits here for the next line. A newer thing of the same kind
     /// takes the place of one still waiting, which then goes back unused.
     fn hand(&mut self, mut boxed: Box<GrainThing>) -> Option<Box<GrainThing>> {
-        match std::mem::replace(&mut *boxed, GrainThing::Taken) {
+        // Each arm leaves in the box what goes back to the app, or, on a
+        // miss, the thing itself to offer again.
+        let (kind, taken) = match std::mem::replace(&mut *boxed, GrainThing::Taken) {
             GrainThing::Params(params) => {
-                if self.shared.put_params(params) {
-                    // Older settings still waiting must not land after these.
-                    let stale = self.waiting_params.take();
-                    self.set_aside(stale);
-                    Some(boxed)
-                } else {
+                let taken = self.shared.put_params(params);
+                if !taken {
                     *boxed = GrainThing::Params(params);
-                    self.waiting_params.replace(boxed)
                 }
+                (PARAMS, taken)
             }
             GrainThing::Source(source) => match self.shared.put_source(Arc::clone(&source)) {
                 Ok(in_slot) => {
@@ -262,85 +266,107 @@ impl Grain {
                     let old = std::mem::replace(&mut self.source, source);
                     // One more hold on a sound `old` also holds.
                     drop(in_slot);
-                    // An older sound still waiting must not land after this.
-                    let stale = self.waiting_sound.take();
-                    self.set_aside(stale);
                     *boxed = GrainThing::Source(old);
-                    Some(boxed)
+                    (SOUND, true)
                 }
                 Err(offered) => {
                     // A second hold on `source`, which stays in the box.
                     drop(offered);
                     *boxed = GrainThing::Source(source);
-                    self.waiting_sound.replace(boxed)
+                    (SOUND, false)
                 }
             },
             GrainThing::Parts(parts) => match self.shared.put_parts(Arc::clone(&parts)) {
                 Ok(old) => {
                     // The deck holds the new one now, so this is not the last.
                     drop(parts);
-                    let stale = self.waiting_parts.take();
-                    self.set_aside(stale);
                     *boxed = GrainThing::OldParts(old);
-                    Some(boxed)
+                    (PARTS, true)
                 }
                 Err(offered) => {
                     drop(offered);
                     *boxed = GrainThing::Parts(parts);
-                    self.waiting_parts.replace(boxed)
+                    (PARTS, false)
                 }
             },
             // For these three, MGL's `put` forms: the new thing is left for
             // the deck, and whatever was still waiting there unclaimed goes
             // back in the box. What the deck itself replaces goes on its
             // list, for the app's `Handle::collect`.
-            GrainThing::Rack(rack) => {
-                if let Some(unclaimed) = self.shared.put_rack(rack) {
-                    *boxed = GrainThing::Rack(unclaimed);
+            GrainThing::Rack(rack) => match self.shared.put_rack(rack) {
+                Ok(unclaimed) => {
+                    if let Some(unclaimed) = unclaimed {
+                        *boxed = GrainThing::Rack(unclaimed);
+                    }
+                    (RACK, true)
                 }
-                Some(boxed)
-            }
-            GrainThing::Bank(bank) => {
-                if let Some(unclaimed) = self.shared.put_bank(bank) {
-                    *boxed = GrainThing::Bank(unclaimed);
+                Err(rack) => {
+                    *boxed = GrainThing::Rack(rack);
+                    (RACK, false)
                 }
-                Some(boxed)
-            }
-            GrainThing::Map(map) => {
-                if let Some(unclaimed) = self.shared.put_map(map) {
-                    *boxed = GrainThing::Map(unclaimed);
+            },
+            GrainThing::Bank(bank) => match self.shared.put_bank(bank) {
+                Ok(unclaimed) => {
+                    if let Some(unclaimed) = unclaimed {
+                        *boxed = GrainThing::Bank(unclaimed);
+                    }
+                    (BANK, true)
                 }
-                Some(boxed)
-            }
+                Err(bank) => {
+                    *boxed = GrainThing::Bank(bank);
+                    (BANK, false)
+                }
+            },
+            GrainThing::Map(map) => match self.shared.put_map(map) {
+                Ok(unclaimed) => {
+                    if let Some(unclaimed) = unclaimed {
+                        *boxed = GrainThing::Map(unclaimed);
+                    }
+                    (MAP, true)
+                }
+                Err(map) => {
+                    *boxed = GrainThing::Map(map);
+                    (MAP, false)
+                }
+            },
             GrainThing::Seek(frame) => {
                 self.shared.request_seek(frame);
-                Some(boxed)
+                return Some(boxed);
             }
             GrainThing::Loop { on, a, b } => {
                 self.shared.set_loop(on, a, b);
-                Some(boxed)
+                return Some(boxed);
             }
             GrainThing::PitchTime(settings) => {
                 self.shared.set_pitch_time(settings);
-                Some(boxed)
+                return Some(boxed);
             }
             GrainThing::PostRoll(frames) => {
                 self.shared.set_post_roll_frames(frames);
-                Some(boxed)
+                return Some(boxed);
             }
             old @ (GrainThing::OldParts(_) | GrainThing::Taken) => {
                 *boxed = old;
-                Some(boxed)
+                return Some(boxed);
             }
+        };
+        if taken {
+            // An older one of its kind still waiting must not land after it.
+            let stale = self.waiting[kind].take();
+            self.set_aside(stale);
+            Some(boxed)
+        } else {
+            self.waiting[kind].replace(boxed)
         }
     }
 
     /// Offer again what the deck could not take last time.
     fn offer_again(&mut self) {
-        let waiting = [self.waiting_params.take(), self.waiting_sound.take(), self.waiting_parts.take()];
-        for waiting in waiting.into_iter().flatten() {
-            let finished = self.hand(waiting);
-            self.set_aside(finished);
+        for kind in 0..KINDS {
+            if let Some(waiting) = self.waiting[kind].take() {
+                let finished = self.hand(waiting);
+                self.set_aside(finished);
+            }
         }
     }
 
@@ -461,7 +487,7 @@ impl Module for Grain {
                     self.play(&notes[next]);
                     next += 1;
                 }
-                if self.waiting_params.is_some() || self.waiting_sound.is_some() || self.waiting_parts.is_some() {
+                if self.waiting.iter().any(Option::is_some) {
                     self.offer_again();
                 }
                 self.core.fill(&mut self.block, 2, &self.shared);
