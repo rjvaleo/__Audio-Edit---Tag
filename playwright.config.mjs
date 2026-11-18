@@ -51,6 +51,9 @@ export default defineConfig({
     // muted by the scratch server (`AUDIOLAB_MUTE_OUTPUT`).
     launchOptions: { args: ['--mute-audio'] },
     trace: 'retain-on-failure',
+    // A picture of the page when a test fails: the PC Controller's Tests page
+    // shows it beside the failure (tools/pc/progress-reporter.mjs keeps it).
+    screenshot: 'only-on-failure',
   },
   // Not started when pointed at an instance that is already up — killing the
   // user's own session to run a test would be a poor trade.
