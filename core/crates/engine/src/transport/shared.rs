@@ -153,8 +153,9 @@ impl Shared {
         self.source.lock().ok().map(|g| Arc::clone(&g))
     }
 
+    /// Leave a new sound for the audio thread to pick up. The sound it stops
+    /// playing comes back on the list [`Shared::collect`] frees.
     pub fn set_source(&self, s: Arc<Source>) {
-        self.collect();
         if let Ok(mut g) = self.source.lock() {
             *g = s;
         }
@@ -410,7 +411,6 @@ impl Shared {
     /// one is fine: only the newest settings matter.
     /// Leave a bank of extra layers for the audio thread to pick up.
     pub fn set_bank(&self, bank: crate::stretcher::LayerBank) {
-        self.collect();
         self.bank_layers.store(bank.layers.max(1), Ordering::Release);
         // One not yet taken is replaced, and freed here, outside the lock.
         let unclaimed = self.pending_bank.lock().ok().and_then(|mut g| g.replace(bank));
@@ -431,7 +431,6 @@ impl Shared {
 
     /// Leave a transient map for the audio thread to pick up.
     pub fn set_map(&self, map: Option<fx::transient::TimeMap>) {
-        self.collect();
         // Shared from here on, so the audio thread only ever moves a pointer.
         let map = map.map(Arc::new);
         if let Ok(mut g) = self.pending_map.lock() {
@@ -478,7 +477,9 @@ impl Shared {
 
     /// Free, here, everything the audio thread has finished with: sounds,
     /// racks, banks, maps, effects and voices it has replaced. Call it from
-    /// any thread but the audio one.
+    /// any thread but the audio one, and keep calling it: the main deck's
+    /// voice feeder does, and [`Shared::spawn_collector`] is a thread that
+    /// does nothing else, for a deck with no feeder.
     pub fn collect(&self) {
         // Drained, not taken, so the list keeps its room for the callback;
         // and dropped outside the lock, so the callback is never kept from
@@ -487,6 +488,17 @@ impl Shared {
         drop(gone);
         self.drop_retired();
         self.voices.collect();
+    }
+
+    /// A thread that frees what the audio thread hands back, a few times a
+    /// second, for as long as the deck lasts.
+    pub fn spawn_collector(shared: std::sync::Weak<Shared>) {
+        let _ = std::thread::Builder::new().name("deck-collect".into()).spawn(move || loop {
+            let Some(s) = shared.upgrade() else { break };
+            s.collect();
+            drop(s);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        });
     }
 
     /// Put something the audio thread has finished with on the list to be

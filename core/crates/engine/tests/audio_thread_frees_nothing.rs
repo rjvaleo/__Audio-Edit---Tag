@@ -2,7 +2,8 @@
 //! a new sound, a new rack, a new bank of layers, a new transient map, and
 //! the grain view taking its list of grains. Each of those used to free the
 //! thing replaced (a whole file, for a sound) or grow a list, on the audio
-//! thread. Now the old thing goes back to be freed by `Shared::collect`.
+//! thread. Now the old thing goes back to be freed by `Shared::collect`,
+//! which the voice feeder and the Prism deck's collector thread call.
 //!
 //! A counting allocator wraps the system one and counts only while a block is
 //! being made. One test in this file, so no other test thread is counted.
@@ -188,8 +189,8 @@ fn replacing_what_the_deck_plays_costs_the_callback_no_memory() {
         sizes()
     );
 
-    // The last things replaced (the bank and the maps; each later change
-    // collected what the one before left) are freed here, by the caller.
+    // Everything replaced since (four racks, a bank, two maps) is freed
+    // here, by the caller.
     COUNTED.store(0, Ordering::Relaxed);
     COUNTING.store(true, Ordering::Relaxed);
     shared.collect();

@@ -101,6 +101,8 @@ impl Engine {
         let silent = Arc::new(Source { samples: Vec::new(), channels });
         let prism_params = StreamParams { in_frames: 0, sample_rate, ..params };
         let prism = Arc::new(Shared::new(prism_params, Arc::clone(&silent)));
+        // It has no voice feeder to free what its callback hands back.
+        Shared::spawn_collector(Arc::downgrade(&prism));
         let prism_shared = Arc::clone(&prism);
         // Copied out for the callback, which may not touch `config`.
         let dev_rate = sample_rate;
