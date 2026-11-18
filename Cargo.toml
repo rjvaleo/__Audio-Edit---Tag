@@ -1,5 +1,5 @@
 [workspace]
-members = ["engine-core", "engine-capi"]
+members = ["engine-core", "engine-capi", "engine-idmlab"]
 resolver = "2"
 
 [workspace.package]
@@ -10,6 +10,14 @@ license = "MIT OR Apache-2.0"
 # the overflow checks a debug build carries.
 [profile.dev]
 opt-level = 1
+
+# idMLab's modules run a sample at a time; unoptimised they make the tests crawl.
+[profile.dev.package.dsp-core]
+opt-level = 3
+[profile.dev.package.prism-fx]
+opt-level = 3
+[profile.dev.package.prism-grain]
+opt-level = 3
 
 [profile.release]
 opt-level = 3

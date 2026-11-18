@@ -5,7 +5,13 @@
 set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 ssh mbp "mkdir -p ~/idmlab-native/native"
-tar -C "$HERE" --exclude target --exclude build --exclude .git -cf - . | ssh mbp "rm -rf ~/idmlab-native/native/engine-core ~/idmlab-native/native/engine-capi; tar -x -f - -C ~/idmlab-native/native"
+tar -C "$HERE" --exclude target --exclude build --exclude .git -cf - . | ssh mbp "rm -rf ~/idmlab-native/native/engine-core ~/idmlab-native/native/engine-capi ~/idmlab-native/native/engine-idmlab; tar -x -f - -C ~/idmlab-native/native"
+# idMLab's engine crate and prism-fx go beside this folder, where
+# engine-idmlab looks for them.
+LAB="${LAB:-$HOME/Documents/GitHub/M Clone}"
+FX="${FX:-$HOME/Documents/GitHub/prism-fx}"
+tar -C "$LAB/rust" --exclude target -cf - . | ssh mbp "mkdir -p ~/idmlab-native/M\\ Clone/rust && tar -x -f - -C ~/idmlab-native/M\\ Clone/rust"
+git -C "$FX" archive --format=tar HEAD | ssh mbp "mkdir -p ~/idmlab-native/prism-fx && tar -x -f - -C ~/idmlab-native/prism-fx"
 until ssh mbp "mkdir ~/mgl-test/.lock 2>/dev/null"; do sleep 20; done
 trap 'ssh mbp "rm -rf ~/mgl-test/.lock"' EXIT
 ssh mbp "echo 'idmlab-native tests (coordinator)' > ~/mgl-test/.lock/who"

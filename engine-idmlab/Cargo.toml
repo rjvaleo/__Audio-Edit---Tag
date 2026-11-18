@@ -1,0 +1,14 @@
+[package]
+name = "engine-idmlab"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "idMLab's Rust modules, run inside the native engine."
+
+[dependencies]
+engine-core = { path = "../engine-core" }
+# idMLab's own engine crate, as it is, beside this folder: on this Mac
+# `../../M Clone` is a link to ~/Documents/GitHub/M Clone, and the test
+# scripts send a copy to the same place on the other machines. It finds
+# prism-fx three folders up from itself, so that sits beside it too.
+dsp-core = { path = "../../M Clone/rust/dsp-core" }
