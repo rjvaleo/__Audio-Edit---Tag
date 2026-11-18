@@ -46,11 +46,38 @@ class AtFx extends AudioWorkletProcessor {
         this.n++;
       }
       this.port.postMessage({ t: "laid", n: this.n });
+    } else if (m.t === "board") {
+      // The board (Wave's, run by the same engine): `text` is its lines (see
+      // fx-wasm's `bd_load`); empty clears it and the chain plays again.
+      if (!m.text) { this.x.bd_clear(); this.bn = 0; this.port.postMessage({ t: "boarded", n: 0 }); return; }
+      const n = this.btext(m.text);
+      const got = this.x.bd_load(n);
+      if (got >= 0) this.bn = got;
+      this.port.postMessage({ t: "boarded", n: got });
+    } else if (m.t === "bset") {
+      this.x.bd_set(m.i, this.bkey(m.k), m.v);
+    } else if (m.t === "bon") {
+      this.x.bd_on(m.i, m.on ? 1 : 0);
     } else if (m.t === "set") {
       this.x.fx_set(m.i, this.text(m.k), m.v);
     } else if (m.t === "on") {
       this.x.fx_bypass(m.i, m.on ? 0 : 1);
     }
+  }
+
+  /// A board's text where the module reads it; its length.
+  btext(s) {
+    const n = Math.min(65536, s.length);
+    const m = new Uint8Array(this.x.memory.buffer, this.x.bd_text(), 65536);
+    for (let i = 0; i < n; i++) m[i] = s.charCodeAt(i) & 0x7f;
+    return n;
+  }
+
+  bkey(s) {
+    const n = Math.min(256, s.length);
+    const m = new Uint8Array(this.x.memory.buffer, this.x.bd_text(), 256);
+    for (let i = 0; i < n; i++) m[i] = s.charCodeAt(i) & 0x7f;
+    return n;
   }
 
   /// Write a kind or a key where the module reads it; its length.
@@ -67,7 +94,8 @@ class AtFx extends AudioWorkletProcessor {
     const l = out[0], r = out[1] || out[0];
     const il = inp[0], ir = inp[1] || inp[0];
     if (!il) { l.fill(0); if (r !== l) r.fill(0); return true; }
-    if (!this.x || this.n === 0) {
+    const board = this.x && this.x.bd_active();
+    if (!this.x || (this.n === 0 && !board)) {
       l.set(il);
       if (r !== l) r.set(ir);
       return true;
@@ -75,7 +103,7 @@ class AtFx extends AudioWorkletProcessor {
     const n = il.length;
     const buf = new Float32Array(this.x.memory.buffer, this.x.fx_buf(), n * 2);
     for (let i = 0; i < n; i++) { buf[2 * i] = il[i]; buf[2 * i + 1] = ir[i]; }
-    this.x.fx_process(n);
+    if (board) this.x.bd_process(n); else this.x.fx_process(n);
     const b2 = new Float32Array(this.x.memory.buffer, this.x.fx_buf(), n * 2);
     let pk = 0;
     for (let i = 0; i < n; i++) {
@@ -88,8 +116,10 @@ class AtFx extends AudioWorkletProcessor {
     this.peak.push(pk);
     if (++this.tick % 12 === 0) {
       const tel = [];
-      for (let i = 0; i < this.n; i++) tel.push(this.x.fx_telemetry(i));
-      this.port.postMessage({ t: "lvl", peak: Math.max(...this.peak), tel });
+      if (!board) for (let i = 0; i < this.n; i++) tel.push(this.x.fx_telemetry(i));
+      const bpk = [];
+      if (board) for (let i = 0; i < (this.bn || 0); i++) bpk.push(this.x.bd_peak(i));
+      this.port.postMessage({ t: "lvl", peak: Math.max(...this.peak), tel, bpk });
       this.peak = [];
     }
     return true;
