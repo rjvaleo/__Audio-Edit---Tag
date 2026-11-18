@@ -128,6 +128,7 @@ impl Engine {
             cpal::SampleFormat::F32 => device.build_output_stream(
                 cfg,
                 move |out: &mut [f32], info: &cpal::OutputCallbackInfo| {
+                    let _no_denormals = crate::guard::NoDenormals::new();
                     // How long until the first sample of this block is heard.
                     // The backend knows; everyone else would be guessing, and
                     // a playhead drawn from the frame counter alone runs ahead

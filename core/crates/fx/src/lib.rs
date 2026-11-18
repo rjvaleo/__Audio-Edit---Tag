@@ -116,6 +116,18 @@ impl Default for RackMeters {
 }
 
 /// Anything that can process audio in place.
+/// True if every sample is a number: no NaN, no infinity. One pass over the
+/// bits with no early way out, so it is a handful of instructions a block.
+#[inline]
+pub fn all_finite(buf: &[f32]) -> bool {
+    const EXP: u32 = 0x7f80_0000;
+    let mut bad = 0u32;
+    for x in buf {
+        bad |= ((x.to_bits() & EXP) == EXP) as u32;
+    }
+    bad == 0
+}
+
 pub trait Effect: Send {
     /// Process `buf`, interleaved, `channels` wide.
     fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32);
@@ -261,6 +273,11 @@ pub fn soft_ceiling(x: f32) -> f32 {
     let a = x.abs();
     if a <= CEILING_KNEE {
         return x;
+    }
+    // Not a number: silence. The comparison above is false for one, and
+    // `tanh` would hand it on to the converter.
+    if a.is_nan() {
+        return 0.0;
     }
     let span = CEILING - CEILING_KNEE;
     let y = CEILING_KNEE + span * ((a - CEILING_KNEE) / span).tanh();
@@ -500,11 +517,20 @@ pub struct Rack {
     /// Place works on the two sides apart.
     place_l: Vec<f32>,
     place_r: Vec<f32>,
+    /// How many times a block that was not all numbers was caught and
+    /// silenced. See [`Rack::process`].
+    tripped: u32,
 }
 
 impl Rack {
     pub fn new() -> Self {
-        Rack { slots: Vec::new(), meters: None, dry: Vec::new(), xfade: Vec::new(), place_l: Vec::new(), place_r: Vec::new() }
+        Rack { slots: Vec::new(), meters: None, dry: Vec::new(), xfade: Vec::new(), place_l: Vec::new(), place_r: Vec::new(), tripped: 0 }
+    }
+
+    /// How many blocks have been silenced because an effect, or what came into
+    /// the rack, gave a sample that was not a number.
+    pub fn tripped(&self) -> u32 {
+        self.tripped
     }
 
     /// Share a meter block with whoever is drawing it. The rack writes; the
@@ -610,7 +636,16 @@ impl Rack {
         self.slots.iter_mut().find_map(|s| s.retired.take())
     }
 
+    /// **A sample that is not a number never gets past the stage that made
+    /// it.** One NaN in a reverb's tank or a filter's memory stays there for
+    /// good and every block after it is NaN too. So what comes in is checked,
+    /// and what each effect gives: a bad block is silenced and that effect's
+    /// memory cleared, and the ones before and after it carry on.
     pub fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32) {
+        if !all_finite(buf) {
+            buf.fill(0.0);
+            self.tripped = self.tripped.wrapping_add(1);
+        }
         if let Some(m) = &self.meters {
             m.write(0, buf, channels);
         }
@@ -638,6 +673,17 @@ impl Rack {
                         place_pass(s.place.as_deref_mut().unwrap(), buf, channels, &mut self.place_l, &mut self.place_r, false);
                     }
                     s.blend(buf, dry, channels, sample_rate);
+                }
+                if !all_finite(buf) {
+                    buf.fill(0.0);
+                    s.effect.reset();
+                    if let Some(n) = s.incoming.as_mut() {
+                        n.reset();
+                    }
+                    if let Some(p) = s.place.as_mut() {
+                        p.reset();
+                    }
+                    self.tripped = self.tripped.wrapping_add(1);
                 }
             }
             // Metered even when bypassed, so a switched-out slot reads as

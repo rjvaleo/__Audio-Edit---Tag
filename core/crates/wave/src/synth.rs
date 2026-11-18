@@ -552,6 +552,16 @@ impl Synth {
             }
         }
         if let Some(i) = self.voices.iter().position(|v| !v.active) {
+            // Keep a slot in hand. Once every slot was sounding, the next note
+            // took a release tail's and cut it dead on that sample. So when
+            // this note leaves fewer than two free, the oldest tail is faded
+            // out now (5 ms), and its slot is free by the note after.
+            let free = self.voices.iter().filter(|v| !v.active).count() - 1;
+            if free < 2 {
+                if let Some(k) = self.oldest(|v| v.released && !v.stealing) {
+                    self.voices[k].steal();
+                }
+            }
             return i;
         }
         let i = self.oldest(|v| v.released).or_else(|| self.oldest(|_| true)).unwrap_or(0);

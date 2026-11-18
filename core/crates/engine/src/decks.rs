@@ -67,5 +67,10 @@ impl Decks {
         for (o, p) in out.iter_mut().zip(block.iter()) {
             *o += *p;
         }
+        // Each deck rounds its own peaks, but two decks summed can still pass
+        // full scale, and nothing above has to be a number. The last stage.
+        if crate::guard::finish(out) {
+            main.bad_blocks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }

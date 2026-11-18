@@ -93,6 +93,10 @@ pub struct Shared {
     /// worth stalling.
     capture: Mutex<Option<Capture>>,
     capturing: AtomicBool,
+    /// Frames kept so far, for the page to read without touching `capture`:
+    /// a reader holding that lock made the audio thread drop the block it was
+    /// about to keep, which left a hole in the recording.
+    captured: AtomicU64,
 
     playing: AtomicBool,
     /// Published by the callback; read by the UI for the playhead.
@@ -170,6 +174,10 @@ pub struct Shared {
     load_worst: AtomicU32,
     /// Blocks that took longer to make than to play.
     pub late_blocks: AtomicU64,
+    /// Blocks silenced because something in them was not a number: the
+    /// engine's own (before the rack) and the last stage's (`guard::finish`).
+    /// It should stay at zero; anything else is a fault to find.
+    pub bad_blocks: AtomicU64,
     /// The worst block since the analytics sampler last looked. Kept apart
     /// from `load_worst`, which the interface resets by hand, so neither
     /// reader disturbs the other. See `take_load_window`.
@@ -469,6 +477,24 @@ pub struct Core {
     /// so a loop's wrap inside a block puts it on the same side of the seam as
     /// the grain. Sized once, in `new`.
     seq_runs: Vec<(usize, u64, usize)>,
+    /// Rendered frames read per frame out while those runs were made (Playback
+    /// Speed): a run is counted in rendered frames, and lands on this many
+    /// fewer or more frames of the block.
+    seq_step: f64,
+    /// The last frame the engine gave the rack, and whether the block before
+    /// this one was a playing one. A pause, and a seek while playing, used to
+    /// be a jump from that frame to whatever came next: a click. See
+    /// [`Declick`].
+    last_dry: [f32; 2],
+    was_sounding: bool,
+    seek_landed: bool,
+    declick: Declick,
+    /// The deck's level as it is now, on its way to where it was set. Gain and
+    /// mute were applied whole at the next block: a step in the sound.
+    gain_from: f32,
+    gain_to: f32,
+    gain_now: f32,
+    gain_step: usize,
     /// How much of the sequencer's fade is left after a stop, and the output
     /// frame it has reached.
     seq_fade: usize,
@@ -507,6 +533,68 @@ pub struct Core {
 /// Hyperprism ramped a fader to a new gain in a straight line over this many
 /// frames.
 const FADER_RAMP: usize = 1024;
+
+/// How long the deck's level takes to reach a new gain or mute: 10 ms at
+/// 48 kHz. Long enough not to click, short enough to feel instant.
+const GAIN_RAMP: usize = 480;
+
+/// A jump in the sound, spread out. Where the engine's output would step from
+/// one value to another (it was playing and is now stopped, or it was moved
+/// while playing), the size of the step is added back and faded away over five
+/// milliseconds, so the sound leaves from where it was and arrives where it is
+/// going with no edge between. Nothing more is rendered and the playhead is
+/// not moved: only the frames after the jump are touched.
+#[derive(Clone, Copy, Default)]
+struct Declick {
+    step: [f32; 2],
+    at: usize,
+    len: usize,
+}
+
+impl Declick {
+    /// Begin from `last` (the frame before the jump) to the first frame of
+    /// `out` (the one after it).
+    fn start(&mut self, last: [f32; 2], out: &[f32], channels: usize, sample_rate: u32) {
+        let first = |c: usize| out.get(c.min(channels.saturating_sub(1))).copied().unwrap_or(0.0);
+        self.step = [last[0] - first(0), last[1] - first(1)];
+        self.at = 0;
+        self.len = (sample_rate as usize / 200).max(1);
+    }
+
+    fn active(&self) -> bool {
+        self.at < self.len
+    }
+
+    /// Add what is left of the step to this block.
+    fn run(&mut self, out: &mut [f32], channels: usize) {
+        if !self.active() {
+            return;
+        }
+        for frame in out.chunks_mut(channels.max(1)) {
+            if self.at >= self.len {
+                break;
+            }
+            // 1 at the jump, 0 at the end, level at both.
+            let t = self.at as f32 / self.len as f32;
+            let w = (1.0 - t) * (1.0 - t) * (1.0 + 2.0 * t);
+            frame[0] += self.step[0] * w;
+            if let Some(r) = frame.get_mut(1) {
+                *r += self.step[1] * w;
+            }
+            self.at += 1;
+        }
+    }
+}
+
+/// The last frame of a block, as left and right (a mono block gives it twice).
+fn last_frame(out: &[f32], channels: usize) -> [f32; 2] {
+    let ch = channels.max(1);
+    if out.len() < ch {
+        return [0.0; 2];
+    }
+    let f = &out[out.len() - ch..];
+    [f[0], *f.get(1).unwrap_or(&f[0])]
+}
 
 /// One control on its way to a new value.
 ///
@@ -609,6 +697,7 @@ fn capture_block(out: &[f32], shared: &Shared) {
                     // Within the capacity reserved before recording began,
                     // so this cannot allocate.
                     c.samples.extend_from_slice(&out[..n]);
+                    shared.captured.store((c.samples.len() / c.channels.max(1)) as u64, Ordering::Release);
                 }
                 if n < out.len() {
                     c.full = true;

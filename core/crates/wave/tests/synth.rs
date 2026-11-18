@@ -329,6 +329,40 @@ fn max_step(x: &[f32]) -> f32 {
     x.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max)
 }
 
+/// One pure tone a frame, so a note's own steps are as small as they can be.
+fn sine_table() -> Arc<Wavetable> {
+    let frame: Vec<f32> = (0..2048).map(|i| (i as f32 / 2048.0 * std::f32::consts::TAU).sin()).collect();
+    Arc::new(Wavetable::from_frames(&[frame]))
+}
+
+#[test]
+fn more_tails_than_slots_fade_out_rather_than_being_cut() {
+    // Short notes with a long release, faster than the tails die: after forty
+    // of them every slot is sounding. The next note used to take the oldest
+    // tail's slot on the spot, a step as big as that tail (found by reading,
+    // 18 Nov 2026). A very low tone, so the notes' own steps are tiny beside it.
+    let mut p = clean_patch();
+    p.set_num("amp.r", 1.0);
+    let tables = || [sine_table(), sine_table(), sine_table()];
+    let mut one = synth_with(&p, tables());
+    one.note_on(21, 0.8);
+    let (alone, _) = render(&mut one, 9600);
+    let level = alone.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    assert!(level > 0.01, "one note was silent ({level})");
+
+    let mut s = synth_with(&p, tables());
+    let mut out = Vec::new();
+    for _ in 0..80 {
+        s.note_on(21, 0.8);
+        out.extend(render(&mut s, 480).0);
+        s.note_off(21);
+        out.extend(render(&mut s, 480).0);
+    }
+    assert!(s.active_voices() >= MAX_VOICES - 3, "the slots never filled ({})", s.active_voices());
+    let worst = max_step(&out);
+    assert!(worst <= level * 0.3, "a step of {worst} where one note peaks at {level}");
+}
+
 #[test]
 fn set_param_while_rendering_does_not_click() {
     // A low sine, so a click would stand far above the wave's own steps. The

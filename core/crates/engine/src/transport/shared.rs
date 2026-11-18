@@ -74,6 +74,7 @@ impl Shared {
             load_window: AtomicU32::new(0),
             late_total: AtomicU64::new(0),
             late_blocks: AtomicU64::new(0),
+            bad_blocks: AtomicU64::new(0),
             layer_cap: AtomicU32::new(crate::render::MAX_LAYERS as u32),
             shed_layers: AtomicBool::new(false),
             hot: AtomicU32::new(0),
@@ -101,6 +102,7 @@ impl Shared {
             pre_rack_left: AtomicU32::new(0),
             capture: Mutex::new(None),
             capturing: AtomicBool::new(false),
+            captured: AtomicU64::new(0),
         }
     }
 
@@ -119,6 +121,7 @@ impl Shared {
                 full: false,
             });
         }
+        self.captured.store(0, Ordering::Release);
         self.capturing.store(true, Ordering::Release);
     }
 
@@ -134,11 +137,7 @@ impl Shared {
 
     /// How much has been kept so far, in frames.
     pub fn captured_frames(&self) -> u64 {
-        self.capture
-            .try_lock()
-            .ok()
-            .and_then(|g| g.as_ref().map(|c| (c.samples.len() / c.channels.max(1)) as u64))
-            .unwrap_or(0)
+        self.captured.load(Ordering::Acquire)
     }
 
     pub fn set_params(&self, p: StreamParams) {

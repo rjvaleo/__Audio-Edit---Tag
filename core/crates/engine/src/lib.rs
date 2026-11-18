@@ -27,6 +27,7 @@ pub mod decks;
 #[cfg(feature = "device")]
 pub mod device;
 pub mod glide;
+pub mod guard;
 #[cfg(feature = "device")]
 pub mod input;
 pub mod keys;

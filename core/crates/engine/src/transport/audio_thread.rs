@@ -204,6 +204,15 @@ impl Core {
             smoothing: Vec::with_capacity(MAX_SMOOTHED),
             // A run is at least a frame, so a block has at most one per frame.
             seq_runs: Vec::with_capacity(max_block.max(1) + 1),
+            seq_step: 1.0,
+            last_dry: [0.0; 2],
+            was_sounding: false,
+            seek_landed: false,
+            declick: Declick::default(),
+            gain_from: 1.0,
+            gain_to: f32::NAN,
+            gain_now: 1.0,
+            gain_step: GAIN_RAMP,
             seq_fade: 0,
             seq_fade_at: 0,
             // A block at the top speed reads two frames for each one out, plus
@@ -479,6 +488,7 @@ impl Core {
                 // What was read ahead belongs to where the playhead was.
                 self.vs_frames = 0;
                 self.vs_frac = 0.0;
+                self.seek_landed = true;
             }
         }
         let keyed_to = if keyed.resume {
@@ -501,6 +511,14 @@ impl Core {
             // every listener notices, so the rack keeps running on silence and
             // its tails ring out.
             out.fill(0.0);
+            // Stopped this block: the sound leaves from its last frame, not
+            // from a cut.
+            if self.was_sounding {
+                self.declick.start(self.last_dry, out, channels, self.params.sample_rate);
+                self.was_sounding = false;
+            }
+            self.seek_landed = false;
+            self.declick.run(out, channels);
             if self.tail_left > 0 {
                 self.process_rack(out, channels, shared);
                 let peak = out.iter().fold(0.0f32, |m, s| m.max(s.abs()));
@@ -661,6 +679,7 @@ impl Core {
         if (post || gated) && !poly {
             out.fill(0.0);
             self.seq_runs.clear();
+            self.seq_step = 1.0;
         } else {
             // Hyperprism's Playback Speed: the engine's output is read at `speed`
             // frames a frame, in straight lines between frames, before the rack —
@@ -689,6 +708,7 @@ impl Core {
             let need = need.max(consumed).min(self.vs.len() / ch);
             let fresh = need.saturating_sub(self.vs_frames);
             let base = self.vs_frames;
+            self.seq_step = speed.max(1e-9);
 
             let mut filled = 0usize;
             // Where in this block fresh post-wrap material begins, if it does.
@@ -798,6 +818,19 @@ impl Core {
             self.vs_frac = after - drop as f64;
         }
 
+        // What the engine made must be numbers before anything is built on it.
+        // If it is not, the block is silence and the engine starts again from
+        // where it stands, which clears whatever in it went wrong: left alone,
+        // one such sample in a ring or a filter's memory is every block after.
+        if !fx::all_finite(out) {
+            out.fill(0.0);
+            let at = self.renderer.position();
+            self.renderer.seek(at, &self.params);
+            self.vs_frames = 0;
+            self.vs_frac = 0.0;
+            shared.bad_blocks.fetch_add(1, Ordering::Relaxed);
+        }
+
         // AMP, on what the engine made and before the rack, so the effects'
         // tails ring on after a release.
         if !(gated && poly) {
@@ -806,6 +839,7 @@ impl Core {
         if clocked {
             // The sequencer plays on the transport, not on a note's head.
             self.seq_runs.clear();
+            self.seq_step = 1.0;
             if shared.is_playing() {
                 let at = self.keys.clock();
                 let first = match transport_bounds {
@@ -821,6 +855,16 @@ impl Core {
             }
         }
 
+        // Moved while it was playing: the new place arrives from the old one's
+        // last frame, not across a jump.
+        if self.seek_landed && self.was_sounding {
+            self.declick.start(self.last_dry, out, channels, self.params.sample_rate);
+        }
+        self.seek_landed = false;
+        self.declick.run(out, channels);
+        self.last_dry = last_frame(out, channels);
+        self.was_sounding = true;
+
         // The rack runs on the block, after the grains and before the fader,
         // exactly as the offline render orders it.
         self.process_rack(out, channels, shared);
@@ -831,7 +875,29 @@ impl Core {
         } else {
             f32::from_bits(shared.gain.load(Ordering::Acquire))
         };
-        if (gain - 1.0).abs() > 1e-6 {
+        // A new level is reached over a short ramp. The first block takes the
+        // level it finds whole, so a deck built muted or turned down starts
+        // there; and a level that is not moving is applied as it always was.
+        if self.gain_to.is_nan() {
+            self.gain_to = gain;
+            self.gain_now = gain;
+        } else if gain != self.gain_to {
+            self.gain_from = self.gain_now;
+            self.gain_to = gain;
+            self.gain_step = 0;
+        }
+        if self.gain_step < GAIN_RAMP {
+            for frame in out.chunks_mut(channels) {
+                if self.gain_step < GAIN_RAMP {
+                    self.gain_step += 1;
+                    let t = self.gain_step as f32 / GAIN_RAMP as f32;
+                    self.gain_now = self.gain_from + (self.gain_to - self.gain_from) * t;
+                }
+                for s in frame.iter_mut() {
+                    *s *= self.gain_now;
+                }
+            }
+        } else if (gain - 1.0).abs() > 1e-6 {
             for s in out.iter_mut() {
                 *s *= gain;
             }
@@ -935,12 +1001,27 @@ impl Core {
             return;
         }
         let ch = channels.max(1);
+        let block = out.len() / ch;
+        let step = self.seq_step;
         let (mut found, mut lost) = (0u64, 0u64);
         for &(offset, at, frames) in self.seq_runs.iter() {
             for i in 0..frames {
+                // A run is counted in rendered frames, and Playback Speed reads
+                // `step` of those for each frame out. So frame `i` of the run
+                // belongs on the frames of the block the read spends on it:
+                // one at speed 1, none or one above it, one or more below.
+                // Counted as frames of the block it overran the block at any
+                // speed above 1 and the engine stopped (18 Nov 2026).
+                let (from, to) = if step == 1.0 {
+                    (offset + i, offset + i + 1)
+                } else {
+                    (offset.saturating_add((i as f64 / step) as usize), offset.saturating_add(((i + 1) as f64 / step) as usize))
+                };
                 match bus.take(at + i as u64) {
                     Some((l, r)) => {
-                        add_frame(out, (offset + i) * ch, ch, l, r);
+                        for o in from..to.min(block) {
+                            add_frame(out, o * ch, ch, l, r);
+                        }
                         found += 1;
                     }
                     None => lost += 1,

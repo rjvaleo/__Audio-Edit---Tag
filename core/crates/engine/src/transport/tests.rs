@@ -102,6 +102,47 @@ fn the_sequencer_is_added_on_the_output_frames_the_engine_renders() {
     assert_eq!(shared.seq.missing.load(Ordering::Relaxed), 0);
 }
 
+/// Playback Speed above 1 renders more frames than the block holds. The
+/// sequencer's runs were counted in those and written as frames of the block:
+/// past its end, which stopped the engine (found by reading, 18 Nov 2026).
+#[test]
+fn at_twice_the_speed_the_sequencer_stays_inside_the_block() {
+    let (mut core, shared) = silent_core(2);
+    shared.request_seek(1_000);
+    shared.set_speed(2.0);
+    let run: Vec<f32> = (0..4_096)
+        .flat_map(|i| {
+            let v = (1_000 + i) as f32 * 1e-4;
+            [v, -v]
+        })
+        .collect();
+    assert_eq!(shared.seq.write(1, 1_000, &run, 2, 0, None), 4_096);
+    let mut buf = vec![0.0; 512 * 2];
+    core.fill(&mut buf, 2, &shared);
+    assert!(buf.iter().all(|s| s.is_finite()));
+    // Every frame out carries one of the two frames the read spent on it.
+    for j in 0..512 {
+        let at = buf[j * 2] / 1e-4 - 1_000.0;
+        assert!((at - 2.0 * j as f32).abs() <= 2.5, "frame {j} out carries the sequencer's frame {at}");
+        assert_eq!(buf[j * 2 + 1], -buf[j * 2]);
+    }
+    assert!(shared.seq.mixed.load(Ordering::Relaxed) >= 1_024);
+}
+
+/// Below 1 a rendered frame is read for more than one frame out, and the
+/// sequencer's frame is heard on each of them: no holes.
+#[test]
+fn at_half_the_speed_the_sequencer_fills_every_frame_of_the_block() {
+    let (mut core, shared) = silent_core(2);
+    shared.request_seek(1_000);
+    shared.set_speed(0.5);
+    shared.seq.write(1, 1_000, &[0.25f32; 1_024 * 2], 2, 0, None);
+    let mut buf = vec![0.0; 512 * 2];
+    core.fill(&mut buf, 2, &shared);
+    let holes = buf[..500 * 2].iter().filter(|s| **s != 0.25).count();
+    assert_eq!(holes, 0, "{:?}", &buf[..16]);
+}
+
 #[test]
 fn round_a_loop_the_sequencer_wraps_on_the_same_frame_as_the_grain() {
     let (mut core, shared) = silent_core(2);
@@ -183,12 +224,56 @@ fn a_stopped_transport_keeps_processing_the_chain() {
     assert!(buf.iter().any(|s| *s != 0.0), "nothing was playing to begin with");
 
     shared.pause();
+    // The first stopped block carries the sound's way out (five milliseconds
+    // from its last frame to silence), which is sound and not yet a tail.
+    core.fill(&mut buf, 1, &shared);
     let before = core.tail_left;
     core.fill(&mut buf, 1, &shared);
     assert!(
         core.tail_left < before,
         "the paused branch returned without processing the rack"
     );
+}
+
+/// A stop used to be silence from the next block's first sample: a step from
+/// wherever the wave stood. Now the sound leaves from its last frame.
+#[test]
+fn a_stop_leaves_from_the_last_frame_rather_than_cutting() {
+    let (mut core, shared) = playing_core(1);
+    let mut buf = vec![0.0; 512];
+    core.fill(&mut buf, 1, &shared);
+    let last = buf[511];
+    assert!(last.abs() > 0.1, "nothing was playing to begin with");
+    shared.pause();
+    core.fill(&mut buf, 1, &shared);
+    assert_eq!(buf[0], last, "the first stopped frame is not where the sound was");
+    let worst = buf.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
+    assert!(worst < last.abs() * 0.02, "a step of {worst} on the way out from {last}");
+    assert!(buf[240..].iter().all(|s| *s == 0.0), "not silent after five milliseconds");
+    // And the playhead has not moved to make room for it.
+    let at = shared.position();
+    core.fill(&mut buf, 1, &shared);
+    assert_eq!(shared.position(), at);
+    assert!(buf.iter().all(|s| *s == 0.0));
+}
+
+/// A new level arrives over a short ramp, not on one sample.
+#[test]
+fn turning_the_level_down_is_a_ramp_not_a_step() {
+    let (mut core, shared) = playing_core(1);
+    let mut buf = vec![0.0; 512];
+    core.fill(&mut buf, 1, &shared);
+    let full = buf[511];
+    shared.set_gain(0.25);
+    core.fill(&mut buf, 1, &shared);
+    let worst = buf.windows(2).map(|w| (w[1] - w[0]).abs()).fold((buf[0] - full).abs(), f32::max);
+    assert!(worst < full.abs() * 0.01, "a step of {worst} from a level of {full}");
+    assert!((buf[511] - full * 0.25).abs() < 1e-6, "it did not arrive: {}", buf[511]);
+    // Mute is the same ramp, to nothing.
+    shared.set_mute(true);
+    core.fill(&mut buf, 1, &shared);
+    assert!(buf[0].abs() > full.abs() * 0.2);
+    assert_eq!(buf[511], 0.0);
 }
 
 /// ...but not for ever. A stopped transport must not process silence for as

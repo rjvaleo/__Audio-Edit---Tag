@@ -156,6 +156,7 @@ struct Voice {
     air_hp: f32,
     noise: Noise,
     steal: u32, // samples of a fast fade before a stolen voice starts again
+    last: [f32; 2], // what it last added to the mix, for a steal to carry on from
 }
 
 impl Voice {
@@ -177,6 +178,7 @@ impl Voice {
             air_hp: 0.0,
             noise: Noise::new(7 + n * 31),
             steal: 0,
+            last: [0.0; 2],
         }
     }
     fn free(&self) -> bool {
@@ -198,6 +200,12 @@ pub struct Synth {
     last_hz: f32,
     scale: Vec<f32>,
     last_voice: usize,
+    /// What stolen voices were sounding when they were taken, dying away. A
+    /// voice taken for a new note is started again from nothing, and its old
+    /// sound used to stop on that sample: a click. Now it leaves from where it
+    /// was, over a few milliseconds, under the new note's own fade in.
+    carry: [f32; 2],
+    carry_k: f32,
 }
 
 impl Synth {
@@ -211,6 +219,9 @@ impl Synth {
             last_hz: 0.0,
             scale: vec![0.0, 200.0, 400.0, 500.0, 700.0, 900.0, 1100.0],
             last_voice: 0,
+            carry: [0.0; 2],
+            // Down by 60 dB in 10 ms.
+            carry_k: (-6.9 / (0.010 * sr.max(1.0))).exp(),
         }
     }
 
@@ -331,6 +342,11 @@ impl Synth {
         let scale = self.scale.clone();
         let v = &mut self.voices[i];
         let was_sounding = !v.amp.idle();
+        if was_sounding {
+            self.carry[0] += v.last[0];
+            self.carry[1] += v.last[1];
+        }
+        v.last = [0.0; 2];
         v.id = id;
         v.age = 0;
         v.vel = vel;
@@ -492,10 +508,23 @@ impl Synth {
                 v.steal -= 1;
                 g *= 1.0 - v.steal as f32 / (0.004 * sr);
             }
-            sl += vl * g;
-            sr_ += vr * g;
+            v.last = [vl * g, vr * g];
+            sl += v.last[0];
+            sr_ += v.last[1];
             if v.amp.idle() {
                 v.id = -1;
+                v.last = [0.0; 2];
+            }
+        }
+        if self.carry != [0.0; 2] {
+            sl += self.carry[0];
+            sr_ += self.carry[1];
+            self.carry[0] *= self.carry_k;
+            self.carry[1] *= self.carry_k;
+            // Done when it is too small to hear, and at once if it is not a number.
+            let live = |x: f32| x.abs() >= 1e-6 && x.is_finite();
+            if !self.carry[0].is_finite() || !self.carry[1].is_finite() || !(live(self.carry[0]) || live(self.carry[1])) {
+                self.carry = [0.0; 2];
             }
         }
         (sl, sr_)
