@@ -422,6 +422,46 @@ pub(super) fn api_stems_midi(app: &Arc<App>, req: &Request) -> Response {
     )
 }
 
+/// The MIDI file `api_stems_midi` wrote for the song at `p`, if it is there.
+fn midi_file(app: &Arc<App>, rel: &str) -> Result<(PathBuf, String), Response> {
+    let (_, dir, name) = song_dir(app, rel)?;
+    let file = dir.join(format!("{name}.mid"));
+    if !file.is_file() {
+        return Err(Response::error(404, "no MIDI file written yet"));
+    }
+    Ok((file, format!("{name}.mid")))
+}
+
+/// GET ?p=Stems/<song>: the song's MIDI file, to save somewhere else.
+pub(super) fn api_stems_midi_get(app: &Arc<App>, req: &Request) -> Response {
+    let (file, name) = match midi_file(app, req.param("p").unwrap_or("")) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    match std::fs::read(&file) {
+        Ok(bytes) => Response::ok("audio/midi", bytes).with("Content-Disposition", &format!("attachment; filename=\"{}\"", name.replace(['"', '\\'], "_"))),
+        Err(e) => Response::error(500, &e.to_string()),
+    }
+}
+
+/// POST {p}: show the song's MIDI file in the Finder (macOS; elsewhere it says
+/// it cannot). The file is the one this server wrote, nothing the page names.
+pub(super) fn api_stems_midi_show(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let (file, _) = match midi_file(app, v.get("p").and_then(|p| p.as_str()).unwrap_or("")) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    if !cfg!(target_os = "macos") {
+        return Response::error(501, "only on a Mac");
+    }
+    match std::process::Command::new("/usr/bin/open").arg("-R").arg(&file).status() {
+        Ok(s) if s.success() => Response::json(Value::obj().set("shown", true).to_string()),
+        Ok(_) => Response::error(500, "the Finder would not show it"),
+        Err(e) => Response::error(500, &e.to_string()),
+    }
+}
+
 /// POST {p, kind: "drums" | "bass", per}: cut tries from a song's stems into its
 /// `.tries/` folder. Drums: the clearest kicks, snares and hats. Bass: the
 /// longest clean notes, one per pitch.

@@ -224,7 +224,8 @@ function stBuild() {
       </section>
     </div>`;
 
-  $('stTabs').append(uiSeg({ h: 28, value: ST.tab, items: [{ k: 'split', label: 'Split a song' }, { k: 'make', label: 'Make a sound' }], onPick: (k) => stTab(k) }));
+  $('stTabs').append(uiSeg({ h: 28, value: ST.tab, items: [{ k: 'split', label: 'Split a song' }, { k: 'make', label: 'Make a sound' }, { k: 'midi', label: 'MIDI' }], onPick: (k) => stTab(k) }));
+  smBuild();
   ST.modelSeg = uiSeg({
     h: 24, value: ST.model, onPick: (k) => { ST.model = k; },
     items: [
@@ -336,6 +337,8 @@ function stTab(k) {
   $('stSplit').classList.toggle('hidden', k !== 'split');
   $('stMake').classList.toggle('hidden', k !== 'make');
   if (k === 'make') stFillFrom();
+  $('stMidi').classList.toggle('hidden', k !== 'midi');
+  if (k === 'midi') smFill();
   afterLayout(stDrawAll);
 }
 
@@ -502,6 +505,7 @@ async function stRefreshList() {
     : '<p class="st-note">Nothing split yet. Pick a song in the library and press Split.</p>';
   for (const it of box.querySelectorAll('.st-it')) it.onclick = () => stOpenSong(it.dataset.p);
   stFillFrom();
+  smFill();
 }
 
 async function stOpenSong(p) {
@@ -523,6 +527,7 @@ async function stOpenSong(p) {
   for (const f of s.files) ST.lanes[f.stem] = { level: 1, solo: false, mute: false };
   stBuildLanes();
   stFillWhat();
+  smFill();
   stDrawAll();
   stPollStatus();
 }
@@ -745,6 +750,7 @@ function stDrawRoll() {
 
 function stDrawAll() {
   if (state.mode !== 'stems') return;
+  if (ST.tab === 'midi') return smDraw();
   if (ST.tab === 'split') {
     const src = ST.song?.meta?.source || ST.pending?.p;
     if (src) stWave($('stMixWave'), src, ST_COL.mix);

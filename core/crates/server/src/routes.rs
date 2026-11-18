@@ -408,6 +408,8 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/stems/mix") => api_stems_mix(app, req),
         ("POST", "/api/stems/learn") => api_stems_learn(app, req),
         ("POST", "/api/stems/midi") => api_stems_midi(app, req),
+        ("GET", "/api/stems/midi") => api_stems_midi_get(app, req),
+        ("POST", "/api/stems/midi/show") => api_stems_midi_show(app, req),
         ("POST", "/api/stems/analyse") => api_stems_analyse(app, req),
         ("POST", "/api/stems/tries") => api_stems_tries(app, req),
         ("POST", "/api/stems/keep") => api_stems_keep(app, req),

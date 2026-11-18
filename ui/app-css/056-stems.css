@@ -171,3 +171,29 @@ body.stemspage #overview { display: none; }
 .st-algo:not(.off) { cursor: pointer; }
 .st-kitparts { display: flex; gap: 3px; flex-wrap: wrap; }
 .st-model:not(.off) { cursor: pointer; }
+
+/* ── the MIDI tab (421-stems-midi.js): one fixed size, 1496 x 640; the view scrolls ── */
+#stMidi { overflow: auto; }
+.sm-page { width: 1496px; flex: none; display: flex; flex-direction: column; gap: 8px; }
+.sm-head { flex-direction: row; align-items: center; gap: 10px; height: 44px; padding: 0 10px; flex: none; }
+.sm-head select.st-field { width: 360px; height: var(--h-m); }
+.sm-body { display: grid; grid-template-columns: 300px 868px 312px; gap: 8px; height: 588px; }
+.sm-body .st-cap i { font-style: normal; font-weight: 400; letter-spacing: 0; text-transform: none; margin-left: 8px; }
+.sm-row { display: flex; align-items: center; gap: 8px; }
+.sm-part { display: grid; grid-template-columns: 18px 10px 1fr auto; gap: 8px; align-items: center; height: 46px; padding: 0 8px; margin-bottom: 4px; border-radius: var(--r-m); background: var(--look-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); cursor: pointer; }
+.sm-part.off { opacity: .45; }
+.sm-part input { margin: 0; accent-color: var(--on); }
+.sm-part i { width: 10px; height: 10px; border-radius: 0; background: var(--c); }
+.sm-part .nm { font: 500 var(--fs-l) var(--sans); color: var(--look-text); }
+.sm-part small { display: block; font: 400 var(--fs-s) var(--sans); color: var(--look-text-3); }
+.sm-part .n { font: 400 var(--fs-s) var(--mono); color: var(--look-text-2); text-align: right; }
+.sm-part .n small { font: 400 var(--fs-xs) var(--mono); }
+#smRoll { width: 846px; height: 500px; flex: none; display: block; border-radius: var(--r-m); background: var(--look-well); box-shadow: inset 0 3px 6px rgba(var(--black-rgb), .9), inset 0 0 0 1px rgba(var(--black-rgb), .75); cursor: pointer; }
+.sm-file .st-cap { margin-top: 6px; }
+.sm-file .st-cap:first-child { margin-top: 0; }
+.sm-file .ui-seg { align-self: flex-start; }
+.sm-file #smWrite { align-self: flex-start; margin-top: 10px; }
+.sm-done { display: flex; flex-direction: column; gap: 5px; padding: 8px 9px; border-radius: var(--r-m); background: var(--look-well); box-shadow: inset 2px 0 0 var(--meter-ok), inset 0 1px 3px rgba(var(--black-rgb), .8); font: 400 var(--fs-m)/1.5 var(--sans); color: var(--look-text-2); }
+.sm-done b { font-weight: 500; color: var(--look-text); }
+.sm-done .sm-path { display: block; font: 400 var(--fs-s) var(--mono); color: var(--look-text-3); word-break: break-all; }
+.sm-done a.st-btn { text-decoration: none; }
