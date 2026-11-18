@@ -6,6 +6,8 @@
 set -e
 cd "$(dirname "$0")/.."
 T="${CARGO_TARGET_DIR:-$PWD/core/target}"
-(cd core && cargo build -p fx-wasm --release --target wasm32-unknown-unknown)
+(cd core && cargo build -p fx-wasm -p atmos --release --target wasm32-unknown-unknown)
 cp "$T/wasm32-unknown-unknown/release/fx_wasm.wasm" ui/sequencer/atfx.wasm
-ls -l ui/sequencer/atfx.wasm
+# Atmosphere's physically modelled voice (core/crates/atmos).
+cp "$T/wasm32-unknown-unknown/release/atmos.wasm" ui/sequencer/atmos.wasm
+ls -l ui/sequencer/atfx.wasm ui/sequencer/atmos.wasm

@@ -223,6 +223,18 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
             Response::ok("text/javascript; charset=utf-8", SEQ_ATFX_WORKLET_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
+        ("GET" | "HEAD", "/sequencer/atphys.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_ATPHYS_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/atmos-worklet.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_ATMOS_WORKLET_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/atmos.wasm") => {
+            Response::ok("application/wasm", SEQ_ATMOS_WASM.to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
         ("GET" | "HEAD", "/sequencer/atfx.wasm") => {
             Response::ok("application/wasm", SEQ_ATFX_WASM.to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")

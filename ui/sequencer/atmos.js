@@ -99,6 +99,12 @@ const AT_KNOBS = [
   ["atFltDec", "F·Dec", 0, 100, 60, (v) => atMs(atExp(v, 1, 10000))],
   ["atFltSus", "F·Sus", 0, 100, 50, atPct],
   ["atFltRel", "F·Rel", 0, 100, 70, (v) => atMs(atExp(v, 10, 20000))],
+  // Its physically modelled oscillators' controls (RJ, 17 Nov 2026; atphys.js):
+  // four for the model each oscillator is, and a fine tune.
+  ["atMA1", "", 0, 100, 20], ["atMA2", "", 0, 100, 30], ["atMA3", "", 0, 100, 10], ["atMA4", "", 0, 100, 60],
+  ["atMAFine", "Fine", -100, 100, 0, (v) => (v > 0 ? "+" : "") + Math.round(v) + "¢"],
+  ["atMB1", "", 0, 100, 50], ["atMB2", "", 0, 100, 30], ["atMB3", "", 0, 100, 50], ["atMB4", "", 0, 100, 60],
+  ["atMBFine", "Fine", -100, 100, 0, (v) => (v > 0 ? "+" : "") + Math.round(v) + "¢"],
   // Its own LFOs (RJ, 16 Nov 2026), three, as Seq has its own.
   ["atL1Rate", "Rate", 0, 100, 40, (v) => atLfoHz(v).toFixed(2) + "Hz"], ["atL1Depth", "Depth", 0, 100, 0, atPct],
   ["atL2Rate", "Rate", 0, 100, 30, (v) => atLfoHz(v).toFixed(2) + "Hz"], ["atL2Depth", "Depth", 0, 100, 0, atPct],
@@ -116,7 +122,7 @@ const AT_TUNE_IDS = ["atTuneScaleSelect", "atTuneRootSelect", "atTuneOctSelect"]
 const atFltHz = (v) => atExp(v, 30, 20000);
 const atFltQ = (v) => 0.5 + (v / 100) * 14.5;
 const atHz = (f) => (f >= 1000 ? (f / 1000).toFixed(f >= 10000 ? 0 : 1) + "kHz" : Math.round(f) + "Hz");
-const AT_SELECTS = ["atModeSelect", "atKindASelect", "atKindBSelect", "atSymTuneSelect", "atFxChain", ...AT_LFO_IDS, ...AT_TUNE_IDS];
+const AT_SELECTS = ["atModeSelect", "atKindASelect", "atKindBSelect", "atModelASelect", "atModelBSelect", "atSymTuneSelect", "atFxChain", ...AT_LFO_IDS, ...AT_TUNE_IDS];
 // What presets, morphs and the Performance recorder carry.
 const ATMOS_SLIDER_IDS = AT_KNOBS.map((k) => k[0] + "Slider");
 const ATMOS_SELECT_IDS = AT_SELECTS.slice();
@@ -148,13 +154,41 @@ function atPanel(cls, name, meta, inner) {
 }
 const atKnobs = (ids) => `<div class="at-knobs">${ids.map(atK).join("")}</div>`;
 
+/// Its oscillators as physical models (RJ, 17 Nov 2026: "its oscillators should
+/// be physically modeled"): ten cards, the model's live picture, its four
+/// controls, Oct and Fine. The old kinds' select and knobs stay, hidden, for
+/// what still uses them (the Band's own patches, Draw's Atmosphere ink).
+const AT_MODELS = [
+  { id: "pluck", name: "Plucked string", sub: "waveguide · pick", g: "M2 17Q15 4 30 17T58 17", p: ["Position", "Damping", "Stiffness", "Pick"], d: [20, 30, 10, 60] },
+  { id: "bow", name: "Bowed string", sub: "stick–slip bow", g: "M2 17Q30 6 58 17M20 30 40 4", p: ["Pressure", "Speed", "Position", "Rosin"], d: [50, 50, 25, 20] },
+  { id: "bar", name: "Struck bar", sub: "modes · wood–metal", g: "M4 14H56V20H4ZM14 26V20M46 26V20", p: ["Material", "Hardness", "Strike", "Decay"], d: [50, 50, 30, 50] },
+  { id: "bell", name: "Bell", sub: "hum · tierce · nominal", g: "M20 28C20 10 24 5 30 5S40 10 40 28H44H16Z", p: ["Size", "Tierce", "Strike", "Ring"], d: [50, 30, 50, 60] },
+  { id: "glass", name: "Glass", sub: "bowed · struck", g: "M20 4H40L36 22H24ZM30 22V30M24 30H36", p: ["Bow ↔ strike", "Fill", "Ring", "Bright"], d: [20, 40, 70, 50] },
+  { id: "membrane", name: "Membrane", sub: "drumhead modes", g: "M8 14C8 6 52 6 52 14V22C52 30 8 30 8 22ZM8 14C8 22 52 22 52 14", p: ["Tension", "Damping", "Strike", "Size"], d: [50, 40, 30, 50] },
+  { id: "pipe", name: "Blown pipe", sub: "jet · bore", g: "M4 13H56V21H4ZM14 13V9M22 21V25", p: ["Breath", "Noise", "Embouchure", "Bore"], d: [60, 30, 50, 0] },
+  { id: "reed", name: "Reed", sub: "reed · bore · bell", g: "M4 15H44L56 9V25L44 19H4Z", p: ["Pressure", "Stiffness", "Bell", "Noise"], d: [60, 50, 50, 10] },
+  { id: "voice", name: "Voice", sub: "glottis · vocal tract", g: "M6 26C6 10 20 6 30 10S52 12 54 24", p: ["Vowel", "Tension", "Breath", "Size"], d: [20, 50, 30, 50] },
+  { id: "classic", name: "Classic", sub: "sine · tri · saw · square", g: "M2 17C9 2 16 2 23 17S37 32 44 17 58 2 58 2", p: ["Wave", "", "", ""], d: [66, 0, 0, 0] },
+];
+const AT_MODEL_DEFAULT = { A: "pluck", B: "bell" };
+
 function atOscHtml(w) {
+  const cards = AT_MODELS.map((m) => `<button type="button" class="at-osc" data-model="${m.id}" title="${m.name}: ${m.sub}">`
+    + `<svg viewBox="0 0 60 34"><path d="${m.g}"/></svg><b>${m.name}</b><small>${m.sub}</small></button>`).join("");
+  return `<section class="panel at-oscbox" data-osc="${w}"><div class="ph"><b class="nm">OSC ${w}</b><span class="meta" id="at${w}What"></span><span class="grow"></span><span class="meta">10 models</span>`
+    + `<select id="atModel${w}Select" class="at-hidden" onchange="atmosRead()">${AT_MODELS.map((m) => `<option value="${m.id}"${m.id === AT_MODEL_DEFAULT[w] ? " selected" : ""}>${m.name}</option>`).join("")}</select></div>`
+    + `<div class="at-oscs at-models">${cards}</div><div class="at-osc-row"><div class="well scope scope-osc at-pic"><canvas id="atPic${w}" width="480" height="150"></canvas></div>`
+    + `${atKnobs([`atM${w}1`, `atM${w}2`, `atM${w}3`, `atM${w}4`, `at${w}Oct`, `atM${w}Fine`])}</div>`
+    + `<div class="at-hidden">${atOldOscHtml(w)}</div></section>`;
+}
+
+function atOldOscHtml(w) {
   const cards = AT_KINDS.map((k) => `<button type="button" class="at-osc" data-kind="${k.id}" title="${k.name}: ${k.sub}">`
     + `<svg viewBox="0 0 60 34"><path d="${AT_GLYPH[k.id]}"/></svg><b>${k.name}</b><small>${k.sub}</small></button>`).join("");
-  return `<section class="panel at-oscbox" data-osc="${w}"><div class="ph"><b class="nm">OSC ${w}</b><span class="meta" id="at${w}What"></span><span class="grow"></span><span class="meta">8 kinds</span>`
+  return `<section class="panel at-oscbox" data-osc="${w}"><div class="ph"><b class="nm">OSC ${w}</b><span class="meta"></span><span class="grow"></span><span class="meta">8 kinds</span>`
     + `<select id="atKind${w}Select" class="at-hidden" onchange="atmosRead()">${AT_KINDS.map((k) => `<option value="${k.id}">${k.name}</option>`).join("")}</select></div>`
     + `<div class="at-oscs">${cards}</div><div class="at-osc-row"><div class="well scope scope-osc"><canvas id="scope${w}" width="240" height="58"></canvas></div>`
-    + `${atKnobs([`at${w}1`, `at${w}2`, `at${w}3`, `at${w}Oct`])}</div></section>`;
+    + `${atKnobs([`at${w}1`, `at${w}2`, `at${w}3`])}</div></section>`;
 }
 
 const AT_STARTS = [
@@ -213,8 +247,11 @@ function atmosBuildUI() {
   document.getElementById("atTurnOn")?.addEventListener("click", () => atPowerClick("atmos"));
   for (const w of ["A", "B"]) {
     document.querySelector(`.at-oscbox[data-osc="${w}"] .at-oscs`).addEventListener("click", (e) => {
-      const b = e.target.closest(".at-osc");
-      if (b) atmosSet(`atKind${w}Select`, b.dataset.kind);
+      const b = e.target.closest(".at-osc[data-model]");
+      if (!b) return;
+      const m = AT_MODELS.find((x) => x.id === b.dataset.model);
+      m.d.forEach((v, i) => { const el = document.getElementById(`atM${w}${i + 1}Slider`); if (el) { el.value = v; window.updateKnobVisual?.(`atM${w}${i + 1}Slider`); } });
+      atmosSet(`atModel${w}Select`, m.id);
     });
   }
   document.getElementById("atStarts").addEventListener("click", (e) => {
@@ -264,6 +301,19 @@ function atmosRead() {
   AT.kindA = document.getElementById("atKindASelect")?.value || "choir";
   AT.kindB = document.getElementById("atKindBSelect")?.value || "spectrum";
   AT.symTune = document.getElementById("atSymTuneSelect")?.value || "degrees";
+  AT.modelA = document.getElementById("atModelASelect")?.value || AT_MODEL_DEFAULT.A;
+  AT.modelB = document.getElementById("atModelBSelect")?.value || AT_MODEL_DEFAULT.B;
+  for (const w of ["A", "B"]) {
+    const m = AT_MODELS.find((x) => x.id === AT["model" + w]) || AT_MODELS[0];
+    for (let i = 1; i <= 4; i++) {
+      const id = `atM${w}${i}`, name = m.p[i - 1];
+      const lab = document.getElementById(id + "Label");
+      if (lab) lab.textContent = name || "—";
+      document.querySelector(`.at-kg[data-k="${id}"]`)?.classList.toggle("at-unused", !name);
+      const val = document.getElementById(id + "Val");
+      if (val) val.textContent = !name ? "" : m.id === "classic" ? ["SINE", "TRI", "SAW", "SQUARE"][Math.round(AT[id] / 100 * 3)] : Math.round(AT[id]) + "%";
+    }
+  }
   atmosOn = AT.mode !== "classic";
   classicOn = AT.mode !== "atmos";
   document.body.classList.toggle("atmos-mode", atmosOn);
@@ -279,7 +329,8 @@ function atmosRead() {
       if (val) val.textContent = name ? atParamText(kind.id, i, AT[id]) : "";
     }
     const what = document.getElementById(`at${w}What`);
-    if (what) what.textContent = kind.name + " · " + kind.sub;
+    const m = AT_MODELS.find((x) => x.id === AT["model" + w]) || AT_MODELS[0];
+    if (what) what.textContent = m.name + " · " + m.sub;
   }
   const note = document.getElementById("atModeNote");
   // Its own instrument (RJ, 14 Nov 2026): the keys and MIDI play it always;
@@ -288,6 +339,7 @@ function atmosRead() {
   atmosPaintSegs();
   atmosApplyGlobal();
   atmosLfosApply();
+  if (typeof atphysSend === "function") atphysSend();
   atmosTuneShow();
   atmosDrawAmp();
   atmosDrawFilter();
@@ -326,7 +378,7 @@ function atmosPaintSegs() {
   for (const b of document.querySelectorAll(".power[data-syn]")) b.classList.toggle("on", b.dataset.syn === "classic" ? classicOn : atmosOn);
   document.getElementById("atWithClassic")?.classList.toggle("on", classicOn);
   for (const w of ["A", "B"]) {
-    for (const b of document.querySelectorAll(`.at-oscbox[data-osc="${w}"] .at-osc`)) b.classList.toggle("on", b.dataset.kind === AT["kind" + w]);
+    for (const b of document.querySelectorAll(`.at-oscbox[data-osc="${w}"] .at-osc[data-model]`)) b.classList.toggle("on", b.dataset.model === AT["model" + w]);
   }
   const fr = document.getElementById("atFreeze");
   if (fr) fr.classList.toggle("on", atFrozen);
@@ -446,6 +498,8 @@ function atmosInit() {
   atTrem.connect(masterGain);
   atFxIn.connect(atOut);
   if (typeof atfxAttach === "function") atfxAttach(c, atFxIn, atOut);
+  // Its physically modelled voice (atphys.js), into Character as the old voices are.
+  if (typeof atphysAttach === "function") atphysAttach(c, atIn);
   atPost.connect(atFxIn);
   // Accompany's chain: the same character, its output left for accompany.js
   // to take to the delay and Space.
@@ -1104,6 +1158,9 @@ function atLfoOn(target) {
 
 /// Build its LFOs on this context once, and set them as the controls are.
 function atmosLfosApply() {
+  // The physically modelled voice runs its own LFOs (atphys.js); these were the
+  // browser voice's, and are kept for it.
+  if (typeof ATPHYS !== "undefined") return;
   const c = audioCtx;
   if (!c || !atTrem || !atBus.cutoff) return;
   if (!atLfos.length || atLfos[0].osc.context !== c) {

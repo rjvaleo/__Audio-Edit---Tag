@@ -1082,3 +1082,11 @@ body.only-atmos .fx-delay .ph .cap { display: none; }
 .atfx-knobs { padding: 10px 12px 12px; gap: 6px 4px; }
 .atfx-vsep { width: 1px; align-self: stretch; margin: 0 6px; background: var(--look-line); }
 .atfx-none { padding: 0 12px 12px; }
+
+/* Atmosphere's physically modelled oscillators (atphys.js): ten model cards,
+   the model's live picture, its four controls, Oct and Fine. */
+.at-oscs.at-models { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+.at-models .at-osc small { font-size: 8px; }
+.at-pic canvas { width: 100%; height: 100%; display: block; }
+.at-oscbox .at-osc-row .at-knobs { display: grid; grid-template-columns: repeat(3, auto); gap: 4px 2px; align-content: center; }
+.at-hidden { display: none !important; }

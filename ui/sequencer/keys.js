@@ -95,8 +95,10 @@ function kyClassicOn(freq, vel) {
   };
 }
 
-/// Atmosphere, held: a long note, let go with its own Release.
-function kyAtmosOn(freq, vel) {
+/// Atmosphere, held: a long note, let go with its own Release. Its
+/// physically modelled voice when it is up (atphys.js); the browser voice until then.
+function kyAtmosOn(freq, vel, key) {
+  if (typeof atphysOn === "function") { const v = atphysOn(key, freq, vel); if (v) return v; }
   const c = audioCtx, t = c.currentTime;
   const v = atmosPlay(freq, t, 3600, { gain: vel });
   if (!v) return null;
@@ -124,7 +126,7 @@ function kyNoteOn(part, key, vel = 0.8) {
   kyNoteOff(part, key);
   // Atmosphere in its own tuning (atmos.js, `atKeyHz`), Seq's synth in Seq's.
   const hz = part === "atmos" && typeof atKeyHz === "function" ? atKeyHz(key) : kyHz(key);
-  const voice = part === "atmos" ? kyAtmosOn(hz, vel) : kyClassicOn(hz, vel);
+  const voice = part === "atmos" ? kyAtmosOn(hz, vel, key) : kyClassicOn(hz, vel);
   if (!voice) return false;
   if (typeof scopeNote === "function") scopeNote(hz);
   // Seq's filter envelope is Seq's synth's: Atmosphere has a filter of its own.
