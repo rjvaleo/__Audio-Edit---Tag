@@ -77,66 +77,118 @@ pub fn on_the_grid(found: &[(f32, f32, u8, f32)], grid: &Grid, bars: usize) -> V
 /// Below this level (RMS, about -50 dB) a step holds no note, however clear its pitch.
 const FLOOR: f32 = 0.003;
 
-/// The melody in `x` (one channel at `rate`), between `lo_hz` and `hi_hz`.
-pub fn read(x: &[f32], rate: f32, grid: &Grid, lo_hz: f32, hi_hz: f32) -> Vec<Note> {
+/// One sixteenth as the reader heard it: its pitch as a MIDI note with cents
+/// as decimals, and how loud beside the stem's loudest (0..1).
+pub type Step = Option<(f32, f32)>;
+
+/// The pitch of each sixteenth of `x` (one channel at `rate`), between `lo_hz`
+/// and `hi_hz`; `None` where there is no steady note.
+///
+/// A step is listened to in up to three windows across its middle, and it has a
+/// pitch only if most of them have one and they agree within a semitone. A
+/// voice between notes, a consonant, or what bleeds in from the other stems
+/// gives windows that disagree, and so no note (18 Nov 2026: on a real voice,
+/// one window a step gave 1742 one-sixteenth notes out of 1869, a fifth or more
+/// apart from their neighbours).
+pub fn steps(x: &[f32], rate: f32, grid: &Grid, lo_hz: f32, hi_hz: f32) -> Vec<Step> {
     // A window long enough for two periods of the lowest note and a bit.
     let need = (2.2 * rate / lo_hz) as usize + 4;
-    let mut steps: Vec<Option<(f32, f32)>> = Vec::new(); // (midi, rms)
+    let mut heard: Vec<Option<f32>> = Vec::new();
     let mut rms_all = Vec::new();
     for bar in 0..grid.bars() {
         for s in 0..16 {
             let Some((t, len)) = grid.step(bar, s) else {
-                steps.push(None);
+                heard.push(None);
                 rms_all.push(0.0);
                 continue;
             };
-            let a = (((t + 0.1 * len) * rate) as usize).min(x.len());
             // The middle of the step, so a note that starts or stops on the grid line is not half heard.
-            let n = ((0.8 * len * rate) as usize).max(need);
-            let seg = &x[a..(a + n).min(x.len())];
-            let rms = (seg.iter().map(|v| v * v).sum::<f32>() / seg.len().max(1) as f32).sqrt();
-            rms_all.push(rms);
-            let f0 = pitch::yin(seg, rate, lo_hz, hi_hz).filter(|(_, ap)| *ap < 0.3);
-            steps.push(f0.map(|(hz, _)| (pitch::midi(hz), rms)));
+            let a = (((t + 0.1 * len) * rate) as usize).min(x.len());
+            let span = (0.8 * len * rate) as usize;
+            let seg = &x[a..(a + span.max(need)).min(x.len())];
+            rms_all.push((seg.iter().map(|v| v * v).sum::<f32>() / seg.len().max(1) as f32).sqrt());
+            let k = (span / need).clamp(1, 3);
+            let win = (span / k).max(need);
+            let mut found: Vec<f32> = (0..k)
+                .filter_map(|i| {
+                    let w0 = (a + i * span / k).min(x.len());
+                    pitch::yin(&x[w0..(w0 + win).min(x.len())], rate, lo_hz, hi_hz).filter(|(_, ap)| *ap < 0.2).map(|(hz, _)| pitch::midi(hz))
+                })
+                .collect();
+            found.sort_by(f32::total_cmp);
+            let steady = found.len() * 3 >= k * 2 && found.last().zip(found.first()).is_some_and(|(hi, lo)| hi - lo <= 1.0);
+            heard.push(steady.then(|| found[found.len() / 2]));
         }
     }
     let mut sorted = rms_all.clone();
     let loud = crate::rhythm::percentile(&mut sorted, 0.98).max(1e-9);
+    // Loud enough beside the stem's loudest, and loud enough at all: a stem with
+    // no voice in it still has a whisper of the others, and that is not a melody
+    // (18 Nov 2026: six stray notes from a silent vocals stem).
+    let mut out: Vec<Step> = heard.iter().zip(&rms_all).map(|(m, &r)| m.filter(|_| r > loud * 0.12 && r > FLOOR).map(|m| (m, (r / loud).min(1.0)))).collect();
     // Octave slips: a step more than nine semitones from the line around it is folded back.
-    let raw: Vec<Option<f32>> = steps.iter().map(|p| p.map(|(m, _)| m)).collect();
-    for g in 0..steps.len() {
-        let Some((m, r)) = steps[g] else { continue };
+    let raw: Vec<Option<f32>> = out.iter().map(|p| p.map(|(m, _)| m)).collect();
+    for g in 0..out.len() {
+        let Some((m, v)) = out[g] else { continue };
         let mut near: Vec<f32> = raw[g.saturating_sub(8)..(g + 9).min(raw.len())].iter().flatten().copied().collect();
         if near.len() < 3 {
             continue;
         }
         let med = crate::rhythm::percentile(&mut near, 0.5);
         if (m - med).abs() > 9.0 {
-            steps[g] = Some((m - 12.0 * ((m - med) / 12.0).round(), r));
+            out[g] = Some((m - 12.0 * ((m - med) / 12.0).round(), v));
         }
-    }
-    let mut out: Vec<Note> = Vec::new();
-    let mut last: Option<usize> = None; // the step the note in hand ended on
-    for (g, sp) in steps.iter().enumerate() {
-        // Loud enough beside the stem's loudest, and loud enough at all: a stem with
-        // no voice in it still has a whisper of the others, and that is not a melody
-        // (18 Nov 2026: six stray notes from a silent vocals stem).
-        let Some((m, r)) = sp.filter(|(_, r)| *r > loud * 0.08 && *r > FLOOR) else {
-            last = None;
-            continue;
-        };
-        let note = m.round().clamp(0.0, 127.0) as u8;
-        let vel = (r / loud).min(1.0);
-        match (last, out.last_mut()) {
-            (Some(l), Some(n)) if l + 1 == g && n.note == note => {
-                n.steps += 1.0;
-                n.vel = n.vel.max(vel);
-            }
-            _ => out.push(Note { bar: (g / 16) as u32, step: (g % 16) as f32, steps: 1.0, note, vel }),
-        }
-        last = Some(g);
     }
     out
+}
+
+/// Steps into notes, held as a voice holds them:
+///   - a one-step hole between two steps within a semitone of each other is sung through;
+///   - a step joins the note before it while it stays within a semitone of that
+///     note's pitch so far, so vibrato and a pitch on the line between two
+///     semitones make one note, not a trill; the note is written at its middle pitch;
+///   - a note one step long is kept only if it is loud (half the stem's loudest
+///     or more): a quiet blip is not a melody note.
+pub fn notes(steps: &[Step]) -> Vec<Note> {
+    let mut st = steps.to_vec();
+    for g in 1..st.len().saturating_sub(1) {
+        if let (None, Some((a, va)), Some((b, vb))) = (steps[g], steps[g - 1], steps[g + 1]) {
+            if (a - b).abs() <= 1.0 {
+                st[g] = Some(((a + b) / 2.0, va.min(vb)));
+            }
+        }
+    }
+    // (first step, the pitches, the loudest)
+    let mut runs: Vec<(usize, Vec<f32>, f32)> = Vec::new();
+    let mut open = false;
+    for (g, sp) in st.iter().enumerate() {
+        let Some((m, v)) = *sp else {
+            open = false;
+            continue;
+        };
+        match runs.last_mut().filter(|_| open) {
+            Some(r) if (m - r.1.iter().sum::<f32>() / r.1.len() as f32).abs() <= 1.0 => {
+                r.1.push(m);
+                r.2 = r.2.max(v);
+            }
+            _ => runs.push((g, vec![m], v)),
+        }
+        open = true;
+    }
+    runs.into_iter()
+        .filter(|r| r.1.len() > 1 || r.2 >= 0.5)
+        .map(|(g, mut ms, vel)| {
+            ms.sort_by(f32::total_cmp);
+            // The middle pitch; of an even count, the lower middle, so a line sung on the line reads the same each time.
+            let note = ms[(ms.len() - 1) / 2].round().clamp(0.0, 127.0) as u8;
+            Note { bar: (g / 16) as u32, step: (g % 16) as f32, steps: ms.len() as f32, note, vel }
+        })
+        .collect()
+}
+
+/// The melody in `x` (one channel at `rate`), between `lo_hz` and `hi_hz`.
+pub fn read(x: &[f32], rate: f32, grid: &Grid, lo_hz: f32, hi_hz: f32) -> Vec<Note> {
+    notes(&steps(x, rate, grid, lo_hz, hi_hz))
 }
 
 /// The melody of a stem file. The stem is brought down to about 11 kHz first:
@@ -195,6 +247,66 @@ mod tests {
         let x: Vec<f32> = (0..(4.5 * rate) as usize).map(|i| tone(i as f32 / rate)).collect();
         let got: Vec<_> = read(&x, rate, &grid, 80.0, 1000.0).iter().map(|n| (n.bar, n.step, n.steps, n.note)).collect();
         assert_eq!(got, [(0, 0.0, 4.0, 69), (0, 8.0, 8.0, 72)]);
+    }
+
+    fn spans(n: &[Note]) -> Vec<(u32, f32, f32, u8)> {
+        n.iter().map(|n| (n.bar, n.step, n.steps, n.note)).collect()
+    }
+
+    #[test]
+    fn a_wavering_pitch_is_one_held_note_not_a_trill() {
+        // On the line between A and B flat, a little either side each step.
+        let st: Vec<Step> = [69.3, 69.6, 69.2, 69.7, 69.4].iter().map(|&m| Some((m, 0.3))).collect();
+        assert_eq!(spans(&notes(&st)), [(0, 0.0, 5.0, 69)]);
+        // A real step up is a new note.
+        let st: Vec<Step> = [69.1, 69.0, 71.0, 71.1].iter().map(|&m| Some((m, 0.3))).collect();
+        assert_eq!(spans(&notes(&st)), [(0, 0.0, 2.0, 69), (0, 2.0, 2.0, 71)]);
+    }
+
+    #[test]
+    fn a_one_step_hole_in_a_note_is_sung_through() {
+        let st = [Some((64.0, 0.4)), Some((64.1, 0.4)), None, Some((63.9, 0.4)), None, None, Some((64.0, 0.4)), Some((64.0, 0.4))];
+        assert_eq!(spans(&notes(&st)), [(0, 0.0, 4.0, 64), (0, 6.0, 2.0, 64)]);
+        // A hole between two different notes stays a hole.
+        let st = [Some((60.0, 0.4)), Some((60.0, 0.4)), None, Some((65.0, 0.4)), Some((65.0, 0.4))];
+        assert_eq!(spans(&notes(&st)), [(0, 0.0, 2.0, 60), (0, 3.0, 2.0, 65)]);
+    }
+
+    #[test]
+    fn a_quiet_blip_is_dropped_and_a_loud_short_note_is_kept() {
+        let st = [Some((60.0, 0.2)), None, None, Some((72.0, 0.9)), None, None, Some((55.0, 0.49))];
+        assert_eq!(spans(&notes(&st)), [(0, 3.0, 1.0, 72)]);
+        // Jumping about from step to step, quietly, is no line at all.
+        let st: Vec<Step> = [51.0, 58.0, 51.0, 56.0, 50.0, 63.0].iter().map(|&m| Some((m, 0.15))).collect();
+        assert!(notes(&st).is_empty());
+    }
+
+    #[test]
+    fn vibrato_is_one_note_and_a_pitch_that_will_not_settle_is_none() {
+        let rate = 11_025.0;
+        let beats: Vec<f32> = (0..9).map(|i| 0.5 * i as f32).collect();
+        let grid = Grid { beats_s: &beats, downbeat_beat: 0 };
+        let two_pi = 2.0 * std::f32::consts::PI;
+        // A4 for four beats with vibrato: 40 cents either way, five and a half times a second.
+        let mut phase = 0.0f32;
+        let sung: Vec<f32> = (0..(4.5 * rate) as usize)
+            .map(|i| {
+                let t = i as f32 / rate;
+                phase += two_pi * hz(69.0 + 0.4 * (two_pi * 5.5 * t).sin()) / rate;
+                if t < 2.0 { 0.5 * phase.sin() + 0.2 * (2.0 * phase).sin() } else { 0.0 }
+            })
+            .collect();
+        assert_eq!(spans(&read(&sung, rate, &grid, 80.0, 1000.0)), [(0, 0.0, 16.0, 69)]);
+        // A pitch that leaps a fifth and back every 25 ms: the windows of a step never agree.
+        let mut phase = 0.0f32;
+        let restless: Vec<f32> = (0..(4.5 * rate) as usize)
+            .map(|i| {
+                let t = i as f32 / rate;
+                phase += two_pi * hz(if (t / 0.025) as usize % 2 == 0 { 57.0 } else { 64.0 }) / rate;
+                0.5 * phase.sin()
+            })
+            .collect();
+        assert!(read(&restless, rate, &grid, 80.0, 1000.0).len() <= 1);
     }
 
     #[test]

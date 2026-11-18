@@ -62,7 +62,7 @@ that has been split and read).
 
   | part | channel | from |
   |---|---|---|
-  | Melody | 7 | the vocals stem, one note at a time: the bass line's pitch reader (YIN) on every sixteenth, octave slips folded back, steps on one semitone joined. A few seconds, on this machine. |
+  | Melody | 7 | the vocals stem, one note at a time: the bass line's pitch reader (YIN) in up to three windows across every sixteenth, which must agree within a semitone for the step to have a pitch; octave slips folded back; then held as a voice holds a note (a one-step hole sung through, vibrato and a pitch on the line between two semitones one note, a quiet one-step blip dropped). Nothing below about -50 dB. A few seconds, on this machine. |
   | Other notes | 8 | the other stem, many notes at once: **Basic Pitch** (Spotify, Apache 2.0) on the PC, ONNX on the CPU, in `D:\models\basic-pitch` (its own Python 3.11 environment). About a minute. Each note goes to its nearest sixteenth. Needs the GPU machine set. |
 
 - **The notes** shows them over the whole song, with the sections and the chord names along

@@ -490,6 +490,16 @@ fn basic_pitch(gpu: &crate::gpu::Gpu, stem: &Path) -> Result<Vec<(f32, f32, u8, 
         .collect())
 }
 
+/// An analysis's beat times in seconds, and the beat bar 0 starts on.
+fn beat_grid(a: &Value) -> (Vec<f32>, usize) {
+    let beats = a.get("beats_s").and_then(|b| b.arr()).map(|b| b.iter().filter_map(|x| if let Value::Num(n) = x { Some(*n as f32) } else { None }).collect()).unwrap_or_default();
+    let downbeat = match a.get("downbeat_beat") {
+        Some(Value::Num(n)) => *n as usize,
+        _ => 0,
+    };
+    (beats, downbeat)
+}
+
 /// POST {p, part: "melody" | "other"}: read a part's notes from its stem and
 /// keep them beside the stems (`notes-<part>.json`), for the MIDI tab.
 /// Melody: the vocals stem, one note at a time, read here. Other: the other
@@ -504,11 +514,7 @@ pub(super) fn api_stems_notes(app: &Arc<App>, req: &Request) -> Response {
     let Some(a) = std::fs::read_to_string(dir.join("songprint.json")).ok().and_then(|t| json::parse(&t)) else {
         return Response::error(400, "not analysed yet");
     };
-    let beats: Vec<f32> = a.get("beats_s").and_then(|b| b.arr()).map(|b| b.iter().filter_map(|x| if let Value::Num(n) = x { Some(*n as f32) } else { None }).collect()).unwrap_or_default();
-    let downbeat = match a.get("downbeat_beat") {
-        Some(Value::Num(n)) => *n as usize,
-        _ => 0,
-    };
+    let (beats, downbeat) = beat_grid(&a);
     let grid = songprint::melody::Grid { beats_s: &beats, downbeat_beat: downbeat };
     if grid.bars() == 0 {
         return Response::error(400, "the analysis has no beat times: press Read again");
@@ -1437,6 +1443,31 @@ mod midi_tests {
         std::fs::write(notes_file(&dir, "melody"), Value::obj().set("notes", notes_value(&notes)).to_string()).unwrap();
         assert_eq!(notes_kept(&dir, "melody").unwrap(), notes);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Not a test of anything: what the melody reader makes of a real song's
+    /// vocals stem, for a person to read. `MGL_STEM_DIR` names a folder holding
+    /// `vocals.wav` and `songprint.json`; run with `--ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn the_melody_of_a_real_song_in_numbers() {
+        let Ok(dir) = std::env::var("MGL_STEM_DIR") else { return };
+        let dir = Path::new(&dir);
+        let a = json::parse(&std::fs::read_to_string(dir.join("songprint.json")).unwrap()).unwrap();
+        let (beats, downbeat) = beat_grid(&a);
+        let grid = songprint::melody::Grid { beats_s: &beats, downbeat_beat: downbeat };
+        let t0 = std::time::Instant::now();
+        let notes = songprint::melody::read_file(&dir.join("vocals.wav"), &grid).unwrap();
+        let lens: Vec<usize> = notes.iter().map(|n| n.steps as usize).collect();
+        let count = |f: &dyn Fn(usize) -> bool| lens.iter().filter(|&&l| f(l)).count();
+        println!("MELODY bars {} | notes {} | in {:.1} s", grid.bars(), notes.len(), t0.elapsed().as_secs_f32());
+        println!("MELODY lengths in sixteenths: 1: {}  2: {}  3-4: {}  5-8: {}  9+: {}  longest {}", count(&|l| l == 1), count(&|l| l == 2), count(&|l| (3..=4).contains(&l)), count(&|l| (5..=8).contains(&l)), count(&|l| l >= 9), lens.iter().max().copied().unwrap_or(0));
+        let leaps = notes.windows(2).filter(|w| (w[0].note as i32 - w[1].note as i32).abs() > 7).count();
+        println!("MELODY pitches {:?} to {:?} | steps sung {} of {} | leaps over a fifth between neighbours {}", notes.iter().map(|n| n.note).min(), notes.iter().map(|n| n.note).max(), lens.iter().sum::<usize>(), grid.bars() * 16, leaps);
+        for n in notes.iter().take(40) {
+            print!("{}:{}+{}={} ", n.bar + 1, n.step, n.steps, n.note);
+        }
+        println!();
     }
 
     #[test]
