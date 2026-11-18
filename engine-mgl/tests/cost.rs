@@ -9,6 +9,7 @@ mod common;
 use common::*;
 use engine_core::basics::{Player, SoundSource};
 use engine_core::*;
+use engine_mgl::grain::{self, Grain};
 use engine_mgl::{Fx, Wave};
 use prism_fx::{contract, par, CATALOG};
 use std::sync::Arc;
@@ -148,4 +149,67 @@ fn what_a_full_patch_costs() {
     timed(&mut audio, 200);
     let times = timed(&mut audio, 6_000);
     println!("{}", line("Synth + 7 effects + a sound", &times));
+}
+
+/// MGL's grain deck: each engine playing its sound straight, then Poly with
+/// eight keys held.
+#[test]
+#[ignore = "a measurement: run it alone, in a release build"]
+fn what_the_grain_deck_costs() {
+    use mgl_engine::Source;
+    use mgl_fx::grain::{Grain as Settings, StreamParams};
+    use mgl_fx::stretch::Algorithm;
+    let frames = 96_000;
+    let mut seed = 7u32;
+    let samples: Vec<f32> = (0..frames)
+        .flat_map(|i| {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            let noise = ((seed >> 16) as f32 / 32768.0) - 1.0;
+            let s = (i as f32 * 0.02).sin() * 0.4 + noise * 0.05;
+            [s, s * 0.8]
+        })
+        .collect();
+    let source = Arc::new(Source { samples, channels: 2 });
+    let params = |algorithm| StreamParams {
+        in_frames: frames,
+        sample_rate: 48_000,
+        ratio: 2.0,
+        semitones: 0.0,
+        window_ms: 40.0,
+        grain: Settings::default(),
+        algorithm,
+        wsola: Default::default(),
+        vocoder: Default::default(),
+        pvsola: Default::default(),
+        hybrid: Default::default(),
+        soundhack: Default::default(),
+        cloud: false,
+        cloud_mix: 0.5,
+    };
+    for algorithm in [Algorithm::Granular, Algorithm::Wsola, Algorithm::Vocoder, Algorithm::Pvsola] {
+        for keys in [0u8, 8] {
+            let mut deck = Grain::new(48_000, BLOCK, params(algorithm), Arc::clone(&source));
+            if keys > 0 {
+                deck = deck.poly(keys as usize);
+            }
+            let (mut ctl, mut audio) = engine(RATE, exact());
+            ctl.add(1, Box::new(deck)).unwrap();
+            ctl.connect_out(port(1, 0)).unwrap();
+            ctl.commit().unwrap();
+            if keys == 0 {
+                ctl.send(1, EventKind::Param { index: grain::RUN, value: 1.0 }).unwrap();
+                ctl.send(1, EventKind::Param { index: grain::PLAY, value: 1.0 }).unwrap();
+            } else {
+                ctl.send(1, EventKind::Param { index: grain::RUN, value: 0.0 }).unwrap();
+                ctl.send(1, EventKind::Param { index: grain::KEY_MODE, value: 2.0 }).unwrap();
+                for i in 0..keys {
+                    ctl.send(1, EventKind::Note(NoteEvent::on(48 + i * 3, 0.8))).unwrap();
+                }
+            }
+            timed(&mut audio, 200);
+            let times = timed(&mut audio, 3_000);
+            let what = if keys == 0 { "playing".to_string() } else { format!("Poly, {keys} keys") };
+            println!("{}", line(&format!("Grain {algorithm:?}, {what}"), &times));
+        }
+    }
 }

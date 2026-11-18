@@ -6,10 +6,12 @@ mod ceiling;
 mod fx;
 pub mod grain;
 pub mod sound;
+mod suite;
 mod wave;
 
 pub use crate::ceiling::Ceiling;
 pub use crate::fx::Fx;
 pub use crate::grain::{Grain, GrainThing, Handle};
 pub use crate::sound::Document;
+pub use crate::suite::{Suite, SuiteThing};
 pub use crate::wave::{Wave, WaveThing};
