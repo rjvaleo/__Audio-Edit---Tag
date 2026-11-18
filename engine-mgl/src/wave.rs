@@ -1,8 +1,27 @@
 //! The Wave page's wavetable synth as a module.
 
-use engine_core::{EventKind, Io, Kind, Module, NoteEvent, NoteKind};
+use engine_core::{EventKind, Io, Kind, Module, NoteEvent, NoteKind, Thing};
 use std::sync::Arc;
-use wave::{ParamId, PatchState, Synth, Wavetable};
+use wave::{BoardPlan, ParamId, PatchState, Synth, Wavetable};
+
+/// What the synth is handed while it plays, built on the app's thread
+/// (`Controller::give`, slot 0). Like a note or a knob, each takes effect on
+/// the next line of 32 samples.
+pub enum WaveThing {
+    /// A whole patch, compiled from its keys by the app.
+    Patch(PatchState),
+    /// A table for oscillator 0, 1 or 2.
+    Table(usize, Arc<Wavetable>),
+    /// A built-in table for the table bank, by its place in the list.
+    BankTable(usize, Arc<Wavetable>),
+    /// An effects board, compiled for the engine's rate. The one it replaces
+    /// fades out over 10 ms as this fades in.
+    Board(Box<BoardPlan>),
+    /// On its way back: the table a new one replaced.
+    OldTable(Option<Arc<Wavetable>>),
+    /// What a box holds on its way back, once the synth has taken its contents.
+    Taken,
+}
 
 /// The Wave synth. Input 0 takes notes, output 0 is audio; knob numbers are
 /// the synth's own parameter numbers (`wave::param_id`).
@@ -19,6 +38,8 @@ pub struct Wave {
     l: [f32; Wave::GRID],
     r: [f32; Wave::GRID],
     used: usize,
+    /// A board cut short by the one after it, on its way back to the app.
+    cut_short: Option<Box<BoardPlan>>,
 }
 
 impl Wave {
@@ -32,9 +53,25 @@ impl Wave {
     /// apart: its own control block.
     pub const GRID: usize = 32;
 
+    /// The knob number of control `param` of the effects board's node `node`.
+    pub const fn board_knob(node: usize, param: usize) -> u32 {
+        (1 << 17) + ((node as u32) << 8) + param as u32
+    }
+
+    /// The knob number that switches the board's node `node` in (1) or out (0).
+    pub const fn board_switch(node: usize) -> u32 {
+        (1 << 18) + node as u32
+    }
+
     /// A synth for `rate` (the engine's), with the default patch and no tables.
     pub fn new(rate: f32) -> Wave {
-        Wave { synth: Synth::new(rate, Self::GRID), l: [0.0; Self::GRID], r: [0.0; Self::GRID], used: Self::GRID }
+        Wave {
+            synth: Synth::new(rate, Self::GRID),
+            l: [0.0; Self::GRID],
+            r: [0.0; Self::GRID],
+            used: Self::GRID,
+            cut_short: None,
+        }
     }
 
     /// Start from this patch.
@@ -82,9 +119,50 @@ impl Module for Wave {
             EventKind::Param { index, value } if index < Self::BEND => {
                 self.synth.set_param(ParamId(index as u16), value);
             }
+            EventKind::Param { index, value } if index >= Self::board_switch(0) => {
+                self.synth.set_board_on((index - Self::board_switch(0)) as usize, value >= 0.5);
+            }
+            EventKind::Param { index, value } if index >= Self::board_knob(0, 0) => {
+                let knob = index - Self::board_knob(0, 0);
+                self.synth.set_board_param((knob >> 8) as usize, (knob & 0xff) as usize, value);
+            }
             EventKind::Note(note) => self.play(&note),
             _ => {}
         }
+    }
+    /// The synth has already made its block up to the next line, so what is
+    /// handed over here is first heard from that line, as a knob is. What
+    /// it replaces goes back in the box, to be freed by the app.
+    fn take(&mut self, _slot: u32, thing: Thing) -> Option<Thing> {
+        let mut boxed = match thing.downcast::<WaveThing>() {
+            Ok(boxed) => boxed,
+            Err(other) => return Some(other),
+        };
+        match std::mem::replace(&mut *boxed, WaveThing::Taken) {
+            WaveThing::Patch(state) => self.synth.adopt(state),
+            WaveThing::Table(osc, table) => *boxed = WaveThing::OldTable(self.synth.set_table(osc, table)),
+            WaveThing::BankTable(i, table) => *boxed = WaveThing::OldTable(self.synth.set_bank_table(i, table)),
+            WaveThing::Board(plan) => {
+                // A board still fading out from the swap before is cut short
+                // and comes straight back (as does this one, if it was made
+                // for another rate). At most one: the engine asks for what
+                // has finished after every piece of audio.
+                if let Some(displaced) = self.synth.set_board(plan) {
+                    if let Some(lost) = self.cut_short.replace(displaced) {
+                        // Two cut short between two pieces: let go of
+                        // without freeing, once, rather than free it here.
+                        std::mem::forget(lost);
+                    }
+                }
+            }
+            old @ (WaveThing::OldTable(_) | WaveThing::Taken) => *boxed = old,
+        }
+        Some(boxed)
+    }
+    /// The boards the synth has finished with: one cut short, or one that
+    /// has faded out.
+    fn finished(&mut self) -> Option<Thing> {
+        self.cut_short.take().or_else(|| self.synth.take_retired()).map(|board| board as Thing)
     }
     fn process(&mut self, io: &mut Io) {
         let notes = io.ins.notes(0);

@@ -93,3 +93,28 @@ fn handing_things_over_frees_nothing_on_the_audio_thread() {
     assert_eq!(freed.total(), 79);
     assert_eq!(freed.in_audio(), 0);
 }
+
+#[test]
+fn mixing_and_recording_cost_the_audio_thread_no_memory() {
+    use engine_core::basics::{Mix, Record, Sine, Tape};
+    let (mut ctl, mut audio) = engine(RATE, exact());
+    ctl.add(1, Box::new(Sine::new(440.0, 0.5))).unwrap();
+    ctl.add(2, Box::new(Sine::new(660.0, 0.25))).unwrap();
+    ctl.add(3, Box::new(Mix::new(2))).unwrap();
+    ctl.add(4, Box::new(Record::new())).unwrap();
+    ctl.connect(port(1, 0), port(3, 0)).unwrap();
+    ctl.connect(port(2, 0), port(3, 1)).unwrap();
+    ctl.connect(port(3, 0), port(4, 0)).unwrap();
+    ctl.connect_out(port(4, 0)).unwrap();
+    ctl.commit().unwrap();
+    for i in 0..10u64 {
+        ctl.give_at(200 + 700 * i, 4, 0, Box::new(Tape::with_room(400))).unwrap();
+        ctl.send_at(300 + 700 * i, 3, EventKind::Param { index: 0, value: 0.1 * i as f32 }).unwrap();
+    }
+    let before = counted();
+    render(&mut audio, 8_000, 64);
+    assert_eq!(counted(), before, "allocations or frees inside a render");
+    let mut back = Vec::new();
+    assert_eq!(ctl.collect_things(&mut back).things, 10);
+    assert!(back.iter().all(|thing| thing.downcast_ref::<Tape>().is_some_and(|tape| tape.l.len() == 400)));
+}

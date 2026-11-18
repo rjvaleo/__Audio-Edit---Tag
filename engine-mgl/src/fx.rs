@@ -1,6 +1,7 @@
 //! Any effect in prism-fx's catalogue as a module.
 
 use engine_core::{EventKind, Io, Kind, Module};
+use prism_fx::place::{Place, PlaceSettings};
 use prism_fx::{Descriptor, DynKernel};
 
 /// One effect from prism-fx's catalogue. Input 0 and output 0 are audio; knob
@@ -10,13 +11,28 @@ use prism_fx::{Descriptor, DynKernel};
 /// sound, both before the module goes into the patch.
 pub struct Fx {
     kernel: Box<dyn DynKernel>,
+    rate: f32,
+    /// prism-fx's Place around the effect, if it was `placed`.
+    place: Option<Place>,
 }
 
 impl Fx {
+    /// Knob numbers past the effect's own, for an effect that is `placed`:
+    /// on (1) or off (0); the shape, by its number in prism-fx's list; the
+    /// place's size in metres; position, -100 (left) to 100; distance and
+    /// height, 0 to 100; and the spread of the effect's output, 0 to 200%.
+    pub const PLACE_ON: u32 = 1 << 16;
+    pub const PLACE_SHAPE: u32 = Self::PLACE_ON + 1;
+    pub const PLACE_SIZE: u32 = Self::PLACE_ON + 2;
+    pub const PLACE_POSITION: u32 = Self::PLACE_ON + 3;
+    pub const PLACE_DISTANCE: u32 = Self::PLACE_ON + 4;
+    pub const PLACE_HEIGHT: u32 = Self::PLACE_ON + 5;
+    pub const PLACE_SPREAD: u32 = Self::PLACE_ON + 6;
+
     /// The effect with that catalogue id, at its defaults, made for `rate`
     /// (the engine's). None when the catalogue has no such effect.
     pub fn new(id: &str, rate: f32) -> Option<Fx> {
-        prism_fx::make(id, rate).map(|kernel| Fx { kernel })
+        prism_fx::make(id, rate).map(|kernel| Fx { kernel, rate, place: None })
     }
 
     /// Start with a knob at this value, in the effect's own units.
@@ -29,6 +45,18 @@ impl Fx {
     /// Effects that take none ignore it.
     pub fn sound(mut self, samples: &[f32], channels: usize, rate: f32) -> Fx {
         self.kernel.set_sound(samples, channels, rate);
+        self
+    }
+
+    /// Put the effect in a place: prism-fx's Place around it, as MGL's rack
+    /// puts one around a reverb. Its controls are the `PLACE_` knobs; it
+    /// starts switched off, and off it changes nothing at all.
+    pub fn placed(mut self) -> Fx {
+        // Place is made for the effect's own rate. It allocates its memory
+        // here, before the module goes into the patch.
+        let mut place = Place::new(self.rate);
+        place.set(PlaceSettings { on: false, ..PlaceSettings::default() });
+        self.place = Some(place);
         self
     }
 
@@ -49,17 +77,44 @@ impl Module for Fx {
     /// starts, with no glide up to them.
     fn prepare(&mut self, _rate: f32, _max_block: usize) {
         self.kernel.reset();
+        if let Some(place) = self.place.as_mut() {
+            place.reset();
+        }
     }
     fn handle(&mut self, event: &EventKind) {
-        if let EventKind::Param { index, value } = *event {
+        let EventKind::Param { index, value } = *event else { return };
+        if index < Self::PLACE_ON {
             self.kernel.set_param(index as usize, value);
+            return;
         }
+        let Some(place) = self.place.as_mut() else { return };
+        let mut s = place.settings();
+        match index {
+            Self::PLACE_ON => s.on = value >= 0.5,
+            Self::PLACE_SHAPE => s.shape = value.max(0.0) as u8,
+            Self::PLACE_SIZE => s.size_m = value,
+            Self::PLACE_POSITION => s.pos = value,
+            Self::PLACE_DISTANCE => s.dist = value,
+            Self::PLACE_HEIGHT => s.height = value,
+            Self::PLACE_SPREAD => s.spread = value,
+            _ => return,
+        }
+        place.set(s);
     }
     fn process(&mut self, io: &mut Io) {
         let (in_l, in_r) = io.ins.audio(0);
         let (l, r) = io.outs.audio(0);
         l.copy_from_slice(in_l);
         r.copy_from_slice(in_r);
-        self.kernel.process(l, r);
+        match self.place.as_mut() {
+            // As prism-fx says a host runs it: the place before the effect,
+            // and the spread of the effect's output after.
+            Some(place) => {
+                place.before(l, r);
+                self.kernel.process(l, r);
+                place.after(l, r);
+            }
+            None => self.kernel.process(l, r),
+        }
     }
 }

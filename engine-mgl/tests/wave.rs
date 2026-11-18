@@ -10,9 +10,10 @@
 mod common;
 use common::*;
 use engine_core::*;
-use engine_mgl::Wave;
+use engine_mgl::{Wave, WaveThing};
 use std::sync::Arc;
-use wave::{builtin_frames, param_id, Patch, PatchState, Synth, Wavetable};
+use wave::board::{input_nodes, Board, Cable, Node};
+use wave::{builtin_frames, param_id, BoardPlan, Patch, PatchState, Synth, Wavetable};
 
 const N: usize = 36_000;
 const WAVE: ModuleId = 1;
@@ -214,4 +215,163 @@ fn the_module_does_not_allocate_on_the_audio_thread() {
     let before = counted();
     render(&mut audio, N, 128);
     assert_eq!(counted(), before, "allocations or frees inside a render, notes on a cable");
+}
+
+// ---- Tables, a patch and an effects board handed over while it plays.
+
+fn table(name: &str) -> Arc<Wavetable> {
+    Arc::new(Wavetable::from_frames(&builtin_frames(name).expect("a built-in table")))
+}
+
+/// A patch that plainly differs from the default: one oscillator, shut filter.
+fn other_patch() -> PatchState {
+    let mut p = Patch::default();
+    p.set_num("osc1.on", 0.0);
+    p.set_num("osc2.on", 0.0);
+    p.set_num("filt0.cut", 0.3);
+    PatchState::new(&p)
+}
+
+/// The patch's own effects as a board, and a plainly different one: the
+/// voice through a gain 12 dB down.
+fn board(quiet: bool) -> Box<BoardPlan> {
+    let b = if quiet {
+        let mut nodes = input_nodes();
+        nodes.push(Node::new("out", "out", 600.0, 16.0));
+        nodes.push(Node::new("g", "gain", 300.0, 16.0).with("db", -12.0));
+        Board {
+            name: "quiet".into(),
+            nodes,
+            cables: vec![Cable::new("invoice", "o", "g", "i"), Cable::new("g", "o", "out", "i")],
+        }
+    } else {
+        Board::migrate(&Patch::default().values)
+    };
+    Box::new(BoardPlan::compile(&b, RATE).unwrap_or_else(|e| panic!("{e}")))
+}
+
+#[derive(Clone, Copy)]
+enum Swap {
+    Table(usize, &'static str),
+    Patch,
+    Board(bool),
+}
+
+/// Held notes, and what is swapped under them, each with its sample.
+const HELD: [(u64, u8); 3] = [(1, 45), (700, 52), (1_300, 57)];
+fn swaps() -> Vec<(u64, Swap)> {
+    vec![
+        (4_001, Swap::Board(false)),
+        (9_000, Swap::Table(0, "Glass Organ")),
+        (13_333, Swap::Board(true)),
+        (13_400, Swap::Board(false)),
+        (18_000, Swap::Patch),
+        (22_222, Swap::Table(1, "Formant Sweep")),
+        (26_000, Swap::Board(true)),
+    ]
+}
+const SWAP_FRAMES: usize = 32_000;
+
+/// The synth alone: each swap before the first block of 32 that starts at
+/// or after its sample, as MGL's deck makes them between its blocks.
+fn swapped_alone() -> (Vec<f32>, Vec<f32>) {
+    let mut synth = Synth::new(RATE, Wave::GRID);
+    synth.adopt(PatchState::new(&Patch::default()));
+    synth.set_seed(SEED);
+    for (osc, t) in tables().into_iter().enumerate() {
+        synth.set_table(osc, t);
+    }
+    let swaps = swaps();
+    let mut l = vec![0.0; SWAP_FRAMES];
+    let mut r = vec![0.0; SWAP_FRAMES];
+    let (mut next_note, mut next_swap, mut at) = (0, 0, 0);
+    while at < SWAP_FRAMES {
+        while next_note < HELD.len() && HELD[next_note].0 <= at as u64 {
+            synth.note_on(HELD[next_note].1, 0.9);
+            next_note += 1;
+        }
+        while next_swap < swaps.len() && swaps[next_swap].0 <= at as u64 {
+            drop(synth.take_retired());
+            match swaps[next_swap].1 {
+                Swap::Table(osc, name) => drop(synth.set_table(osc, table(name))),
+                Swap::Patch => synth.adopt(other_patch()),
+                Swap::Board(quiet) => drop(synth.set_board(board(quiet))),
+            }
+            next_swap += 1;
+        }
+        let end = (at + Wave::GRID).min(SWAP_FRAMES);
+        synth.render(&mut l[at..end], &mut r[at..end]);
+        at = end;
+    }
+    (l, r)
+}
+
+fn swapped_in_the_engine() -> (Controller, AudioEngine) {
+    let (mut ctl, audio) = engine(RATE, exact());
+    ctl.add(WAVE, Box::new(module())).unwrap();
+    ctl.connect_out(port(WAVE, 0)).unwrap();
+    ctl.commit().unwrap();
+    for (frame, key) in HELD {
+        ctl.send_at(frame, WAVE, EventKind::Note(NoteEvent::on(key, 0.9))).unwrap();
+    }
+    for (frame, swap) in swaps() {
+        let thing = match swap {
+            Swap::Table(osc, name) => WaveThing::Table(osc, table(name)),
+            Swap::Patch => WaveThing::Patch(other_patch()),
+            Swap::Board(quiet) => WaveThing::Board(board(quiet)),
+        };
+        ctl.give_at(frame, WAVE, 0, Box::new(thing)).unwrap();
+    }
+    (ctl, audio)
+}
+
+#[test]
+fn tables_a_patch_and_a_board_are_handed_over_while_it_plays() {
+    let (want_l, want_r) = swapped_alone();
+    assert!(peak(&want_l) > 0.05, "the held notes are heard: {}", peak(&want_l));
+    let (plain_l, _) = alone(&[(1, Act::On(45, 0.9)), (700, Act::On(52, 0.9)), (1_300, Act::On(57, 0.9))]);
+    assert!(first_difference(&want_l, &plain_l[..SWAP_FRAMES]).is_some(), "the swaps change the sound");
+    for block in [512, 61, 1000] {
+        let (_ctl, mut audio) = swapped_in_the_engine();
+        let (l, r) = render(&mut audio, SWAP_FRAMES, block);
+        assert_same(&format!("left, blocks of {block}"), &l, &want_l);
+        assert_same(&format!("right, blocks of {block}"), &r, &want_r);
+    }
+}
+
+#[test]
+fn what_the_synth_is_handed_costs_the_audio_thread_no_memory_and_comes_back() {
+    assert_the_check_is_on();
+    let (mut ctl, mut audio) = swapped_in_the_engine();
+    let before = counted();
+    let (l, _) = render(&mut audio, SWAP_FRAMES, 128);
+    assert!(peak(&l) > 0.05);
+    assert_eq!(counted(), before, "allocations or frees inside a render; the last sizes: {:?}", last_sizes());
+    // Seven boxes, and the boards the synth has finished with: the three it
+    // faded out of, and the one cut short by the next 67 samples later.
+    assert_eq!(ctl.collect().things, 7 + 3);
+}
+
+#[test]
+fn a_boards_controls_are_knobs() {
+    let moves = |ctl: &mut Controller| {
+        ctl.send_at(6_000, WAVE, EventKind::Param { index: Wave::board_switch(0), value: 0.0 }).unwrap();
+        ctl.send_at(9_000, WAVE, EventKind::Param { index: Wave::board_switch(0), value: 1.0 }).unwrap();
+    };
+    let play = |with_moves: bool| {
+        let (mut ctl, mut audio) = engine(RATE, exact());
+        ctl.add(WAVE, Box::new(module())).unwrap();
+        ctl.connect_out(port(WAVE, 0)).unwrap();
+        ctl.commit().unwrap();
+        ctl.give(WAVE, 0, Box::new(WaveThing::Board(board(false)))).unwrap();
+        ctl.send_at(100, WAVE, EventKind::Note(NoteEvent::on(48, 0.9))).unwrap();
+        if with_moves {
+            moves(&mut ctl);
+        }
+        render(&mut audio, 12_000, 128).0
+    };
+    let plain = play(false);
+    let moved = play(true);
+    let first = first_difference(&moved, &plain).expect("switching a node out is heard");
+    assert!((6_000..6_032).contains(&first), "from the line after its sample: {first}");
 }

@@ -343,6 +343,10 @@ impl Controller {
     /// The app calls this now and then; it is the only place old plans, old
     /// modules and old sounds are freed.
     pub fn collect(&mut self) -> Collected {
+        self.collect_with(None)
+    }
+
+    fn collect_with(&mut self, mut keep: Option<&mut Vec<Thing>>) -> Collected {
         let mut collected = Collected::default();
         while let Some(back) = self.rx.pop() {
             match back {
@@ -355,7 +359,10 @@ impl Controller {
                     collected.sounds += 1;
                 }
                 Back::Thing(thing) => {
-                    drop(thing);
+                    match keep.as_mut() {
+                        Some(keep) => keep.push(thing),
+                        None => drop(thing),
+                    }
                     collected.things += 1;
                 }
                 Back::Applied { seq, frame } => self.applied.push((seq, frame)),
@@ -367,6 +374,13 @@ impl Controller {
             }
         }
         collected
+    }
+
+    /// [`Self::collect`], keeping what modules handed back instead of
+    /// freeing it: a tape that has been recorded, say. Each thing is put on
+    /// the end of `keep` for the caller to look into and free.
+    pub fn collect_things(&mut self, keep: &mut Vec<Thing>) -> Collected {
+        self.collect_with(Some(keep))
     }
 
     /// Message number and the frame it landed on, for every message since the

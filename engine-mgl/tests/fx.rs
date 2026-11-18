@@ -301,3 +301,124 @@ fn no_effect_allocates_on_the_audio_thread() {
 fn an_effect_the_catalogue_does_not_have_is_refused() {
     assert!(Fx::new("no-such-effect", RATE).is_none());
 }
+
+// ---- Place around an effect, and MGL's ceiling.
+
+/// prism-fx's Place run by hand around the bare effect, as its own notes
+/// say a host runs it: `before`, the effect, `after`.
+fn placed_alone(id: &str, moves: &[(usize, prism_fx::place::PlaceSettings)], block: usize) -> (Vec<f32>, Vec<f32>) {
+    let mut kernel = prism_fx::make(id, contract::SAMPLE_RATE).unwrap();
+    kernel.reset();
+    let mut place = prism_fx::place::Place::new(contract::SAMPLE_RATE);
+    place.set(prism_fx::place::PlaceSettings { on: false, ..Default::default() });
+    place.reset();
+    let (mut l, mut r) = par::input();
+    let mut at = 0;
+    while at < par::FRAMES {
+        let end = (at + block).min(par::FRAMES);
+        for (frame, settings) in moves {
+            if *frame == at {
+                place.set(*settings);
+            }
+        }
+        place.before(&mut l[at..end], &mut r[at..end]);
+        kernel.process(&mut l[at..end], &mut r[at..end]);
+        place.after(&mut l[at..end], &mut r[at..end]);
+        at = end;
+    }
+    (l, r)
+}
+
+fn placed_patch(id: &str) -> (Controller, AudioEngine) {
+    let (l, r) = par::input();
+    let (mut ctl, audio) = engine(contract::SAMPLE_RATE, exact());
+    let sound = ctl
+        .load_sound(1, SoundData { rate: contract::SAMPLE_RATE, l: l.into_boxed_slice(), r: r.into_boxed_slice() })
+        .unwrap();
+    ctl.add(SOURCE, Box::new(SoundSource::new())).unwrap();
+    ctl.send(SOURCE, EventKind::Sound { slot: 0, sound }).unwrap();
+    ctl.add(PLAYER, Box::new(Player::new(1.0))).unwrap();
+    ctl.add(FX, Box::new(Fx::new(id, contract::SAMPLE_RATE).unwrap().placed())).unwrap();
+    ctl.connect(port(SOURCE, 0), port(PLAYER, 0)).unwrap();
+    ctl.connect(port(PLAYER, 0), port(FX, 0)).unwrap();
+    ctl.connect_out(port(FX, 0)).unwrap();
+    ctl.commit().unwrap();
+    (ctl, audio)
+}
+
+#[test]
+fn an_effect_in_a_place_plays_what_prism_fxs_place_makes_of_it() {
+    use prism_fx::place::PlaceSettings;
+    let hall = PlaceSettings { on: true, ..Default::default() };
+    let dome = PlaceSettings { on: true, shape: 3, size_m: 60.0, pos: 70.0, dist: 80.0, height: 10.0, spread: 150.0 };
+    for id in ["lxp-hall", "dattorro-plate"] {
+        // Blocks of 512; the moves on samples 2,048 and 8,192.
+        let moves = [(2_048, hall), (8_192, dome)];
+        let (want_l, want_r) = placed_alone(id, &moves, 512);
+        let (mut ctl, mut audio) = placed_patch(id);
+        knob(&mut ctl, 2_048, Fx::PLACE_ON as usize, 1.0);
+        for (index, value) in [
+            (Fx::PLACE_SHAPE, 3.0),
+            (Fx::PLACE_SIZE, 60.0),
+            (Fx::PLACE_POSITION, 70.0),
+            (Fx::PLACE_DISTANCE, 80.0),
+            (Fx::PLACE_HEIGHT, 10.0),
+            (Fx::PLACE_SPREAD, 150.0),
+        ] {
+            knob(&mut ctl, 8_192, index as usize, value);
+        }
+        let (l, r) = render(&mut audio, par::FRAMES, 512);
+        assert_same(&format!("{id}, left"), &l, &want_l);
+        assert_same(&format!("{id}, right"), &r, &want_r);
+        // Until it is switched on, it is the effect and nothing else.
+        let (mut plain_ctl, mut plain) = patch(id, &[]);
+        let _ = &mut plain_ctl;
+        let (plain_l, _) = render(&mut plain, par::FRAMES, 512);
+        assert_same(&format!("{id}, before the place is on"), &l[..2_048], &plain_l[..2_048]);
+        assert!(first_difference(&l, &plain_l).is_some(), "{id}: the place is heard");
+    }
+}
+
+#[test]
+fn a_placed_effect_and_the_ceiling_do_not_allocate() {
+    assert_the_check_is_on();
+    let (mut ctl, mut audio) = placed_patch("lxp-hall");
+    ctl.add(9, Box::new(engine_mgl::Ceiling)).unwrap();
+    ctl.connect(port(FX, 0), port(9, 0)).unwrap();
+    ctl.disconnect_out(port(FX, 0));
+    ctl.connect_out(port(9, 0)).unwrap();
+    ctl.commit().unwrap();
+    knob(&mut ctl, 1_000, Fx::PLACE_ON as usize, 1.0);
+    knob(&mut ctl, 3_000, Fx::PLACE_SIZE as usize, 80.0);
+    knob(&mut ctl, 5_000, Fx::PLACE_SHAPE as usize, 4.0);
+    let before = counted();
+    render(&mut audio, 8_000, 128);
+    assert_eq!(counted(), before, "allocations or frees inside a render");
+}
+
+#[test]
+fn the_ceiling_is_mgls_soft_ceiling() {
+    // The scenario input pushed well over full scale.
+    let (mut l, mut r) = par::input();
+    for v in l.iter_mut().chain(r.iter_mut()) {
+        *v *= 3.0;
+    }
+    let (mut ctl, mut audio) = engine(contract::SAMPLE_RATE, exact());
+    let sound = ctl
+        .load_sound(1, SoundData { rate: contract::SAMPLE_RATE, l: l.clone().into_boxed_slice(), r: r.clone().into_boxed_slice() })
+        .unwrap();
+    ctl.add(SOURCE, Box::new(SoundSource::new())).unwrap();
+    ctl.send(SOURCE, EventKind::Sound { slot: 0, sound }).unwrap();
+    ctl.add(PLAYER, Box::new(Player::new(1.0))).unwrap();
+    ctl.add(9, Box::new(engine_mgl::Ceiling)).unwrap();
+    ctl.connect(port(SOURCE, 0), port(PLAYER, 0)).unwrap();
+    ctl.connect(port(PLAYER, 0), port(9, 0)).unwrap();
+    ctl.connect_out(port(9, 0)).unwrap();
+    ctl.commit().unwrap();
+    let (got_l, got_r) = render(&mut audio, par::FRAMES, 512);
+    mgl_fx::soften(&mut l);
+    mgl_fx::soften(&mut r);
+    assert_same("left", &got_l, &l);
+    assert_same("right", &got_r, &r);
+    assert!(peak(&got_l) < 1.0 && peak(&l) > 0.9, "held under full scale: {}", peak(&got_l));
+}

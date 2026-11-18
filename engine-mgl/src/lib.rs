@@ -2,10 +2,14 @@
 //! engine. Each wraps MGL's code as it is, so a fix made for MGL is a fix
 //! here, and each is checked against what that code plays on its own.
 
+mod ceiling;
 mod fx;
 pub mod grain;
+pub mod sound;
 mod wave;
 
+pub use crate::ceiling::Ceiling;
 pub use crate::fx::Fx;
 pub use crate::grain::{Grain, GrainThing, Handle};
-pub use crate::wave::Wave;
+pub use crate::sound::Document;
+pub use crate::wave::{Wave, WaveThing};

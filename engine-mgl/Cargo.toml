@@ -17,5 +17,6 @@ wave = { path = "../../MultiGrainLive/core/crates/wave" }
 # of its own.
 mgl-engine = { package = "engine", path = "../../MultiGrainLive/core/crates/engine", default-features = false }
 mgl-fx = { package = "fx", path = "../../MultiGrainLive/core/crates/fx" }
+mgl-edit = { package = "edit", path = "../../MultiGrainLive/core/crates/edit" }
 audio-core = { path = "../../MultiGrainLive/core/crates/audio-core" }
 prism-grain = { path = "../../GitHub/prism-fx/crates/prism-grain" }

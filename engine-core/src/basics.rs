@@ -2,7 +2,7 @@
 //! what the tests and the JUCE probe play. None of them is one of the app's
 //! instruments.
 
-use crate::module::{EventKind, Io, Module};
+use crate::module::{EventKind, Io, Module, Thing};
 use crate::types::{ClockState, Kind, NoteEvent, NoteKind, SoundRef};
 use std::f64::consts::TAU;
 
@@ -442,5 +442,162 @@ impl Module for Player {
                 r.fill(0.0);
             }
         }
+    }
+}
+
+/// Several sounds into one. Each input is audio; knob `i` is the level of
+/// input `i` (1 to begin with) and knob `inputs` is the level of the whole.
+pub struct Mix {
+    levels: Vec<f32>,
+    master: f32,
+}
+
+impl Mix {
+    pub fn new(inputs: usize) -> Self {
+        Self { levels: vec![1.0; inputs.max(1)], master: 1.0 }
+    }
+}
+
+impl Module for Mix {
+    fn inputs(&self) -> Vec<Kind> {
+        vec![Kind::Audio; self.levels.len()]
+    }
+    fn outputs(&self) -> Vec<Kind> {
+        vec![Kind::Audio]
+    }
+    fn handle(&mut self, event: &EventKind) {
+        if let Some((index, value)) = param(event) {
+            let index = index as usize;
+            if index < self.levels.len() {
+                self.levels[index] = value;
+            } else if index == self.levels.len() {
+                self.master = value;
+            }
+        }
+    }
+    fn process(&mut self, io: &mut Io) {
+        // The first input is copied and the rest added to it, in order, so
+        // one input at full level arrives with every bit as it was.
+        let (first_l, first_r) = io.ins.audio(0);
+        let (l, r) = io.outs.audio(0);
+        let level = self.levels[0];
+        for i in 0..l.len() {
+            l[i] = first_l[i] * level;
+            r[i] = first_r[i] * level;
+        }
+        for (input, &level) in self.levels.iter().enumerate().skip(1) {
+            if level == 0.0 {
+                continue;
+            }
+            let (in_l, in_r) = io.ins.audio(input);
+            for i in 0..l.len() {
+                // Silence is left out, not added: adding +0.0 would turn a
+                // negative zero positive, and an input with no cable is
+                // silence.
+                let (a, b) = (in_l[i] * level, in_r[i] * level);
+                if a != 0.0 {
+                    l[i] += a;
+                }
+                if b != 0.0 {
+                    r[i] += b;
+                }
+            }
+        }
+        if self.master != 1.0 {
+            for i in 0..l.len() {
+                l[i] *= self.master;
+                r[i] *= self.master;
+            }
+        }
+    }
+}
+
+/// What a [`Record`] module writes into: its room is made by the app, on the
+/// app's thread, and the audio thread only fills it.
+pub struct Tape {
+    pub l: Vec<f32>,
+    pub r: Vec<f32>,
+}
+
+impl Tape {
+    /// A tape with room for `frames` samples a side.
+    pub fn with_room(frames: usize) -> Tape {
+        Tape { l: Vec::with_capacity(frames), r: Vec::with_capacity(frames) }
+    }
+}
+
+/// Records what passes through it. Handed a [`Tape`] (`Controller::give`,
+/// slot 0) it writes from that sample on, until the tape is full or knob 0
+/// is set to 0; then the tape goes back to the app
+/// (`Controller::collect_things`). The audio passes through untouched.
+pub struct Record {
+    tape: Option<Box<Tape>>,
+    done: Option<Box<Tape>>,
+}
+
+impl Record {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self { tape: None, done: None }
+    }
+
+    /// The tape that is running stops and waits to go back.
+    fn stop(&mut self) {
+        if let Some(tape) = self.tape.take() {
+            if let Some(lost) = self.done.replace(tape) {
+                // Two tapes stopped between two pieces of audio, which the
+                // engine's asking after every piece rules out. It must not
+                // be freed here.
+                std::mem::forget(lost);
+            }
+        }
+    }
+}
+
+impl Module for Record {
+    fn inputs(&self) -> Vec<Kind> {
+        vec![Kind::Audio]
+    }
+    fn outputs(&self) -> Vec<Kind> {
+        vec![Kind::Audio]
+    }
+    fn handle(&mut self, event: &EventKind) {
+        if let Some((0, value)) = param(event) {
+            if value < 0.5 {
+                self.stop();
+            }
+        }
+    }
+    fn process(&mut self, io: &mut Io) {
+        let (in_l, in_r) = io.ins.audio(0);
+        let (l, r) = io.outs.audio(0);
+        l.copy_from_slice(in_l);
+        r.copy_from_slice(in_r);
+        let Some(tape) = self.tape.as_mut() else { return };
+        // Only ever into the room the app made: growing a tape here would
+        // be an allocation on the audio thread.
+        let room = tape.l.capacity().min(tape.r.capacity()) - tape.l.len().max(tape.r.len());
+        let n = room.min(in_l.len());
+        tape.l.extend_from_slice(&in_l[..n]);
+        tape.r.extend_from_slice(&in_r[..n]);
+        if n == room {
+            self.stop();
+        }
+    }
+    fn take(&mut self, _slot: u32, thing: Thing) -> Option<Thing> {
+        match thing.downcast::<Tape>() {
+            Ok(tape) => {
+                // A tape still running gives way; one already waiting to go
+                // back goes back now, in this one's place.
+                let waiting = self.done.take();
+                self.stop();
+                self.tape = Some(tape);
+                waiting.map(|tape| tape as Thing)
+            }
+            Err(other) => Some(other),
+        }
+    }
+    fn finished(&mut self) -> Option<Thing> {
+        self.done.take().map(|tape| tape as Thing)
     }
 }

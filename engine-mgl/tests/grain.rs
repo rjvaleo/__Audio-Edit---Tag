@@ -77,6 +77,18 @@ struct Setup {
     grid: usize,
 }
 
+/// Poly, set up the same way for the deck alone and for the module.
+#[derive(Clone, Copy)]
+struct Poly {
+    voices: usize,
+    /// Copies of the sound an octave or more up, for keys above C8.
+    octaves: bool,
+}
+
+fn alone_in_poly(setup: Setup, poly: Poly, script: &Script) -> Vec<f32> {
+    alone_with(setup, Some(poly), script)
+}
+
 fn rack(grid: usize) -> mgl_fx::Rack {
     let mut rack = mgl_fx::Rack::new();
     rack.push(Box::new(mgl_fx::Gain { db: -3.0 }));
@@ -188,6 +200,10 @@ const START_HASH: u64 = 0xcbf2_9ce4_8422_2325;
 /// The deck alone, as MGL's test plays it: whole blocks, each act before the
 /// first block that starts at or after its sample. Left and right interleaved.
 fn alone(setup: Setup, script: &Script) -> Vec<f32> {
+    alone_with(setup, None, script)
+}
+
+fn alone_with(setup: Setup, poly: Option<Poly>, script: &Script) -> Vec<f32> {
     let src = source();
     let sp = params(setup.alg, 2.0, setup.layers, setup.cloud);
     let shared = Shared::new(sp, Arc::clone(&src));
@@ -205,6 +221,15 @@ fn alone(setup: Setup, script: &Script) -> Vec<f32> {
     keys.set_start(0.1);
     if setup.played {
         keys.set_played(true);
+    }
+    if let Some(poly) = poly {
+        // As MGL's own Poly tests do: no clock, a fixed number of voices.
+        shared.voices.set_offline(true);
+        shared.voices.set_ceiling(poly.voices as u32);
+        mgl_engine::voices::stock(&shared, poly.voices, setup.grid, 2);
+        if poly.octaves {
+            shared.build_octaves();
+        }
     }
     let mut core = Core::new(setup.grid, 2, sp, src).with_keys(Arc::clone(&keys));
     let mut out = Vec::with_capacity(script.frames * 2);
@@ -255,9 +280,19 @@ fn knob(index: u32, value: f32) -> EventKind {
 
 /// The module in the engine, set up as the rig is.
 fn deck(setup: Setup) -> (Controller, AudioEngine) {
+    deck_with(setup, None)
+}
+
+fn deck_with(setup: Setup, poly: Option<Poly>) -> (Controller, AudioEngine) {
     let src = source();
     let sp = params(setup.alg, 2.0, setup.layers, setup.cloud);
     let mut deck = Grain::new(SR, setup.grid, sp, Arc::clone(&src)).rack(rack(setup.grid));
+    if let Some(poly) = poly {
+        deck = deck.poly(poly.voices);
+        if poly.octaves {
+            deck = deck.octaves();
+        }
+    }
     if let Some(parts) = parts(setup, &src, &sp) {
         deck = deck.parts(parts);
     }
@@ -709,7 +744,7 @@ fn the_app_can_read_where_the_deck_is() {
 /// memory, and every box comes back.
 #[test]
 fn sounds_handed_over_while_the_app_collects_all_arrive() {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     assert_the_check_is_on();
     let setup = Setup { alg: Algorithm::Granular, layers: 1, cloud: false, run: true, played: false, grid: 64 };
     let src = source();
@@ -728,26 +763,254 @@ fn sounds_handed_over_while_the_app_collects_all_arrive() {
         ctl.give_at(640 + 128 * i as u64, DECK, 0, Box::new(GrainThing::Source(sound))).unwrap();
     }
     let stop = Arc::new(AtomicBool::new(false));
+    let rounds = Arc::new(AtomicU64::new(0));
     let collecting = {
-        let stop = Arc::clone(&stop);
+        let (stop, rounds) = (Arc::clone(&stop), Arc::clone(&rounds));
         std::thread::spawn(move || {
-            let mut rounds = 0u64;
             while !stop.load(Ordering::Relaxed) {
                 handle.collect();
-                rounds += 1;
+                rounds.fetch_add(1, Ordering::Relaxed);
             }
-            rounds
         })
     };
+    // Not until the other thread is well under way.
+    while rounds.load(Ordering::Relaxed) < 1_000 {
+        std::thread::yield_now();
+    }
+    let started = rounds.load(Ordering::Relaxed);
     let before = counted();
     let (l, _) = render(&mut audio, 640 + 128 * 300 + 4_096, 64);
     assert_eq!(counted(), before, "allocations or frees inside a render; the last sizes: {:?}", last_sizes());
+    let during = rounds.load(Ordering::Relaxed) - started;
     stop.store(true, Ordering::Relaxed);
-    let rounds = collecting.join().unwrap();
-    assert!(rounds > 1_000, "the other thread really was collecting: {rounds} rounds");
+    collecting.join().unwrap();
+    assert!(during > 100, "the other thread really was collecting while it played: {during} rounds");
     assert!(peak(&l) > 0.01, "it is heard");
     assert_eq!(ctl.collect().things, 300, "every box came back");
     // The last sound handed over is held by the deck; the 299 before it are
     // gone once the app has collected.
     assert!(last.upgrade().is_some(), "the last sound is the one the deck holds");
+}
+
+/// A chord, a top note and a change of mode in Poly.
+fn chords() -> Script {
+    Script {
+        acts: vec![
+            (1, Act::Mode(KeyMode::Poly)),
+            (1_001, Act::On(48, 0.8)),
+            (1_500, Act::On(55, 0.7)),
+            (2_222, Act::On(60, 0.9)),
+            (6_000, Act::On(64, 0.6)),
+            (9_000, Act::Off(48)),
+            (9_500, Act::Bend(1.0)),
+            (12_345, Act::On(67, 0.8)),
+            (13_000, Act::On(72, 0.8)),
+            (16_000, Act::Off(55)),
+            (16_000, Act::Off(60)),
+            (20_480, Act::Bend(0.0)),
+            (22_000, Act::AllOff),
+            (26_000, Act::On(52, 1.0)),
+            (30_000, Act::Off(52)),
+        ],
+        frames: 40_000,
+    }
+}
+
+/// Poly: a voice per key. The module makes its voices before it plays and
+/// holds to a fixed number, and then plays what MGL's deck plays set up the
+/// same way, whatever the sound card's blocks.
+#[test]
+fn poly_plays_what_mgls_deck_plays() {
+    for alg in [Algorithm::Granular, Algorithm::Wsola] {
+        let setup = Setup { alg, layers: 1, cloud: false, run: false, played: false, grid: 128 };
+        let poly = Poly { voices: 8, octaves: false };
+        let script = chords();
+        let want = alone_in_poly(setup, poly, &script);
+        assert!(peak(&want) > 0.05, "{alg:?}: the chords are heard: {}", peak(&want));
+        let mono = alone(setup, &script);
+        assert!(first_difference(&want, &mono).is_some(), "{alg:?}: Poly is not Mono");
+        for block in [128, 512, 61, 0] {
+            let (mut ctl, mut audio) = deck_with(setup, Some(poly));
+            ctl.commit().unwrap();
+            send_with(&mut ctl, &script, setup.grid);
+            let (l, r) = if block == 0 {
+                render_uneven(&mut audio, script.frames, 13)
+            } else {
+                render(&mut audio, script.frames, block)
+            };
+            assert_same(&format!("{alg:?}, blocks of {block}"), &interleaved(&l, &r), &want);
+        }
+    }
+}
+
+/// Six keys held with room for three: the oldest give way, as in MGL, and
+/// the limit moved while it plays lands on its sample.
+#[test]
+fn poly_holds_to_its_number_of_voices() {
+    let setup = Setup { alg: Algorithm::Granular, layers: 1, cloud: false, run: false, played: false, grid: 128 };
+    let poly = Poly { voices: 6, octaves: false };
+    let mut acts = vec![(1, Act::Mode(KeyMode::Poly))];
+    for i in 0..6u64 {
+        acts.push((1_000 + 700 * i, Act::On(48 + 3 * i as u8, 0.8)));
+    }
+    let script = Script { acts, frames: 20_000 };
+    let all_six = alone_in_poly(setup, poly, &script);
+
+    let (mut ctl, mut audio) = deck_with(setup, Some(poly));
+    ctl.commit().unwrap();
+    send_with(&mut ctl, &script, setup.grid);
+    // Three voices from sample 3,000 on.
+    ctl.send_at(3_000, DECK, knob(grain::VOICES, 3.0)).unwrap();
+    let (l, r) = render(&mut audio, script.frames, 128);
+    let got = interleaved(&l, &r);
+    let first = first_difference(&got, &all_six).expect("three voices do not sound like six") / 2;
+    assert!(first >= 3_000, "nothing changes before the limit is moved: {first}");
+    assert!(peak(&got) > 0.05);
+}
+
+/// A key above C8 plays from the copies an octave or more up, made before
+/// the deck plays: the same as MGL's deck with its copies made up front.
+#[test]
+fn the_top_keys_play_from_the_octave_copies() {
+    let setup = Setup { alg: Algorithm::Wsola, layers: 1, cloud: false, run: false, played: false, grid: 128 };
+    let poly = Poly { voices: 4, octaves: true };
+    let script = Script {
+        acts: vec![
+            (1, Act::Mode(KeyMode::Poly)),
+            (1_001, Act::On(120, 0.9)),
+            (5_000, Act::On(127, 0.9)),
+            (9_000, Act::On(60, 0.9)),
+            (14_000, Act::AllOff),
+        ],
+        frames: 20_000,
+    };
+    let want = alone_in_poly(setup, poly, &script);
+    assert!(peak(&want) > 0.01, "the top keys are heard: {}", peak(&want));
+    let without = alone_in_poly(setup, Poly { voices: 4, octaves: false }, &script);
+    assert!(first_difference(&want, &without).is_some(), "the copies are what the top keys play from");
+    let (mut ctl, mut audio) = deck_with(setup, Some(poly));
+    ctl.commit().unwrap();
+    send_with(&mut ctl, &script, setup.grid);
+    let (l, r) = render(&mut audio, script.frames, 128);
+    assert_same("the top keys", &interleaved(&l, &r), &want);
+}
+
+/// Poly allocates nothing on the audio thread, and the app can see how many
+/// voices are sounding.
+#[test]
+fn poly_does_not_allocate_and_reports_its_voices() {
+    assert_the_check_is_on();
+    let setup = Setup { alg: Algorithm::Granular, layers: 1, cloud: false, run: false, played: false, grid: 128 };
+    let src = source();
+    let sp = params(setup.alg, 2.0, 1, false);
+    let deck = Grain::new(SR, setup.grid, sp, src).poly(8).octaves();
+    let handle = deck.handle();
+    let (mut ctl, mut audio) = engine(SR as f32, exact());
+    ctl.add(DECK, Box::new(deck)).unwrap();
+    // The keys as the other tests set them: Run off, so a key starts the
+    // sound, and a quick attack.
+    for message in [
+        knob(grain::RUN, 0.0),
+        knob(grain::AMP_ATTACK, 0.01),
+        knob(grain::AMP_DECAY, 0.05),
+        knob(grain::AMP_SUSTAIN, 0.7),
+        knob(grain::AMP_RELEASE, 0.05),
+        knob(grain::START, 0.1),
+    ] {
+        ctl.send(DECK, message).unwrap();
+    }
+    ctl.connect_out(port(DECK, 0)).unwrap();
+    ctl.commit().unwrap();
+    let mut script = chords();
+    script.acts.push((33_000, Act::On(124, 0.8)));
+    send_with(&mut ctl, &script, setup.grid);
+    let before = counted();
+    let (l, _) = render(&mut audio, 8_000, 128);
+    assert!(peak(&l) > 0.05, "it is heard");
+    assert_eq!(handle.voices_running(), 4, "four keys are down at sample 8,000");
+    render(&mut audio, 32_000, 128);
+    assert_eq!(counted(), before, "allocations or frees inside a render; the last sizes: {:?}", last_sizes());
+    handle.collect();
+    render(&mut audio, 2_000, 128);
+    assert_eq!(counted(), before, "collecting costs the audio thread nothing");
+}
+
+/// MGL plays two decks at once: the Grain page's and the Prism page's, each
+/// with its own sound, summed. Two grain modules side by side in the engine
+/// play what MGL's two decks play.
+#[test]
+fn two_decks_side_by_side_play_as_mgls_two_decks_do() {
+    use mgl_engine::Decks;
+    let grid = 128;
+    let frames = 24_000;
+    let main_sp = params(Algorithm::Granular, 2.0, 1, true);
+    let prism_sp = params(Algorithm::Wsola, 0.5, 1, false);
+    let (main_src, prism_src) = (source_from(7), source_from(99));
+
+    let main = Shared::new(main_sp, Arc::clone(&main_src));
+    let prism = Shared::new(prism_sp, Arc::clone(&prism_src));
+    let keys = Arc::new(GrainKeys::new());
+    keys.set_run(true);
+    let mut decks = Decks::new(
+        Core::new(grid, 2, main_sp, Arc::clone(&main_src)).with_keys(keys),
+        Core::new(grid, 2, prism_sp, Arc::clone(&prism_src)),
+        grid,
+        2,
+    );
+    let mut want = Vec::with_capacity(frames * 2);
+    let mut buf = vec![0f32; grid * 2];
+    let mut at = 0;
+    while at < frames {
+        // The acts, on the lines the modules will take them on.
+        if at == 1_024 {
+            main.play();
+        }
+        if at == 4_096 {
+            prism.play();
+        }
+        if at == 16_000 {
+            prism.set_gain(0.5);
+        }
+        decks.fill(&mut buf, 2, &main, &prism);
+        want.extend_from_slice(&buf);
+        at += grid;
+    }
+    want.truncate(frames * 2);
+    assert!(peak(&want) > 0.01, "the two decks are heard");
+
+    let (mut ctl, mut audio) = engine(SR as f32, exact());
+    ctl.add(1, Box::new(Grain::new(SR, grid, main_sp, main_src))).unwrap();
+    ctl.add(2, Box::new(Grain::new(SR, grid, prism_sp, prism_src))).unwrap();
+    ctl.send(1, knob(grain::RUN, 1.0)).unwrap();
+    ctl.connect_out(port(1, 0)).unwrap();
+    ctl.connect_out(port(2, 0)).unwrap();
+    ctl.commit().unwrap();
+    ctl.send_at(1_024, 1, knob(grain::PLAY, 1.0)).unwrap();
+    ctl.send_at(4_096, 2, knob(grain::PLAY, 1.0)).unwrap();
+    ctl.send_at(16_000, 2, knob(grain::GAIN, 0.5)).unwrap();
+    let (l, r) = render(&mut audio, frames, 512);
+    assert_same("the two decks", &interleaved(&l, &r), &want);
+}
+
+#[test]
+fn the_app_can_draw_the_decks_scope() {
+    let setup = Setup { alg: Algorithm::Granular, layers: 1, cloud: false, run: true, played: false, grid: 128 };
+    let src = source();
+    let sp = params(setup.alg, 2.0, 1, false);
+    let deck = Grain::new(SR, setup.grid, sp, src).rack(rack(setup.grid));
+    let handle = deck.handle();
+    let (mut ctl, mut audio) = engine(SR as f32, exact());
+    ctl.add(DECK, Box::new(deck)).unwrap();
+    ctl.send(DECK, knob(grain::RUN, 1.0)).unwrap();
+    ctl.send(DECK, knob(grain::PLAY, 1.0)).unwrap();
+    ctl.connect_out(port(DECK, 0)).unwrap();
+    ctl.commit().unwrap();
+    render(&mut audio, 24_000, 128);
+    let (l, r, rate) = handle.scope().expect("a scope once it has played");
+    assert_eq!(rate, SR);
+    assert!(peak(&l) > 0.01 && peak(&r) > 0.01, "the scope holds the sound");
+    // MGL keeps a fixed row of meters, one pair for every slot a rack can
+    // have; this rack uses the first.
+    let levels = handle.rack_levels();
+    assert!(levels[0].0 > 0.0, "a level going into the rack's first slot: {:?}", levels[0]);
 }

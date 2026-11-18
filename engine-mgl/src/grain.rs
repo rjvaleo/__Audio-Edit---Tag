@@ -52,6 +52,9 @@ pub const SMOOTHING: u32 = 14;
 /// The left and right faders, as gains.
 pub const SIDE_LEFT: u32 = 15;
 pub const SIDE_RIGHT: u32 = 16;
+/// The most voices Poly may sound at once; the oldest gives way to a new
+/// note past it. 0: as many as there are.
+pub const VOICES: u32 = 17;
 
 /// What the deck is handed while it plays, built on the app's thread
 /// (`Controller::give`, slot 0).
@@ -91,6 +94,7 @@ pub enum GrainThing {
 /// change the deck: every change goes through the engine, stamped.
 pub struct Handle {
     shared: Arc<Shared>,
+    grid: usize,
 }
 
 impl Handle {
@@ -124,6 +128,29 @@ impl Handle {
         self.shared.waveform()
     }
 
+    /// Make voices for Poly until there are `voices` of the kind the deck's
+    /// settings now call for (new settings need new voices). They reach the
+    /// deck at its next block, so a key played before then waits for one.
+    pub fn stock_voices(&self, voices: usize) {
+        mgl_engine::voices::stock(&self.shared, voices, self.grid, 2);
+    }
+
+    /// How many voices the last block played.
+    pub fn voices_running(&self) -> u32 {
+        self.shared.voices.running()
+    }
+
+    /// The last moments of the deck's output, left and right, and its rate:
+    /// for a scope.
+    pub fn scope(&self) -> Option<(Vec<f32>, Vec<f32>, u32)> {
+        self.shared.scope_snapshot()
+    }
+
+    /// The level going into and coming out of each slot of the deck's rack.
+    pub fn rack_levels(&self) -> Vec<(f32, f32)> {
+        self.shared.rack_levels()
+    }
+
     /// The grains started since this was last called, for a grain view.
     pub fn grains(&self) -> Vec<GrainEvent> {
         self.shared.drain_events()
@@ -149,8 +176,10 @@ pub struct Grain {
     /// each still in its box, offered again at every line until taken.
     waiting_sound: Option<Box<GrainThing>>,
     waiting_parts: Option<Box<GrainThing>>,
+    /// The same for new settings, which the app's `stock_voices` reads.
+    waiting_params: Option<Box<GrainThing>>,
     /// Boxes finished with after a second offer, on their way back.
-    done: [Option<Box<GrainThing>>; 2],
+    done: [Option<Box<GrainThing>>; 8],
     amp: [f32; 4],
     sides: [f32; 2],
     grid: usize,
@@ -173,14 +202,20 @@ impl Grain {
         let params = StreamParams { sample_rate: rate, ..params };
         let keys = Arc::new(GrainKeys::new());
         let (attack, decay, sustain, release) = keys.amp();
+        let shared = Arc::new(Shared::new(params, Arc::clone(&source)));
+        // Poly's voices are never limited by how long a block took: that is
+        // the clock on the wall, and the same performance must play the same
+        // twice. They are limited by a number (`VOICES`, or `poly`).
+        shared.voices.set_offline(true);
         Grain {
             core: Core::new(grid, 2, params, Arc::clone(&source)).with_keys(Arc::clone(&keys)),
-            shared: Arc::new(Shared::new(params, Arc::clone(&source))),
+            shared,
             keys,
             source,
             waiting_sound: None,
             waiting_parts: None,
-            done: [None, None],
+            waiting_params: None,
+            done: Default::default(),
             amp: [attack, decay, sustain, release],
             sides: [1.0; 2],
             grid,
@@ -208,8 +243,15 @@ impl Grain {
     fn hand(&mut self, mut boxed: Box<GrainThing>) -> Option<Box<GrainThing>> {
         match std::mem::replace(&mut *boxed, GrainThing::Taken) {
             GrainThing::Params(params) => {
-                self.shared.set_params(params);
-                Some(boxed)
+                if self.shared.put_params(params) {
+                    // Older settings still waiting must not land after these.
+                    let stale = self.waiting_params.take();
+                    self.set_aside(stale);
+                    Some(boxed)
+                } else {
+                    *boxed = GrainThing::Params(params);
+                    self.waiting_params.replace(boxed)
+                }
             }
             GrainThing::Source(source) => match self.shared.put_source(Arc::clone(&source)) {
                 Ok(in_slot) => {
@@ -220,6 +262,9 @@ impl Grain {
                     let old = std::mem::replace(&mut self.source, source);
                     // One more hold on a sound `old` also holds.
                     drop(in_slot);
+                    // An older sound still waiting must not land after this.
+                    let stale = self.waiting_sound.take();
+                    self.set_aside(stale);
                     *boxed = GrainThing::Source(old);
                     Some(boxed)
                 }
@@ -234,6 +279,8 @@ impl Grain {
                 Ok(old) => {
                     // The deck holds the new one now, so this is not the last.
                     drop(parts);
+                    let stale = self.waiting_parts.take();
+                    self.set_aside(stale);
                     *boxed = GrainThing::OldParts(old);
                     Some(boxed)
                 }
@@ -290,14 +337,23 @@ impl Grain {
 
     /// Offer again what the deck could not take last time.
     fn offer_again(&mut self) {
-        for waiting in [self.waiting_sound.take(), self.waiting_parts.take()].into_iter().flatten() {
-            if let Some(finished) = self.hand(waiting) {
-                // Two at most, and the engine empties these after every
-                // piece of audio.
-                if let Some(free) = self.done.iter_mut().find(|slot| slot.is_none()) {
-                    *free = Some(finished);
-                }
-            }
+        let waiting = [self.waiting_params.take(), self.waiting_sound.take(), self.waiting_parts.take()];
+        for waiting in waiting.into_iter().flatten() {
+            let finished = self.hand(waiting);
+            self.set_aside(finished);
+        }
+    }
+
+    /// Keep a box that is finished with until the engine next asks for what
+    /// has finished, which it does after every piece of audio.
+    fn set_aside(&mut self, boxed: Option<Box<GrainThing>>) {
+        let Some(boxed) = boxed else { return };
+        match self.done.iter_mut().find(|slot| slot.is_none()) {
+            Some(free) => *free = Some(boxed),
+            // No room, which takes eight superseded hand-overs between two
+            // pieces of audio. It must not be freed here, so it is let go of
+            // without being freed: a few hundred bytes lost, once.
+            None => std::mem::forget(boxed),
         }
     }
 
@@ -307,10 +363,29 @@ impl Grain {
         self
     }
 
+    /// Make `voices` voices for Poly now, and hold Poly to that many. In MGL
+    /// a helper thread makes voices as keys ask and the number allowed
+    /// follows how long each block took; here they are made before the deck
+    /// plays and the number is fixed, so a performance plays the same twice.
+    pub fn poly(self, voices: usize) -> Grain {
+        self.shared.voices.set_ceiling(voices as u32);
+        mgl_engine::voices::stock(&self.shared, voices, self.grid, 2);
+        self
+    }
+
+    /// Make the copies of the sound an octave or more up now, which keys
+    /// above C8 play from. Without this they are made by a helper thread
+    /// when such a key first asks (`Handle::collect` starts it), and until
+    /// they arrive the key plays from the sound itself.
+    pub fn octaves(self) -> Grain {
+        self.shared.build_octaves();
+        self
+    }
+
     /// The app's side of this deck. Take it before the module goes into the
     /// patch.
     pub fn handle(&self) -> Handle {
-        Handle { shared: Arc::clone(&self.shared) }
+        Handle { shared: Arc::clone(&self.shared), grid: self.grid }
     }
 
     fn play(&mut self, note: &NoteEvent) {
@@ -343,6 +418,7 @@ impl Grain {
             }
             KEY_GLIDE => self.keys.set_glide(value),
             START => self.keys.set_start(value),
+            VOICES => self.shared.voices.set_ceiling(value.max(0.0) as u32),
             GAIN => self.shared.set_gain(value),
             MUTE => self.shared.set_mute(on),
             SPEED => self.shared.set_speed(value),
@@ -385,7 +461,7 @@ impl Module for Grain {
                     self.play(&notes[next]);
                     next += 1;
                 }
-                if self.waiting_sound.is_some() || self.waiting_parts.is_some() {
+                if self.waiting_params.is_some() || self.waiting_sound.is_some() || self.waiting_parts.is_some() {
                     self.offer_again();
                 }
                 self.core.fill(&mut self.block, 2, &self.shared);
