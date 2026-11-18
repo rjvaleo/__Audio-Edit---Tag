@@ -92,7 +92,7 @@ const state = {
   spec: null,
   stats: null,
   showSpec: false,
-  fftSize: 1024,
+  fftSize: 4096, // the sonogram's resolution: 4096 for the detail (RJ, 17 Nov 2026)
   view: { from: 0, to: 0, frames: 0, sampleRate: 44100 },
 
   /// Whether the library lists files that have no audio header. Off, and the
@@ -249,7 +249,7 @@ let editPage = (() => {
 
 // Atmosphere is the Seq page's second synth on a page of its own, so it is on
 // the same side as Seq: walking from one to the other leaves the transport be.
-const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 'seq' || m === 'atmos' || m === 'draw' || m === 'compose';
+const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 'seq' || m === 'atmos' || m === 'draw' || m === 'band' || m === 'compose';
 
 /// The modes where the library is an overlay drawer rather than a docked
 /// column. Both of them give the whole width to something else — the editor's
@@ -259,7 +259,7 @@ const playsDocument = (m = state.mode) => m === 'edit' || m === 'room' || m === 
 /// The Wave page too: it plays no document, but it is a page of its own at
 /// full width, and the library slides over it rather than squeezing it. And
 /// the Theme page, for the same reason.
-const drawerMode = () => playsDocument() || state.mode === 'synth' || state.mode === 'theme' || state.mode === 'stems';
+const drawerMode = () => playsDocument() || state.mode === 'synth' || state.mode === 'theme' || state.mode === 'stems' || state.mode === 'pclib';
 
 function openDrawer() {
   state.drawerOpen = true;

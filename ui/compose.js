@@ -58,9 +58,10 @@ const CG_MACROS = [
     fmt: (v) => `±${v.toFixed(1)} st` },
 ];
 
-/// The engines, with a name short enough for a fifth of a cell.
+/// The engines, with a name short enough for a sixth of a cell: the full
+/// panel's six, SoundHack's phase vocoder the sixth (14 Nov 2026).
 const CG_ENGINES = [
-  ['wsola', 'WSOLA'], ['vocoder', 'VOC'], ['pvsola', 'PVSOLA'], ['hybrid', 'HYB'], ['granular', 'GRAIN'],
+  ['wsola', 'WSOLA'], ['vocoder', 'VOC'], ['pvsola', 'PVSOLA'], ['hybrid', 'HYB'], ['granular', 'GRAIN'], ['soundhack', 'SH'],
 ];
 
 /// What a macro is set to, from the draft the full panel edits.

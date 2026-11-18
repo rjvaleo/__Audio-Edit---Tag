@@ -167,20 +167,20 @@ function bandInit() {
   const dlyIn = delayL, spcIn = typeof atRev !== "undefined" && atRev ? atRev.gate : null;
   // The melody: out of the filter into its channel, instead of straight into
   // the dry path, the delay and Space.
-  for (const d of [delayDryGain, delayL, spcIn]) { if (d) try { filterNode.disconnect(d); } catch (e) { /* not joined */ } }
+  for (const d of [delayDryGain, delayL, spcIn]) { if (d) try { melBus.disconnect(d); } catch (e) { /* not joined */ } }
   const N = { ch: {}, slots: {}, dlyIn, spcIn };
   for (const ch of BD_CH) {
     const x = { in: c.createGain(), fader: c.createGain(), pan: c.createStereoPanner(), dly: c.createGain(), spc: c.createGain(), meter: c.createAnalyser(), extraDly: c.createGain(), extraSpc: c.createGain() };
     x.meter.fftSize = 512;
     x.in.connect(x.fader); x.fader.connect(x.pan);
     // The melody's dry goes where it always went: the delay's dry side.
-    x.pan.connect(ch.c === "Mel" ? delayDryGain : masterGain);
+    x.pan.connect(ch.c === "Mel" ? delayDryGain : seqVol);
     x.pan.connect(x.dly); x.pan.connect(x.spc); x.pan.connect(x.meter);
     if (dlyIn) { x.dly.connect(dlyIn); x.extraDly.connect(dlyIn); }
     if (spcIn) { x.spc.connect(spcIn); x.extraSpc.connect(spcIn); }
     N.ch[ch.c] = x;
   }
-  filterNode.connect(N.ch.Mel.in);
+  melBus.connect(N.ch.Mel.in);
   // Chords and Drone: Atmosphere's accompaniment chain → their filters → channels.
   N.chordFlt = c.createBiquadFilter();
   N.droneFlt = c.createBiquadFilter();

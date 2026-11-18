@@ -105,6 +105,10 @@ const LOOK_KNOB = {
   atSymSlider: ["mix", "pitch"], atSymRingSlider: ["ring", "pitch"], atSymMatSlider: ["res", "pitch"],
   atRevWetSlider: ["mix", "space"], atRevSizeSlider: ["size", "space"], atRevPreSlider: ["pre", "space"], atRevDampSlider: ["damp", "tone"],
   atRevShimSlider: ["shim", "space"], atRevSpreadSlider: ["spread", "space"], atLowCutSlider: ["lowcut", "tone"], atMacroSlider: ["big", "on"],
+  atFltTypeSlider: ["wave", "tone"], atFltCutSlider: ["cut", "tone"], atFltResSlider: ["res", "tone"], atFltKeySlider: ["key", "tone"], atFltAmtSlider: ["tilt", "tone"],
+  atL1RateSlider: ["hz", "attack"], atL1DepthSlider: ["wave", "attack"], atL2RateSlider: ["hz", "tone"], atL2DepthSlider: ["wave", "tone"],
+  atL3RateSlider: ["hz", "space"], atL3DepthSlider: ["wave", "space"],
+  atFltAtkSlider: ["rise", "tone"], atFltDecSlider: ["fall", "tone"], atFltSusSlider: ["sus", "tone"], atFltRelSlider: ["fall", "tone"],
   // The Draw page's mark (draw.js).
   drawLevelSlider: ["vol", "level"], drawThickSlider: ["tilt", "level"], drawSmudgeSlider: ["dots", "time"], drawOctSlider: ["oct", "pitch"],
 };

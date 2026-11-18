@@ -34,7 +34,8 @@ function scopesInit() {
   sink.connect(c.destination);
   scopeNodes = { classic: mk(), A: mk(), B: mk(), out: mk(), sink, buf: new Float32Array(2048) };
   for (const k of ["classic", "A", "B", "out"]) scopeNodes[k].connect(sink);
-  masterGain.connect(scopeNodes.out);
+  // The Output panel is on Atmosphere's page: what Atmosphere sends out.
+  ((typeof atOut !== "undefined" && atOut) || masterGain).connect(scopeNodes.out);
 }
 
 /// Let a scope hear `node`, when both are on the same context.

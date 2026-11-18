@@ -326,7 +326,7 @@ function drawBuild() {
   drawGrainBus = null;
   if (!c || !masterGain) return;
   const g = c.createGain();
-  g.connect(masterGain);
+  g.connect(seqVol);
   const N = typeof bdNodes !== "undefined" ? bdNodes : null;
   for (const [into, amt] of [[N && N.dlyIn, 0.25], [N && N.spcIn, 0.4]]) {
     if (!into) continue;

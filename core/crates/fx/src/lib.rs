@@ -319,9 +319,48 @@ pub fn swap_fade_frames(sample_rate: u32) -> usize {
     sample_rate as usize / 50
 }
 
+/// Place's controls (prism-fx `place`), as a Reverb slot names them.
+pub const PLACE_KEYS: [&str; 7] = ["place.on", "place.shape", "place.sizeM", "place.pos", "place.dist", "place.height", "place.spread"];
+
+/// Write one of Place's controls into its settings, clamped. False for a key
+/// that is not one of [`PLACE_KEYS`].
+pub fn place_set(s: &mut prism::prism_fx::place::PlaceSettings, key: &str, v: f32) -> bool {
+    if !v.is_finite() {
+        return false;
+    }
+    match key {
+        "place.on" => s.on = v >= 0.5,
+        "place.shape" => s.shape = v.round().clamp(0.0, 5.0) as u8,
+        "place.sizeM" => s.size_m = v.clamp(3.0, 80.0),
+        "place.pos" => s.pos = v.clamp(-100.0, 100.0),
+        "place.dist" => s.dist = v.clamp(0.0, 100.0),
+        "place.height" => s.height = v.clamp(0.0, 100.0),
+        "place.spread" => s.spread = v.clamp(0.0, 200.0),
+        _ => return false,
+    }
+    true
+}
+
+/// Read one of Place's controls.
+pub fn place_get(s: &prism::prism_fx::place::PlaceSettings, key: &str) -> Option<f32> {
+    Some(match key {
+        "place.on" => if s.on { 1.0 } else { 0.0 },
+        "place.shape" => s.shape as f32,
+        "place.sizeM" => s.size_m,
+        "place.pos" => s.pos,
+        "place.dist" => s.dist,
+        "place.height" => s.height,
+        "place.spread" => s.spread,
+        _ => return None,
+    })
+}
+
 pub struct Slot {
     pub effect: Box<dyn Effect>,
     pub bypassed: bool,
+    /// Where a Reverb slot's sound sits (prism-fx `place`): before its effect,
+    /// and Spread after it. Off, nothing.
+    place: Option<Box<prism::prism_fx::place::Place>>,
     /// The effect this slot is fading to, and how far through the fade it is.
     incoming: Option<Box<dyn Effect>>,
     fade_at: usize,
@@ -343,6 +382,7 @@ impl Slot {
         Slot {
             effect,
             bypassed,
+            place: None,
             incoming: None,
             fade_at: 0,
             fade_len: 0,
@@ -457,11 +497,14 @@ pub struct Rack {
     dry: Vec<f32>,
     /// What went into a slot fading between two effects, for the new one.
     xfade: Vec<f32>,
+    /// Place works on the two sides apart.
+    place_l: Vec<f32>,
+    place_r: Vec<f32>,
 }
 
 impl Rack {
     pub fn new() -> Self {
-        Rack { slots: Vec::new(), meters: None, dry: Vec::new(), xfade: Vec::new() }
+        Rack { slots: Vec::new(), meters: None, dry: Vec::new(), xfade: Vec::new(), place_l: Vec::new(), place_r: Vec::new() }
     }
 
     /// Share a meter block with whoever is drawing it. The rack writes; the
@@ -501,6 +544,9 @@ impl Rack {
             if let Some(n) = s.incoming.as_mut() {
                 n.reset();
             }
+            if let Some(p) = s.place.as_mut() {
+                p.reset();
+            }
         }
     }
 
@@ -512,6 +558,17 @@ impl Rack {
         }
         if self.xfade.len() < samples {
             self.xfade.resize(samples, 0.0);
+        }
+        if self.place_l.len() < samples {
+            self.place_l.resize(samples, 0.0);
+            self.place_r.resize(samples, 0.0);
+        }
+    }
+
+    /// Give slot `slot` a Place, or take it away. Built off the audio thread.
+    pub fn set_slot_place(&mut self, slot: usize, place: Option<Box<prism::prism_fx::place::Place>>) {
+        if let Some(s) = self.slots.get_mut(slot) {
+            s.place = place;
         }
     }
 
@@ -559,8 +616,15 @@ impl Rack {
         }
         for (i, s) in self.slots.iter_mut().enumerate() {
             if !s.bypassed {
+                let placed = s.place.as_ref().is_some_and(|p| p.settings().on);
+                if placed {
+                    place_pass(s.place.as_deref_mut().unwrap(), buf, channels, &mut self.place_l, &mut self.place_r, true);
+                }
                 if s.plain() {
                     s.run(buf, channels, sample_rate, &mut self.xfade);
+                    if placed {
+                        place_pass(s.place.as_deref_mut().unwrap(), buf, channels, &mut self.place_l, &mut self.place_r, false);
+                    }
                 } else {
                     // Only ever grown off the audio thread: a rack built for
                     // the device has `reserve_mix`ed its largest block.
@@ -570,6 +634,9 @@ impl Rack {
                     let dry = &mut self.dry[..buf.len()];
                     dry.copy_from_slice(buf);
                     s.run(buf, channels, sample_rate, &mut self.xfade);
+                    if placed {
+                        place_pass(s.place.as_deref_mut().unwrap(), buf, channels, &mut self.place_l, &mut self.place_r, false);
+                    }
                     s.blend(buf, dry, channels, sample_rate);
                 }
             }
@@ -595,6 +662,18 @@ impl Rack {
                 s.set_level(value);
                 true
             }
+            k if k.starts_with("place.") => match s.place.as_deref_mut() {
+                Some(p) => {
+                    let mut st = p.settings();
+                    if place_set(&mut st, k, value) {
+                        p.set(st);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                None => false,
+            },
             // While a slot fades, a control reaches the effect it is fading
             // to; the one leaving takes it too, where it has it.
             _ => {
@@ -614,6 +693,7 @@ impl Rack {
         match key {
             SLOT_WET => Some(s.wet),
             SLOT_LEVEL => Some(s.level_db),
+            k if k.starts_with("place.") => s.place.as_ref().and_then(|p| place_get(&p.settings(), k)),
             _ => match s.incoming.as_ref() {
                 Some(n) => n.get_param(key),
                 None => s.effect.get_param(key),
@@ -632,6 +712,36 @@ impl Rack {
         } else {
             // 200 ms covers a slow compressor release and settles any biquad.
             (sample_rate as u64) / 5
+        }
+    }
+}
+
+/// Run Place on an interleaved block: before the effect (the room) or after
+/// it (Spread). Its scratch is only grown off the audio thread
+/// ([`Rack::reserve_mix`]).
+fn place_pass(p: &mut prism::prism_fx::place::Place, buf: &mut [f32], channels: usize, l: &mut Vec<f32>, r: &mut Vec<f32>, before: bool) {
+    let ch = channels.max(1);
+    let frames = buf.len() / ch;
+    if l.len() < frames {
+        l.resize(frames, 0.0);
+        r.resize(frames, 0.0);
+    }
+    let (l, r) = (&mut l[..frames], &mut r[..frames]);
+    for (f, frame) in buf.chunks(ch).enumerate() {
+        l[f] = frame[0];
+        r[f] = if ch > 1 { frame[1] } else { frame[0] };
+    }
+    if before {
+        p.before(l, r);
+    } else {
+        p.after(l, r);
+    }
+    for (f, frame) in buf.chunks_mut(ch).enumerate() {
+        if ch > 1 {
+            frame[0] = l[f];
+            frame[1] = r[f];
+        } else {
+            frame[0] = 0.5 * (l[f] + r[f]);
         }
     }
 }

@@ -215,6 +215,30 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
             Response::ok("text/javascript; charset=utf-8", SEQ_CLONE_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
+        ("GET" | "HEAD", "/sequencer/atfx.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_ATFX_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/atfx-worklet.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_ATFX_WORKLET_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/atphys.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_ATPHYS_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/atmos-worklet.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_ATMOS_WORKLET_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/atmos.wasm") => {
+            Response::ok("application/wasm", SEQ_ATMOS_WASM.to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
+        ("GET" | "HEAD", "/sequencer/atfx.wasm") => {
+            Response::ok("application/wasm", SEQ_ATFX_WASM.to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
         ("GET" | "HEAD", "/sequencer/draw.js") => {
             Response::ok("text/javascript; charset=utf-8", SEQ_DRAW_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
@@ -383,6 +407,9 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("GET", "/api/stems/info") => api_stems_info(app, req),
         ("POST", "/api/stems/mix") => api_stems_mix(app, req),
         ("POST", "/api/stems/learn") => api_stems_learn(app, req),
+        ("POST", "/api/stems/midi") => api_stems_midi(app, req),
+        ("GET", "/api/stems/midi") => api_stems_midi_get(app, req),
+        ("POST", "/api/stems/midi/show") => api_stems_midi_show(app, req),
         ("POST", "/api/stems/analyse") => api_stems_analyse(app, req),
         ("POST", "/api/stems/tries") => api_stems_tries(app, req),
         ("POST", "/api/stems/keep") => api_stems_keep(app, req),
@@ -396,6 +423,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/stems/loop") => api_stems_loop(app, req),
         ("GET", "/api/pc/library") => api_pc_library(app, req),
         ("POST", "/api/pc/fetch") => api_pc_fetch(app, req),
+        ("GET", "/api/pc/audio") => api_pc_audio(app, req),
         // The picture for a video export. See `docs/VIDEO-EXPORT.md`.
         ("POST", "/api/video") => api_video(app, req),
         ("GET", "/api/video") => api_video_status(app),
@@ -412,6 +440,7 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/usertags") => api_user_tags_set(app, req),
         ("GET", "/api/usertag") => api_user_tag_members(app, req),
         ("POST", "/api/engine/load") => api_engine_load(app, req),
+        ("POST", "/api/start-sound") => api_start_sound(app),
         ("GET", "/api/engine/state") => api_engine_state(app),
         ("POST", "/api/engine/transport") => api_engine_transport(app, req),
         ("POST", "/api/engine/seq") => api_engine_seq(app, req),

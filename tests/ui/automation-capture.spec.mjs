@@ -159,7 +159,10 @@ test('the take is drawn as the sequencer draws one, and a click on a lane opens 
 test('a recorder left armed is shown on reload, and leaving the page disarms it', async ({ page }) => {
   await open(page);
   await page.evaluate(() => postJSON('/api/automation/record', { mode: 'latch' }));
-  await page.reload();
+  // One reload: `open` loads the page afresh. (A reload and then `open` was two.
+  // Since the app opens a sound at launch, 17 Nov 2026, the first of them asks
+  // the server at once, finds the recorder armed, and — rightly — lets go of
+  // it as it is navigated away from again.)
   await open(page);
   await page.waitForFunction(() => state.automationRecord === 'latch', { timeout: 10_000 });
   const shown = await page.evaluate(() => ({

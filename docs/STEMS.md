@@ -3,7 +3,7 @@
 *Built 14 Nov 2026 from the mock-up RJ approved (`WORK DIR/page-mockups/stems.html`,
 plan `STEMS-PLAN.md`). Branch `stems`.*
 
-A page of its own on the rail, after Seq. Two tabs.
+A page of its own on the rail, after Seq. Three tabs.
 
 ## Split a song
 
@@ -39,6 +39,42 @@ and hat rows still share some sound. **Read again** re-runs it on stems already 
 
 **Teach the Band** copies the song's `songprint.json` to `data/BAND-LEARN/<song>.json`,
 which the Seq page's Band reads. It learns habits, never audio.
+
+## MIDI
+
+*Built 18 Nov 2026 from the mock-up RJ approved (`WORK DIR/page-mockups/stems-midi.html`,
+plan `STEMS-MIDI-PLAN.md`).*
+
+The third tab writes the open song's notes, as the analysis read them, as a Standard MIDI
+File beside its stems: **`Stems/<song>/<song>.mid`**. Pick the song at the top (any song
+that has been split and read).
+
+- **Parts**, each a track of its own on its own channel, ticked on or off:
+
+  | part | channel | from |
+  |---|---|---|
+  | Drums | 10 | each bar's kick, snare and hat rows; General MIDI notes 36, 38 and 42 |
+  | Bass | 5 | the bass line, each note to the nearest semitone; **An octave up** moves it |
+  | Chords | 6 | the chord of each bar, root below middle C; **Held** until it changes, or **Struck each bar** |
+
+- **The notes** shows them over the whole song, with the sections and the chord names along
+  the top. Click a section to look closer; **Whole song** goes back.
+- **Timing:** **On the grid** puts every note on the sixteenth it was read on, at the song's
+  tempo, with bar 1 at the start of the file: for a sequencer. **As the song plays** writes a
+  tempo for every beat, from the beat times the analysis found, so a note's time in the file is
+  its time in the song and the file lines up with the stems in a DAW.
+- **Write the MIDI file** makes it (type 1, 480 ticks a quarter, the sections as markers).
+  **Download** saves a copy elsewhere; **Show in Finder** shows the one in the library.
+
+The file is written by `songprint::midi` (`core/crates/songprint/src/midi.rs`) through
+`POST /api/stems/midi {p, parts, timing: "grid" | "played", chords: "held" | "bar", bass: "as" |
+"up"}`; `GET /api/stems/midi?p=` sends it, and `POST /api/stems/midi/show {p}` shows it in the
+Finder. The page is `ui/app/421-stems-midi.js`, one fixed size (1496 x 640).
+
+Not in it: a melody from the vocals stem, the other stem's notes (many at once: that needs a
+transcription model), hearing the MIDI in the app, and importing it into Seq or the Band.
+Limits: the chords are a guess; the bass is in semitones, so the song's own tuning is not in
+the file; 4/4 only; kick, snare and hat only.
 
 ## Make a sound
 

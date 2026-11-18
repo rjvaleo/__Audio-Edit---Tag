@@ -30,6 +30,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "ACE-Step-1.5")
 sys.path.insert(0, ROOT)
 os.environ.setdefault("HF_HOME", os.path.join(HERE, "hf"))
+# Decode the music in 512-frame chunks, not the 128 ACE-Step picks on a 12 GB card: 30 s
+# of music in 2.1 s against 2.6 s, the same 7.3 GB peak, from the same latents (the audio
+# differs only by the decoder's bf16 rounding, about 40 dB down). Measured 17 Nov 2026.
+os.environ.setdefault("ACESTEP_VAE_DECODE_CHUNK_SIZE", "512")
 
 import soundfile as sf  # noqa: E402
 import torch  # noqa: E402

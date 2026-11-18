@@ -34,6 +34,16 @@ const wvInspRow = (n, right = '') => `<div class="irow" data-sel="${wvEsc(n.id)}
 const wvInspPic = '<div class="wv-well"><canvas data-ip="1" data-w="240" data-h="84"></canvas></div>';
 
 function wvInspFx(n) {
+  // The rack's face for its effect, with every control it has on Prism's FX
+  // tab (070-rack.js, 071, 075, 076), worn by the node: mounted by
+  // `wvMountRackFace` once this is on the page.
+  const rm = wvRackMode(n);
+  if (rm) {
+    const sp = rm.shaper.params;
+    return wvInspHead(fxFamilyColour(rm.mode.kind), rm.mode.label.toUpperCase(), `${rm.suite.label.toUpperCase()} · ${rm.family.label.toUpperCase()}`, `${sp.length} control${sp.length === 1 ? '' : 's'}`, `<span class="wv-pw wv-btn ${n.on ? 'on' : ''}" data-ipw title="Power: off passes the sound through untouched">${WV_PWR}</span>`)
+      + `<div class="iscroll wv-scroll">${wvInspSound(n)}<div class="fx-module wv-rackface" data-rf="${wvEsc(n.id)}"><div class="fx-module-actions"></div><div class="fx-module-controls"></div></div>`
+      + wvInspMods(n) + '</div><div class="ifoot"><span class="wv-bt wv-btn" data-idel title="Remove this node and its cables">Remove</span><span class="wv-bt wv-btn" data-irst title="Every control back to its default">Defaults</span><span class="wv-sp"></span><span class="wv-hint">Delete removes it too</span></div>';
+  }
   const sp = wvNodeSpec(n), face = WV_FX_FACE[n.kind], F = wvFxOf(n), snd = F && F.sound;
   let gs = (face ? face[1] : []).map(([l, ks]) => [l, ks.map((k) => sp.find((p) => p.key === k)).filter(Boolean)]).filter((g) => g[1].length);
   if (!gs.length && sp.length) gs = [['Settings', sp]];
@@ -91,6 +101,7 @@ function wvRenderInspector() {
   if (s && s.t === 'node' && !n) WV_BOARD_VIEW.sel = null;
   const c = s && s.t === 'cab' ? WV.board.cables[s.i] : null;
   el.innerHTML = n ? (wvIsIO(n) ? wvInspIO(n) : wvIsFx(n) ? wvInspFx(n) : wvInspRouting(n)) : c ? wvInspCable(c) : wvInspBoard();
+  if (n) wvMountRackFace(el, n);
   WV_BOARD_CV.insp = { pic: null, knobs: [] };
   el.querySelectorAll('canvas[data-w]').forEach((cv) => { const g = wvCv(cv); if (cv.dataset.ip) WV_BOARD_CV.insp.pic = g; else WV_BOARD_CV.insp.knobs.push(g); });
   wvWireBoardKnobs(el);
@@ -711,4 +722,23 @@ function wvDrawFx(t) {
     i.style.width = `${Math.abs(m.amt) * 50}%`;
   });
   el.querySelectorAll('[data-mv]').forEach((b) => { const m = WV.mods[+b.dataset.mv]; if (m) wvTxtEl(b, wvAmtTxt(m.amt)); });
+}
+
+/// The rack's face in the inspector for an effect node: the rack draws it as it
+/// draws a module on Prism's FX tab, from the node's own values. Its moves go
+/// to the board, not the rack: the slot is addressed `board:<node>`, which
+/// `liveParam` hands to `wvBoardParam`, and `commitRack` to the board's commit.
+function wvMountRackFace(el, n) {
+  const host = el.querySelector('[data-rf]'), rm = host && wvRackMode(n);
+  if (!rm) return;
+  n.params = n.params || {};
+  const slot = { id: 'board:' + n.id, kind: rm.mode.kind, bypassed: n.on === false, params: n.params };
+  try { renderFxModuleControls(host.querySelector('.fx-module-controls'), slot, rm.shaper, -1); }
+  catch (e) { console.warn('rack face:', e); }
+}
+
+/// The sound a Convolution or Spectral Dynamics node works from, and its picker.
+function wvInspSound(n) {
+  const F = wvFxOf(n), snd = F && F.sound;
+  return snd ? `<div class="ig"><div class="igh">${wvEsc(snd.label.toUpperCase())}</div><div class="isnd ${wvSoundState(n)}"><span class="nm" title="${wvEsc(n.sound || '')}">${wvEsc(wvSoundText(n))}</span><span class="wv-bt wv-btn" data-snd="${wvEsc(n.id)}" title="${wvEsc(snd.label)}: pick a sound from the library">Pick…</span></div></div>` : '';
 }

@@ -46,9 +46,11 @@ const PO_H = { min: 48, max: 240 };
 const PO_HKEY = 'mgl.pageOverview.h';
 const PO_HDEF = 72;
 /// The modes it shows in: Edit, Grain, Prism and Chop (all `edit`), the room,
-/// Compose, Wave (`synth`), Seq, Atmosphere (`atmos`) and Draw (`draw`), the
-/// last two showing Seq's frame. Not Browse (`overview`) or Theme.
-const PO_MODES = ['edit', 'room', 'compose', 'synth', 'seq', 'atmos', 'draw'];
+/// Compose, Wave (`synth`), Seq and Draw (`draw`), the last showing Seq's
+/// frame. Not Browse (`overview`), Theme, Atmosphere (RJ, 16 Nov 2026:
+/// "remove the file overview from the top" — it is an instrument of its own)
+/// or Wave (`synth`; RJ, 17 Nov 2026: "we're not playing that sound here").
+const PO_MODES = ['edit', 'room', 'compose', 'seq', 'draw'];
 /// The shortest stretch the zoom goes down to, in seconds.
 const PO_MINSPAN = 0.01;
 

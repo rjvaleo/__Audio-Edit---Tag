@@ -109,10 +109,15 @@ test('the four factory boards come first, each loads, and lays its rows into the
   expect(errors).toEqual([]);
 });
 
-test('the library adds a node, an out patches to an in, and a loop is refused with its message', async ({ page }) => {
+test('right-click adds a node, an out patches to an in, and a loop is refused with its message', async ({ page }) => {
   const errors = await openFx(page);
-  await page.locator('.wv-fit[data-add="gain"]').dblclick();
-  await page.locator('.wv-fit[data-add="pan"]').dblclick();
+  // No list down the left any more (RJ, 17 Nov 2026): right-click is how a node is added.
+  await expect(page.locator('#waveView .wv-flib')).toBeHidden();
+  const W = await page.locator('#wvFwell').boundingBox();
+  await page.mouse.click(W.x + 420, W.y + 330, { button: 'right' });
+  await menuPick(page, ['Routing', 'Gain']);
+  await page.mouse.click(W.x + 620, W.y + 330, { button: 'right' });
+  await menuPick(page, ['Routing', 'Pan']);
   await settle(page);
   const ids = await page.evaluate(() => WV.board.nodes.filter((n) => n.kind === 'gain' || n.kind === 'pan').map((n) => [n.kind, n.id]));
   const gain = ids.find((x) => x[0] === 'gain')[1], pan = ids.find((x) => x[0] === 'pan')[1];
@@ -198,7 +203,7 @@ test('right-click adds, replaces, and inserts an effect on a cable', async ({ pa
 
   // Replace it: its kind changes, its id stays.
   await page.locator(`#wvWorld .wv-fn[data-node="${added}"] .fh`).click({ button: 'right' });
-  await menuPick(page, ['Replace with', 'Delay', 'Echo']);
+  await menuPick(page, ['Replace with', 'Delay', 'Echo', 'Echo']);
   await settle(page);
   expect((await serverBoard(page)).nodes.find((n) => n.id === added).kind).toBe('fx:echo');
 

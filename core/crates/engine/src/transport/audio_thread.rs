@@ -94,7 +94,32 @@ impl Core {
         }
         self.rack_dry = dry;
         if done {
-            self.leaving = None;
+            if let Some((old, _)) = self.leaving.take() {
+                self.retire(shared, Retired::Rack(old));
+            }
+        }
+    }
+
+    /// Send something this thread has finished with back to be freed, with
+    /// whatever was kept from earlier. What the list has no room for is kept
+    /// here until it has. Only when there is no room here either is anything
+    /// dropped on this thread, which takes dozens of replacements with
+    /// nobody collecting.
+    fn retire(&mut self, shared: &Shared, thing: Retired) {
+        self.send_kept(shared);
+        if let Err(thing) = shared.retire(thing) {
+            if self.kept.len() < self.kept.capacity() {
+                self.kept.push(thing);
+            }
+        }
+    }
+
+    fn send_kept(&mut self, shared: &Shared) {
+        while let Some(thing) = self.kept.pop() {
+            if let Err(thing) = shared.retire(thing) {
+                self.kept.push(thing);
+                break;
+            }
         }
     }
 
@@ -162,6 +187,7 @@ impl Core {
     ) -> Self {
         Core {
             renderer: Stretcher::new(max_block, channels.max(1), params.sample_rate),
+            kept: Vec::with_capacity(RETIRED_THINGS),
             rack: None,
             leaving: None,
             rack_dry: vec![0.0; max_block.max(1) * channels.max(1)],
@@ -282,7 +308,10 @@ impl Core {
         // What a voice is pitched from: the keys' own pitch is its own.
         let voiced = self.params.semitones;
         if detune != 0.0 {
-            self.params.semitones = (self.params.semitones + detune).clamp(-48.0, 48.0);
+            // As far as the engines go, not as far as the Pitch knob: a key
+            // above C8 is more than 48 up (see `voices::voice_params`).
+            let top = fx::stream::MAX_SEMITONES;
+            self.params.semitones = (self.params.semitones + detune).clamp(-top, top);
         }
         {
             // A new stretch keeps the playhead on the same moment of the file
@@ -331,12 +360,20 @@ impl Core {
         shared
             .layers_running
             .store(running, std::sync::atomic::Ordering::Relaxed);
+        self.send_kept(shared);
+        // The old sound is a whole file. This thread holds the last hold on
+        // it, so it goes back to be freed elsewhere.
+        let mut old_source = None;
         if let Ok(g) = shared.source.try_lock() {
             if !Arc::ptr_eq(&self.source, &g) {
-                self.source = Arc::clone(&g);
+                old_source = Some(std::mem::replace(&mut self.source, Arc::clone(&g)));
             }
         }
+        if let Some(old) = old_source {
+            self.retire(shared, Retired::Source(old));
+        }
 
+        let mut cut_short = None;
         if let Ok(mut g) = shared.pending_rack.try_lock() {
             if let Some(next) = g.take() {
                 // Keep the old chain alive for the crossfade. It shares the
@@ -345,10 +382,14 @@ impl Core {
                 // different chains.
                 if let Some(mut old) = self.rack.take() {
                     old.mute_meters();
-                    self.leaving = Some((old, RACK_FADE_FRAMES));
+                    // A chain still fading from the change before gives way.
+                    cut_short = self.leaving.replace((old, RACK_FADE_FRAMES));
                 }
                 self.rack = next;
             }
+        }
+        if let Some((old, _)) = cut_short {
+            self.retire(shared, Retired::Rack(old));
         }
         // One slot switched (a mode change): fade it in place, the rest of
         // the chain untouched. A slot still fading keeps its turn for a later
@@ -378,9 +419,10 @@ impl Core {
                 }
             }
         }
+        let mut old_map = None;
         if let Ok(mut g) = shared.pending_map.try_lock() {
             if let Some(next) = g.take() {
-                self.renderer.set_map(next);
+                old_map = self.renderer.replace_map(next);
             }
         }
         if let Ok(mut g) = shared.pending_parts.try_lock() {
@@ -388,13 +430,22 @@ impl Core {
                 self.renderer.set_parts(next);
             }
         }
+        let mut old_bank = None;
         if let Ok(mut g) = shared.pending_bank.try_lock() {
             if let Some(next) = g.take() {
-                self.renderer.set_bank(next);
+                old_bank = self.renderer.replace_bank(next);
             }
+        }
+        if let Some(old) = old_bank {
+            self.retire(shared, Retired::Bank(old));
         }
         self.poly.pickup(shared, &self.keys, &self.params);
         self.poly.adopt(&self.renderer, shared);
+        // Only now, with the voices on the new map too, is this the last hold
+        // on the old one.
+        if let Some(old) = old_map {
+            self.retire(shared, Retired::Map(old));
+        }
         // Borrowed, never taken — see `Shared::automation`. A contended lock
         // means the writer is mid-update; the previous values are still
         // applied, so skipping a block loses nothing.

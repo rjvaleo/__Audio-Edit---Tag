@@ -312,6 +312,9 @@ let liveTimer = null;
 
 function liveParam(slotId, key, value) {
   if (!slotId) return;
+  // A rack face worn by a node of Wave's board (397-wave-board-inspector.js):
+  // the move is the board's, not the rack's.
+  if (slotId.startsWith('board:')) { wvBoardParam(slotId.slice(6), key, value, true); return; }
   pendingLive.set(`${slotId}\u0000${key}`, { id: slotId, key, value });
   if (liveTimer) return;
   liveTimer = setTimeout(async () => {
@@ -337,6 +340,8 @@ function liveParam(slotId, key, value) {
 /// rack, because there is nothing to rebuild it for and doing so would cut
 /// every tail in the chain at the moment you let go of a slider.
 async function commitRack() {
+  // The end of a drag on a board node's rack face: the board keeps it, the rack has nothing to keep.
+  if (typeof wvBoardLive !== 'undefined' && wvBoardLive.touched.size) { wvBoardCommitTouched(); return; }
   const f = state.selectedFile;
   if (!f || !state.rack) return;
   try {
@@ -533,6 +538,16 @@ function renderRack() {
       slot.bypassed = !slot.bypassed;
       pushRack({ immediate: true });
     };
+    // A Reverb module opens its own window (`077-fx-reverb-window.js`).
+    if (fxSlotMode(slot)?.suite.id === 'reverb') {
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'ghost fx-open';
+      open.textContent = 'Open';
+      open.title = 'Open the Reverb window';
+      open.onclick = () => reverbOpen(slot.id);
+      el.querySelector('.fx-module-actions')?.prepend(open);
+    }
     el.querySelector('.fx-remove')?.addEventListener('click', () => {
       state.rack.slots.splice(i, 1);
       pushRack({ immediate: true });
@@ -543,6 +558,7 @@ function renderRack() {
     renderFxModuleControls(el.querySelector('.fx-module-controls'), slot, shaper, i);
     rail.appendChild(el);
   });
+  rvAfterRack();
 }
 
 function moveFxModule(from, to) {
@@ -563,8 +579,12 @@ function renderVuMeter(box, label) {
     <i class="vu-bar vu-left"></i><i class="vu-bar vu-right"></i></span>`;
 }
 
+/// The latest levels either side of every slot, for the Reverb window.
+var REVERB_LEVELS = [];
+
 function paintRackMeters(levels) {
   if (!levels.length) return;
+  REVERB_LEVELS = levels;
   const height = (v) => `${Math.max(0, Math.min(100, (20 * Math.log10(Math.max(v, 1e-4)) + 60) / 60 * 100))}%`;
   const paint = (box, pair) => {
     if (!box || !pair) return;

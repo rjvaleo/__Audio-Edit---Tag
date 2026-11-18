@@ -139,8 +139,10 @@ function seqRequestState() {
 /// under way, or once it has waited long enough. Otherwise it returns null.
 function seqSync(playing, { preroll = false } = {}) {
   // The SEQ switch: off, the sequencer is told to stop whatever the engine
-  // does, and is not clocked.
-  playing = playing && sourceOn('seq');
+  // does, and is not clocked. Nor does it play on a page that plays a plain
+  // file rather than the document (Stems, Browse, Theme, Wave): there Play is
+  // that file alone (RJ, 16 Nov 2026: "it should just play that song").
+  playing = playing && sourceOn('seq') && playsDocument();
   const routed = playing && seqRouting() && (preroll || engine.playing);
   const wasRouted = seq.routed;
   seqNextEpoch();
@@ -212,7 +214,7 @@ window.addEventListener('message', (e) => {
   const m = e.data || {};
   // The Clone page's Open in Seq: the page it wrote the Band of.
   // Its Split a song on Stems: the Stems page.
-  if (m.type === 'seq:goto' && (m.mode === 'seq' || m.mode === 'clone' || m.mode === 'stems')) { setMode(m.mode); return; }
+  if (m.type === 'seq:goto' && (m.mode === 'seq' || m.mode === 'band' || m.mode === 'clone' || m.mode === 'stems')) { setMode(m.mode); return; }
   // A kept take (a WAV in Made/Clones), opened on Edit, Grain or Chop, as the
   // Stems page opens a stem.
   if (m.type === 'seq:open' && typeof m.p === 'string' && m.p.startsWith('Made/')) {

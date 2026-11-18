@@ -10,7 +10,13 @@ prism-grain = { path = "../../../../GitHub/prism-fx/crates/prism-grain" }
 fx = { path = "../fx" }
 audio-core = { path = "../audio-core" }
 wave = { path = "../wave" }
-cpal = "0.18"
+# The sound card. Only `device` and `input` use it.
+cpal = { version = "0.18", optional = true }
+
+[features]
+default = ["device"]
+# Open the output and input devices. Off for a host that brings its own.
+device = ["dep:cpal"]
 
 [target.'cfg(unix)'.dev-dependencies]
 # Thread CPU time for the block-cost test (`tests/pv_cost.rs`).

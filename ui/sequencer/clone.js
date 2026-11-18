@@ -1018,8 +1018,8 @@ function cloneBuildUI() {
   document.getElementById("clOpen").addEventListener("click", () => {
     const t = clPicked(); if (!t) { clToast("Make some takes first"); return; }
     clUseTake(t);
-    try { window.parent.postMessage({ type: "seq:goto", mode: "seq" }, location.origin); } catch (e) { /* on its own */ }
-    clToast("The Band has the take; Seq edits every part, pattern and section");
+    try { window.parent.postMessage({ type: "seq:goto", mode: "band" }, location.origin); } catch (e) { /* on its own */ }
+    clToast("The Band has the take; the Band page edits every part, pattern and section");
   });
   document.getElementById("clDesc").addEventListener("click", () => { const el = document.getElementById("clJson"); el.classList.toggle("on"); el.textContent = JSON.stringify(cloneDescription(), null, 1); });
   setInterval(() => { if (document.body.classList.contains("only-clone")) clPaintPlaying(); }, 400);

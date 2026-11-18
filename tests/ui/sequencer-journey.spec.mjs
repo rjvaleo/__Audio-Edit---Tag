@@ -123,7 +123,7 @@ test('a film renders the Journey: on, it plays other notes than off, and the sam
   expect(on2, 'the same trip rendered other notes').toBe(on1);
 });
 
-test('each scope hears its own oscillator: Classic alone in its own and the output, A and B in theirs', async ({ page }) => {
+test('each scope hears its own oscillator: Classic in its own, A and B in theirs; the output is Atmosphere\'s', async ({ page }) => {
   await openSeq(page);
   const got = await page.evaluate(async () => {
     const listen = async (mode) => {
@@ -135,7 +135,8 @@ test('each scope hears its own oscillator: Classic alone in its own and the outp
       try { initAudio(); } finally { window.AudioContext = Real; }
       __set('atModeSelect', mode); __set('atAtkSlider', 0); __set('atRevWetSlider', 0); atmosRead();
       bpm = 60; stepBeats = 0.5;
-      playNote(220, 0.05);
+      // Seq's steps play Seq's synth; Atmosphere, its own synth, from its keys.
+      if (mode === 'atmos') atmosPlay(220, 0.05, 0.5); else playNote(220, 0.05);
       const peaks = {};
       off.suspend(0.3).then(() => {
         for (const k of ['classic', 'A', 'B', 'out']) {
@@ -151,7 +152,8 @@ test('each scope hears its own oscillator: Classic alone in its own and the outp
     };
     return { classic: await listen('classic'), atmos: await listen('atmos') };
   });
-  expect(got.classic).toEqual({ classic: true, A: false, B: false, out: true });
+  // The Output panel is on Atmosphere's page and is Atmosphere's (16 Nov 2026).
+  expect(got.classic).toEqual({ classic: true, A: false, B: false, out: false });
   expect(got.atmos).toEqual({ classic: false, A: true, B: true, out: true });
   // And they are on the page: Classic's, A's, B's and the output's.
   expect(await page.evaluate(() => ['scopeClassic', 'scopeA', 'scopeB', 'scopeOut'].map((id) => !!document.getElementById(id)))).toEqual([true, true, true, true]);

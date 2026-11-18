@@ -63,7 +63,12 @@ fn handle(mut stream: TcpStream, app: Arc<App>) -> std::io::Result<()> {
     };
 
     let is_head = req.method == "HEAD";
+    let t0 = std::time::Instant::now();
+    if crate::log::always(&req.method, &req.path) {
+        crate::log::line(&format!("{} {}", req.method, req.path));
+    }
     let response = route(&app, &req);
+    crate::log::request(&req.method, &req.path, response.status, t0.elapsed());
     stream.write_all(&response.to_bytes(!is_head))?;
     stream.flush()
 }

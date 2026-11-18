@@ -431,6 +431,7 @@
          what is in it, teach the Seq Band, make sounds from it. Built by
          `stBuild()` (420-stems-page.js). See `docs/STEMS.md`. -->
     <div class="hidden" id="stemsView"></div>
+    <div class="hidden" id="libraryView"></div>
 
     <div class="hidden" id="themeView">
       <section class="tp-panel tp-top">
@@ -1210,15 +1211,18 @@
       </div>
 
       <div class="dock-body hidden" id="dockVisuals">
-        <div class="fx">
+        <!-- The sonogram's resolution is 4096, and Show follows the Edit page
+             (030-centre.js): nothing to set here (RJ, 17 Nov 2026). Kept,
+             unlisted, because the code still reads these controls. -->
+        <div class="fx hidden">
           <div class="fx-head">Spectrogram</div>
           <div class="fx-row">
             <label class="check"><input type="checkbox" id="specOn"> Show</label>
             <div class="seg" id="fftSizes">
               <button class="seg-btn" data-fft="512">512</button>
-              <button class="seg-btn active" data-fft="1024">1024</button>
+              <button class="seg-btn" data-fft="1024">1024</button>
               <button class="seg-btn" data-fft="2048">2048</button>
-              <button class="seg-btn" data-fft="4096">4096</button>
+              <button class="seg-btn active" data-fft="4096">4096</button>
             </div>
           </div>
         </div>

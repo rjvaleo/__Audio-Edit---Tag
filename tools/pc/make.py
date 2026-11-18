@@ -8,6 +8,7 @@ the Stability AI Community License (see WORK DIR/page-mockups/MODELS.md).
 """
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -104,6 +105,8 @@ def make(model, rate, a, job, tag=None):
     slug = job.get("name") or re.sub(r"[^a-z0-9]+", "-", prompt.lower()).strip("-")[:40] or "sound"
     levels = job.get("levels")  # one guide strength per try, near to far
     prompts = job.get("prompts")  # one prompt per try (a kit: its parts)
+    if init is None and int(job.get("n", a.n)) > 1:
+        return make_batched(model, rate, a, job, tag, secs, size, prompt, slug, prompts)
     for i in range(int(job.get("n", a.n))):
         seed = a.seed + i
         level = float(levels[i % len(levels)]) if levels else float(job.get("near_far", 0.5))
@@ -128,6 +131,67 @@ def make(model, rate, a, job, tag=None):
         path = os.path.join(a.out, f"{slug}-{seed}.wav" if not init else f"{slug}-{i:02d}-{seed}.wav")
         sf.write(path, x / pk * 0.89, rate, subtype="FLOAT")
         print(json.dumps({"id": tag, "path": path, "prompt": prompt, "seed": seed, "seconds": round(len(x) / rate, 3), "took": round(time.time() - t1, 2), "guided": init is not None, "near_far": level if init else None}), flush=True)
+
+# Tries made together, this many seconds of sound a batch: 8 x 1 s in 0.38 s against 2.2 s
+# one at a time, 8 x 4 s in 1.06 s against 2.55 s, on the 3060 (17 Nov 2026). 44 s keeps
+# the peak near 4.5 GB (8 x 11 s at once took 7 GB).
+BATCH_SECONDS = 44.0
+
+
+@contextlib.contextmanager
+def noise_per_seed(seeds):
+    """A batch's starting noise, each row drawn as a single run with its own seed draws it,
+    so every seed still gives the sound it gave one at a time (53-61 dB, the same sound).
+    The sampler adds no noise after that."""
+    orig = torch.randn
+
+    def randn(*size, **kw):
+        shape = list(size[0]) if len(size) == 1 and isinstance(size[0], (list, tuple, torch.Size)) else list(size)
+        if len(seeds) > 1 and shape and shape[0] == len(seeds):
+            rows = []
+            for s in seeds:
+                torch.manual_seed(s)
+                rows.append(orig([1] + shape[1:], **kw))
+            return torch.cat(rows)
+        return orig(*size, **kw)
+
+    torch.randn = randn
+    try:
+        yield
+    finally:
+        torch.randn = orig
+
+
+def make_batched(model, rate, a, job, tag, secs, size, prompt, slug, prompts):
+    """make() for tries with no guide sound: the same files and lines, made a batch at a time."""
+    n = int(job.get("n", a.n))
+    per = max(1, min(n, int(BATCH_SECONDS // secs)))
+    for start in range(0, n, per):
+        idx = list(range(start, min(n, start + per)))
+        seeds = [a.seed + i for i in idx]
+        texts = [prompts[i % len(prompts)] if prompts else prompt for i in idx]
+        t1 = time.time()
+        with torch.no_grad(), noise_per_seed(seeds):
+            out = generate_diffusion_cond(
+                model,
+                steps=a.steps,
+                cfg_scale=a.cfg,
+                conditioning=[{"prompt": t, "seconds_total": secs} for t in texts],
+                batch_size=len(idx),
+                sample_size=size,
+                sample_rate=rate,
+                seed=seeds[0],
+                device=a.device,
+            )
+        took = round((time.time() - t1) / len(idx), 2)
+        for row, (i, seed, text) in enumerate(zip(idx, seeds, texts)):
+            x = out[row].to(torch.float32).cpu().numpy().T[: int(secs * rate)]
+            pk = float(abs(x).max()) or 1.0
+            name = f"part{i:02d}" if prompts else slug
+            path = os.path.join(a.out, f"{name}-{seed}.wav")
+            sf.write(path, x / pk * 0.89, rate, subtype="FLOAT")
+            print(json.dumps({"id": tag, "path": path, "prompt": text, "seed": seed, "seconds": round(len(x) / rate, 3), "took": took, "guided": False, "near_far": None}), flush=True)
+
 
 def blend(model, rate, a, job, tag=None):
     """Two sounds into the model's own sound space (its autoencoder), points part

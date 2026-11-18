@@ -16,7 +16,7 @@
     <div class="page">
       <section class="panel header">
         <div class="logo">SCALE SEQ <span>/ TUNING PROTO</span></div>
-        <div class="subtitle">True pitch · Classic + Atmosphere · 3 LFOs · Filter ADSR · Key follow · 88 keys</div>
+        <div class="subtitle">True pitch · Pulse/PWM · 3 LFOs · Filter ADSR · Key follow · 88 keys</div>
         <span class="grow"></span>
         <div class="capture-group">
           <span class="cap">Capture</span>
@@ -86,7 +86,7 @@
           <!-- CLASSIC, and the filter both synths play through -->
           <div class="r1 synth-voice">
             <section class="panel syn-classic" id="classicPanel">
-              <div class="ph"><button type="button" class="power" data-syn="classic" title="Classic on or off: both synths can play at once"></button><b class="nm">CLASSIC</b><span class="meta">the synth as it was · true pitch</span></div>
+              <div class="ph"><button type="button" class="power" data-syn="classic" title="Classic on or off: both synths can play at once"></button><b class="nm">SYNTH</b><span class="meta">true pitch</span></div>
               <div class="syn-body">
                 <div class="adsr-block">
                   <div class="well pic"><canvas id="adsrCanvas" width="300" height="64"></canvas></div>
@@ -116,7 +116,7 @@
             </section>
 
             <section class="panel syn-filter">
-              <div class="ph"><b class="nm">FILTER</b><span class="meta">both synths play through it</span></div>
+              <div class="ph"><b class="nm">FILTER</b><span class="meta shared-note">shared with Seq</span></div>
               <div class="filter-body">
                 <div class="filter-main">
                   <div class="knob-group"><span class="knob-label">Cutoff</span><div class="knob" onmousedown="knobDown(event, 'cutoffSlider')" ontouchstart="knobTouchStart(event,'cutoffSlider')"></div><input type="range" class="knob-hidden" min="0" max="100" value="67" id="cutoffSlider" oninput="updateFilter()" /><span class="knob-val" id="cutoffVal">2.0kHz</span></div>
@@ -143,7 +143,7 @@
                Classic's panel is not on that page. -->
           <section class="syn-group at-group" id="atGroup">
             <div class="panel at-bar">
-              <div class="ph"><button type="button" class="power" data-syn="atmos" title="Atmosphere on or off: both synths can play at once"></button><b class="nm">ATMOSPHERE</b><span class="meta" id="atModeNote"></span><button type="button" class="btn at-turn-on" id="atTurnOn" title="Atmosphere is off: the sequencer plays Classic alone. Turn it on to hear it">Turn Atmosphere on</button><span class="at-with"><button type="button" class="power" id="atWithClassic" title="Classic plays along: off, the sequencer plays Atmosphere alone"></button><span class="cap">Classic too</span></span><span class="grow"></span><span class="cap">Start from</span><div class="at-starts" id="atStarts"></div></div>
+              <div class="ph"><button type="button" class="power" data-syn="atmos" title="The sequencer plays Atmosphere too: on, its steps play it (with Classic or instead of it). Its own keys and MIDI play it either way"></button><b class="nm">ATMOSPHERE</b><span class="meta" id="atModeNote"></span><button type="button" class="btn at-turn-on" id="atTurnOn" title="Atmosphere is off: the sequencer plays Classic alone. Turn it on to hear it">Turn Atmosphere on</button><span class="at-with"><button type="button" class="power" id="atWithClassic" title="Classic plays along: off, the sequencer plays Atmosphere alone"></button><span class="cap">Classic too</span></span><span class="grow"></span><span class="cap">Start from</span><div class="at-starts" id="atStarts"></div></div>
             </div>
             <div class="at-body" id="atBody"></div>
           </section>
@@ -192,12 +192,9 @@
                 <div class="lfo-knob"><span class="knob-label">Depth</span><div class="knob" onmousedown="knobDown(event, 'lfo3DepthSlider')" ontouchstart="knobTouchStart(event,'lfo3DepthSlider')"></div><input type="range" class="knob-hidden" min="0" max="100" value="0" id="lfo3DepthSlider" oninput="updateLFO(2)" /><span class="knob-val" id="lfo3DepthVal">0%</span></div>
               </div>
             </section>
-          </div>
-
-          <!-- DELAY, and SPACE (atmos.js fills it), for both synths -->
-          <div class="r3 synth-row-scroll">
+            <!-- DELAY: the fourth module of the row (RJ, 16 Nov 2026) -->
             <section class="panel fx-delay">
-              <div class="ph"><b class="nm">DELAY</b><span class="grow"></span><span class="cap">Ping-pong</span><div class="well pp"><canvas id="ppCanvas" width="140" height="34"></canvas></div></div>
+              <div class="ph"><b class="nm">DELAY</b><span class="meta shared-note">shared with Seq</span><span class="grow"></span><span class="cap">Ping-pong</span><div class="well pp"><canvas id="ppCanvas" width="140" height="34"></canvas></div></div>
               <div class="fx-row">
                 <div class="stacked-selects">
                   <div class="select-row"><span class="cap">Time</span><select id="delayTimeSelect" onchange="updateDelay()"><option value="0.125">1/32</option><option value="0.25">1/16</option><option value="0.33333">1/8T</option><option value="0.5" selected>1/8</option><option value="0.75">D 1/8</option><option value="1">1/4</option><option value="1.33333">1/4T</option><option value="1.5">D 1/4</option><option value="2">1/2</option><option value="3">D 1/2</option><option value="4">1 bar</option></select><span class="meta" id="delayTimeVal">250ms</span></div>
@@ -211,6 +208,10 @@
                 </div>
               </div>
             </section>
+          </div>
+
+          <!-- SPACE (atmos.js fills it), shown on the Atmosphere page -->
+          <div class="r3 synth-row-scroll">
             <section class="panel fx-space" id="spaceHost"></section>
           </div>
 
@@ -236,7 +237,7 @@
 
           <!-- OUTPUT: the two synths together, as they leave the page (scopes.js) -->
           <section class="panel scope-out">
-            <div class="ph"><b class="nm">OUTPUT</b><span class="meta">both synths, after the filter, delay and space</span></div>
+            <div class="ph"><b class="nm">OUTPUT</b><span class="meta">what Atmosphere sends out, after its effects</span></div>
             <div class="well scope"><canvas id="scopeOut" width="900" height="70"></canvas></div>
           </section>
 
@@ -248,7 +249,7 @@
 
           <!-- STEPS -->
           <section class="panel seq-panel">
-            <div class="ph"><b class="nm">STEPS</b><span class="meta">up to 64, four rows of 16 · click a step for ◀ ▶ degree · ▼ ▲ octave · RST · ▶ (or the arrow keys, R, Enter) · underlined: moved by the journey</span><span class="grow"></span><button type="button" class="btn" onclick="stepsCopyFirstRow()" title="Steps 1–16 copied to 17–64">Copy row 1 to all</button><button type="button" class="btn" onclick="stepsClear()" title="Every step back to the root">Clear</button></div>
+            <div class="ph"><b class="nm">STEPS</b><span class="meta">up to 64, four rows of 16 · click a step for ◀ ▶ degree · ▼ ▲ octave · RST · ▶ (or the arrow keys, R, Enter)</span><span class="grow"></span><button type="button" class="btn" onclick="stepsCopyFirstRow()" title="Steps 1–16 copied to 17–64">Copy row 1 to all</button><button type="button" class="btn" onclick="stepsClear()" title="Every step back to the root">Clear</button></div>
             <div class="step-grid" id="stepGrid"></div>
           </section>
 
@@ -311,6 +312,10 @@
     <script src="app.js"></script>
     <!-- Ours, not the sequencer repository's: the second synth, Atmosphere. -->
     <script src="atmos.js"></script>
+    <!-- Ours: Atmosphere's own effects, the app's rack in an AudioWorklet (atfx-worklet.js, atfx.wasm). -->
+    <script src="atfx.js"></script>
+    <!-- Ours: Atmosphere's physically modelled voice (atmos-worklet.js, atmos.wasm). -->
+    <script src="atphys.js"></script>
     <!-- Ours: the synths' keys and their MIDI channels. -->
     <script src="keys.js"></script>
     <!-- Ours: the Journey, and the oscillators' and the output's scopes. -->

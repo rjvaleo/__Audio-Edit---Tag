@@ -16,11 +16,18 @@
 //! - [`voices`] is Poly: a full engine per held key.
 //! - [`device`] opens the output and pumps the other two. As thin as possible,
 //!   because it is the only part a test cannot reach.
+//!
+//! [`device`] and [`input`] are the only parts that touch the sound card
+//! (cpal). They sit behind the `device` feature, on by default, so a host
+//! with its own sound card code can build the rest without them.
 
 pub mod brackets;
+pub mod convert;
 pub mod decks;
+#[cfg(feature = "device")]
 pub mod device;
 pub mod glide;
+#[cfg(feature = "device")]
 pub mod input;
 pub mod keys;
 pub mod seqbus;
@@ -34,7 +41,9 @@ pub use prism_grain::{render, stretcher};
 
 pub use decks::Decks;
 pub use keys::{GrainKeys, KeyMode};
-pub use device::{conform_channels, resample, spawn, spawn_with, Engine, Handle};
+pub use convert::{conform_channels, resample};
+#[cfg(feature = "device")]
+pub use device::{spawn, spawn_with, Engine, Handle};
 pub use render::{BlockRenderer, Source};
 pub use seqbus::SeqBus;
 pub use synth::{SynthDeck, WaveEvent, WaveShared, WAVE_POINTS};

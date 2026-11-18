@@ -342,10 +342,12 @@ class SeqTap extends AudioWorkletProcessor {
     this.buf = new Float32Array(this.size * 2);
     this.n = 0;
     this.start = 0;
+    this.next = -1;
+    this.off = 0;
     this.port.onmessage = (e) => {
       const m = e.data || {};
       if (m.port) { if (this.out) this.out.close(); this.out = m.port; }
-      if (m.on !== undefined) { this.on = !!m.on; this.n = 0; }
+      if (m.on !== undefined) { this.on = !!m.on; this.n = 0; this.next = -1; this.off = 0; }
       if (m.done) { this.done = true; if (this.out) this.out.close(); this.out = null; }
     };
   }
@@ -356,8 +358,19 @@ class SeqTap extends AudioWorkletProcessor {
     const frames = input.length ? input[0].length : 128;
     const L = input[0];
     const R = input[1] || input[0];
+    // The frame this call begins at, counted here. Every call is the next
+    // render quantum, so it follows on from the last; currentFrame is believed
+    // only at the start, or when it disagrees two calls running. On a busy
+    // machine one call in thousands reported it a quantum stale, and a block
+    // was stamped 128 frames early: the same frames sent twice, then a gap.
+    const cf = currentFrame;
+    if (this.next < 0) this.next = cf;
+    else if (cf !== this.next) { if (++this.off >= 2) { this.next = cf; this.off = 0; } }
+    else this.off = 0;
+    const base = this.next;
+    this.next = base + frames;
     for (let i = 0; i < frames; i++) {
-      if (this.n === 0) this.start = currentFrame + i;
+      if (this.n === 0) this.start = base + i;
       this.buf[this.n * 2] = L ? L[i] : 0;
       this.buf[this.n * 2 + 1] = R ? R[i] : 0;
       if (++this.n === this.size) {
@@ -835,6 +848,10 @@ async function flush() {
       }
     };
 
+    // Atmosphere's own effects (atfx.js), in the film as they are heard: the
+    // chain as the take's first moment leaves it, up before the render starts.
+    if (typeof atfxOffline === 'function') await atfxOffline(off);
+
     // **A loop goes round.** `span` seconds of the document from `at0`,
     // `repeats` times — the sound was tiled that way by the server — and then
     // the tail, where nothing new is played and the take holds where the loop
@@ -1075,6 +1092,11 @@ async function flush() {
       } else if (perfArmed && !perfRec && typeof perfRecStop === 'function') {
         perfRecStop();
       }
+    } else if (m.type === 'seq:note') {
+      // A key of the app's Atmosphere keyboard (ui/app/212-atmos-dock.js),
+      // played on Atmosphere's own voice in its own tuning (keys.js).
+      if (m.on) kyNoteOn(m.part || 'atmos', m.key, m.vel ?? 0.8);
+      else kyNoteOff(m.part || 'atmos', m.key);
     } else if (m.type === 'seq:compact') {
       // The host's Compose workspace: this page in a cell. The layout is the
       // page's own — see the COMPACT block at the end of style.css.
@@ -1091,6 +1113,9 @@ async function flush() {
       document.body.classList.toggle('only-draw', m.only === 'draw');
       // The host's Clone page: only the Clone panel (clone.js), which drives the Band.
       document.body.classList.toggle('only-clone', m.only === 'clone');
+      // The host's Band page: only the Band panel (band.js), as it was on Seq.
+      document.body.classList.toggle('only-band', m.only === 'band');
+      if (m.only === 'band') document.querySelector('.right-panel')?.scrollTo(0, 0);
       if (m.only === 'clone' && typeof cloneShown === 'function') cloneShown();
       // Its envelope's picture is measured from its box, which has just moved.
       if (typeof atmosDrawAmp === 'function') requestAnimationFrame(atmosDrawAmp);

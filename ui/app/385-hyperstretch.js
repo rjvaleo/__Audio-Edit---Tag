@@ -299,9 +299,15 @@ function hsWire() {
     hs.prev = { p, t };
     hs.down = true;
     hs.vel = { x: 0, y: 0 };
+    // The pad is played by holding it (RJ, 17 Nov 2026: "when you click on
+    // there, it starts to play. When you let go clicking, it stops"). A press
+    // that starts the sound is the one whose release stops it; a sound already
+    // playing (the bar's Play, a take) is left playing.
+    hs.heldPlay = !!prismDeck.path && !prismDeck.playing;
     // RequestRecord: the click is the value and the record button at once.
     // In Lanes the recorder is ●'s, as the rack pad's REC was.
     if (!hsLanes() && hs.mode !== 'rec') hsStartRec(t);
+    if (hs.heldPlay && !prismDeck.playing) prismDeckPlay();
     hsMoveTo(p, t);
   });
   pad.addEventListener('pointermove', (e) => {
@@ -320,7 +326,13 @@ function hsWire() {
     const t = performance.now();
     const thrown = !hsLanes() && hs.throwOn && t - hs.prev.t < 60 && Math.hypot(hs.vel.x, hs.vel.y) > 1e-5;
     if (!thrown) hs.vel = { x: 0, y: 0 };
+    // The take goes on playing by itself (Loop on release) or the point was
+    // thrown: the sound goes on with it. Otherwise letting go stops what the
+    // press started.
+    const goesOn = thrown || (hs.loopOnRelease && hs.mode === 'rec');
     if (hs.loopOnRelease && hs.mode === 'rec' && !thrown) { hsStopRec(t); hsPlay(t); }
+    if (hs.heldPlay && !goesOn && prismDeck.playing) prismDeckPause();
+    hs.heldPlay = false;
     hsCommit();
   };
   pad.addEventListener('pointerup', release);
@@ -640,7 +652,14 @@ function hsStartRec(t) {
 function hsAddPoint(p, t) {
   if (!hs.rec) return;
   const tick = Math.floor((t - hs.recT0) / HS_TICK);
-  if (tick === hs.lastTick) return;
+  if (tick === hs.lastTick) {
+    // Still in the same tick: the point is where the hand is now, so the take
+    // ends where the drag ended. Keeping the tick's first point dropped the
+    // last moves of a quick drag (it stopped at 0.83 of a drag to 0.9).
+    const q = hs.rec[hs.rec.length - 1];
+    if (q) { q.x = p.x; q.y = p.y; }
+    return;
+  }
   hs.lastTick = tick;
   hs.rec.push({ x: p.x, y: p.y, t: tick * HS_TICK });
 }

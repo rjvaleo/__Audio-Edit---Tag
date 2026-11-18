@@ -32,9 +32,6 @@ test('FX opens with nothing open, and shows the sources and the effects with no 
   await expect(page.locator('#gsEngTabs')).toBeHidden();
   await expect(page.locator('#gsCpPb')).toBeHidden();
   await expect(page.locator('#leftRail .rl-item[data-page="fx"]')).toHaveClass(/rl-on/);
-  // Grain with nothing open is still refused, as before: FX is the only page that opens empty.
-  await page.click('#leftRail .rl-item[data-page="grain"]');
-  expect(await page.evaluate(() => editPage)).toBe('fx');
 });
 
 test('FX: a library sound opens there, an effect goes on, and Save writes it through the effects', async ({ page, request }) => {

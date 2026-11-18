@@ -73,6 +73,36 @@ def main():
     make(model, a, {"prompt": a.prompt, "seconds": a.seconds, "n": a.n})
 
 
+# The latent is one frame per 2048 samples. TangoFlux always draws its whole 30 s
+# (645 frames) and its own generate() then decodes all of it: 10.8 GB and 4.8 s on the
+# 3060 for a 4 s sound. The decoder is convolutional, so decoding just the frames the
+# sound needs, plus this many past its end, gives the same audio (65 dB down) in 0.15 s.
+SPARE_FRAMES = 16
+
+
+def generate(model, prompt, seed, steps, secs, cfg):
+    """TangoFluxInference.generate, but seeded and decoding only what is kept.
+
+    Its generate() never passes a seed on, so inference_flow seeded every try with 0:
+    every sound of a prompt and length came out the same (fixed 17 Nov 2026). The
+    flow runs with TF32 matmuls (3.6 s against 4.2 s; 51 dB from full fp32, the same
+    sound); bf16 and fp16 were tried and are not the same sound (fp16 overflows).
+    """
+    tf32 = torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = torch.backends.cudnn.allow_tf32 = True
+    try:
+        with torch.no_grad():
+            lat = model.model.inference_flow(prompt, duration=secs, num_inference_steps=steps,
+                                             guidance_scale=cfg, seed=seed, disable_progress=True)
+    finally:
+        torch.backends.cuda.matmul.allow_tf32, torch.backends.cudnn.allow_tf32 = tf32
+    keep = int(secs * RATE)
+    frames = min(lat.shape[1], -(-keep // 2048) + SPARE_FRAMES)
+    with torch.no_grad():
+        wave = model.vae.decode(lat[:, :frames].float().transpose(2, 1)).sample.cpu()[0]
+    return wave[:, :keep]
+
+
 def make(model, a, job, tag=None):
     # The model's own range is 1 to 30 seconds.
     secs = max(1.0, min(30.0, float(job.get("seconds", a.seconds))))
@@ -82,9 +112,8 @@ def make(model, a, job, tag=None):
     slug = job.get("name") or re.sub(r"[^a-z0-9]+", "-", prompt.lower()).strip("-")[:40] or "sound"
     for i in range(int(job.get("n", a.n))):
         seed = a.seed + i
-        torch.manual_seed(seed)
         t1 = time.time()
-        wave = model.generate(prompt, steps=int(job.get("steps", a.steps)), duration=secs, guidance_scale=a.cfg)
+        wave = generate(model, prompt, seed, int(job.get("steps", a.steps)), secs, a.cfg)
         x = wave.to(torch.float32).numpy().T
         pk = float(abs(x).max()) or 1.0
         path = os.path.join(a.out, f"{slug}-tf-{seed}.wav")

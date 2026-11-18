@@ -1,0 +1,49 @@
+/* The Reverb window (077-fx-reverb-window.js): one fixed 1280 × 640 plugin
+   window over the app, scaled down whole on a smaller screen. */
+.rv-win { position: fixed; z-index: 400; width: 1280px; height: 640px; transform: scale(var(--rv-scale, 1)); transform-origin: 0 0;
+  display: grid; grid-template-rows: auto minmax(300px, 1fr) auto; gap: 6px; padding: 6px 8px 8px;
+  background: var(--surface-2); border-top: 2px solid rgb(var(--rv-rgb)); border-radius: var(--r-l); overflow: hidden;
+  box-shadow: 0 1px 0 rgba(var(--white-rgb), .06), 0 24px 70px rgba(var(--black-rgb), .55); color: var(--text); }
+.rv-win[hidden] { display: none; }
+.rv-bar { display: flex; align-items: center; gap: 6px; min-width: 0; cursor: grab; }
+.rv-bar:active { cursor: grabbing; }
+.rv-title { font: 650 var(--fs-l) var(--sans); margin: 0 4px 0 2px; }
+.rv-modes { display: flex; gap: 6px; }
+.rv-ddpic { width: 40px; height: 15px; display: block; border-radius: 0; background: var(--well); }
+.rv-ddpic.big { width: 72px; height: 27px; }
+.rv-badge { display: flex; }
+.rv-src { flex: 1 1 auto; min-width: 0; font: var(--fs-s) var(--mono); color: var(--text-dimmer); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rv-pwr { width: 14px; height: 14px; padding: 0; border-radius: var(--r-s); background: var(--well); border: 1px solid var(--line-2); cursor: pointer; }
+.rv-pwr.on { background: var(--on); border-color: var(--on); }
+.rv-x { width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--text-dimmer); font: var(--fs-xl) var(--sans); line-height: 1; cursor: pointer; }
+.rv-strip { display: flex; gap: 3px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin; }
+.rv-tag { flex: 0 0 auto; writing-mode: vertical-rl; transform: rotate(180deg); font: 600 var(--fs-xs) var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--text-dimmer); text-align: center; }
+.rv-mini { flex: 0 0 auto; width: 70px; display: grid; gap: 1px; padding: 2px; background: var(--well); border: 1px solid transparent; border-radius: var(--r-s); cursor: pointer; color: var(--text-dimmer); font: 500 var(--fs-xs) var(--sans); text-align: left; }
+.rv-mini span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rv-mini canvas { width: 64px; height: 24px; display: block; }
+.rv-mini.on { border-color: rgb(var(--rv-rgb)); color: var(--text); }
+.rv-views { display: grid; grid-template-columns: 640px minmax(0, 1fr) auto; gap: 6px; min-height: 0; }
+.rv-disp { position: relative; background: var(--well); border-radius: var(--r-s); overflow: hidden; min-width: 0; }
+.rv-disp canvas { width: 100%; height: 100%; display: block; }
+.rv-net.pad { cursor: crosshair; }
+.rv-room { cursor: grab; touch-action: none; }
+.rv-room:active { cursor: grabbing; }
+.rv-cap { position: absolute; left: 8px; top: 5px; font: var(--fs-xs) var(--mono); color: var(--text-dimmer); pointer-events: none; }
+.rv-cap.r { left: auto; right: 8px; }
+.rv-cap.b { top: auto; bottom: 5px; }
+.rv-meters { display: flex; gap: 3px; }
+.rv-vu { width: 7px; background: var(--well); border-radius: var(--r-s); position: relative; overflow: hidden; }
+.rv-vu b { position: absolute; left: 1px; right: 1px; bottom: 0; height: 0; background: rgb(var(--rv-rgb)); border-radius: 0; }
+.rv-band { display: flex; flex-wrap: wrap; gap: 4px; align-items: stretch; align-content: start; }
+.rv-sect { flex: var(--n) 1 auto; min-width: calc(var(--n) * 54px); background: var(--well); border-radius: var(--r-s); padding: 2px 3px 4px; display: grid; align-content: start; }
+.rv-sect > b { display: flex; align-items: center; gap: 5px; font: 600 var(--fs-xs) var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--text-dimmer); padding: 1px 2px; white-space: nowrap; }
+.rv-sect.ours > b { color: var(--on); }
+.rv-sect > b small { font: 500 var(--fs-xs) var(--sans); letter-spacing: .08em; color: var(--text-dimmer); text-transform: none; }
+.rv-led { display: inline-block; width: 9px; height: 9px; border-radius: 0; border: 1px solid var(--line-2); background: var(--surface); cursor: pointer; }
+.rv-led.on { background: var(--on); border-color: var(--on); }
+.rv-sect.off > div { opacity: .4; }
+.rv-sect > div { display: flex; justify-content: space-around; }
+.rv-sect > div > * { flex: 1 1 0; min-width: 0; }
+.rv-sect > div > .fxf { flex: 0 0 42px; }
+.rv-engine > div { display: grid; gap: 2px; }
+.fx-open { margin-right: 2px; }

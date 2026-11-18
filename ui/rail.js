@@ -108,6 +108,12 @@ const COMPOSE_LISTED = false;
       icon: 'draw', label: 'Draw', mode: 'draw',
       title: 'Draw — draw on a canvas and it plays: across is time, up is pitch in the scale\'s true pitch, the ink is the instrument',
     },
+    // The Band: the Band panel that sat at the bottom of Seq, on a page of its
+    // own (the Seq frame again, showing only it). RJ, 16 Nov 2026.
+    {
+      icon: 'band', label: 'Band', mode: 'band',
+      title: 'The Band — drums, bass, chords, arp and drone from the scale, with its mixer; Clone writes it',
+    },
     {
       icon: 'stems', label: 'Stems', mode: 'stems',
       title: 'Stems — split a song into drums, bass, vocals and other, read what is in it, and make sounds from it',
@@ -117,6 +123,12 @@ const COMPOSE_LISTED = false;
     {
       icon: 'clone', label: 'Clone', mode: 'clone',
       title: 'Clone a song — a new piece from your songs: what the reading found, how near or far, played by the Band (and the PC\'s model, when it is connected)',
+    },
+    // The Library: the PC's own sounds, every one its models made (RJ, 16 Nov
+    // 2026: "after clone, let's do library").
+    {
+      icon: 'pclib', label: 'Library', mode: 'pclib',
+      title: 'Library — every sound the PC\'s models made, by the words that made them: hear one, open it on a page, or copy it into your library',
     },
     {
       icon: 'theme', label: 'Theme', mode: 'theme',
@@ -242,9 +254,15 @@ const COMPOSE_LISTED = false;
     // A pen drawing a curve: the canvas that plays.
     draw:
       '<path d="M3 19c3.2-.2 4.6-6.4 7.6-6.6 2.6-.2 2.7 3.2 5 3"/><path d="m15.6 15.4 5.2-8.7a1.3 1.3 0 0 0-.46-1.78l-.2-.12a1.3 1.3 0 0 0-1.78.46l-5.2 8.7-.3 2.5z"/><path d="m17.5 7.6 2 1.2" stroke-width="1"/>',
+    // Three parts of a band: a drum, a bass string, a chord.
+    band:
+      '<circle cx="7" cy="15.5" r="4"/><path d="M3 15.5h8"/><path d="M14 20V5.5l6-1.5v14"/><circle cx="12.6" cy="20" r="1.5"/><circle cx="18.6" cy="18" r="1.5"/>',
     // A song pulled into four lanes.
     stems:
       '<path d="M3.5 12h3"/><path d="M6.5 12 9 6.5h11.5"/><path d="M6.5 12 9 10h11.5"/><path d="M6.5 12 9 14h11.5"/><path d="M6.5 12 9 17.5h11.5"/>',
+    // Shelves of sounds: the PC's library.
+    pclib:
+      '<rect x="3.5" y="4" width="17" height="16" rx="1.6"/><path d="M3.5 9.3h17M3.5 14.7h17"/><path d="M7 6v1.6M10 6v1.6M7 11.2v1.8M13 11.2v1.8M16 11.2v1.8M8.5 16.6v1.6M12 16.6v1.6"/>',
     // One shape becoming two: a song and the new piece grown from it.
     clone:
       '<path d="M4 15.5c2.2-3.6 4.4-3.6 6.6 0"/><path d="M13.4 15.5c2.2-3.6 4.4-3.6 6.6 0" opacity=".7"/><path d="M7.3 12V6.5"/><path d="M16.7 12V8.5"/><path d="M7.3 6.5c3 0 5 1 9.4 2"/>',
@@ -496,7 +514,7 @@ const COMPOSE_LISTED = false;
     // `.hidden`. Two mechanisms, so this says which one a destination uses
     // rather than assuming.
     const tray = (item) => {
-      if (item.dataset.mode === 'theme') return null;
+      if (item.dataset.mode === 'theme' || item.dataset.mode === 'pclib') return null;
       if (item.dataset.panel || item.dataset.mode === 'overview') {
         return document.getElementById('leftPanel');
       }
@@ -566,6 +584,11 @@ const COMPOSE_LISTED = false;
       // FX is the exception: its own Sources panel is where a sound is picked
       // from the PC's library, so it opens with nothing open (`425-fx-page.js`).
       if (mode === 'edit' && item.dataset.page !== 'fx' && !state.selectedFile && !state.tabs.length) {
+        // Grain opens its own sound, a pulse wave, and goes on (406-grain-page.js).
+        if (item.dataset.page === 'grain' && typeof gsOpenStartSound === 'function') {
+          gsOpenStartSound().then((ok) => { if (!ok) toast('Open a sound first — double-click one in the library'); else if (go(item)) sync(); });
+          return false;
+        }
         toast('Open a sound first — double-click one in the library');
         return false;
       }

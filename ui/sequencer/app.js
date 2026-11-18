@@ -540,6 +540,9 @@ const SCALES = [
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let audioCtx = null;
 let masterGain = null;
+/// Seq's own volume (its Vol knob), before the master. Atmosphere, a synth of its
+/// own (RJ, 16 Nov 2026), joins the master after it, so Seq's Vol is not its.
+let seqVol = null;
 let isPlaying = false;
 let currentStep = 0;
 // Which step boundary the scheduler lays next, counted from Play (or, in the
@@ -566,6 +569,9 @@ let playingStepIdx = -1;
 let filterCutoff = 2046; // Hz (log-scale, slider default=67)
 let filterRes = 2.09; // Q factor
 let filterNode = null;
+/// Where Seq's filter leaves for the delay and Space: the melody's bus. Atmosphere,
+/// which has its own filter (RJ, 16 Nov 2026), joins here, after Seq's.
+let melBus = null;
 // Base cutoff and per-note filter envelope live on separate ConstantSource
 // nodes summed into filterNode.frequency, so the knob and the ADSR never
 // cancel each other's automation (soft takeover — no jump on grab/release).
@@ -703,7 +709,10 @@ function initAudio() {
   if (audioCtx) return;
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   masterGain = audioCtx.createGain();
-  masterGain.gain.value = volume * 0.3;
+  masterGain.gain.value = 0.3;
+  seqVol = audioCtx.createGain();
+  seqVol.gain.value = volume;
+  seqVol.connect(masterGain);
   filterNode = audioCtx.createBiquadFilter();
   filterNode.type = "lowpass";
   // frequency is driven entirely by the summed inputs below
@@ -726,8 +735,16 @@ function initAudio() {
   // Dry path: filter → dryGain → masterGain
   delayDryGain = audioCtx.createGain();
   delayDryGain.gain.value = 1 - delayWet;
-  filterNode.connect(delayDryGain);
-  delayDryGain.connect(masterGain);
+  melBus = audioCtx.createGain();
+  // Stereo, always: it was made so by Atmosphere's stereo sound joining it, and
+  // the Band's melody channel (a stereo panner) passes stereo at full level but
+  // takes 3 dB off a mono input. With Atmosphere a synth of its own, it says so.
+  melBus.channelCount = 2;
+  melBus.channelCountMode = "explicit";
+  melBus.channelInterpretation = "speakers";
+  filterNode.connect(melBus);
+  melBus.connect(delayDryGain);
+  delayDryGain.connect(seqVol);
 
   // Ping-pong delay wet path — a tape-echo model: ONE feedback loop, and the
   // delay time is its playback speed. Retiming glides that speed, re-pitching
@@ -743,7 +760,7 @@ function initAudio() {
   delayPanR.pan.value = delaySpread;
   delayWetGain = audioCtx.createGain();
   delayWetGain.gain.value = delayWet;
-  delayWetGain.connect(masterGain);
+  delayWetGain.connect(seqVol);
   delayHiCutLR = audioCtx.createBiquadFilter();
   delayHiCutLR.type = "lowpass";
   delayHiCutLR.Q.value = 0.5;
@@ -759,7 +776,7 @@ function initAudio() {
   // Graph: input → delayL → panL → wetOut
   //               delayL → hiCut → fbGain → delayR → panR → wetOut
   //               delayR → hiCut → fbGain → delayL  (ping-pong loop)
-  filterNode.connect(delayL);
+  melBus.connect(delayL);
   delayL.connect(delayPanL);
   delayPanL.connect(delayWetGain);
   delayL.connect(delayHiCutLR);
@@ -780,7 +797,7 @@ function initAudio() {
   // Shimmer: single slow LFO on the OUTPUT allpass only (not in any feedback loop).
   reverbPreDelayNode = audioCtx.createDelay(0.15);
   reverbPreDelayNode.delayTime.value = reverbPreDelay * 0.15;
-  filterNode.connect(reverbPreDelayNode);
+  melBus.connect(reverbPreDelayNode);
 
   reverbSendGain = audioCtx.createGain();
   reverbSendGain.gain.value = 1.0; // parallel send — full level, doesn't affect dry path
@@ -788,7 +805,7 @@ function initAudio() {
 
   reverbWetGain = audioCtx.createGain();
   reverbWetGain.gain.value = reverbWet; // WET slider controls output mix level
-  reverbWetGain.connect(masterGain);
+  reverbWetGain.connect(seqVol);
   reverbWetGain.connect(captureDestNode);
 
   // Soft limiter after comb bank sum — prevents runaway, preserves tail character
@@ -887,12 +904,10 @@ function playNote(freq, time, hold = 1) {
   // The two synths, Classic (here) and Atmosphere (atmos.js), each on or off;
   // with both on, both play the note. They share the filter and its envelope,
   // which runs for the longer of the two notes.
-  let envDur = 0;
-  if (typeof atmosOn !== "undefined" && atmosOn) {
-    envDur = atmosNoteDur((60 / bpm) * stepBeats * hold);
-    atmosPlay(freq, time, envDur);
-  }
-  if (typeof classicOn === "undefined" || classicOn) envDur = Math.max(envDur, playClassic(freq, time, hold));
+  // Seq's steps play Seq's synth only. Atmosphere is a synth of its own (RJ,
+  // 16 Nov 2026: "completely separate from everything else"): its keys and its
+  // MIDI channel play it, never these steps.
+  let envDur = playClassic(freq, time, hold);
   noteFilterEnv(freq, time, envDur);
 }
 
@@ -1268,7 +1283,7 @@ function updateEnv() {
 function updateVol(v) {
   volume = parseInt(v) / 100;
   document.getElementById("volVal").textContent = v + "%";
-  if (masterGain) masterGain.gain.value = volume * 0.3;
+  if (seqVol) seqVol.gain.value = volume;
 }
 
 // ─── PULSE WAVE ───────────────────────────────────────────────────────────────
@@ -1326,7 +1341,7 @@ function getLFOTargetParam(target) {
     case "resonance":
       return filterNode?.Q;
     case "volume":
-      return masterGain?.gain;
+      return seqVol?.gain;
     case "delay-wet":
       return delayWetGain?.gain;
     default:
@@ -1342,7 +1357,7 @@ function getLFOGainValue(lfo) {
     case "resonance":
       return lfo.depth * 10;
     case "volume":
-      return lfo.depth * volume * 0.3;
+      return lfo.depth * volume;
     case "delay-wet":
       return lfo.depth * delayWet;
     default:

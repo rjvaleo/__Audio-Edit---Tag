@@ -312,11 +312,25 @@
 .seqview { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; background: var(--seq-bg); }
 .seqview.hidden { display: none; }
 .seq-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: var(--seq-bg); }
+/* Atmosphere's keys, in the app (212-atmos-dock.js): the one keyboard, its
+   fixed 812 × 100 px, along the bottom of the Atmosphere page only. */
+body.atmospage .seqview { flex-direction: column; }
+.ad-dock { display: none; }
+body.atmospage .ad-dock { flex: none; height: 120px; display: flex; gap: 10px; align-items: center; padding: 8px 14px 10px;
+  border-top: 1px solid var(--look-line); background: rgba(var(--black-rgb), .22); color: var(--look-text); font: var(--fs-m)/1.3 var(--sans); }
+.ad-info { width: 96px; flex: none; display: flex; flex-direction: column; gap: 4px; }
+.ad-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 6px; background: var(--look-well); width: max-content; }
+.ad-seg span, .ad-seg b { height: 20px; min-width: 20px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--look-text-3); cursor: pointer; font: 500 var(--fs-s) var(--mono); }
+.ad-seg b.on { color: var(--on); cursor: default; }
+.ad-midi { height: 22px; font: 500 var(--fs-s) var(--sans); color: var(--look-text-2); background: var(--look-well); border: 1px solid var(--look-line); border-radius: 6px; }
+.ad-hint, .ad-ro { font: 400 var(--fs-xs)/1.35 var(--mono); color: var(--look-text-3); }
+.ad-keys { flex: none; width: 812px; height: 100px; }
+.ad-keys canvas { display: block; cursor: pointer; touch-action: none; }
 /* The Atmosphere page is the same frame showing only Atmosphere, and Draw the
    same frame showing only its canvas. The page is the instrument, not the open
    sound, so the sound's overview strip goes, as on Wave, and the page has the
    whole height. */
-body.atmospage #overview, body.drawpage #overview, body.clonepage #overview { display: none; }
+body.atmospage #overview, body.drawpage #overview, body.clonepage #overview, body.bandpage #overview { display: none; }
 
 /* ── PERFORMANCE ─────────────────────────────────────────────────────────────
    The scale sequencer's panel, on the grain page. These are its rules and

@@ -444,8 +444,12 @@ respond to its own MIDI channel", "each item gets its own midi channel", and
 - **Held from MIDI too**, with the velocity. Two parts on the same channel
   play together; a release goes to whoever had the press, even if a channel
   changed in between. CC 120/123 let every key go.
-- **Off is silent**: a synth that is off plays nothing from the steps, its
-  keys or MIDI.
+- **Atmosphere is its own instrument** (RJ: "a completely separate synth
+  from the scale sequencer … I shouldn't have to turn it on"). Its keys and
+  MIDI play it always, from the Atmosphere page or Seq; its power switch is
+  only whether the sequencer's steps play it too. The Atmosphere page is
+  never dimmed and has no "turn on". It starts on Classic's waves in
+  oscillator A. Classic, off, is silent to MIDI.
 - **How MIDI gets here.** The synths are WebAudio in this page, so the server
   keeps what arrives on their channels in a numbered queue, and the page asks
   for it with a long poll (`GET /api/engine/midi/events?after=N&wait=ms`),
@@ -912,3 +916,106 @@ readings, the settings and the seed: the same seed makes the same piece.
 
 Tests: `tests/ui/sequencer-clone.spec.mjs` (the Stems routes stood in for with a
 small song's reading).
+
+## The pages, as RJ set them (16 Nov 2026)
+
+- **Seq** is the scale sequencer as it was built (September): the synth, the
+  filter, three LFOs, the delay, the scale, the steps, the performance and the
+  88 keys, in the app's look. Atmosphere, its Space, the Output scope, the
+  Journey and the Band are not shown there (`style.css`, "THE SEQ PAGE"); none
+  of them is removed.
+- **Band** is a rail page of its own: the same frame with `seq:only` `band`
+  (`body.only-band`), the Band panel as it was, with Play, Stop and the tempo.
+  Clone's "Open" goes there.
+- **Atmosphere** has no file overview, transport line or Atmosphere bar; it
+  starts with the oscillators. Voice and Amp sit tight; Character, Sympathy,
+  Space and Output are one line; the keys are a 61-key piano, which the
+  computer's letters play too (A–; from the strip's middle C, Z and X for the
+  octave).
+- **Stems** (and every page that plays a plain file): Play is that file alone;
+  `seqSync` starts the sequencer only where `playsDocument()`.
+
+## Atmosphere's own filter and effects (16 Nov 2026)
+
+RJ: "It should have its own filter … it's its own synth", and "right click,
+insert effects … all the effects … like I can on the grain page".
+
+- **Its own filter, one per voice** (`atVoiceFilter`, atmos.js): low-pass,
+  band or high-pass, cutoff, resonance, key follow and an envelope of its own
+  (amount, attack, decay, sustain, release). Open and still, it is not built,
+  so a voice sounds as it did. Seq's filter no longer touches Atmosphere:
+  Seq's filter leaves through `melBus` (app.js) to the delay and Space, and
+  Atmosphere joins there, after it. The Band's mixer takes `melBus` too.
+- **Its own effects** (atfx.js): the FX line, after its voice, character and
+  sympathy and before the delay and Space. Right-click (or ＋) inserts any
+  effect the app's suites list; a module's right-click opens, switches,
+  inserts before or after, replaces or removes it; a module drags to move;
+  a click opens its window with every control, Mix and Level.
+- **The same effects as the engine.** `core/crates/fx-wasm` is the `fx` crate's
+  `Rack` built for wasm32 (`tools/build-fx-wasm.sh` writes
+  `ui/sequencer/atfx.wasm`), run in an AudioWorklet (`atfx-worklet.js`). No
+  lead, no round trip: the keys stay quick. Run the script after changing an
+  effect, then rebuild the binary.
+- **Kept** in the hidden field `#atFxChain` (JSON) among Atmosphere's
+  switches, so presets and morphs carry it, and in this browser
+  (`atmos.fx`).
+- **In a film too** *(18 Nov 2026)*: `renderFilm` (bridge.js) awaits
+  `atfxOffline`, which puts the chain's worklet into the offline context and
+  waits for it to say "laid" before the render starts. With an empty line
+  nothing is added, so the render is the samples it was. The physically
+  modelled voice is not in a film: only keys and MIDI play it, and a film has
+  neither.
+
+## Atmosphere: a synth of its own (16 Nov 2026, later)
+
+RJ: "completely its own synth … its own MIDI channel, its own filter section,
+its own amplitude section, its own effects section … its own volume … nothing
+to do with anything else", with its own LFOs and its own tuning.
+
+- **The sound:** voice (its oscillators) → its filter (one per voice) → its
+  Amp → Character → Sympathy → its FX line → `atOut` (trim 0.7, its old level)
+  → `atTrem` (its volume LFO) → the master. Never Seq's filter, delay, Space,
+  Vol (`seqVol`, now before the master) or LFOs. Seq's steps no longer play it
+  (`playNote`); its keys and its MIDI channel do.
+- **Its own LFOs**, three: shape, rate, depth, and a target — cutoff (every
+  voice's filter, through the `cutoff` bus), pitch, volume, pan, blend, air,
+  vowel, fit. Seq's LFOs no longer offer Atmosphere's targets.
+- **Its own tuning:** every scale in the library, its own root and octave;
+  each "Same as Seq" until set (`atKeyHz`). Its keys, Sympathy and the Scale
+  spectrum oscillator use it.
+- **The page**, in signal order: oscillators; Voice, Amp; Filter, Character,
+  Sympathy; LFO 1–3, Tuning; FX, Output; keys. No Delay or Space panel.
+- `melBus` is stereo by its own settings: it used to become stereo only
+  because Atmosphere joined it, and the Band's melody channel takes 3 dB off a
+  mono input.
+- Tests: `tests/ui/sequencer-atfx.spec.mjs`.
+
+## Atmosphere's physical models (17 Nov 2026)
+
+RJ: "its oscillators should be physically modeled"; "builds all of the modeled
+instruments". Plan and mock-up: `WORK DIR/page-mockups/ATMOS-PHYS-PLAN.md`,
+`atmos-phys.html`; a phrase on each model: `page-mockups/atmos-models/*.wav`.
+
+- **The engine** is `core/crates/atmos` (Rust, no dependencies): ten models —
+  plucked string (waveguide with stiffness and a body), bowed string
+  (stick–slip bow on a two-part waveguide), struck bar (wood to metal modes),
+  bell, glass (bowed or struck), membrane (Bessel modes, tension drop), blown
+  pipe (a tuned bore and a jet), reed, voice (glottis through formants), and
+  Classic (band-limited waves) — and the whole voice: two oscillators with
+  octave, fine and up to three unison copies, blend, sub, air, glide, drift,
+  its own filter and envelope, the Amp, its three LFOs; sixteen voices.
+- **In the page** it runs in an AudioWorklet (`atmos-worklet.js`, built as
+  `atmos.wasm` by `tools/build-fx-wasm.sh`); `atphys.js` sends it every
+  control and plays it from Atmosphere's keys and MIDI channel. Its output goes
+  into Character, then Sympathy and the FX line, as before.
+- **The oscillator panels** show the ten models as cards, the running model's
+  picture (the string's or bore's shape, the modes ringing), its four controls,
+  Oct and Fine. The old eight kinds (and the old browser voice) are kept,
+  unlisted, for the Band's own patches and Draw's Atmosphere ink.
+- **Tests:** `core/crates/atmos/tests/models.rs` (pitch within 2 cents — the
+  bowed string 5, the blown pipe 20 — level, a sweep of every control, the
+  physics, sixteen voices in a third of real time) and
+  `tests/ui/sequencer-atphys.spec.mjs`. They run on the PC (`tools/pc/
+  test-on-pc.sh rust`) and the MacBook (`tools/pc/test-on-mbp.sh`).
+- Not yet: a film's offline render does not include Atmosphere's engine or
+  its FX line.

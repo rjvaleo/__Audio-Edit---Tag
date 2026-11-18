@@ -38,6 +38,13 @@ pub fn spike_file(t_ms: f64) -> String {
 
 /// This process's CPU seconds (user + system) and its peak resident memory in
 /// bytes.
+#[cfg(not(unix))]
+pub fn usage() -> (f64, u64) {
+    // Not measured off Unix (the PC runs the tests on Windows).
+    (0.0, 0)
+}
+
+#[cfg(unix)]
 pub fn usage() -> (f64, u64) {
     // SAFETY: getrusage fills the struct it is given and nothing else.
     let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
@@ -324,6 +331,8 @@ mod tests {
         assert_eq!(w.cpu_max, 30.0);
     }
 
+    // `usage` reads nothing off Unix (the PC's Windows runs leave it at zero).
+    #[cfg(unix)]
     #[test]
     fn this_process_has_cpu_time_and_memory() {
         let (cpu, rss) = usage();

@@ -155,7 +155,8 @@ function gsFit() {
   if (!app) return;
   const cw = host.clientWidth, ch = host.clientHeight;
   if (!cw || !ch) return;
-  const s = Math.min(cw / GS_W, ch / GS_H, 1.3);
+  // One size, never scaled to the window: it scrolls (RJ, 17 Nov 2026).
+  const s = 1;
   GS.scale = s;
   app.style.transform = `scale(${s})`;
 }
@@ -368,6 +369,32 @@ function gsRestyle() {
   if (GS.themed === themeStamp) return;
   GS.themed = themeStamp;
   GS_KEYS.cl = '';
+}
+
+/// With no sound open, Grain opens its own: a pulse wave, 25 % wide, at C3, so
+/// the keys play at once (RJ, 17 Nov 2026: "a default pulse width wave to load
+/// up in the grain synth so that we can just load it without having to worry
+/// about loading a sound"). The server writes it into a hidden folder of the
+/// library (`api_start_sound`); it opens as any sound does, in a tab, and
+/// opening a real sound is just another tab. Opened when the app starts
+/// (260-startup.js), and by the rail's Grain button if nothing is open. False if there is no library to put it in.
+async function gsOpenStartSound({ ifNothingOpen = false } = {}) {
+  try {
+    const f = await postJSON('/api/start-sound', {});
+    // At launch it steps aside for a sound opened while it was being fetched:
+    // it is there so the pages have something, never to replace a choice.
+    if (ifNothingOpen && (state.selectedFile || state.tabs.length)) return true;
+    const file = { name: f.name, path: f.path, sampleRate: f.sampleRate, channels: f.channels, bits: 32, frames: f.frames,
+      duration: f.frames / f.sampleRate, format: 'wav', category: 'Synth', instrument: 'Pulse wave', machine: '', confidence: 1 };
+    // A tab of its own, as a double-click in the library makes (`openInEditor`),
+    // without going anywhere: the rail goes on to Grain itself.
+    stashActiveTab();
+    state.tabs.push(blankTab(file));
+    adoptTab(state.tabs.length - 1);
+    renderTabs();
+    await selectFile(file, { keepTab: true });
+    return true;
+  } catch (e) { console.warn('start sound:', e); return false; }
 }
 
 function gsEnter() {

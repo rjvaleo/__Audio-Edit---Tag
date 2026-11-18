@@ -31,7 +31,7 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
   --gs-f-time: var(--look-f-time); --gs-f-pitch: var(--look-f-pitch); --gs-f-tone: var(--look-f-tone);
   --gs-f-attack: var(--look-f-attack); --gs-f-space: var(--look-f-space); --gs-f-level: var(--look-f-level);
   --gs-noise: var(--look-grain);
-  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: hidden;
+  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: auto; /* one size; it scrolls */
   color: var(--gs-t); font: var(--fs-m)/1.3 var(--sans); user-select: none;
   background: var(--gs-noise), radial-gradient(120% 80% at 30% 0%, var(--gs-panel), var(--gs-chassis) 60%);
   background-blend-mode: soft-light, normal;
@@ -95,7 +95,7 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 @keyframes gs-flow { to { stroke-dashoffset: -9; } }
 #grainView .gs-rack { flex: none; display: flex; align-items: center; gap: 3px; height: 38px; padding: 0 4px 0 3px; border-radius: var(--r-l); background: linear-gradient(180deg, rgba(var(--on-rgb), .13), rgba(var(--on-rgb), .04)); box-shadow: inset 0 0 0 1px rgba(var(--on-rgb), .5), 0 2px 8px rgba(var(--black-rgb), .5); }
 #grainView .gs-rack.on { background: linear-gradient(180deg, rgba(var(--on-rgb), .24), rgba(var(--on-rgb), .08)); box-shadow: inset 0 0 0 1px var(--gs-on), 0 0 14px rgba(var(--on-rgb), .25); }
-#grainView .gs-rack.denser { gap: 2px; }
+#grainView .gs-rack.denser { gap: 1px; }
 #grainView .gs-rack.denser .gs-ar { display: none; }
 #grainView .gs-lab2 { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 32px; height: 30px; border-radius: var(--r-m); cursor: pointer; padding: 0; background: none; box-shadow: none; border: 0; flex: none; }
 #grainView .gs-lab2 b { font: 700 var(--fs-s) var(--mono); letter-spacing: .12em; color: var(--gs-on); }
@@ -112,7 +112,8 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
 #grainView .gs-tplus { width: 26px; justify-content: center; padding: 0; color: var(--gs-on); font-size: var(--fs-l, 14px); }
 #grainView .gs-ar { color: rgba(var(--on-rgb), .6); font-size: var(--fs-m); flex: none; }
 #grainView .gs-tile.nm0 b { display: none; }
-#grainView .gs-tile.nm0 { padding: 0 6px; }
+#grainView .gs-tile.nm0 { padding: 0 4px; gap: 2px; }
+#grainView .gs-tile.nm0 .gs-fxi { width: 14px; }
 #grainView .gs-tile.ic0 .gs-fxi { display: none; }
 #grainView .gs-head.gs-fxopen .gs-tab.on { color: var(--gs-t3); background: none; box-shadow: inset 0 -2px 0 var(--gs-on); }
 #grainView .gs-outl { font: 700 var(--fs-s) var(--mono); letter-spacing: .12em; color: var(--gs-t2); flex: none; }
@@ -452,3 +453,7 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
    every mode by family, so the family tabs are not needed to reach one. */
 .gs-fxview .fx-modebar { margin-bottom: 2px; }
 .gs-fxview .fx-modebar .fx-mode-families { display: none; }
+
+/* The keys stay on screen while the page, one size, scrolls (RJ, 17 Nov 2026:
+   "we want that keyboard to be persistent"). */
+#grainView .gs-dock { position: sticky; bottom: 0; z-index: 6; background: var(--gs-chassis); }

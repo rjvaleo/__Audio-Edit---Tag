@@ -8,6 +8,9 @@ async function showSonicTags(file) {
   const box = $('sonicTags');
   if (!box) return;
   const seq = ++sonicSeq;
+  // The app's own starting sound (`.mgl/`, 406-grain-page.js) is not one of the
+  // library's: there is nothing measured to ask for, and asking was a 404.
+  if (file.path.startsWith('.mgl/')) { box.innerHTML = '<span class="dim">not measured</span>'; return; }
   box.textContent = '…';
   let r;
   try {

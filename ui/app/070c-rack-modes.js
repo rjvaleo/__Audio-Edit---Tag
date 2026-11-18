@@ -37,7 +37,7 @@ function fxFaceStyle(slot) {
 }
 
 /// The fields a slot keeps that are its mode's values rather than the slot's.
-const FX_SLOT_OWN = new Set(['id', 'kind', 'bypassed', 'suite', 'mode', 'rev', 'memory', 'face', 'wet', 'level']);
+const FX_SLOT_OWN = new Set(['id', 'kind', 'bypassed', 'suite', 'mode', 'rev', 'memory', 'face', 'wet', 'level', 'place']);
 
 /// A mode's values, as `memory` keeps them.
 function fxModeValues(slot) {
@@ -81,7 +81,8 @@ function fxSwitchMode(index, mode, suiteId) {
   Object.assign(fresh, {
     id: old.id, bypassed: old.bypassed, suite: suiteId, mode: mode.id, rev: mode.rev, memory,
   });
-  for (const k of ['wet', 'level', 'face']) if (old[k] !== undefined) fresh[k] = old[k];
+  // The slot's own: its footer, its look, and where its sound sits.
+  for (const k of ['wet', 'level', 'face', 'place']) if (old[k] !== undefined) fresh[k] = old[k];
   state.rack.slots[index] = fresh;
   pushRack({ immediate: true });
   renderRack();

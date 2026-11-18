@@ -230,13 +230,18 @@ pub struct Shared {
     /// grows it.
     retired_effects: Mutex<Vec<Box<dyn fx::Effect>>>,
 
+    /// Everything else the audio thread has replaced and must not free
+    /// itself: sounds, racks, banks of layers, transient maps. Freed by
+    /// [`Shared::collect`]. Its room is reserved up front, as above.
+    retired: Mutex<Vec<Retired>>,
+
     /// A transient map waiting to be adopted by the audio thread.
     ///
     /// Handed over for the same reason the rack is: deriving one runs an onset
     /// detector over the whole file, which is an allocation and a long walk,
     /// and neither belongs in a callback. `None` inside means a straight line,
     /// which is the ordinary case and needs no map at all.
-    pending_map: Mutex<Option<Option<fx::transient::TimeMap>>>,
+    pending_map: Mutex<Option<Option<Arc<fx::transient::TimeMap>>>>,
 
     /// The source split into partials, attacks and everything else, waiting to
     /// be adopted. Handed over for the same reason as the map: separating runs
@@ -396,10 +401,32 @@ impl Scope {
     }
 }
 
+/// Something the audio thread has finished with. Freeing it there could cost
+/// a block (a sound is a whole file), so it is carried back in one of these
+/// and dropped by [`Shared::collect`]. Nothing reads what is inside.
+#[allow(dead_code)]
+pub(crate) enum Retired {
+    Source(Arc<Source>),
+    Rack(fx::Rack),
+    Bank(crate::stretcher::LayerBank),
+    Map(Arc<fx::transient::TimeMap>),
+}
+
+/// Room for things on their way back, in [`Shared`]'s list and in the deck's
+/// own stash for when that list cannot be reached.
+const RETIRED_THINGS: usize = 32;
+
+/// Room for the grains reported between two visits from the grain view: the
+/// bound `report` keeps to, and one report over it.
+const EVENTS_ROOM: usize = 4096 + 2 * 128;
+
 /// The audio thread's own state. Lives in the callback closure, touched by
 /// nothing else.
 pub struct Core {
     renderer: Stretcher,
+    /// What could not be put on [`Shared`]'s list of things to free, kept
+    /// until it can be.
+    kept: Vec<Retired>,
     rack: Option<fx::Rack>,
     /// The rack being faded out of, and how many frames of the fade are left.
     ///
@@ -607,7 +634,10 @@ pub(crate) fn report(shared: &Shared, events: &[GrainEvent]) {
         if g.len() > 4096 {
             g.clear();
         }
-        g.extend_from_slice(events);
+        // Never past the room reserved: growing the list is an allocation,
+        // and this is the audio thread.
+        let room = g.capacity() - g.len();
+        g.extend_from_slice(&events[..events.len().min(room)]);
     }
 }
 

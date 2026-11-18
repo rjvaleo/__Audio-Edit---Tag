@@ -218,13 +218,35 @@ pub struct VoiceFeed {
     cap: AtomicU32,
     /// A ceiling set by hand, for a test or a slow machine. Nought is none.
     ceiling: AtomicU32,
-    /// An export: there is no deadline, and every voice asked for is played.
+    /// An export: there is no deadline, and every voice asked for (up to a
+    /// ceiling) is played.
     offline: AtomicBool,
     cost_ppm: [AtomicU32; 6],
 }
 
 impl VoiceFeed {
+    /// Free the voices and separations the audio thread has retired. True if
+    /// there were any. Never the audio thread.
+    pub fn collect(&self) -> bool {
+        // Dropped out here so no lock is held across a free of many megabytes.
+        // Drained rather than taken: the lists keep their capacity for the callback.
+        let retired: Vec<_> = self.retired.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
+        let parts: Vec<_> = self.retired_parts.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
+        !retired.is_empty() || !parts.is_empty()
+    }
+
     pub fn new() -> VoiceFeed {
+        let feed = VoiceFeed::unlocked();
+        // See `Shared::new`: every lock is locked once here, so that the
+        // audio thread is never the first to.
+        drop(feed.ready.lock());
+        drop(feed.retired.lock());
+        drop(feed.retired_parts.lock());
+        drop(feed.heads.lock());
+        feed
+    }
+
+    fn unlocked() -> VoiceFeed {
         VoiceFeed {
             ready: Mutex::new(Vec::with_capacity(POOL_SLOTS)),
             retired: Mutex::new(Vec::with_capacity(POOL_SLOTS)),
@@ -267,7 +289,8 @@ impl VoiceFeed {
         self.ceiling.store(n, Ordering::Relaxed);
     }
 
-    /// An export: play every voice, and take no notice of how long it takes.
+    /// An export, or a test run frame by frame: play every voice, and take no
+    /// notice of how long it takes. A ceiling still holds.
     pub fn set_offline(&self, on: bool) {
         self.offline.store(on, Ordering::Relaxed);
     }
@@ -295,13 +318,11 @@ pub fn cap_for(block_load: f32, voice_load: f32, per_voice: f32) -> u32 {
 /// if there is more to do straight away. Allocates; never the audio thread.
 pub fn feed(shared: &Shared, max_block: usize, channels: usize) -> bool {
     let f = &shared.voices;
-    // Dropped out here so no lock is held across a free of many megabytes.
-    // Drained rather than taken: the lists keep their capacity for the callback.
-    let retired: Vec<_> = f.retired.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
-    let parts: Vec<_> = f.retired_parts.lock().map(|mut g| g.drain(..).collect()).unwrap_or_default();
-    let dropped = !retired.is_empty() || !parts.is_empty();
-    drop(retired);
-    drop(parts);
+    let dropped = f.collect();
+    // And what the deck itself has finished with: old sounds, racks, banks
+    // and maps. This thread comes round every few milliseconds, so nothing
+    // retired waits long.
+    shared.collect();
     if !f.want.load(Ordering::Relaxed) {
         return false;
     }
@@ -576,7 +597,15 @@ impl Poly {
         }
         let shape = Shape::of(doc);
         let offline = shared.voices.offline.load(Ordering::Relaxed);
-        let cap = if offline { u32::MAX } else { self.cap(shared) };
+        // Offline, how long a block took means nothing: only a ceiling caps it.
+        let cap = if offline {
+            match shared.voices.ceiling.load(Ordering::Relaxed) {
+                0 => u32::MAX,
+                n => n,
+            }
+        } else {
+            self.cap(shared)
+        };
         let sr = doc.sample_rate.max(1) as f32;
         let steal_frames = (STEAL_SECONDS * sr) as u32;
 
@@ -826,7 +855,10 @@ impl Voice {
 fn voice_params(doc: &StreamParams, shape: Shape, key: u8, semis: f32) -> StreamParams {
     let mut p = *doc;
     p.algorithm = shape.algorithm;
-    p.semitones = (doc.semitones + semis).clamp(-48.0, 48.0);
+    // The key's pitch rides on the document's: Pitch's own ±48 plus a key as
+    // far as G9 (+67 from middle C) is wider than ±48, which is where the
+    // keys used to stop, at C8 (RJ, 16 Nov 2026). The engines' own limit.
+    p.semitones = (doc.semitones + semis).clamp(-fx::stream::MAX_SEMITONES, fx::stream::MAX_SEMITONES);
     // Two voices on one key are the same note twice; different keys are
     // different notes and should not throw the same grains.
     p.grain.seed = doc.grain.seed.wrapping_add((key as u32).wrapping_mul(0x9E37_79B9));
