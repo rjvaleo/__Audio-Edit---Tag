@@ -24,10 +24,11 @@ async function openFx(page) {
   await page.waitForFunction(() => document.body.classList.contains('fxpage'));
 }
 
-test('FX opens with nothing open, and shows the sources and the effects with no grain engine', async ({ page }) => {
+test('FX opens, and shows the sources and the effects with no grain engine', async ({ page }) => {
+  // With nothing of the user's open, the app's own pulse wave is (main, 18 Nov), and FX opens on it.
   await openFx(page);
   await expect(page.locator('#fxSources')).toBeVisible();
-  await expect(page.locator('#fxOpenName')).toHaveText('Nothing open');
+  await expect(page.locator('#fxOpenName')).not.toHaveText('');
   await expect(page.locator('#gsFxView')).toBeVisible();
   await expect(page.locator('#gsEngTabs')).toBeHidden();
   await expect(page.locator('#gsCpPb')).toBeHidden();
