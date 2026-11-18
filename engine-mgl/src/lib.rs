@@ -7,5 +7,5 @@ pub mod grain;
 mod wave;
 
 pub use crate::fx::Fx;
-pub use crate::grain::{Collector, Grain, GrainThing};
+pub use crate::grain::{Grain, GrainThing, Handle};
 pub use crate::wave::Wave;

@@ -11,7 +11,9 @@ use common::*;
 use engine_core::*;
 use engine_mgl::grain::{self, Grain, GrainThing};
 use mgl_engine::stretcher::LayerBank;
+use mgl_engine::transport::PitchTime;
 use mgl_engine::{Core, GrainKeys, KeyMode, Shared, Source};
+use mgl_fx::transient::TimeMap;
 use mgl_fx::grain::{Grain as GrainSettings, StreamParams};
 use mgl_fx::stretch::Algorithm;
 use std::sync::Arc;
@@ -101,6 +103,43 @@ enum Act {
     Pause,
     Sound(Arc<Source>),
     Settings(StreamParams),
+    /// A rack of one gain at this many dB, or no rack.
+    Rack(Option<f32>),
+    /// A bank for this many layers.
+    Bank(u32),
+    /// The separated parts of the sound made from this seed.
+    Parts(u32),
+    /// A straight-line map at this ratio, or none.
+    Map(Option<f32>),
+    Seek(u64),
+    Loop(bool, u64, u64),
+    Pitch(PitchTime),
+    PostRoll(u64),
+    Gain(f32),
+    Mute(bool),
+    Speed(f32),
+    Smoothing(f32),
+    Sides(f32, f32),
+}
+
+fn rack_at(db: f32, grid: usize) -> mgl_fx::Rack {
+    let mut rack = mgl_fx::Rack::new();
+    rack.push(Box::new(mgl_fx::Gain { db }));
+    rack.reserve_mix(grid * 2);
+    rack
+}
+
+fn bank_of(layers: u32, grid: usize) -> LayerBank {
+    LayerBank::build(Algorithm::Wsola, layers, grid, 2, SR)
+}
+
+fn parts_of(seed: u32) -> Arc<mgl_fx::hstream::Parts> {
+    let sp = params(Algorithm::Wsola, 2.0, 1, false);
+    Arc::new(mgl_fx::hstream::Parts::separate(&source_from(seed).samples, 2, sp.hybrid))
+}
+
+fn map_at(ratio: f32) -> TimeMap {
+    TimeMap::linear(FILE, ratio)
 }
 
 /// A script: each act with the sample it is made on, and how long it runs.
@@ -186,6 +225,19 @@ fn alone(setup: Setup, script: &Script) -> Vec<f32> {
                 Act::Pause => shared.pause(),
                 Act::Sound(sound) => shared.set_source(sound),
                 Act::Settings(sp) => shared.set_params(sp),
+                Act::Rack(db) => shared.set_rack(db.map(|db| rack_at(db, setup.grid))),
+                Act::Bank(layers) => shared.set_bank(bank_of(layers, setup.grid)),
+                Act::Parts(seed) => shared.set_parts(parts_of(seed)),
+                Act::Map(ratio) => shared.set_map(ratio.map(map_at)),
+                Act::Seek(frame) => shared.request_seek(frame),
+                Act::Loop(on, a, b) => shared.set_loop(on, a, b),
+                Act::Pitch(pt) => shared.set_pitch_time(pt),
+                Act::PostRoll(frames) => shared.set_post_roll_frames(frames),
+                Act::Gain(gain) => shared.set_gain(gain),
+                Act::Mute(on) => shared.set_mute(on),
+                Act::Speed(rate) => shared.set_speed(rate),
+                Act::Smoothing(amount) => shared.set_glide(amount),
+                Act::Sides(l, r) => shared.set_side_gains(l, r),
             }
             next += 1;
         }
@@ -240,9 +292,31 @@ fn mode_number(mode: KeyMode) -> f32 {
     }
 }
 
-/// Every act of a script as a message stamped with its sample.
+/// Every act of a script as a message stamped with its sample. `grid` is
+/// the deck's block, which racks and banks are sized for.
 fn send(ctl: &mut Controller, script: &Script) {
+    send_with(ctl, script, BLOCK)
+}
+
+fn send_with(ctl: &mut Controller, script: &Script, grid: usize) {
     for (frame, act) in script.acts.iter().cloned() {
+        let thing = match &act {
+            Act::Sound(sound) => Some(GrainThing::Source(Arc::clone(sound))),
+            Act::Settings(sp) => Some(GrainThing::Params(*sp)),
+            Act::Rack(db) => Some(GrainThing::Rack(db.map(|db| rack_at(db, grid)))),
+            Act::Bank(layers) => Some(GrainThing::Bank(bank_of(*layers, grid))),
+            Act::Parts(seed) => Some(GrainThing::Parts(parts_of(*seed))),
+            Act::Map(ratio) => Some(GrainThing::Map(ratio.map(|ratio| Arc::new(map_at(ratio))))),
+            Act::Seek(frame) => Some(GrainThing::Seek(*frame)),
+            Act::Loop(on, a, b) => Some(GrainThing::Loop { on: *on, a: *a, b: *b }),
+            Act::Pitch(pt) => Some(GrainThing::PitchTime(*pt)),
+            Act::PostRoll(frames) => Some(GrainThing::PostRoll(*frames)),
+            _ => None,
+        };
+        if let Some(thing) = thing {
+            ctl.give_at(frame, DECK, 0, Box::new(thing)).unwrap();
+            continue;
+        }
         let message = match act {
             Act::Mode(mode) => knob(grain::KEY_MODE, mode_number(mode)),
             Act::On(key, vel) => EventKind::Note(NoteEvent::on(key, vel)),
@@ -251,14 +325,15 @@ fn send(ctl: &mut Controller, script: &Script) {
             Act::Bend(semis) => knob(grain::BEND, semis),
             Act::Play => knob(grain::PLAY, 1.0),
             Act::Pause => knob(grain::PLAY, 0.0),
-            Act::Sound(sound) => {
-                ctl.give_at(frame, DECK, 0, Box::new(GrainThing::Source(sound))).unwrap();
-                continue;
+            Act::Gain(gain) => knob(grain::GAIN, gain),
+            Act::Mute(on) => knob(grain::MUTE, on as u32 as f32),
+            Act::Speed(rate) => knob(grain::SPEED, rate),
+            Act::Smoothing(amount) => knob(grain::SMOOTHING, amount),
+            Act::Sides(l, r) => {
+                ctl.send_at(frame, DECK, knob(grain::SIDE_LEFT, l)).unwrap();
+                knob(grain::SIDE_RIGHT, r)
             }
-            Act::Settings(sp) => {
-                ctl.give_at(frame, DECK, 0, Box::new(GrainThing::Params(sp))).unwrap();
-                continue;
-            }
+            _ => unreachable!("handed over as a thing, above"),
         };
         ctl.send_at(frame, DECK, message).unwrap();
     }
@@ -469,15 +544,15 @@ fn the_deck_does_not_allocate_from_its_first_block() {
 }
 
 /// What the deck itself retires (here, racks it has faded out of) is freed
-/// by the app through the deck's collector, never on the audio thread.
+/// by the app through the deck's handle, never on the audio thread.
 #[test]
-fn what_the_deck_retires_is_freed_by_the_collector() {
+fn what_the_deck_retires_is_freed_through_its_handle() {
     assert_the_check_is_on();
     let setup = Setup { alg: Algorithm::Wsola, layers: 3, cloud: false, run: true, played: false, grid: 128 };
     let src = source();
     let sp = params(setup.alg, 2.0, setup.layers, setup.cloud);
     let deck = Grain::new(SR, setup.grid, sp, Arc::clone(&src)).rack(rack(setup.grid)).bank(bank(setup).unwrap());
-    let collector = deck.collector();
+    let handle = deck.handle();
     let (mut ctl, mut audio) = engine(SR as f32, exact());
     ctl.add(DECK, Box::new(deck)).unwrap();
     ctl.connect_out(port(DECK, 0)).unwrap();
@@ -489,7 +564,190 @@ fn what_the_deck_retires_is_freed_by_the_collector() {
     assert_eq!(counted(), before, "allocations or frees inside a render");
     // Collecting from this thread while the deck plays on costs the audio
     // thread nothing either.
-    collector.collect();
+    handle.collect();
     render(&mut audio, 4_000, 128);
     assert_eq!(counted(), before);
+}
+
+/// Every control the deck has in MGL, moved while it plays: each lands as
+/// MGL's own setter does on the same line of the grid.
+#[test]
+fn the_decks_other_controls_land_as_mgls_setters_do() {
+    let setup = Setup { alg: Algorithm::Wsola, layers: 3, cloud: false, run: true, played: false, grid: 128 };
+    let pitch = PitchTime { on: true, speed: 150.0, pitch: 80.0, ..PitchTime::default() };
+    let script = Script {
+        acts: vec![
+            (100, Act::Play),
+            (3_000, Act::Gain(0.5)),
+            (5_001, Act::Sides(0.9, 0.4)),
+            (7_000, Act::Speed(1.5)),
+            (9_999, Act::Loop(true, 20_000, 60_000)),
+            (12_000, Act::Seek(30_000)),
+            (15_001, Act::Smoothing(40.0)),
+            (17_000, Act::Pitch(pitch)),
+            (22_000, Act::Speed(1.0)),
+            (25_000, Act::Mute(true)),
+            (27_000, Act::Mute(false)),
+            (29_000, Act::Loop(false, 0, 0)),
+            (30_000, Act::PostRoll(4_800)),
+            (33_000, Act::Pitch(PitchTime::default())),
+            (36_000, Act::Gain(1.0)),
+        ],
+        frames: 44_000,
+    };
+    let want = alone(setup, &script);
+    assert!(peak(&want) > 0.01, "the script is heard");
+    let plain = alone(setup, &Script { acts: vec![(100, Act::Play)], frames: 44_000 });
+    assert!(first_difference(&want, &plain).is_some(), "and the controls change it");
+    for block in [128, 512, 61, 0] {
+        let (mut ctl, mut audio) = deck(setup);
+        ctl.commit().unwrap();
+        send_with(&mut ctl, &script, setup.grid);
+        let (l, r) =
+            if block == 0 { render_uneven(&mut audio, script.frames, 7) } else { render(&mut audio, script.frames, block) };
+        assert_same(&format!("blocks of {block}"), &interleaved(&l, &r), &want);
+    }
+}
+
+/// A new rack, bank of layers, separation and transient map handed over
+/// while it plays, each on its sample: the same sound as MGL's setters, no
+/// memory touched on the audio thread, and every box back with the app.
+#[test]
+fn a_rack_a_bank_parts_and_a_map_are_handed_over_while_it_plays() {
+    assert_the_check_is_on();
+    let setup = Setup { alg: Algorithm::Wsola, layers: 3, cloud: false, run: true, played: false, grid: 128 };
+    let script = Script {
+        acts: vec![
+            (100, Act::Play),
+            (4_000, Act::Rack(Some(-9.0))),
+            (9_000, Act::Bank(2)),
+            (13_000, Act::Parts(99)),
+            (17_000, Act::Map(Some(3.0))),
+            (21_000, Act::Rack(Some(-12.0))),
+            (21_000, Act::Rack(Some(-1.0))),
+            (26_000, Act::Map(None)),
+            (30_000, Act::Rack(None)),
+        ],
+        frames: 36_000,
+    };
+    let want = alone(setup, &script);
+    let plain = alone(setup, &Script { acts: vec![(100, Act::Play)], frames: 36_000 });
+    assert!(first_difference(&want, &plain).is_some(), "the hand-overs change the sound");
+
+    let src = source();
+    let sp = params(setup.alg, 2.0, setup.layers, setup.cloud);
+    let deck = Grain::new(SR, setup.grid, sp, Arc::clone(&src)).rack(rack(setup.grid)).bank(bank(setup).unwrap());
+    let handle = deck.handle();
+    let (mut ctl, mut audio) = engine(SR as f32, exact());
+    ctl.add(DECK, Box::new(deck)).unwrap();
+    ctl.send(DECK, knob(grain::RUN, 1.0)).unwrap();
+    for message in [
+        knob(grain::AMP_ATTACK, 0.01),
+        knob(grain::AMP_DECAY, 0.05),
+        knob(grain::AMP_SUSTAIN, 0.7),
+        knob(grain::AMP_RELEASE, 0.05),
+        knob(grain::KEY_GLIDE, 0.02),
+        knob(grain::START, 0.1),
+    ] {
+        ctl.send(DECK, message).unwrap();
+    }
+    ctl.connect_out(port(DECK, 0)).unwrap();
+    ctl.commit().unwrap();
+    send_with(&mut ctl, &script, setup.grid);
+    let before = counted();
+    let (l, r) = render(&mut audio, script.frames, 128);
+    assert_eq!(counted(), before, "allocations or frees inside a render; the last sizes: {:?}", last_sizes());
+    assert_same("handed over through the engine", &interleaved(&l, &r), &want);
+    assert_eq!(ctl.collect().things, 8, "every box came back");
+    handle.collect();
+    render(&mut audio, 2_000, 128);
+    assert_eq!(counted(), before, "collecting from the app costs the audio thread nothing");
+}
+
+/// The app reads where the deck is and what it is playing through the
+/// deck's handle, from its own thread, without costing the audio thread.
+#[test]
+fn the_app_can_read_where_the_deck_is() {
+    assert_the_check_is_on();
+    let setup = Setup { alg: Algorithm::Granular, layers: 1, cloud: true, run: true, played: false, grid: 128 };
+    let src = source();
+    let sp = params(setup.alg, 2.0, setup.layers, setup.cloud);
+    let deck = Grain::new(SR, setup.grid, sp, src);
+    let handle = deck.handle();
+    let (mut ctl, mut audio) = engine(SR as f32, exact());
+    ctl.add(DECK, Box::new(deck)).unwrap();
+    ctl.send(DECK, knob(grain::RUN, 1.0)).unwrap();
+    ctl.connect_out(port(DECK, 0)).unwrap();
+    ctl.commit().unwrap();
+    assert!(!handle.is_playing());
+    assert_eq!(handle.position(), 0);
+    ctl.send_at(1_000, DECK, knob(grain::PLAY, 1.0)).unwrap();
+    let before = counted();
+    render(&mut audio, 12_800, 128);
+    assert!(handle.is_playing());
+    let first = handle.position();
+    assert!(first > 5_000, "the position has moved on: {first}");
+    assert_eq!(handle.spectrum().len(), 513, "a spectrum of 513 bands");
+    assert_eq!(handle.waveform().len(), 128, "a waveform of 128 columns");
+    let grains = handle.grains();
+    assert!(!grains.is_empty(), "the grains it started");
+    assert!(handle.grains().is_empty(), "taken once");
+    render(&mut audio, 12_800, 128);
+    assert!(handle.position() > first, "and it keeps moving");
+    assert!(!handle.grains().is_empty(), "with more grains");
+    ctl.send(DECK, knob(grain::PLAY, 0.0)).unwrap();
+    render(&mut audio, 1_280, 128);
+    assert!(!handle.is_playing());
+    assert_eq!(counted(), before, "reading it cost the audio thread nothing; the last sizes: {:?}", last_sizes());
+}
+
+/// MGL's housekeeping reads the sound to make the copies the top keys play
+/// from, so a new sound is offered to the deck and, if the housekeeping is
+/// mid-read, offered again at the next line. Here a second thread collects
+/// without pause while 300 sounds are handed over one after another: none
+/// is lost, the last one ends up playing, the audio thread touches no
+/// memory, and every box comes back.
+#[test]
+fn sounds_handed_over_while_the_app_collects_all_arrive() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    assert_the_check_is_on();
+    let setup = Setup { alg: Algorithm::Granular, layers: 1, cloud: false, run: true, played: false, grid: 64 };
+    let src = source();
+    let sp = params(setup.alg, 2.0, setup.layers, setup.cloud);
+    let deck = Grain::new(SR, setup.grid, sp, Arc::clone(&src));
+    let handle = deck.handle();
+    let (mut ctl, mut audio) = engine(SR as f32, exact());
+    ctl.add(DECK, Box::new(deck)).unwrap();
+    ctl.send(DECK, knob(grain::RUN, 1.0)).unwrap();
+    ctl.send(DECK, knob(grain::PLAY, 1.0)).unwrap();
+    ctl.connect_out(port(DECK, 0)).unwrap();
+    ctl.commit().unwrap();
+    let sounds: Vec<Arc<Source>> = (0..300).map(|i| if i % 2 == 0 { source_from(99) } else { source_from(7) }).collect();
+    let last = Arc::downgrade(sounds.last().unwrap());
+    for (i, sound) in sounds.into_iter().enumerate() {
+        ctl.give_at(640 + 128 * i as u64, DECK, 0, Box::new(GrainThing::Source(sound))).unwrap();
+    }
+    let stop = Arc::new(AtomicBool::new(false));
+    let collecting = {
+        let stop = Arc::clone(&stop);
+        std::thread::spawn(move || {
+            let mut rounds = 0u64;
+            while !stop.load(Ordering::Relaxed) {
+                handle.collect();
+                rounds += 1;
+            }
+            rounds
+        })
+    };
+    let before = counted();
+    let (l, _) = render(&mut audio, 640 + 128 * 300 + 4_096, 64);
+    assert_eq!(counted(), before, "allocations or frees inside a render; the last sizes: {:?}", last_sizes());
+    stop.store(true, Ordering::Relaxed);
+    let rounds = collecting.join().unwrap();
+    assert!(rounds > 1_000, "the other thread really was collecting: {rounds} rounds");
+    assert!(peak(&l) > 0.01, "it is heard");
+    assert_eq!(ctl.collect().things, 300, "every box came back");
+    // The last sound handed over is held by the deck; the 299 before it are
+    // gone once the app has collected.
+    assert!(last.upgrade().is_some(), "the last sound is the one the deck holds");
 }
