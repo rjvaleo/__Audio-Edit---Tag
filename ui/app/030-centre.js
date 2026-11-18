@@ -369,12 +369,22 @@ async function selectFile(file, { keepTab = false } = {}) {
   }
   showSonicTags(file);
 
-  try { state.edit = await api(`/api/edit?p=${encodeURIComponent(file.path)}`); }
-  catch { state.edit = null; }
+  // **A sound opened while this one was still loading wins.** Each wait below
+  // can outlast a second `selectFile`, and what came back was then written
+  // over the newer sound: its document replaced by this one's, its rack and
+  // lanes asked for again under the wrong name. The sound the app opens at
+  // launch (406-grain-page.js) made that likely, not just possible, so a load
+  // that has been overtaken stops here.
+  let edit = null;
+  try { edit = await api(`/api/edit?p=${encodeURIComponent(file.path)}`); }
+  catch { edit = null; }
+  if (state.selectedFile !== file) return;
+  state.edit = edit;
   reflectEditState();
   renderStretch();
 
   await loadPeaks();
+  if (state.selectedFile !== file) return;
   loadStats();
   loadAnnotations();
   loadRack();

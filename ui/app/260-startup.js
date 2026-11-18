@@ -66,6 +66,12 @@ async function refresh() {
     } else if (!s.indexed) {
       showPane('left', 'scan');
     }
+    // A sound open from the start (RJ, 17 Nov 2026: "a default wave that gets
+    // loaded in the app so that when it launches, you can go into the grain
+    // player, you can go into Hyperprism, you can go into anything"): the pulse
+    // wave Grain starts on (406-grain-page.js), in a tab of its own. Opening a
+    // real sound is another tab.
+    if (s.library && !state.selectedFile && !state.tabs.length && typeof gsOpenStartSound === 'function') await gsOpenStartSound({ ifNothingOpen: true });
   } catch (e) {
     toast('Cannot reach the server: ' + e.message);
   }

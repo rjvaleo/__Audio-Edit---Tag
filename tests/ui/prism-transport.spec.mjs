@@ -62,10 +62,16 @@ async function stripAt(page, u) {
 
 test('on Prism the bar plays, stops, loops and seeks the Prism deck', async ({ page }) => {
   const { sent, deck } = await open(page);
+  // Prism loops from the start (RJ, 17 Nov 2026): the deck was told so as it loaded.
+  await expect(page.locator('#loopBtn')).toHaveClass(/\bon\b/);
+  expect(sent.some((b) => b.deck === 'prism' && b.loop?.on === true), JSON.stringify(sent)).toBe(true);
   sent.length = 0;
 
   await page.locator('#nowBar #playBtn').click();
   await expect(page.locator('#playBtn')).toHaveAttribute('aria-label', 'Pause');
+  // The bar's Loop still switches it: off, and on again.
+  await page.locator('#nowBar #loopBtn').click();
+  await expect(page.locator('#loopBtn')).not.toHaveClass(/\bon\b/);
   await page.locator('#nowBar #loopBtn').click();
   await expect(page.locator('#loopBtn')).toHaveClass(/\bon\b/);
   await page.locator('#nowBar #playBtn').click();
@@ -99,8 +105,8 @@ test('on Prism the bar plays, stops, loops and seeks the Prism deck', async ({ p
 
 test('on Grain, after Prism, the bar is the main sound\'s again', async ({ page }) => {
   const { sent, files } = await open(page);
-  // Leave Prism with its deck looping, so the hand-back has something to undo.
-  await page.locator('#nowBar #loopBtn').click();
+  // Prism's deck is looping (it does from the start), so the hand-back has something to undo.
+  await expect(page.locator('#loopBtn')).toHaveClass(/\bon\b/);
   await page.locator('#leftRail .rl-item[data-page="grain"]').click();
   await expect(page.locator('body')).not.toHaveClass(/prismpage/);
   await expect(page.locator('#nbName')).toHaveText(files[0].split('/').pop());
@@ -126,4 +132,35 @@ test('on Grain, after Prism, the bar is the main sound\'s again', async ({ page 
   expect(await page.evaluate(() => engine.playing)).toBe(false);
   // The Prism deck was left as it was.
   expect(await page.evaluate(() => prismDeck.loop)).toBe(true);
+});
+
+test('the pad is played by holding it: a press starts Prism, letting go stops it', async ({ page }) => {
+  const { sent } = await open(page);
+  sent.length = 0;
+  const pad = await page.locator('#hsPad').boundingBox();
+  await page.mouse.move(pad.x + pad.width * 0.4, pad.y + pad.height * 0.5);
+  await page.mouse.down();
+  await expect.poll(() => sent.some((b) => b.deck === 'prism' && b.play === true)).toBe(true);
+  // (The deck's state is polled, so the page's own flag is read the same way.)
+  await expect.poll(() => page.evaluate(() => prismDeck.playing)).toBe(true);
+  await page.mouse.move(pad.x + pad.width * 0.6, pad.y + pad.height * 0.4);
+  await page.mouse.up();
+  await expect.poll(() => sent.some((b) => b.deck === 'prism' && b.play === false)).toBe(true);
+  await expect.poll(() => page.evaluate(() => prismDeck.playing)).toBe(false);
+  // Looping all the while: it never ran out under the hand.
+  expect(await page.evaluate(() => prismDeck.loop)).toBe(true);
+});
+
+test('a sound the bar started is not stopped by letting go of the pad', async ({ page }) => {
+  const { sent } = await open(page);
+  await page.locator('#nowBar #playBtn').click();
+  await expect(page.locator('#playBtn')).toHaveAttribute('aria-label', 'Pause');
+  sent.length = 0;
+  const pad = await page.locator('#hsPad').boundingBox();
+  await page.mouse.move(pad.x + pad.width * 0.5, pad.y + pad.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  expect(sent.some((b) => b.deck === 'prism' && b.play === false)).toBe(false);
+  await expect.poll(() => page.evaluate(() => prismDeck.playing)).toBe(true);
 });

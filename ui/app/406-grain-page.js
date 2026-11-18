@@ -376,11 +376,14 @@ function gsRestyle() {
 /// up in the grain synth so that we can just load it without having to worry
 /// about loading a sound"). The server writes it into a hidden folder of the
 /// library (`api_start_sound`); it opens as any sound does, in a tab, and
-/// opening a real sound is just another tab. Called by the rail's Grain button
-/// when nothing is open. False if there is no library to put it in.
-async function gsOpenStartSound() {
+/// opening a real sound is just another tab. Opened when the app starts
+/// (260-startup.js), and by the rail's Grain button if nothing is open. False if there is no library to put it in.
+async function gsOpenStartSound({ ifNothingOpen = false } = {}) {
   try {
     const f = await postJSON('/api/start-sound', {});
+    // At launch it steps aside for a sound opened while it was being fetched:
+    // it is there so the pages have something, never to replace a choice.
+    if (ifNothingOpen && (state.selectedFile || state.tabs.length)) return true;
     const file = { name: f.name, path: f.path, sampleRate: f.sampleRate, channels: f.channels, bits: 32, frames: f.frames,
       duration: f.frames / f.sampleRate, format: 'wav', category: 'Synth', instrument: 'Pulse wave', machine: '', confidence: 1 };
     // A tab of its own, as a double-click in the library makes (`openInEditor`),

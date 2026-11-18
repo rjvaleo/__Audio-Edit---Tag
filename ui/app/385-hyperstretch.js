@@ -299,9 +299,15 @@ function hsWire() {
     hs.prev = { p, t };
     hs.down = true;
     hs.vel = { x: 0, y: 0 };
+    // The pad is played by holding it (RJ, 17 Nov 2026: "when you click on
+    // there, it starts to play. When you let go clicking, it stops"). A press
+    // that starts the sound is the one whose release stops it; a sound already
+    // playing (the bar's Play, a take) is left playing.
+    hs.heldPlay = !!prismDeck.path && !prismDeck.playing;
     // RequestRecord: the click is the value and the record button at once.
     // In Lanes the recorder is ●'s, as the rack pad's REC was.
     if (!hsLanes() && hs.mode !== 'rec') hsStartRec(t);
+    if (hs.heldPlay && !prismDeck.playing) prismDeckPlay();
     hsMoveTo(p, t);
   });
   pad.addEventListener('pointermove', (e) => {
@@ -320,7 +326,13 @@ function hsWire() {
     const t = performance.now();
     const thrown = !hsLanes() && hs.throwOn && t - hs.prev.t < 60 && Math.hypot(hs.vel.x, hs.vel.y) > 1e-5;
     if (!thrown) hs.vel = { x: 0, y: 0 };
+    // The take goes on playing by itself (Loop on release) or the point was
+    // thrown: the sound goes on with it. Otherwise letting go stops what the
+    // press started.
+    const goesOn = thrown || (hs.loopOnRelease && hs.mode === 'rec');
     if (hs.loopOnRelease && hs.mode === 'rec' && !thrown) { hsStopRec(t); hsPlay(t); }
+    if (hs.heldPlay && !goesOn && prismDeck.playing) prismDeckPause();
+    hs.heldPlay = false;
     hsCommit();
   };
   pad.addEventListener('pointerup', release);

@@ -54,8 +54,17 @@ const prismDeck = {
   rack: { slots: [], master: undefined, pads: {}, postRoll: {} },
   /// Time & Pitch: the granular engine at rest until the pad moves it.
   stretch: { ratio: 1, semitones: 0, windowMs: 46, cloudMix: 0.5, algorithm: 'granular' },
-  playing: false, pos: 0, loop: false, wave: null, polled: 0,
+  playing: false, pos: 0, loop: true, wave: null, polled: 0,
 };
+
+/// Prism loops unless it is told not to (RJ, 17 Nov 2026: "it needs to
+/// automatically have loop set on the hyperpad so that the file doesn't just
+/// play once and stop"). The pad is played by holding it down, and a sound
+/// that ran out under the hand was the instrument going silent. Loop turned
+/// off on the bar is remembered in this browser.
+function prismLoopWanted() {
+  try { return localStorage.getItem('prism.loop') !== '0'; } catch { return true; }
+}
 
 /// The engines the pad can play through, as the Grain tab offers them (the
 /// ones the audio callback runs live). RJ, 14 Nov 2026: the engine "doesn't
@@ -87,6 +96,9 @@ async function prismDeckUse(path, { chosen = true } = {}) {
   prismDeck.path = path;
   prismDeck.playing = false;
   prismDeck.pos = 0;
+  // A deck that has just been loaded is not looping: set it as Prism keeps it.
+  prismDeck.loop = prismLoopWanted();
+  prismDeckSend({ loop: { on: prismDeck.loop, a: 0, b: 0 } });
   // Only a sound picked in the panel is Prism's own. The open file is what it
   // falls back on, so the next file opened is the next one it plays.
   prismDeck.borrowed = !chosen;
@@ -199,6 +211,7 @@ function prismDeckStop() {
 }
 function prismDeckLoop() {
   prismDeck.loop = !prismDeck.loop;
+  try { localStorage.setItem('prism.loop', prismDeck.loop ? '1' : '0'); } catch { /* private mode */ }
   prismDeckSend({ loop: { on: prismDeck.loop, a: 0, b: 0 } });
   prismDeckShow();
 }

@@ -93,3 +93,14 @@ test('Edit\'s sonogram reads at 4096, and its setting is off the Visuals tab', a
   expect(await page.evaluate(() => state.fftSize)).toBe(4096);
   expect(await page.evaluate(() => document.getElementById('fftSizes').closest('.fx').classList.contains('hidden'))).toBe(true);
 });
+
+test('the app starts with the pulse wave open, so every page has a sound', async ({ page }) => {
+  await page.goto('/');
+  await expect.poll(() => page.evaluate(() => state.selectedFile?.path)).toBe('.mgl/Pulse 25%.wav');
+  expect(await page.evaluate(() => state.mode)).toBe('overview');
+  // Prism and Edit open on it without asking for a sound.
+  await page.locator('#leftRail .rl-item[data-page="prism"]').first().click();
+  await expect(page.locator('body')).toHaveClass(/prismpage/);
+  await page.locator('#leftRail .rl-item[data-page="wave"]').first().click();
+  await expect(page.locator('body')).toHaveClass(/wavepage/);
+});

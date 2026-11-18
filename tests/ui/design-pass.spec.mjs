@@ -281,9 +281,13 @@ test('C8 · the automation timeline is drawn at its own width when its tab opens
 
 test('C9 · Browse with the library put away offers to open it', async ({ page }) => {
   await ready(page);
-  await page.evaluate(() => setMode('overview'));
+  // The app opens on its own pulse wave now (17 Nov 2026), so "nothing open"
+  // is made here: the offer is for a lane with no sound in it.
+  await page.waitForFunction(() => !!state.selectedFile);
+  await page.evaluate(() => { setMode('overview'); state.peaks = null; drawWave(); });
   await page.locator('#leftRail [data-mode="overview"]').first().click();
   await expect(page.locator('#leftPanel')).toHaveClass(/collapsed/);
+  await page.evaluate(() => { state.peaks = null; drawWave(); });
   const open = page.locator('#laneEmpty button');
   await expect(open).toBeVisible();
   await open.click();
