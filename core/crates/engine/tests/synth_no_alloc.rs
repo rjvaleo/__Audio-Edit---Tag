@@ -94,11 +94,6 @@ fn a_patch_handoff_and_a_table_swap_do_not_allocate_in_the_callback() {
     let fx_knobs: Vec<_> = ["fx0.k0", "fx1.k0", "fx2.k0", "fx3.k0", "fx4.k0"].iter().map(|k| param_id(k).unwrap()).collect();
     let fx_on: Vec<_> = (0..5).map(|i| param_id(&format!("fx{i}.on")).unwrap()).collect();
     let mut buf = vec![0f32; BLOCK * CH];
-    // Warm up, so anything built on a first call is built before counting.
-    for _ in 0..4 {
-        decks.fill(&mut buf, CH, &main, &prism);
-    }
-
     // The writers' calls are made with counting off: `set_patch` and
     // `set_table` run on a request thread, which may allocate. Only the
     // callback is counted.
@@ -107,6 +102,14 @@ fn a_patch_handoff_and_a_table_swap_do_not_allocate_in_the_callback() {
         decks.fill(buf, CH, &main, &prism);
         COUNTING.store(false, Ordering::SeqCst);
     };
+
+    // No warm-up: the very first blocks are counted too. (They used to be
+    // let off, and on macOS each lock the callback was first to try cost it
+    // an allocation.)
+    for _ in 0..4 {
+        callback(&mut decks, &mut buf);
+    }
+    assert_eq!(ALLOCS.load(Ordering::SeqCst), 0, "the first four blocks allocated or freed");
 
     wave.push(WaveEvent::NoteOn { note: 60, vel: 0.8 });
     wave.push(WaveEvent::NoteOn { note: 64, vel: 0.8 });

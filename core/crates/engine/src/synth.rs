@@ -272,7 +272,7 @@ impl Default for WaveShared {
 
 impl WaveShared {
     pub fn new() -> WaveShared {
-        WaveShared {
+        let shared = WaveShared {
             events: EventQueue::new(EVENT_CAPACITY),
             live: (0..NUM_PARAMS).map(|_| AtomicU32::new(0)).collect(),
             dirty: std::array::from_fn(|_| AtomicU64::new(0)),
@@ -289,7 +289,24 @@ impl WaveShared {
             pending_bank: std::array::from_fn(|_| Mutex::new(None)),
             returned_bank: std::array::from_fn(|_| Mutex::new(None)),
             current_bank: Mutex::new([None, None, None, None, None]),
+        };
+        // On macOS a lock makes its system lock the first time it is locked,
+        // which is an allocation. The callback only ever tries these, and it
+        // must not be the first to: lock each once, here.
+        drop(shared.pending_patch.lock());
+        drop(shared.current.lock());
+        drop(shared.telemetry.lock());
+        drop(shared.board.lock());
+        drop(shared.pending_board.lock());
+        drop(shared.returned_board.lock());
+        drop(shared.current_bank.lock());
+        for lock in shared.pending_tables.iter().chain(&shared.returned) {
+            drop(lock.lock());
         }
+        for lock in shared.pending_bank.iter().chain(&shared.returned_bank) {
+            drop(lock.lock());
+        }
+        shared
     }
 
     /// Hand over a board, checked by the caller ([`Board::complete`]).
