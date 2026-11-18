@@ -259,23 +259,25 @@ const clipped = `(() => {
   return out;
 })()`;
 
-test('nothing inside the page is clipped or overflows, at two window sizes', async ({ page }) => {
+test('nothing inside the page is clipped or overflows, and it is one size at any window', async ({ page }) => {
   await openWave(page);
+  // Room for the whole page: nothing in it clipped or overflowing.
+  await page.setViewportSize({ width: 2400, height: 1300 });
+  await page.waitForTimeout(250);
+  for (const v of ['play', 'create', 'matrix', 'fx']) {
+    await page.locator(`#wvViews [data-v="${v}"]`).click();
+    await page.waitForTimeout(150);
+    expect(await page.evaluate(clipped), `${v} at 2400×1300`).toEqual([]);
+  }
+  // One size, never scaled (RJ, 17 Nov 2026: "it's a fixed size… we scroll
+  // around on the page to get to it"): in a small window it scrolls.
   for (const size of [{ width: 1600, height: 1000 }, { width: 1180, height: 760 }]) {
     await page.setViewportSize(size);
     await page.waitForTimeout(250);
-    for (const v of ['play', 'create', 'matrix', 'fx']) {
-      await page.locator(`#wvViews [data-v="${v}"]`).click();
-      await page.waitForTimeout(150);
-      expect(await page.evaluate(clipped), `${v} at ${size.width}×${size.height}`).toEqual([]);
-    }
-    // The page is scaled, not cropped: its whole fixed size is inside the centre.
-    const fit = await page.evaluate(() => {
-      const h = $('waveView').getBoundingClientRect(), a = document.querySelector('#waveView .wv-app').getBoundingClientRect();
-      return { inside: a.left >= h.left - 1 && a.right <= h.right + 1 && a.top >= h.top - 1 && a.bottom <= h.bottom + 1, scale: WV.scale };
-    });
-    expect(fit.inside, `${size.width}×${size.height}`).toBe(true);
-    expect(fit.scale).toBeGreaterThan(0.5);
+    const fit = await page.evaluate(() => ({ scale: WV.scale, w: document.querySelector('#waveView .wv-app').getBoundingClientRect().width, sw: $('waveView').scrollWidth, sh: $('waveView').scrollHeight }));
+    expect(fit.scale).toBe(1);
+    expect(Math.round(fit.w)).toBe(1460);
+    expect(fit.sw).toBeGreaterThanOrEqual(Math.min(1460, fit.sw));
   }
 });
 

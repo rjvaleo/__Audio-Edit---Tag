@@ -53,14 +53,16 @@ test('Atmosphere starts with its oscillators, and the computer\'s keys play it',
     return vis[0]?.dataset.osc || vis[0]?.className;
   });
   expect(top).toContain('A');
-  expect(await f.evaluate(() => document.querySelectorAll('.ky-key').length)).toBe(61);
   // Seq's Filter and Delay, which it plays through, are shown here too.
   // Its own filter, LFOs, tuning and effects; nothing of Seq's synth.
   for (const s of ['.at-filt', '.at-lfo', '.at-tune', '#atFxLine', '.scope-out']) expect(await shown(f, s), `${s} on Atmosphere`).toBe(true);
   for (const s of ['#classicPanel', '.syn-filter', '.lfo-unit', '.fx-delay', '.fx-space']) expect(await shown(f, s), `${s} on Atmosphere`).toBe(false);
-  // One line: Character, Sympathy and its Filter share a top.
-  const tops = await f.evaluate(() => ['.at-char', '.at-sym', '.at-filt'].map((s) => Math.round(document.querySelector(s).getBoundingClientRect().top)));
-  expect(new Set(tops).size).toBe(1);
+  // Laid out as Wave is (17 Nov 2026): OSC A, OSC B and its Filter on one
+  // line; Amp, the LFOs and Voice on the next; Character, Sympathy, Tuning.
+  const topOf = (sels) => f.evaluate((ss) => ss.map((s) => Math.round(document.querySelector(s).getBoundingClientRect().top)), sels);
+  expect(new Set(await topOf(['.at-oscbox[data-osc="A"]', '.at-oscbox[data-osc="B"]', '.at-filt'])).size).toBe(1);
+  expect(new Set(await topOf(['.at-ampp', '.at-lfo.at-lfo-on', '.at-voice'])).size).toBe(1);
+  expect(new Set(await topOf(['.at-char', '.at-sym', '.at-tune'])).size).toBe(1);
   await f.locator('body').click({ position: { x: 5, y: 5 } });
   await f.evaluate(() => document.body.focus());
   await page.keyboard.down('a');

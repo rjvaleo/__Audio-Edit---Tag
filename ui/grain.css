@@ -452,3 +452,7 @@ body.gs-mapping #grainView .gs-nomap .gs-bw, body.gs-mapping #grainView .gs-noma
    every mode by family, so the family tabs are not needed to reach one. */
 .gs-fxview .fx-modebar { margin-bottom: 2px; }
 .gs-fxview .fx-modebar .fx-mode-families { display: none; }
+
+/* The keys stay on screen while the page, one size, scrolls (RJ, 17 Nov 2026:
+   "we want that keyboard to be persistent"). */
+#grainView .gs-dock { position: sticky; bottom: 0; z-index: 6; background: var(--gs-chassis); }

@@ -73,14 +73,30 @@ const wvFxOf = (n) => WV_FXCAT.by[n.kind] || null;
 const wvNodeCat = (n) => (n.kind === 'wave:drive' ? 'distortion' : (wvFxOf(n) || {}).category || 'utility');
 const wvNodeCol = (n) => (wvIsFx(n) ? wvCatCol(wvNodeCat(n), 64) : n.kind.startsWith('in:') ? WV_IN[n.kind].c : n.kind === 'out' ? 'var(--wv-acc)' : 'var(--wv-t2)');
 
-/// A node's name: an effect's own (Hyperprism's without the brand), a
-/// routing node's, an input's.
+/// The rack's mode for an effect node, `fx:<kernel>`: the same effect as on
+/// Prism's FX tab, with its suite, family, name, face and every control
+/// (RJ, 17 Nov 2026: "the same effects that you have on the effects tab on
+/// Hyperprism… the same visuals and the same amount of controls"). Null for
+/// routing, inputs, and the few kernels the rack does not list.
+function wvRackMode(n) {
+  if (!n || !n.kind.startsWith('fx:') || !state.suites?.length) return null;
+  const kernel = n.kind.slice(3);
+  for (const s of state.suites) for (const f of s.families) for (const m of f.modes) {
+    if (m.kernel === kernel && m.listed && state.shapers[m.kind]) return { suite: s, family: f, mode: m, shaper: state.shapers[m.kind] };
+  }
+  return null;
+}
+
+/// A node's name: the rack's for its effect; an effect's own (Hyperprism's
+/// without the brand) where the rack has none; a routing node's, an input's.
 function wvNodeName(n) {
   if (!n) return '';
   if (n.kind.startsWith('in:')) return WV_IN[n.kind].n;
   if (n.kind === 'out') return 'Out';
   if (n.kind === 'wave:drive') return 'Drive';
   if (WV_ROUTING[n.kind]) return WV_ROUTING[n.kind].n;
+  const rm = wvRackMode(n);
+  if (rm) return rm.mode.label;
   const f = wvFxOf(n);
   return (f ? f.label : n.kind.slice(3)).replace(/^Hyperprism /, '');
 }
@@ -292,7 +308,8 @@ async function wvBoardFetch(path, method = 'GET', body) {
 /// On every visit: the catalogue, the presets, and the board if the patch
 /// came without one.
 async function wvBoardConnect() {
-  const [fx, boards] = await Promise.all([wvBoardFetch('/api/wave/fx'), wvBoardFetch('/api/wave/boards')]);
+  // The rack's catalogue too: the board's menu, names and faces are the rack's.
+  const [fx, boards] = await Promise.all([wvBoardFetch('/api/wave/fx'), wvBoardFetch('/api/wave/boards'), loadShapers()]);
   if (fx.ok && Array.isArray(fx.json)) {
     WV_FXCAT.list = fx.json.filter((f) => f && f.kind);
     WV_FXCAT.by = Object.fromEntries(WV_FXCAT.list.map((f) => [f.kind, f]));
