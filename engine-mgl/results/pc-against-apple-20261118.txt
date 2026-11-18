@@ -1,0 +1,16 @@
+4 of 101 effects render Apple's bits here. The furthest from it:
+  hp-high-pass                -65.9 dB
+  hp-more-stereo              -75.7 dB
+  hp-quasi-stereo             -87.2 dB
+  dattorro-filter-bank        -99.8 dB
+  sh-phasor                  -101.3 dB
+  regalia                    -103.5 dB
+  dattorro-notch             -105.4 dB
+  dattorro-resonator         -108.9 dB
+  dattorro-plate             -127.0 dB
+  jcrev                      -129.9 dB
+  hp-band-pass               -130.5 dB
+  rappify                    -130.9 dB
+  convolution                -131.4 dB
+  spectral-dynamics          -134.5 dB
+  hp-phaser                  -134.8 dB

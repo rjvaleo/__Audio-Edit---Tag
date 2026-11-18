@@ -1,5 +1,5 @@
 [workspace]
-members = ["engine-core", "engine-capi", "engine-idmlab"]
+members = ["engine-core", "engine-capi", "engine-idmlab", "engine-mgl"]
 resolver = "2"
 
 [workspace.package]
@@ -17,6 +17,11 @@ opt-level = 3
 [profile.dev.package.prism-fx]
 opt-level = 3
 [profile.dev.package.prism-grain]
+opt-level = 3
+# MultiGrainLive's own crates: the same level MGL builds them at.
+[profile.dev.package.wave]
+opt-level = 3
+[profile.dev.package.audio-core]
 opt-level = 3
 
 [profile.release]

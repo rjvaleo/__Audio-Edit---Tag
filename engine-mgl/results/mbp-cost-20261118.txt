@@ -1,0 +1,20 @@
+Synth + 7 effects + a sound  median 0.6343 ms   99th 0.7192 ms (27.0% of the slot)   longest 0.8237 ms
+Each effect alone, fed a sound, 8 seconds each; costliest first:
+convolution                  median 0.0013 ms   99th 0.0936 ms (3.5% of the slot)   longest 0.1019 ms
+spectral-dynamics            median 0.0101 ms   99th 0.0566 ms (2.1% of the slot)   longest 0.0674 ms
+lxp-plate                    median 0.0367 ms   99th 0.0447 ms (1.7% of the slot)   longest 0.0577 ms
+lxp-chamber                  median 0.0353 ms   99th 0.0433 ms (1.6% of the slot)   longest 0.0490 ms
+lxp-hall                     median 0.0312 ms   99th 0.0391 ms (1.5% of the slot)   longest 0.0483 ms
+lxp-room                     median 0.0285 ms   99th 0.0364 ms (1.4% of the slot)   longest 0.0461 ms
+sh-phasor                    median 0.0191 ms   99th 0.0245 ms (0.9% of the slot)   longest 0.0323 ms
+sh-bubbler                   median 0.0118 ms   99th 0.0175 ms (0.7% of the slot)   longest 0.0237 ms
+sh-delay                     median 0.0117 ms   99th 0.0167 ms (0.6% of the slot)   longest 0.0202 ms
+sm-cirrus-major              median 0.0114 ms   99th 0.0164 ms (0.6% of the slot)   longest 0.0208 ms
+ambient-fdn                  median 0.0090 ms   99th 0.0163 ms (0.6% of the slot)   longest 0.0184 ms
+phaser                       median 0.0105 ms   99th 0.0160 ms (0.6% of the slot)   longest 0.0218 ms
+... 101 effects; the cheapest: gain                         median 0.0003 ms   99th 0.0003 ms (0.0% of the slot)   longest 0.0052 ms
+All 101 at once would take about 0.742 ms a block (28% of the slot)
+Wave, 1 notes held           median 0.0523 ms   99th 0.0607 ms (2.3% of the slot)   longest 0.0903 ms
+Wave, 8 notes held           median 0.3132 ms   99th 0.3463 ms (13.0% of the slot)   longest 0.3712 ms
+Wave, 16 notes held          median 0.6143 ms   99th 0.6909 ms (25.9% of the slot)   longest 0.8011 ms
+Wave, 32 notes held          median 1.2299 ms   99th 1.3225 ms (49.6% of the slot)   longest 1.5455 ms

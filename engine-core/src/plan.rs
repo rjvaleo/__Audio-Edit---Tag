@@ -651,12 +651,15 @@ impl Plan {
                 Op::Absorb(_) => module.absorb(&mut io),
             }
         }
-        left[..n].fill(0.0);
-        right[..n].fill(0.0);
+        let mut any = false;
         for src in out.iter_mut() {
             if let Buf::Audio { l, r } = &pool[src.place] {
-                add_stereo(&mut left[..n], &mut right[..n], &l[..n], &r[..n], src, step);
+                any |= add_stereo(&mut left[..n], &mut right[..n], &l[..n], &r[..n], src, step, !any);
             }
+        }
+        if !any {
+            left[..n].fill(0.0);
+            right[..n].fill(0.0);
         }
         *fade_left = fade_left.saturating_sub(n);
     }
@@ -671,45 +674,77 @@ fn moved(gain: f32, target: f32, step: f32) -> f32 {
     }
 }
 
-/// Add one cable into a sum at its level, moving the level as it goes. The
-/// level moves once a sample, so the result does not depend on how the audio
-/// is cut into pieces.
-fn add_stereo(l: &mut [f32], r: &mut [f32], from_l: &[f32], from_r: &[f32], src: &mut Src, step: f32) {
+/// Put one cable into a sum at its level, moving the level as it goes, and
+/// say whether anything was put. The level moves once a sample, so the result
+/// does not depend on how the audio is cut into pieces.
+///
+/// The `first` cable in is copied and the rest are added to it. Adding the
+/// first to silence instead would turn a negative zero positive, and a cable
+/// must carry every bit as it was.
+fn add_stereo(
+    l: &mut [f32],
+    r: &mut [f32],
+    from_l: &[f32],
+    from_r: &[f32],
+    src: &mut Src,
+    step: f32,
+    first: bool,
+) -> bool {
     if src.silent() {
-        return;
+        return false;
     }
     if src.full() {
-        for i in 0..l.len() {
-            l[i] += from_l[i];
-            r[i] += from_r[i];
+        if first {
+            l.copy_from_slice(from_l);
+            r.copy_from_slice(from_r);
+        } else {
+            for i in 0..l.len() {
+                l[i] += from_l[i];
+                r[i] += from_r[i];
+            }
         }
-        return;
+        return true;
     }
     let mut gain = src.gain;
     for i in 0..l.len() {
-        l[i] += from_l[i] * gain;
-        r[i] += from_r[i] * gain;
+        if first {
+            l[i] = from_l[i] * gain;
+            r[i] = from_r[i] * gain;
+        } else {
+            l[i] += from_l[i] * gain;
+            r[i] += from_r[i] * gain;
+        }
         gain = moved(gain, src.target, step);
     }
     src.gain = gain;
+    true
 }
 
-fn add_mono(values: &mut [f32], from: &[f32], src: &mut Src, step: f32) {
+fn add_mono(values: &mut [f32], from: &[f32], src: &mut Src, step: f32, first: bool) -> bool {
     if src.silent() {
-        return;
+        return false;
     }
     if src.full() {
-        for i in 0..values.len() {
-            values[i] += from[i];
+        if first {
+            values.copy_from_slice(from);
+        } else {
+            for i in 0..values.len() {
+                values[i] += from[i];
+            }
         }
-        return;
+        return true;
     }
     let mut gain = src.gain;
     for i in 0..values.len() {
-        values[i] += from[i] * gain;
+        if first {
+            values[i] = from[i] * gain;
+        } else {
+            values[i] += from[i] * gain;
+        }
         gain = moved(gain, src.target, step);
     }
     src.gain = gain;
+    true
 }
 
 /// Two buffers out of the pool at once, one to write and one to read.
@@ -732,22 +767,17 @@ fn mix_inputs(pool: &mut [Buf], mixes: &mut [Mix], inputs: &mut [usize], n: usiz
             continue;
         }
         inputs[mix.input] = mix.scratch;
-        match &mut pool[mix.scratch] {
-            Buf::Audio { l, r } => {
-                l[..n].fill(0.0);
-                r[..n].fill(0.0);
-            }
-            Buf::Control(values) => values[..n].fill(0.0),
-            Buf::Notes(notes) => notes.clear(),
-            Buf::Clock(_) | Buf::Sound(_) => {}
+        if let Buf::Notes(notes) = &mut pool[mix.scratch] {
+            notes.clear();
         }
+        let mut any = false;
         for src in mix.sources.iter_mut() {
             match pair(pool, mix.scratch, src.place) {
                 (Buf::Audio { l, r }, Buf::Audio { l: from_l, r: from_r }) => {
-                    add_stereo(&mut l[..n], &mut r[..n], &from_l[..n], &from_r[..n], src, step);
+                    any |= add_stereo(&mut l[..n], &mut r[..n], &from_l[..n], &from_r[..n], src, step, !any);
                 }
                 (Buf::Control(values), Buf::Control(from)) => {
-                    add_mono(&mut values[..n], &from[..n], src, step);
+                    any |= add_mono(&mut values[..n], &from[..n], src, step, !any);
                 }
                 (Buf::Notes(notes), Buf::Notes(from)) => {
                     for event in from.as_slice() {
@@ -757,8 +787,14 @@ fn mix_inputs(pool: &mut [Buf], mixes: &mut [Mix], inputs: &mut [usize], n: usiz
                 _ => {}
             }
         }
-        if let Buf::Notes(notes) = &mut pool[mix.scratch] {
-            sort_by_offset(notes.as_mut_slice());
+        match &mut pool[mix.scratch] {
+            Buf::Audio { l, r } if !any => {
+                l[..n].fill(0.0);
+                r[..n].fill(0.0);
+            }
+            Buf::Control(values) if !any => values[..n].fill(0.0),
+            Buf::Notes(notes) => sort_by_offset(notes.as_mut_slice()),
+            _ => {}
         }
     }
 }
