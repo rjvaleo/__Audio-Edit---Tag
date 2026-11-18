@@ -206,8 +206,10 @@ fn what_the_grain_deck_costs() {
                     ctl.send(1, EventKind::Note(NoteEvent::on(48 + i * 3, 0.8))).unwrap();
                 }
             }
-            timed(&mut audio, 200);
-            let times = timed(&mut audio, 3_000);
+            // 2.9 seconds in all: the sound, stretched to twice its two
+            // seconds, is still playing at the end.
+            timed(&mut audio, 100);
+            let times = timed(&mut audio, 1_000);
             let what = if keys == 0 { "playing".to_string() } else { format!("Poly, {keys} keys") };
             println!("{}", line(&format!("Grain {algorithm:?}, {what}"), &times));
         }
