@@ -7,9 +7,9 @@ The engine of the JUCE plan (`../PLAN.md`). Phase 1, the core: `../PHASE1.md`. P
 | `engine-core/` | The graph, cables, queues, clock, sound bank and plain utility modules. Rust, no dependencies. |
 | `engine-capi/` | The same behind a C interface, built as a static library for the JUCE app. |
 | `engine-idmlab/` | idMLab's Rust modules, run inside the engine (`../IDMLAB-WRAP.md`). |
-| `engine-mgl/` | MultiGrainLive's own: every prism-fx effect and the Wave synth, wrapped as they are. |
+| `engine-mgl/` | MultiGrainLive's own, wrapped as they are: every prism-fx effect (with Place, and the suites), the Wave synth, the grain deck (with Poly), the Sound module's document, the master ceiling. |
 | `probe/` | A JUCE console app that plays the engine on the real sound card and checks it against an offline replay. |
-| `tools/` | `test-on-mbp.sh` and `test-on-pc.sh` run the tests on the MacBook and the PC; `probe-on-mbp.sh` builds and runs the probe on the MacBook. |
+| `tools/` | `test-on-mbp.sh` and `test-on-pc.sh` run the tests on the MacBook and the PC; `mgl-engine-tests-on-mbp.sh` and `prism-grain-tests-on-mbp.sh` run MGL's own engine tests and prism-grain's there; `probe-on-mbp.sh` builds and runs the probe. |
 
 Tests always run with the allocation check on:
 
