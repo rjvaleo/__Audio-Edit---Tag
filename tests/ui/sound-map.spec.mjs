@@ -19,10 +19,18 @@ async function openMap(page) {
   await page.waitForFunction(() => window.SoundMap.state.count >= 2, null, { timeout: 20_000 });
 }
 
+/// How many sounds the server places: the scratch library's two tones, and
+/// whatever a test before this one left in it (in a full run, the take that
+/// sequencer-clone's Keep renders into Made/Clones is a third). The map is to
+/// draw every one of them.
+const placed = async (page) => (await (await page.request.get('/api/map')).json()).count;
+
 test('the map opens from the rail and places the library', async ({ page }) => {
   await openMap(page);
   await expect(page.locator('#soundMap')).toBeVisible();
-  await expect(page.locator('.smap-status')).toHaveText(/2 sounds/);
+  const n = await placed(page);
+  expect(n).toBeGreaterThanOrEqual(2);
+  await expect(page.locator('.smap-status')).toHaveText(new RegExp(`(^|\\D)${n} sounds`));
   // The axes are named where the world puts them.
   await expect(page.locator('.smap-axis[data-axis="high"]')).toBeVisible();
 });
@@ -66,7 +74,8 @@ test('Escape closes the card, then the map', async ({ page }) => {
 
 test('every sound is drawn as its own waveform, not a ball', async ({ page }) => {
   await openMap(page);
-  await expect.poll(() => page.evaluate(() => window.SoundMap.state.waves)).toBe(2);
+  const n = await placed(page);
+  await expect.poll(() => page.evaluate(() => window.SoundMap.state.waves)).toBe(n);
 });
 
 test('the library fills the window, with no box round it', async ({ page }) => {
