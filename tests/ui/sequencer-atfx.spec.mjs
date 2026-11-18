@@ -279,3 +279,51 @@ test('on its page, in the order its sound goes: Amp, Filter, then its effects; n
   expect(got.tune).toBe(true);
   expect(got.lfos).toBe(3);
 });
+
+// A film's render is the page's graph on an offline context (bridge.js,
+// `renderFilm`). Atmosphere's effects were left out of it; they are in it now
+// (18 Nov 2026), up before the render starts.
+test('a film\'s render has Atmosphere\'s effects in it, and none when the line is empty', async ({ page }) => {
+  // In the app: the film is rendered by the frame's bridge, which only the app has.
+  await page.goto('/');
+  await page.waitForFunction(() => typeof state !== 'undefined' && (state.folders || []).length > 0, { timeout: 20_000 });
+  await page.locator('#leftRail [data-mode="seq"]').click();
+  await page.waitForFunction(() => seq.ready === true, { timeout: 20_000 });
+  const frame = page.frames().find((f) => f.url().includes('/sequencer/'));
+  await frame.waitForFunction(() => typeof ATFX !== 'undefined' && ATFX.suites.length > 5);
+  const got = await frame.evaluate(async () => {
+    // A still voice that ends when it is let go.
+    for (const [k, v] of Object.entries({ atUnison: 1, atDrift: 0, atAir: 0, atEns: 0, atWow: 0, atSym: 0, atSub: 0, atAtk: 0, atRel: 0 })) { const el = document.getElementById(k + 'Slider'); if (el) el.value = v; }
+    atmosRead();
+    initAudio();
+    perfLoaded = null;
+    steps.forEach((s) => { s.rest = true; });
+    const real = drawAt;
+    // One short Atmosphere note at the film's start, laid as Draw lays its own.
+    drawAt = (k, time) => { if (k === 0) atmosPlay(440, time, 0.25); };
+    const rate = 48000;
+    const render = async () => (await seqBridge.renderFilm({ seconds: 2.5, rate, fps: 10, bands: 8, liss: 16 })).left;
+    const rms = (b, a, z) => { let e = 0; const i0 = Math.round(a * rate), i1 = Math.round(z * rate); for (let i = i0; i < i1; i++) e += b[i] * b[i]; return Math.sqrt(e / (i1 - i0)); };
+    try {
+      ATFX.chain = [];
+      const dry = await render();
+      const kind = ATFX.suites.find((s) => s.id.startsWith('reverb')).families[0].modes[0].kind;
+      ATFX.chain = [{ kind, on: true, params: {}, wet: 100, level: 0 }];
+      const wet = await render();
+      ATFX.chain = [{ kind, on: false, params: {}, wet: 100, level: 0 }];
+      const off = await render();
+      return { kind, note: rms(dry, 0.05, 0.25), dryTail: rms(dry, 1, 2), wetTail: rms(wet, 1, 2), offTail: rms(off, 1, 2), live: audioCtx.constructor.name };
+    } finally {
+      drawAt = real;
+      ATFX.chain = [];
+    }
+  });
+  // The note sounded, and dry it is over within the second.
+  expect(got.note, JSON.stringify(got)).toBeGreaterThan(0.002);
+  expect(got.dryTail).toBeLessThan(got.note * 0.02);
+  // Through the reverb it rings on; switched off, it does not.
+  expect(got.wetTail, JSON.stringify(got)).toBeGreaterThan(Math.max(got.dryTail * 20, got.note * 0.02));
+  expect(got.offTail).toBeLessThan(got.note * 0.02);
+  // The page has its own context back.
+  expect(got.live).toBe('AudioContext');
+});

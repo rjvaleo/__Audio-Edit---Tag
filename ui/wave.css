@@ -164,7 +164,7 @@ body.synthpage #overview { display: none; }
 #waveView .wv-wheels { display: flex; gap: 6px; }
 #waveView .wv-wheel { border-radius: var(--r-m); cursor: ns-resize; }
 #waveView .wv-keys { position: relative; flex: none; }
-#waveView .wv-macrodock { display: grid; grid-template-columns: repeat(4, 56px); grid-auto-rows: 56px; gap: 2px; align-content: center; }
+#waveView .wv-macrodock { display: grid; grid-template-columns: repeat(4, 68px); grid-auto-rows: 56px; gap: 2px 6px; align-content: center; }
 /* Two rows of four beside the 812 px keys: the dock gives them its height. */
 #waveView .wv-dock:has(.wv-macrodock) { padding-top: 3px; padding-bottom: 3px; }
 #waveView .wv-macrodock .wv-cell { gap: 0; }

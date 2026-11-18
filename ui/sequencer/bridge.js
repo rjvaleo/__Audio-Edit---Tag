@@ -835,6 +835,10 @@ async function flush() {
       }
     };
 
+    // Atmosphere's own effects (atfx.js), in the film as they are heard: the
+    // chain as the take's first moment leaves it, up before the render starts.
+    if (typeof atfxOffline === 'function') await atfxOffline(off);
+
     // **A loop goes round.** `span` seconds of the document from `at0`,
     // `repeats` times — the sound was tiled that way by the server — and then
     // the tail, where nothing new is played and the take holds where the loop

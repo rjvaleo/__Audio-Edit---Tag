@@ -958,7 +958,13 @@ insert effects … all the effects … like I can on the grain page".
   effect, then rebuild the binary.
 - **Kept** in the hidden field `#atFxChain` (JSON) among Atmosphere's
   switches, so presets and morphs carry it, and in this browser
-  (`atmos.fx`). A film's offline render does not run the chain yet.
+  (`atmos.fx`).
+- **In a film too** *(18 Nov 2026)*: `renderFilm` (bridge.js) awaits
+  `atfxOffline`, which puts the chain's worklet into the offline context and
+  waits for it to say "laid" before the render starts. With an empty line
+  nothing is added, so the render is the samples it was. The physically
+  modelled voice is not in a film: only keys and MIDI play it, and a film has
+  neither.
 
 ## Atmosphere: a synth of its own (16 Nov 2026, later)
 

@@ -50,7 +50,8 @@ function atfxBytes() {
 
 /// Put the chain between `inp` and `out` in this context: straight through
 /// until the worklet is up, then through it. An offline context (a film's
-/// render) is left straight through.
+/// render) is not given one here: `atfxOffline` puts it in, awaited, before the
+/// render starts.
 function atfxAttach(c, inp, out) {
   if (!c.audioWorklet || typeof AudioWorkletNode === "undefined" || c instanceof OfflineAudioContext) return;
   const up = c.__atfx || (c.__atfx = c.audioWorklet.addModule("atfx-worklet.js"));
@@ -70,6 +71,40 @@ function atfxAttach(c, inp, out) {
     ATFX.nodes = ATFX.nodes.filter((n) => n.context.state !== "closed");
     ATFX.nodes.push(node);
   }).catch((e) => console.warn("atfx:", e));
+}
+
+/// A film's render (bridge.js, `renderFilm`): the chain in the offline context
+/// too, and up before the render starts, so the film has what was heard. With
+/// no chain the line is left straight through, the same samples as before.
+/// Never throws: a render without the effects beats no render.
+async function atfxOffline(c) {
+  try {
+    if (!ATFX.chain.length || !c.audioWorklet || typeof AudioWorkletNode === "undefined") return false;
+    if (typeof atFxIn === "undefined" || !atFxIn || atFxIn.context !== c) return false;
+    const [, bytes] = await Promise.all([c.audioWorklet.addModule("atfx-worklet.js"), atfxBytes()]);
+    if (!bytes) return false;
+    const node = new AudioWorkletNode(c, "atfx", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+    // The worklet says "laid" once the module is in and the chain is built.
+    const laid = new Promise((res) => {
+      node.port.onmessage = (e) => {
+        if (e.data.t === "laid") res(true);
+        else if (e.data.t === "error") { console.warn("atfx:", e.data.text); res(false); }
+      };
+      setTimeout(() => res(false), 4000);
+    });
+    node.port.postMessage({ t: "wasm", bytes: bytes.slice(0) });
+    node.port.postMessage({ t: "chain", slots: ATFX.chain });
+    if (!(await laid)) return false;
+    try { atFxIn.disconnect(atOut); } catch (e) { /* not joined */ }
+    atFxIn.connect(node);
+    node.connect(atOut);
+    ATFX.nodes = ATFX.nodes.filter((n) => n.context.state !== "closed");
+    ATFX.nodes.push(node);
+    return true;
+  } catch (e) {
+    console.warn("atfx:", e);
+    return false;
+  }
 }
 
 function atfxSend(m) {
