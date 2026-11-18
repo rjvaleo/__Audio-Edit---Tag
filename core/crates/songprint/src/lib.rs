@@ -12,6 +12,7 @@
 
 pub mod features;
 pub mod json;
+pub mod midi;
 pub mod pitch;
 pub mod rhythm;
 pub mod sound;

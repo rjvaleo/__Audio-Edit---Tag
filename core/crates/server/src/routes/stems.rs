@@ -327,6 +327,101 @@ pub(super) fn api_stems_learn(app: &Arc<App>, req: &Request) -> Response {
     Response::json(Value::obj().set("learnt", to.is_file()).set("songs", n).to_string())
 }
 
+/// A split song's analysis (`songprint.json`) as the parts of a MIDI file.
+/// `parts` names the tracks wanted, in the file's order: drums (channel 10),
+/// bass (5), chords (6). `played`: the tempo follows the song's own beats;
+/// otherwise one tempo, on the grid. `each_bar`: chords struck again every bar.
+/// `bass_up`: the bass an octave higher.
+pub(super) fn midi_song(a: &Value, title: &str, parts: &[String], played: bool, each_bar: bool, bass_up: bool) -> Result<songprint::midi::Song, String> {
+    use songprint::midi::{self, Note, Part, Timing};
+    let num = |v: Option<&Value>| match v {
+        Some(Value::Num(n)) => Some(*n),
+        _ => None,
+    };
+    let nums = |v: Option<&Value>| -> Vec<f32> { v.and_then(|x| x.arr()).map(|x| x.iter().filter_map(|n| num(Some(n))).map(|n| n as f32).collect()).unwrap_or_default() };
+    let bars = a.get("bars").and_then(|b| b.arr()).ok_or("the analysis has no bars: press Read again")?;
+    let bar_count = num(a.get("bar_count")).map(|n| n as u32).unwrap_or(bars.len() as u32);
+    let timing = if played {
+        let beats_s = nums(a.get("beats_s"));
+        if beats_s.len() < 2 {
+            return Err("the analysis has no beat times".into());
+        }
+        Timing::Played { beats_s, downbeat_beat: num(a.get("downbeat_beat")).unwrap_or(0.0) as usize }
+    } else {
+        Timing::Grid { bpm: num(a.get("tempo").and_then(|t| t.get("bpm"))).ok_or("the analysis has no tempo")? as f32 }
+    };
+    let mut out = Vec::new();
+    for p in parts {
+        match p.as_str() {
+            "drums" => {
+                let rows: Vec<[Vec<f32>; 3]> = bars.iter().map(|b| [nums(b.get("kick")), nums(b.get("snare")), nums(b.get("hat"))]).collect();
+                out.push(Part { name: "Drums".into(), channel: 10, notes: midi::drums(&rows) });
+            }
+            "bass" => {
+                // [bar, step, length in steps, midi with cents as decimals, velocity]
+                let notes = a.get("bass").and_then(|b| b.get("notes")).and_then(|n| n.arr()).unwrap_or(&[]);
+                let notes = notes
+                    .iter()
+                    .filter_map(|n| {
+                        let v = nums(Some(n));
+                        (v.len() >= 5).then(|| Note { bar: v[0] as u32, step: v[1], steps: v[2].max(0.25), note: (v[3].round() + if bass_up { 12.0 } else { 0.0 }).clamp(0.0, 127.0) as u8, vel: v[4] })
+                    })
+                    .collect();
+                out.push(Part { name: "Bass".into(), channel: 5, notes });
+            }
+            "chords" => {
+                let changes = a.get("chords").and_then(|c| c.get("changes")).and_then(|c| c.arr()).unwrap_or(&[]);
+                let changes: Vec<(u32, String)> = changes.iter().filter_map(|c| Some((num(c.arr()?.first())? as u32, c.arr()?.get(1)?.as_str()?.to_string()))).collect();
+                out.push(Part { name: "Chords".into(), channel: 6, notes: midi::chords(&changes, bar_count, each_bar) });
+            }
+            other => return Err(format!("no such part: {other}")),
+        }
+    }
+    if out.is_empty() {
+        return Err("no parts chosen".into());
+    }
+    let markers = a.get("sections").and_then(|s| s.arr()).unwrap_or(&[]).iter().filter_map(|s| Some((num(s.get("start_bar"))? as u32, s.get("label")?.as_str()?.to_string()))).collect();
+    Ok(songprint::midi::Song { title: title.to_string(), timing, markers, parts: out })
+}
+
+/// POST {p, parts: ["drums", "bass", "chords"], timing: "grid" | "played",
+/// chords: "held" | "bar", bass: "as" | "up"}: write the song's notes as a MIDI
+/// file beside its stems, `Stems/<song>/<song>.mid`.
+pub(super) fn api_stems_midi(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let rel = v.get("p").and_then(|p| p.as_str()).unwrap_or("").to_string();
+    let (_, dir, name) = match song_dir(app, &rel) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let Some(a) = std::fs::read_to_string(dir.join("songprint.json")).ok().and_then(|t| json::parse(&t)) else {
+        return Response::error(400, "not analysed yet");
+    };
+    let is = |k: &str, want: &str| v.get(k).and_then(|x| x.as_str()) == Some(want);
+    let parts: Vec<String> = match v.get("parts").and_then(|p| p.arr()) {
+        Some(p) => p.iter().filter_map(|x| x.as_str().map(str::to_string)).collect(),
+        None => ["drums", "bass", "chords"].map(String::from).to_vec(),
+    };
+    let song = match midi_song(&a, &name, &parts, is("timing", "played"), is("chords", "bar"), is("bass", "up")) {
+        Ok(s) => s,
+        Err(e) => return Response::error(400, &e),
+    };
+    let bytes = songprint::midi::write(&song);
+    let file = format!("{name}.mid");
+    if let Err(e) = std::fs::write(dir.join(&file), &bytes) {
+        return Response::error(500, &e.to_string());
+    }
+    let counts: Vec<Value> = song.parts.iter().map(|p| Value::obj().set("name", p.name.as_str()).set("channel", p.channel as f64).set("notes", p.notes.len() as f64)).collect();
+    Response::json(
+        Value::obj()
+            .set("file", format!("{}/{file}", rel.trim_end_matches('/')))
+            .set("bytes", bytes.len() as f64)
+            .set("notes", song.parts.iter().map(|p| p.notes.len()).sum::<usize>() as f64)
+            .set("parts", Value::Arr(counts))
+            .to_string(),
+    )
+}
+
 /// POST {p, kind: "drums" | "bass", per}: cut tries from a song's stems into its
 /// `.tries/` folder. Drums: the clearest kicks, snares and hats. Bass: the
 /// longest clean notes, one per pitch.
@@ -1110,5 +1205,55 @@ mod pc_library_tests {
     fn a_heard_sound_is_kept_under_its_day_and_name() {
         let p = pc_cache_path(Path::new("/d"), "sounds/2026-11-16/kick-1.flac");
         assert_eq!(p, Path::new("/d/pc-cache/2026-11-16_kick-1.flac"));
+    }
+}
+
+#[cfg(test)]
+mod midi_tests {
+    use super::*;
+
+    fn analysis() -> Value {
+        json::parse(
+            r#"{"bar_count": 3, "downbeat_beat": 1, "beats_s": [0.2, 0.7, 1.2, 1.7, 2.2, 2.7], "tempo": {"bpm": 120},
+            "bars": [{"kick": [1, 0, 0, 0, 0.5], "snare": [0, 0, 0, 0, 1], "hat": []}, {"kick": [1], "snare": [], "hat": []}, {"kick": [], "snare": [], "hat": []}],
+            "bass": {"notes": [[0, 0, 2, 30.46, 1], [1, 8, 4, 29.64, 0.5]]},
+            "chords": {"changes": [[0, "Fmaj7"], [2, "Dm"]]},
+            "sections": [{"label": "A", "start_bar": 0}, {"label": "B", "start_bar": 2}]}"#,
+        )
+        .unwrap()
+    }
+    fn all() -> Vec<String> {
+        ["drums", "bass", "chords"].map(String::from).to_vec()
+    }
+
+    #[test]
+    fn an_analysis_becomes_a_track_a_part_on_its_own_channel() {
+        let s = midi_song(&analysis(), "song", &all(), false, false, false).unwrap();
+        let got: Vec<_> = s.parts.iter().map(|p| (p.name.as_str(), p.channel, p.notes.len())).collect();
+        // Drums: three kicks and a snare. Chords: Fmaj7 has four notes, Dm three.
+        assert_eq!(got, [("Drums", 10, 4), ("Bass", 5, 2), ("Chords", 6, 7)]);
+        // The bass is written to the nearest semitone: 30.46 is 30, 29.64 is 30.
+        assert_eq!(s.parts[1].notes.iter().map(|n| n.note).collect::<Vec<_>>(), [30, 30]);
+        assert_eq!(s.markers, [(0, "A".to_string()), (2, "B".to_string())]);
+        assert!(matches!(s.timing, songprint::midi::Timing::Grid { bpm } if bpm == 120.0));
+        assert_eq!(&songprint::midi::write(&s)[0..4], b"MThd");
+    }
+
+    #[test]
+    fn the_choices_reach_the_file() {
+        let only = midi_song(&analysis(), "song", &["bass".to_string()], true, false, true).unwrap();
+        assert_eq!(only.parts.len(), 1);
+        assert_eq!(only.parts[0].notes[0].note, 42, "an octave up");
+        assert!(matches!(only.timing, songprint::midi::Timing::Played { downbeat_beat: 1, .. }));
+        let struck = midi_song(&analysis(), "song", &["chords".to_string()], false, true, false).unwrap();
+        // Fmaj7 for two bars, struck each bar, then Dm for one.
+        assert_eq!(struck.parts[0].notes.len(), 4 + 4 + 3);
+    }
+
+    #[test]
+    fn what_cannot_be_written_says_why() {
+        assert_eq!(midi_song(&analysis(), "song", &[], false, false, false).err().unwrap(), "no parts chosen");
+        assert_eq!(midi_song(&analysis(), "song", &["flute".to_string()], false, false, false).err().unwrap(), "no such part: flute");
+        assert!(midi_song(&Value::obj(), "song", &all(), false, false, false).is_err());
     }
 }
