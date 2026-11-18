@@ -31,6 +31,7 @@ pub struct Note {
     pub vel: f32,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Part {
     pub name: String,
     /// 1..=16, as musicians count them.
@@ -207,6 +208,170 @@ pub fn write(song: &Song) -> Vec<u8> {
     out
 }
 
+/// What a MIDI file holds, read back: for the Band to play (RJ, 18 Nov 2026:
+/// "A, note for note"). Notes only: controllers, bends and program changes are
+/// passed over. One tempo, the file's first; 4/4, so a bar is four quarters
+/// from tick 0.
+#[derive(Debug, PartialEq)]
+pub struct Read {
+    /// The first track's name, if it has one.
+    pub title: String,
+    /// The first tempo in the file; 120 when it has none, as the standard says.
+    pub bpm: f32,
+    /// How many bars the notes span.
+    pub bars: u32,
+    pub markers: Vec<(u32, String)>,
+    /// A part for every channel of every track that has notes, in the file's order.
+    pub parts: Vec<Part>,
+}
+
+struct Cursor<'a> {
+    b: &'a [u8],
+    at: usize,
+}
+
+impl Cursor<'_> {
+    fn byte(&mut self) -> Result<u8, String> {
+        let v = *self.b.get(self.at).ok_or("the file ends in the middle of a track")?;
+        self.at += 1;
+        Ok(v)
+    }
+    fn take(&mut self, n: usize) -> Result<&[u8], String> {
+        let end = self.at.checked_add(n).filter(|&e| e <= self.b.len()).ok_or("the file ends in the middle of a track")?;
+        let s = &self.b[self.at..end];
+        self.at = end;
+        Ok(s)
+    }
+    fn var(&mut self) -> Result<u32, String> {
+        let mut v = 0u32;
+        for _ in 0..4 {
+            let c = self.byte()?;
+            v = v << 7 | (c & 127) as u32;
+            if c & 128 == 0 {
+                return Ok(v);
+            }
+        }
+        Err("a length in the file is too long".into())
+    }
+}
+
+/// Read a Standard MIDI File (type 0 or 1, ticks to the quarter). A file that
+/// is cut short or is not MIDI is an error, never a panic.
+pub fn read(bytes: &[u8]) -> Result<Read, String> {
+    if bytes.len() < 14 || &bytes[0..4] != b"MThd" {
+        return Err("not a MIDI file".into());
+    }
+    let head = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
+    let division = u16::from_be_bytes([bytes[12], bytes[13]]);
+    if head < 6 || division == 0 || division & 0x8000 != 0 {
+        return Err("a MIDI file timed in film frames, not beats, cannot be read".into());
+    }
+    let step = division as f64 / 4.0;
+    let mut out = Read { title: String::new(), bpm: 120.0, bars: 0, markers: Vec::new(), parts: Vec::new() };
+    let (mut at, mut track_no, mut tempo_at, mut last_step) = (8 + head, 0usize, u32::MAX, 0.0f64);
+    while at + 8 <= bytes.len() {
+        let len = u32::from_be_bytes([bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]]) as usize;
+        let end = (at + 8).checked_add(len).filter(|&e| e <= bytes.len()).ok_or("a track is longer than the file")?;
+        if &bytes[at..at + 4] != b"MTrk" {
+            at = end; // a chunk of some other kind: passed over, as the standard says
+            continue;
+        }
+        let mut c = Cursor { b: &bytes[at + 8..end], at: 0 };
+        let (mut tick, mut status, mut name) = (0u32, 0u8, String::new());
+        // Per channel: the notes, and the notes sounding as (note, start tick, velocity).
+        let mut notes: Vec<Vec<Note>> = vec![Vec::new(); 16];
+        let mut held: Vec<Vec<(u8, u32, u8)>> = vec![Vec::new(); 16];
+        let mut close = |ch: usize, note: u8, tick: u32, held: &mut Vec<Vec<(u8, u32, u8)>>, notes: &mut Vec<Vec<Note>>| {
+            if let Some(i) = held[ch].iter().position(|h| h.0 == note) {
+                let (_, on, vel) = held[ch].remove(i);
+                let (a, z) = (on as f64 / step, tick as f64 / step);
+                let bar = (a / 16.0).floor();
+                notes[ch].push(Note { bar: bar as u32, step: ((a - bar * 16.0) * 1000.0).round() as f32 / 1000.0, steps: (((z - a) * 1000.0).round() as f32 / 1000.0).max(0.001), note, vel: ((vel as f32 - 30.0) / 97.0).clamp(0.05, 1.0) });
+                last_step = last_step.max(z);
+            }
+        };
+        while c.at < c.b.len() {
+            tick = tick.checked_add(c.var()?).ok_or("the file is too long")?;
+            let first = c.byte()?;
+            if first == 0xFF {
+                let kind = c.byte()?;
+                let n = c.var()? as usize;
+                let d = c.take(n)?;
+                match kind {
+                    0x03 if name.is_empty() => name = String::from_utf8_lossy(d).trim().to_string(),
+                    0x06 => out.markers.push(((tick as f64 / step / 16.0).floor() as u32, String::from_utf8_lossy(d).trim().to_string())),
+                    0x51 if d.len() == 3 && tick < tempo_at => {
+                        let us = (d[0] as u32) << 16 | (d[1] as u32) << 8 | d[2] as u32;
+                        if us > 0 {
+                            out.bpm = (6e7 / us as f64) as f32;
+                            tempo_at = tick;
+                        }
+                    }
+                    0x2F => break,
+                    _ => {}
+                }
+                continue;
+            }
+            if first == 0xF0 || first == 0xF7 {
+                let n = c.var()? as usize;
+                c.take(n)?;
+                continue;
+            }
+            // A data byte first means the status before it goes on ("running status").
+            let d1 = if first & 0x80 != 0 {
+                status = first;
+                c.byte()?
+            } else {
+                first
+            };
+            if status & 0x80 == 0 {
+                return Err("a track starts with data and no message".into());
+            }
+            let ch = (status & 15) as usize;
+            match status & 0xF0 {
+                0x90 | 0x80 => {
+                    let vel = c.byte()?;
+                    close(ch, d1 & 127, tick, &mut held, &mut notes);
+                    if status & 0xF0 == 0x90 && vel > 0 {
+                        held[ch].push((d1 & 127, tick, vel & 127));
+                    }
+                }
+                0xA0 | 0xB0 | 0xE0 => {
+                    c.byte()?;
+                }
+                0xC0 | 0xD0 => {}
+                _ => return Err("a message in the file is not one a track may hold".into()),
+            }
+        }
+        // A note never let go ends where its track does.
+        for ch in 0..16 {
+            for (note, _, _) in held[ch].clone() {
+                close(ch, note, tick.max(1), &mut held, &mut notes);
+            }
+        }
+        if track_no == 0 {
+            out.title = name.clone();
+        }
+        let chans = notes.iter().filter(|n| !n.is_empty()).count();
+        for (ch, mut n) in notes.into_iter().enumerate() {
+            if n.is_empty() {
+                continue;
+            }
+            n.sort_by(|a, b| (a.bar, a.step, a.note).partial_cmp(&(b.bar, b.step, b.note)).unwrap());
+            let named = if name.is_empty() { format!("Track {}", track_no + 1) } else { name.clone() };
+            out.parts.push(Part { name: if chans > 1 { format!("{named} · channel {}", ch + 1) } else { named }, channel: ch as u8 + 1, notes: n });
+        }
+        track_no += 1;
+        at = end;
+    }
+    if out.parts.is_empty() {
+        return Err("the file has no notes in it".into());
+    }
+    out.bars = (last_step / 16.0).ceil().max(1.0) as u32;
+    out.markers.sort();
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,6 +491,76 @@ mod tests {
         let kick = r.notes[1].iter().find(|e| e.1 == 0x99).unwrap().0;
         assert!((time_of(kick) - 0.80).abs() < 1e-4);
         assert_eq!(r.markers[0].0, kick);
+    }
+
+    #[test]
+    fn a_file_written_here_reads_back_as_what_went_in() {
+        let song = song(Timing::Grid { bpm: 113.5 });
+        let r = super::read(&write(&song)).unwrap();
+        assert_eq!(r.title, "a song");
+        assert!((r.bpm - 113.5).abs() < 0.01);
+        assert_eq!(r.markers, [(0, "A".to_string()), (2, "B".to_string())]);
+        let got: Vec<_> = r.parts.iter().map(|p| (p.name.as_str(), p.channel, p.notes.len())).collect();
+        assert_eq!(got, [("Drums", 10, 3), ("Bass", 5, 1)]);
+        // The bass note: bar 1, step 6, two steps long, at full velocity.
+        assert_eq!(r.parts[1].notes[0], Note { bar: 1, step: 6.0, steps: 2.0, note: 30, vel: 1.0 });
+        // The quieter kick comes back about as quiet as it went in (0.5).
+        let quiet = r.parts[0].notes.iter().find(|n| n.step == 4.0).unwrap();
+        assert!((quiet.vel - 0.5).abs() < 0.02 && quiet.steps == 0.5);
+        assert_eq!(r.bars, 2);
+    }
+
+    #[test]
+    fn another_program_s_file_is_read_too() {
+        // Type 0, 96 ticks to the quarter: every channel in one track, a note-on
+        // with velocity 0 for a note-off, running status, a sysex and a controller
+        // to pass over, and a note never let go.
+        let mut t: Vec<u8> = Vec::new();
+        t.extend([0, 0xFF, 0x51, 3, 0x09, 0x27, 0xC0]); // 600 000 us a quarter: 100 bpm
+        t.extend([0, 0xF0, 2, 1, 0xF7]); // sysex
+        t.extend([0, 0xB0, 7, 100]); // volume on channel 1
+        t.extend([0, 0x90, 60, 100]); // C on channel 1 at tick 0
+        t.extend([48, 64, 0]); // running status: E on with velocity 0 (nothing was sounding: passed over)
+        t.extend([48, 60, 0]); // running status: C off at tick 96
+        t.extend([0, 0x99, 36, 127]); // a kick on channel 10 at tick 96
+        t.extend([24, 0x89, 36, 0]);
+        t.extend([0x81, 0x00, 0x91, 67, 80]); // tick 248: G on channel 2, never let go
+        t.extend([0x82, 0x00, 0xFF, 0x2F, 0]); // the track ends at tick 504
+        let mut f: Vec<u8> = b"MThd".to_vec();
+        f.extend([0, 0, 0, 6, 0, 0, 0, 1, 0, 96]);
+        f.extend(b"MTrk");
+        f.extend((t.len() as u32).to_be_bytes());
+        f.extend(t);
+        let r = super::read(&f).unwrap();
+        assert!((r.bpm - 100.0).abs() < 0.01);
+        let got: Vec<_> = r.parts.iter().map(|p| (p.name.as_str(), p.notes[0].bar, p.notes[0].step, p.notes[0].steps, p.notes[0].note)).collect();
+        assert_eq!(
+            got,
+            [
+                ("Track 1 · channel 1", 0, 0.0, 4.0, 60),
+                ("Track 1 · channel 2", 0, 10.333, 10.667, 67),
+                ("Track 1 · channel 10", 0, 4.0, 1.0, 36),
+            ]
+        );
+        assert_eq!(r.bars, 2);
+    }
+
+    #[test]
+    fn what_is_not_a_midi_file_is_refused_not_crashed_on() {
+        assert_eq!(super::read(b"RIFF....WAVE").err().unwrap(), "not a MIDI file");
+        let whole = write(&song(Timing::Grid { bpm: 120.0 }));
+        // Cut anywhere, it is an error or a shorter song: never a panic.
+        for cut in 0..whole.len() {
+            let _ = super::read(&whole[..cut]);
+        }
+        // Rubbish after a good header.
+        let mut junk = whole[..22].to_vec();
+        junk.extend((0..200u32).map(|i| (i * 37 % 251) as u8));
+        let _ = super::read(&junk);
+        // A header that claims a track far longer than the file.
+        let mut long = whole.clone();
+        long[18] = 0x7F;
+        assert_eq!(super::read(&long).err().unwrap(), "a track is longer than the file");
     }
 
     #[test]
