@@ -983,3 +983,33 @@ to do with anything else", with its own LFOs and its own tuning.
   because Atmosphere joined it, and the Band's melody channel takes 3 dB off a
   mono input.
 - Tests: `tests/ui/sequencer-atfx.spec.mjs`.
+
+## Atmosphere's physical models (17 Nov 2026)
+
+RJ: "its oscillators should be physically modeled"; "builds all of the modeled
+instruments". Plan and mock-up: `WORK DIR/page-mockups/ATMOS-PHYS-PLAN.md`,
+`atmos-phys.html`; a phrase on each model: `page-mockups/atmos-models/*.wav`.
+
+- **The engine** is `core/crates/atmos` (Rust, no dependencies): ten models —
+  plucked string (waveguide with stiffness and a body), bowed string
+  (stick–slip bow on a two-part waveguide), struck bar (wood to metal modes),
+  bell, glass (bowed or struck), membrane (Bessel modes, tension drop), blown
+  pipe (a tuned bore and a jet), reed, voice (glottis through formants), and
+  Classic (band-limited waves) — and the whole voice: two oscillators with
+  octave, fine and up to three unison copies, blend, sub, air, glide, drift,
+  its own filter and envelope, the Amp, its three LFOs; sixteen voices.
+- **In the page** it runs in an AudioWorklet (`atmos-worklet.js`, built as
+  `atmos.wasm` by `tools/build-fx-wasm.sh`); `atphys.js` sends it every
+  control and plays it from Atmosphere's keys and MIDI channel. Its output goes
+  into Character, then Sympathy and the FX line, as before.
+- **The oscillator panels** show the ten models as cards, the running model's
+  picture (the string's or bore's shape, the modes ringing), its four controls,
+  Oct and Fine. The old eight kinds (and the old browser voice) are kept,
+  unlisted, for the Band's own patches and Draw's Atmosphere ink.
+- **Tests:** `core/crates/atmos/tests/models.rs` (pitch within 2 cents — the
+  bowed string 5, the blown pipe 20 — level, a sweep of every control, the
+  physics, sixteen voices in a third of real time) and
+  `tests/ui/sequencer-atphys.spec.mjs`. They run on the PC (`tools/pc/
+  test-on-pc.sh rust`) and the MacBook (`tools/pc/test-on-mbp.sh`).
+- Not yet: a film's offline render does not include Atmosphere's engine or
+  its FX line.
