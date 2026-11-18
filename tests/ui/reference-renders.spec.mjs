@@ -165,7 +165,8 @@ function seqHelpers() {
   const R = (window.__ref = {});
   R.f32 = (b64) => { const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return new Float32Array(u.buffer); };
   R.b64 = (f) => { const u = new Uint8Array(f.buffer, f.byteOffset, f.byteLength); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
-  R.buffer = (sig) => { const b = new AudioBuffer({ length: sig.frames, sampleRate: sig.rate, numberOfChannels: sig.channels.length }); sig.channels.forEach((c, i) => b.copyToChannel(R.f32(c), i)); return b; };
+  /// A signal as a buffer, with silence after it up to `least` frames.
+  R.buffer = (sig, least = 0) => { const b = new AudioBuffer({ length: Math.max(sig.frames, least), sampleRate: sig.rate, numberOfChannels: sig.channels.length }); sig.channels.forEach((c, i) => b.copyToChannel(R.f32(c), i)); return b; };
   /// mulberry32, the manifest's generator.
   R.rng = (seed) => {
     let a = seed >>> 0;
@@ -453,7 +454,11 @@ function seqHelpers() {
         case 'buffer': {
           atmosRetuneSympathy();
           const src = off.createBufferSource();
-          src.buffer = R.buffer(signals[e.signal]);
+          // The signal, then silence to the end of the render, as one buffer.
+          // A source that ends lets Chromium switch off what it fed: 0.21 s
+          // after this one ended the whole chain went dead, mid-ring, and
+          // when it did depended on how busy the page's main thread was.
+          src.buffer = R.buffer(signals[e.signal], Math.ceil((C.seconds - e.t) * signals[e.signal].rate) + 256);
           src.connect(atIn);
           src.start(e.t);
           break;
@@ -500,7 +505,14 @@ function seqHelpers() {
         off.resume();
       });
     }
-    const buf = await off.startRendering();
+    const done = off.startRendering();
+    // The second render of a case holds the page's main thread while the
+    // render runs. Chromium does some of its housekeeping from that thread
+    // (switching off nodes whose sources have ended), so a render that
+    // leans on when it happens comes out different here, on any machine,
+    // and not only on a loaded one.
+    if (window.__refBusyMs) { const t0 = performance.now(); while (performance.now() - t0 < window.__refBusyMs) { /* held */ } }
+    const buf = await done;
     audioCtx = null;
     if (failed) throw failed;
     const left = buf.getChannelData(0), right = buf.getChannelData(1), x = new Float32Array(left.length * 2);
@@ -650,10 +662,14 @@ for (const c of M.cases) {
     test.setTimeout(180_000);
     rmSync(entryPath(c.id), { force: true });
     const first = await render(page, c);
-    // Again, in a page that has never rendered anything.
+    // Again, in a page that has never rendered anything, with its main thread held.
     const context = await browser.newContext({ baseURL: info.project.use.baseURL, viewport: info.project.use.viewport });
     let second;
-    try { second = await render(await context.newPage(), c); } finally { await context.close(); }
+    try {
+      const again = await context.newPage();
+      await again.addInitScript(() => { window.__refBusyMs = 600; });
+      second = await render(again, c);
+    } finally { await context.close(); }
 
     const entry = { id: c.id, instrument: c.instrument, kind: c.kind, exercises: c.exercises };
     let a, b;
