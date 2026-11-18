@@ -1,0 +1,15 @@
+[workspace]
+members = ["engine-core"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+# Tests run the audio path a sample at a time, so keep them quick, and keep
+# the overflow checks a debug build carries.
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
