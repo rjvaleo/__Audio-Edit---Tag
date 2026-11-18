@@ -13,7 +13,7 @@
 //! -10 no such kind of module               -11 no engine
 
 use engine_core::basics::{
-    Clock, Delay, Gain, Keys, Lfo, Player, Pulse, Sine, SoundSource, Voice,
+    Clock, Delay, Gain, Keys, Lfo, Mix, Player, Pulse, Sine, SoundSource, Voice,
 };
 use engine_core::{
     engine, port, AudioEngine, Config, Controller, EventKind, Module, NoteEvent, NoteKind,
@@ -26,6 +26,7 @@ use std::slice;
 pub struct NeEngine {
     ctl: Controller,
     audio: AudioEngine,
+    rate: f32,
     /// Reports gathered but not yet read by `ne_applied`.
     applied: VecDeque<(u64, u64)>,
 }
@@ -40,8 +41,19 @@ pub const NE_VOICE: u32 = 7;
 pub const NE_KEYS: u32 = 8;
 pub const NE_SOUND_SOURCE: u32 = 9;
 pub const NE_PLAYER: u32 = 10;
+/// MultiGrainLive's own (engine-mgl): the Wave synth with its default patch
+/// and three built-in tables; MGL's master ceiling; a grain deck playing a
+/// two-second test sound (a: 0 Granular, 1 WSOLA, 2 Vocoder, 3 PVSOLA;
+/// b: Poly voices to make); a mixer (a: how many inputs).
+pub const NE_WAVE: u32 = 11;
+pub const NE_CEILING: u32 = 12;
+pub const NE_GRAIN: u32 = 13;
+pub const NE_MIX: u32 = 14;
 
 const NO_ENGINE: i32 = -11;
+
+/// The grain deck's own block, in samples.
+const GRAIN_GRID: usize = 128;
 
 fn code(error: PatchError) -> i32 {
     match error {
@@ -65,6 +77,16 @@ fn sent(result: Result<u64, PatchError>) -> i64 {
 }
 
 /// The app's half. Never the whole box: the audio thread may be in the other half.
+/// The engine's rate. Read through the pointer, field by field, as `ctl` is:
+/// the audio thread may be inside the other half at this moment.
+unsafe fn rate_of(e: *mut NeEngine) -> Option<f32> {
+    if e.is_null() {
+        None
+    } else {
+        Some(ptr::addr_of!((*e).rate).read())
+    }
+}
+
 unsafe fn ctl<'a>(e: *mut NeEngine) -> Option<&'a mut Controller> {
     if e.is_null() {
         None
@@ -84,7 +106,7 @@ pub extern "C" fn ne_new(rate: f32, max_block: u32, log_applied: u32, fade_frame
         ..Config::default()
     };
     let (ctl, audio) = engine(rate, config);
-    Box::into_raw(Box::new(NeEngine { ctl, audio, applied: VecDeque::new() }))
+    Box::into_raw(Box::new(NeEngine { ctl, audio, rate, applied: VecDeque::new() }))
 }
 
 /// # Safety
@@ -123,12 +145,14 @@ pub unsafe extern "C" fn ne_frame(e: *mut NeEngine) -> u64 {
 
 /// Add a module. What `a` and `b` set depends on the kind: sine (pitch,
 /// level), gain (gain), delay (samples), lfo (rate, depth), clock (tempo,
-/// playing), pulse (note), player (level).
+/// playing), pulse (note), player (level); and for MultiGrainLive's own,
+/// see `NE_WAVE` and the kinds after it.
 ///
 /// # Safety
 /// `e` came from `ne_new`.
 #[no_mangle]
 pub unsafe extern "C" fn ne_add(e: *mut NeEngine, id: u32, kind: u32, a: f32, b: f32) -> i32 {
+    let Some(rate) = rate_of(e) else { return NO_ENGINE };
     let Some(ctl) = ctl(e) else { return NO_ENGINE };
     let module: Box<dyn Module> = match kind {
         NE_SINE => Box::new(Sine::new(a, b)),
@@ -141,9 +165,32 @@ pub unsafe extern "C" fn ne_add(e: *mut NeEngine, id: u32, kind: u32, a: f32, b:
         NE_KEYS => Box::new(Keys::new()),
         NE_SOUND_SOURCE => Box::new(SoundSource::new()),
         NE_PLAYER => Box::new(Player::new(a)),
+        NE_WAVE => Box::new(engine_mgl::demo::wave(rate)),
+        NE_CEILING => Box::new(engine_mgl::Ceiling),
+        NE_GRAIN => Box::new(engine_mgl::demo::grain(rate as u32, a as u32, GRAIN_GRID, b as usize)),
+        NE_MIX => Box::new(Mix::new(a as usize)),
         _ => return -10,
     };
     ctl.add(id, module).map_or_else(code, |()| 0)
+}
+
+/// Add one of prism-fx's effects by its catalogue id ("dattorro-plate").
+/// -10 if there is no such effect.
+///
+/// # Safety
+/// `e` came from `ne_new`; `name` is a C string or null.
+#[no_mangle]
+pub unsafe extern "C" fn ne_add_fx(e: *mut NeEngine, id: u32, name: *const std::ffi::c_char) -> i32 {
+    let Some(rate) = rate_of(e) else { return NO_ENGINE };
+    let Some(ctl) = ctl(e) else { return NO_ENGINE };
+    if name.is_null() {
+        return -10;
+    }
+    let Ok(name) = std::ffi::CStr::from_ptr(name).to_str() else { return -10 };
+    match engine_mgl::Fx::new(name, rate) {
+        Some(fx) => ctl.add(id, Box::new(fx)).map_or_else(code, |()| 0),
+        None => -10,
+    }
 }
 
 /// # Safety

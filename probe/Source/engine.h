@@ -8,13 +8,18 @@ extern "C" {
 
 typedef struct NeEngine NeEngine;
 
-enum { NE_SINE = 1, NE_GAIN, NE_DELAY, NE_LFO, NE_CLOCK, NE_PULSE, NE_VOICE, NE_KEYS, NE_SOUND_SOURCE, NE_PLAYER };
+enum { NE_SINE = 1, NE_GAIN, NE_DELAY, NE_LFO, NE_CLOCK, NE_PULSE, NE_VOICE, NE_KEYS, NE_SOUND_SOURCE, NE_PLAYER,
+       // MultiGrainLive's own: the Wave synth; its master ceiling; a grain deck playing a test sound
+       // (a: 0 Granular, 1 WSOLA, 2 Vocoder, 3 PVSOLA; b: Poly voices); a mixer (a: inputs).
+       NE_WAVE, NE_CEILING, NE_GRAIN, NE_MIX };
 
 NeEngine* ne_new (float rate, uint32_t max_block, uint32_t log_applied, uint32_t fade_frames);
 void ne_free (NeEngine*);
 void ne_render (NeEngine*, float* l, float* r, uint32_t n);
 uint64_t ne_frame (NeEngine*);
 int32_t ne_add (NeEngine*, uint32_t id, uint32_t kind, float a, float b);
+// One of prism-fx's effects by its catalogue id, e.g. "dattorro-plate".
+int32_t ne_add_fx (NeEngine*, uint32_t id, const char* name);
 int32_t ne_remove (NeEngine*, uint32_t id);
 int32_t ne_connect (NeEngine*, uint32_t from_module, uint32_t from_port, uint32_t to_module, uint32_t to_port);
 int32_t ne_disconnect (NeEngine*, uint32_t from_module, uint32_t from_port, uint32_t to_module, uint32_t to_port);

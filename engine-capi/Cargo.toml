@@ -11,3 +11,5 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 engine-core = { path = "../engine-core" }
+# MultiGrainLive's instruments and effects, for the kinds past the plain ones.
+engine-mgl = { path = "../engine-mgl" }

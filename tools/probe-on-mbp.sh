@@ -1,11 +1,13 @@
 #!/bin/sh
-# Build the phase 1 probe on the MacBook (ssh mbp) and run it there, holding
-# the MacBook's test lock. Arguments go to the probe (--buffer, --seconds,
-# --monitor). The result line is kept in probe/results/.
+# Build the probe on the MacBook (ssh mbp) and run it there, holding the
+# MacBook's test lock. Arguments go to the probe (--seconds, --monitor,
+# --patch real, --engine 0..3). The result line is kept in probe/results/.
+# The real patch builds MGL's crates, which the test scripts leave beside
+# this folder on the MacBook: run tools/test-on-mbp.sh once first.
 set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 ssh mbp "mkdir -p ~/idmlab-native/native"
-tar -C "$HERE" --exclude target --exclude build --exclude .git --exclude results -cf - . | ssh mbp "rm -rf ~/idmlab-native/native/engine-core ~/idmlab-native/native/engine-capi ~/idmlab-native/native/probe/Source; tar -x -f - -C ~/idmlab-native/native"
+tar -C "$HERE" --exclude target --exclude build --exclude .git --exclude results -cf - . | ssh mbp "rm -rf ~/idmlab-native/native/engine-core ~/idmlab-native/native/engine-capi ~/idmlab-native/native/engine-idmlab ~/idmlab-native/native/engine-mgl ~/idmlab-native/native/probe/Source; tar -x -f - -C ~/idmlab-native/native"
 until ssh mbp "mkdir ~/mgl-test/.lock 2>/dev/null"; do sleep 20; done
 trap 'ssh mbp "rm -rf ~/mgl-test/.lock"' EXIT
 ssh mbp "echo 'idmlab-native probe (coordinator)' > ~/mgl-test/.lock/who"

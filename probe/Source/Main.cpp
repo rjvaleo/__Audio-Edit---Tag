@@ -1,6 +1,6 @@
 // Phase 1 probe: the engine core on the real sound card.
 //
-//   probe --buffer 128 --seconds 8 [--monitor 0.2] [--skew 1]
+//   probe --buffer 128 --seconds 8 [--monitor 0.2] [--skew 1] [--patch real [--engine 0..3]]
 //
 // Plays a patch with every kind of cable through JUCE while this thread sends
 // it knob moves, notes and patch changes "now", as an app would. What the
@@ -158,6 +158,33 @@ void buildPatch (NeEngine* e, float rate)
     ok (ne_point_sound (e, 0, 10, 0, 1, 1));
 }
 
+// The real instruments (--patch real): MultiGrainLive's own code.
+//   1 Wave synth > 2 chorus > 3 plate reverb > 6 mixer
+//   4 grain deck (a test sound, at half speed) > 5 multi-delay > 6 mixer
+//   6 mixer > 7 MGL's ceiling > out
+// `engine` is the deck's: 0 Granular, 1 WSOLA, 2 Vocoder, 3 PVSOLA.
+void buildRealPatch (NeEngine* e, float engine)
+{
+    ok (ne_add (e, 1, NE_WAVE, 0.0f, 0.0f));
+    ok (ne_add_fx (e, 2, "hp-chorus"));
+    ok (ne_add_fx (e, 3, "dattorro-plate"));
+    ok (ne_add (e, 4, NE_GRAIN, engine, 0.0f));
+    ok (ne_add_fx (e, 5, "multi-delay"));
+    ok (ne_add (e, 6, NE_MIX, 2.0f, 0.0f));
+    ok (ne_add (e, 7, NE_CEILING, 0.0f, 0.0f));
+    ok (ne_connect (e, 1, 0, 2, 0));
+    ok (ne_connect (e, 2, 0, 3, 0));
+    ok (ne_connect (e, 4, 0, 5, 0));
+    ok (ne_connect (e, 3, 0, 6, 0));
+    ok (ne_connect (e, 5, 0, 6, 1));
+    ok (ne_connect (e, 6, 0, 7, 0));
+    ok (ne_connect_out (e, 7, 0));
+    ok (ne_commit (e, 0));
+    // The deck: Run on, loop the whole sound, play (its knobs 2 and 0).
+    ok (ne_param (e, 0, 4, 2, 1.0f));
+    ok (ne_param (e, 0, 4, 0, 1.0f));
+}
+
 // One thing the app's thread does.
 struct Op
 {
@@ -205,6 +232,25 @@ Op nextOp (int i, uint32_t& seed)
     return { Op::param, 4, 0, 60.0f + 120.0f * v };
 }
 
+// The same for the real patch: notes on the synth, knobs on the effects and
+// the deck, and the same three patch changes.
+Op nextRealOp (int i, uint32_t& seed)
+{
+    const uint32_t r = roll (seed) % 100;
+    const float v = (float) (roll (seed) % 1000) / 1000.0f;
+    if (i == 100) return { Op::addSine, 20, 0, 550.0f };
+    if (i == 400) return { Op::removeModule, 20, 0, 0.0f };
+    if (i == 700) return { Op::addSine, 21, 0, 660.0f };
+    if (r < 30) return { Op::note, 1, 1, v };
+    if (r < 40) return { Op::note, 1, 2, v };
+    if (r < 55) return { Op::param, 3, 0, v };
+    if (r < 70) return { Op::param, 2, 0, v };
+    if (r < 80) return { Op::param, 5, 0, v };
+    if (r < 88) return { Op::param, 4, 11, 0.5f + 0.5f * v };   // the deck's gain
+    if (r < 94) return { Op::param, 4, 13, 0.5f + v };          // its varispeed
+    return { Op::param, 6, 0, 0.5f + 0.5f * v };                // the synth's level in the mix
+}
+
 void readLanded (NeEngine* e, std::unordered_map<uint64_t, uint64_t>& landed)
 {
     uint64_t seqs[256], frames[256];
@@ -229,6 +275,8 @@ int main (int argc, char* argv[])
     const float monitor = argValue (args, "--monitor", "0").getFloatValue();
     const auto wantType = argValue (args, "--type", "");
     const auto skew = (uint64_t) argValue (args, "--skew", "0").getIntValue();
+    const bool real = argValue (args, "--patch", "plain") == "real";
+    const float deckEngine = argValue (args, "--engine", "0").getFloatValue();
 
     juce::AudioDeviceManager manager;
     if (wantType.isNotEmpty())
@@ -255,7 +303,7 @@ int main (int argc, char* argv[])
 
     // Live.
     NeEngine* live = ne_new ((float) rate, 1024, 1, (uint32_t) (rate / 100.0));
-    buildPatch (live, (float) rate);
+    if (real) buildRealPatch (live, deckEngine); else buildPatch (live, (float) rate);
     Live callback;
     callback.engine = live;
     callback.monitor = monitor;
@@ -269,7 +317,7 @@ int main (int argc, char* argv[])
     const double until = juce::Time::getMillisecondCounterHiRes() + seconds * 1000.0;
     for (int i = 0; juce::Time::getMillisecondCounterHiRes() < until; ++i)
     {
-        const Op op = nextOp (i, seed);
+        const Op op = real ? nextRealOp (i, seed) : nextOp (i, seed);
         const int64_t seq = apply (live, op, 0);
         ok (seq);
         ops.push_back (op);
@@ -286,7 +334,7 @@ int main (int argc, char* argv[])
 
     // Offline: the same messages, stamped with where they landed.
     NeEngine* offline = ne_new ((float) rate, 1024, 0, (uint32_t) (rate / 100.0));
-    buildPatch (offline, (float) rate);
+    if (real) buildRealPatch (offline, deckEngine); else buildPatch (offline, (float) rate);
     size_t replayed = 0, patchChanges = 0;
     std::vector<uint64_t> where;
     for (size_t i = 0; i < ops.size(); ++i)
@@ -340,13 +388,14 @@ int main (int argc, char* argv[])
             ++late;
 
     const bool identical = firstDifference < 0 && frames > 0 && mistakes == 0 && callback.tooBig.load() == 0;
-    std::printf ("{\"device\":\"%s\",\"type\":\"%s\",\"rate\":%.0f,\"buffer\":%d,\"seconds\":%.1f,"
+    std::printf ("{\"device\":\"%s\",\"type\":\"%s\",\"rate\":%.0f,\"buffer\":%d,\"seconds\":%.1f,\"patch\":\"%s\",\"deck_engine\":%d,"
                  "\"frames_compared\":%zu,\"offline_block\":97,\"skew\":%d,\"messages_sent\":%zu,\"messages_replayed\":%zu,"
                  "\"distinct_landing_frames\":%zu,\"patch_changes\":%zu,\"mistakes_live\":%d,\"mistakes_all\":%d,"
                  "\"identical\":%s,\"first_difference\":%lld,\"max_difference\":%g,\"peak\":%.4f,"
                  "\"callbacks\":%d,\"work_mean_ms\":%.4f,\"work_p99_ms\":%.4f,\"work_max_ms\":%.4f,"
                  "\"load_p99_pct\":%.1f,\"load_max_pct\":%.1f,\"gap_max_ms\":%.3f,\"late_callbacks\":%d}\n",
                  device->getName().replace ("\"", "'").toRawUTF8(), device->getTypeName().toRawUTF8(), rate, block, seconds,
+                 real ? "real" : "plain", (int) deckEngine,
                  frames, (int) skew, ops.size(), replayed, distinct, patchChanges, liveMistakes, mistakes,
                  identical ? "true" : "false", firstDifference, maxDifference, peak,
                  n, n > 0 ? 1000.0 * std::accumulate (durs.begin(), durs.end(), 0.0) / n : 0.0,

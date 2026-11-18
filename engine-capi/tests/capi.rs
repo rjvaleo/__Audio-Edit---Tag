@@ -154,3 +154,53 @@ fn an_engine_made_with_a_fade_fades_its_patch_in() {
         ne_free(e);
     }
 }
+
+/// The real instruments through C, as the probe builds them: the Wave synth
+/// through a chorus and a plate, a grain deck through a delay, both into
+/// MGL's ceiling.
+unsafe fn real_patch(e: *mut NeEngine) {
+    let name = |s: &str| std::ffi::CString::new(s).unwrap();
+    assert_eq!(ne_add(e, 1, NE_WAVE, 0.0, 0.0), 0);
+    assert_eq!(ne_add_fx(e, 2, name("hp-chorus").as_ptr()), 0);
+    assert_eq!(ne_add_fx(e, 3, name("dattorro-plate").as_ptr()), 0);
+    assert_eq!(ne_add(e, 4, NE_GRAIN, 0.0, 0.0), 0);
+    assert_eq!(ne_add_fx(e, 5, name("multi-delay").as_ptr()), 0);
+    assert_eq!(ne_add(e, 6, NE_MIX, 2.0, 0.0), 0);
+    assert_eq!(ne_add(e, 7, NE_CEILING, 0.0, 0.0), 0);
+    for (from, to, input) in [(1, 2, 0), (2, 3, 0), (4, 5, 0), (3, 6, 0), (5, 6, 1), (6, 7, 0)] {
+        assert_eq!(ne_connect(e, from, 0, to, input), 0);
+    }
+    assert_eq!(ne_connect_out(e, 7, 0), 0);
+    assert!(ne_commit(e, 0) > 0);
+    // The deck runs and plays (its knobs 2 and 0); two notes on the synth.
+    assert!(ne_param(e, 0, 4, 2, 1.0) > 0);
+    assert!(ne_param(e, 0, 4, 0, 1.0) > 0);
+    assert!(ne_note(e, 100, 1, 1, 48, 0.8) > 0);
+    assert!(ne_note(e, 3_000, 1, 1, 55, 0.8) > 0);
+    assert!(ne_param(e, 7_000, 3, 0, 0.5) > 0);
+}
+
+#[test]
+fn the_real_instruments_are_built_and_played_through_c() {
+    unsafe {
+        let play = |block: usize| {
+            let e = ne_new(RATE, 1024, 0, 0);
+            real_patch(e);
+            let out = render(e, 24_000, block);
+            ne_free(e);
+            out
+        };
+        let (l, r) = play(128);
+        let peak = l.iter().chain(&r).fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(peak > 0.02 && peak < 1.0, "heard, and under the ceiling: {peak}");
+        let (l2, r2) = play(512);
+        assert!(l.iter().zip(&l2).all(|(a, b)| a.to_bits() == b.to_bits()), "the same at another block size");
+        assert!(r.iter().zip(&r2).all(|(a, b)| a.to_bits() == b.to_bits()));
+
+        let e = ne_new(RATE, 1024, 0, 0);
+        let nothing = std::ffi::CString::new("no-such-effect").unwrap();
+        assert_eq!(ne_add_fx(e, 1, nothing.as_ptr()), -10);
+        assert_eq!(ne_add_fx(e, 1, ptr::null()), -10);
+        ne_free(e);
+    }
+}

@@ -3,6 +3,7 @@
 //! here, and each is checked against what that code plays on its own.
 
 mod ceiling;
+pub mod demo;
 mod fx;
 pub mod grain;
 pub mod sound;
