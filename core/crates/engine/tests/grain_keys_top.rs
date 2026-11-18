@@ -139,13 +139,16 @@ fn cents(got: f64, want: f64) -> f64 {
 
 /// One note, held on its own, on a fresh deck: what it sounds like once it
 /// has settled.
-/// Also answers the slowest block it took, in milliseconds (a block of 512 at
-/// 48 kHz plays for 10.7).
-fn play(alg: Algorithm, mode: KeyMode, src: &Arc<Source>, parts: Option<&Arc<fx::hstream::Parts>>, note: u8) -> (Vec<f32>, f64) {
+/// Also answers the slowest block it took once settled, in milliseconds of
+/// this thread's CPU (a block of 512 at 48 kHz plays for 10.7).
+fn play(alg: Algorithm, mode: KeyMode, src: &Arc<Source>, parts: Option<&Arc<fx::hstream::Parts>>, note: u8, octaves: bool) -> (Vec<f32>, f64) {
     let sp = deck(alg);
     let shared = Shared::new(sp, Arc::clone(src));
     if let Some(p) = parts {
         shared.set_parts(Arc::clone(p));
+    }
+    if octaves {
+        shared.build_octaves();
     }
     let keys = Arc::new(GrainKeys::new());
     keys.set_run(false);
@@ -160,12 +163,14 @@ fn play(alg: Algorithm, mode: KeyMode, src: &Arc<Source>, parts: Option<&Arc<fx:
     let mut buf = vec![0f32; BLOCK];
     let mut worst = 0f64;
     let mut timed = |core: &mut Core, buf: &mut [f32]| {
-        let t = std::time::Instant::now();
+        let t = cpu_now();
         core.fill(buf, 1, &shared);
-        worst = worst.max(t.elapsed().as_secs_f64() * 1000.0);
+        worst = worst.max((cpu_now() - t) * 1000.0);
     };
+    // The first blocks of a note are its seek, which every engine pays once
+    // (and PVSOLA's first whole run): settled, it is what a held note costs.
     for _ in 0..20 {
-        timed(&mut core, &mut buf[..]);
+        core.fill(&mut buf[..], 1, &shared);
     }
     let mut got = Vec::with_capacity(40 * BLOCK);
     for _ in 0..40 {
@@ -175,10 +180,59 @@ fn play(alg: Algorithm, mode: KeyMode, src: &Arc<Source>, parts: Option<&Arc<fx:
     (got, worst)
 }
 
+/// Seconds of CPU this thread has used: what a block costs, without the time
+/// the system gave the core to something else (as `pv_cost.rs`).
+#[cfg(unix)]
+fn cpu_now() -> f64 {
+    let mut t = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    // SAFETY: `t` is a valid timespec for the call to fill.
+    unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut t) };
+    t.tv_sec as f64 + t.tv_nsec as f64 * 1e-9
+}
+#[cfg(not(unix))]
+fn cpu_now() -> f64 {
+    use std::sync::OnceLock;
+    static T0: OnceLock<std::time::Instant> = OnceLock::new();
+    T0.get_or_init(std::time::Instant::now).elapsed().as_secs_f64()
+}
+
+fn tone() -> Arc<Source> {
+    let w = std::f64::consts::TAU * TONE / SR as f64;
+    Arc::new(Source { samples: (0..FILE).map(|i| ((i as f64 * w).sin() * 0.5) as f32).collect(), channels: 1 })
+}
+
+/// The top note costs what C8 does (RJ, 17 Nov 2026): on the copy of the sound
+/// two octaves up, G9 is read at 12, under C8's 16. Before, it was read at 48
+/// and PVSOLA, the hybrid and SoundHack took two to three times longer than a
+/// block plays for. The worst block of a held G9 has to be well inside the
+/// budget on every engine, and no worse than half as much again as C8's.
+#[test]
+fn the_top_key_costs_no_more_than_c8_on_every_engine() {
+    let src = tone();
+    let budget = BLOCK as f64 / SR as f64 * 1000.0;
+    let mut wrong = Vec::new();
+    for alg in ENGINES {
+        let parts = (alg == Algorithm::Hybrid)
+            .then(|| Arc::new(fx::hstream::Parts::separate(&src.samples, 1, params(alg).hybrid)));
+        // The best of three, so one block the machine was busy for is not a failure.
+        let worst = |note: u8| {
+            (0..3).map(|_| play(alg, KeyMode::Mono, &src, parts.as_ref(), note, true).1).fold(f64::MAX, f64::min)
+        };
+        let (c8, g9) = (worst(108), worst(127));
+        eprintln!("{alg:?}: worst block C8 {c8:.2} ms, G9 {g9:.2} ms, of {budget:.1}");
+        // Held to where the thread's own CPU time can be read: on the PC's
+        // Windows this is the wall clock, and another run sharing the machine
+        // once made a G9 block 24 ms there. The numbers are printed either way.
+        if cfg!(unix) && (g9 > budget * 0.75 || g9 > c8 * 1.5 + 0.5) {
+            wrong.push(format!("{alg:?}: G9 {g9:.2} ms against C8 {c8:.2} ms and a budget of {budget:.1}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
 #[test]
 fn every_key_up_to_g9_sounds_a_semitone_above_the_one_below_on_every_engine() {
-    let w = std::f64::consts::TAU * TONE / SR as f64;
-    let src = Arc::new(Source { samples: (0..FILE).map(|i| ((i as f64 * w).sin() * 0.5) as f32).collect(), channels: 1 });
+    let src = tone();
     let mut wrong = Vec::new();
     for alg in ENGINES {
         let parts = (alg == Algorithm::Hybrid)
@@ -186,7 +240,10 @@ fn every_key_up_to_g9_sounds_a_semitone_above_the_one_below_on_every_engine() {
         for mode in [KeyMode::Poly, KeyMode::Mono] {
             let mut line = format!("{alg:?} {mode:?}:");
             for note in NOTES {
-                let (got, ms) = play(alg, mode, &src, parts.as_ref(), note);
+                // Poly plays from the copies an octave or more up, as the deck
+                // does once they are made; Mono from the sound itself, as it
+                // does until then. Both have to be in tune.
+                let (got, ms) = play(alg, mode, &src, parts.as_ref(), note, mode == KeyMode::Poly);
                 if note == 127 {
                     line += &format!(" [G9 worst block {ms:.1} ms of 10.7]");
                 }
@@ -221,3 +278,4 @@ fn the_keys_table_reaches_the_top_of_midi() {
     assert_eq!(keys.key_semitones(127), 67.0);
     assert_eq!(keys.key_semitones(108), 48.0);
 }
+

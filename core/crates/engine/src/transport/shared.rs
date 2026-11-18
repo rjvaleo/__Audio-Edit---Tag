@@ -74,6 +74,8 @@ impl Shared {
             retired: Mutex::new(Vec::with_capacity(RETIRED_THINGS)),
             pending_map: Mutex::new(None),
             pending_parts: Mutex::new(None),
+            parts_now: Mutex::new(None),
+            octaves: crate::octaves::OctaveSlot::new(),
             pending_bank: Mutex::new(None),
             bank_layers: AtomicU32::new(1),
             rack_meters: Arc::new(fx::RackMeters::new()),
@@ -158,6 +160,18 @@ impl Shared {
     pub fn set_source(&self, s: Arc<Source>) {
         if let Ok(mut g) = self.source.lock() {
             *g = s;
+        }
+        // The copies an octave up were of the old one.
+        self.octaves.clear();
+    }
+
+    /// Make the copies of the sound an octave or more up now, on this thread,
+    /// for an export or a test; the live deck makes them when a key asks.
+    pub fn build_octaves(&self) {
+        if let Some(src) = self.source() {
+            let parts = self.parts_now.lock().ok().and_then(|g| g.clone());
+            let parts = parts.filter(|p| !p.is_empty() && p.frames() == src.frames());
+            self.octaves.build_now(&src, parts.as_deref());
         }
     }
 
@@ -424,6 +438,9 @@ impl Shared {
 
     /// Leave a freshly separated source for the audio thread to pick up.
     pub fn set_parts(&self, parts: Arc<fx::hstream::Parts>) {
+        if let Ok(mut g) = self.parts_now.lock() {
+            *g = Some(Arc::clone(&parts));
+        }
         if let Ok(mut g) = self.pending_parts.lock() {
             *g = Some(parts);
         }
@@ -488,6 +505,8 @@ impl Shared {
         drop(gone);
         self.drop_retired();
         self.voices.collect();
+        let parts = self.parts_now.lock().ok().and_then(|g| g.clone());
+        self.octaves.tend(self.source(), parts);
     }
 
     /// A thread that frees what the audio thread hands back, a few times a
