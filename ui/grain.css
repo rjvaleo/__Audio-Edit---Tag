@@ -31,7 +31,7 @@ body.grainsub #editTools:has(> #tabBar.hidden) { display: none; }
   --gs-f-time: var(--look-f-time); --gs-f-pitch: var(--look-f-pitch); --gs-f-tone: var(--look-f-tone);
   --gs-f-attack: var(--look-f-attack); --gs-f-space: var(--look-f-space); --gs-f-level: var(--look-f-level);
   --gs-noise: var(--look-grain);
-  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: hidden;
+  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: auto; /* one size; it scrolls */
   color: var(--gs-t); font: var(--fs-m)/1.3 var(--sans); user-select: none;
   background: var(--gs-noise), radial-gradient(120% 80% at 30% 0%, var(--gs-panel), var(--gs-chassis) 60%);
   background-blend-mode: soft-light, normal;

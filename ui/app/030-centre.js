@@ -140,6 +140,7 @@ function setMode(mode) {
   // The shared overview (416) loads after this file in the bundle, and the
   // first setMode runs during start-up, before it: it syncs itself when it loads.
   if (window.poReady) poSync();
+  if (typeof adSync === 'function') adSync(); // Atmosphere's keys (212-atmos-dock.js)
 
   // After the toggles, so the parts it borrows are in the state this mode gave
   // them before they are moved.

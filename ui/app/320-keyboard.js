@@ -388,6 +388,9 @@ document.addEventListener('keydown', (e) => {
   // The Grain page's, the same way, ahead of the old note keys.
   if (gsKeyDown(e)) return;
 
+  // Atmosphere's, the same way: its keys are in the app now (212-atmos-dock.js).
+  if (adKeyDown(e)) return;
+
   // The note keyboard. Before the overlay tier so the Keys window can stay open
   // while you play, and after the text-field guard so typing a name is typing a
   // name. Escape is never a note.
@@ -442,7 +445,7 @@ document.addEventListener('keydown', (e) => {
 /// its key is let go. It claims nothing and answers to no other page, so it
 /// cannot disagree with the dispatcher above.
 document.addEventListener('keyup', (e) => {
-  if (!inTextField(e.target)) { wvKeyUp(e); gsKeyUp(e); }
+  if (!inTextField(e.target)) { wvKeyUp(e); gsKeyUp(e); adKeyUp(e); }
 });
 
 

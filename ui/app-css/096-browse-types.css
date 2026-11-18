@@ -9,7 +9,7 @@
   border-left: 1px solid var(--line); background: var(--surface);
 }
 /* Under the Now Playing bar, as the panels are (`edit.css`). */
-.shell > .browse-types { margin-top: 48px; }
+.shell > .browse-types { margin-bottom: 48px; }
 body.browsetypes .centre { flex: 1 1 0; min-width: 300px; }
 /* The details' four columns are too many for the narrower middle. */
 body.browsetypes #statsView .stats-tags { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }

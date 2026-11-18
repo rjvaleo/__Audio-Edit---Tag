@@ -22,7 +22,7 @@ body.synthpage #overview { display: none; }
   --wv-wave: var(--look-wave); --wv-bloom: var(--look-bloom); --wv-acc: var(--look-accent); --wv-on: var(--on); --wv-mod: var(--look-mod);
   --wv-arc: var(--look-arc); --wv-track: var(--look-track); --wv-glow: var(--look-glow);
   --wv-grain: var(--look-grain);
-  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: hidden;
+  flex: 1 1 auto; min-height: 0; min-width: 0; position: relative; overflow: auto; /* one size; it scrolls */
   color: var(--wv-t); font: var(--fs-m)/1.3 var(--sans); user-select: none;
   background: var(--wv-grain), radial-gradient(120% 80% at 30% 0%, var(--wv-panel), var(--wv-chassis) 60%);
   background-blend-mode: soft-light, normal;
@@ -164,7 +164,7 @@ body.synthpage #overview { display: none; }
 #waveView .wv-wheels { display: flex; gap: 6px; }
 #waveView .wv-wheel { border-radius: var(--r-m); cursor: ns-resize; }
 #waveView .wv-keys { position: relative; flex: none; }
-#waveView .wv-macrodock { display: grid; grid-template-columns: repeat(8, 56px); gap: 2px; align-content: center; }
+#waveView .wv-macrodock { display: grid; grid-template-columns: repeat(4, 56px); grid-auto-rows: 50px; gap: 2px; align-content: center; }
 #waveView .wv-kbinfo { width: 96px; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
 #waveView .wv-kbinfo .wv-hint { white-space: normal; }
 

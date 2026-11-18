@@ -481,3 +481,76 @@ pub(super) fn api_engine_pad(app: &Arc<App>, req: &Request) -> Response {
     .unwrap_or(false);
     Response::json(Value::obj().set("ok", true).set("applied", applied).to_string())
 }
+
+/// Where the starting sound lives, inside the library so every route that reads
+/// a library file reads it, and in a hidden folder so the library's list never
+/// shows it (`library.rs` and the indexer skip names that start with a dot).
+pub const START_SOUND: &str = ".mgl/Pulse 25%.wav";
+
+/// One second of a pulse wave at C3 (130.81 Hz), 25 % wide, 48 kHz mono,
+/// band-limited (a sum of its harmonics below 20 kHz) so it does not alias.
+pub fn start_sound_samples() -> Vec<f32> {
+    let sr = 48_000.0f64;
+    let f0 = 130.812_782_650_299_3f64;
+    let duty = 0.25f64;
+    let n = sr as usize;
+    let kmax = (20_000.0 / f0) as usize;
+    let mut out = vec![0f32; n];
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f64 / sr;
+        let mut v = 0.0;
+        for k in 1..=kmax {
+            let kf = k as f64;
+            v += (2.0 / (kf * std::f64::consts::PI)) * (std::f64::consts::PI * kf * duty).sin() * (2.0 * std::f64::consts::PI * kf * f0 * t).cos();
+        }
+        *s = (v * 0.7) as f32;
+    }
+    out
+}
+
+/// Grain's sound to start with (RJ, 17 Nov 2026: "a default pulse width wave
+/// to load up in the grain synth so that we can just load it without having to
+/// worry about loading a sound"). Written into the library once; answers its
+/// path, so the page opens it as it would any sound.
+pub(super) fn api_start_sound(app: &Arc<App>) -> Response {
+    let Some(lib) = app.library_path() else {
+        return Response::error(400, "no library chosen");
+    };
+    let path = lib.join(START_SOUND);
+    if !path.exists() {
+        if let Some(dir) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(dir) {
+                return Response::error(500, &e.to_string());
+            }
+        }
+        if let Err(e) = crate::capture::write_wav(&path, &start_sound_samples(), 1, 48_000) {
+            return Response::error(500, &e.to_string());
+        }
+    }
+    Response::json(
+        Value::obj()
+            .set("path", START_SOUND)
+            .set("name", "Pulse 25%")
+            .set("sampleRate", 48_000.0)
+            .set("channels", 1.0)
+            .set("frames", 48_000.0)
+            .to_string(),
+    )
+}
+
+#[cfg(test)]
+mod start_sound_tests {
+    use super::*;
+
+    #[test]
+    fn the_start_sound_is_a_quarter_wide_pulse_that_does_not_clip() {
+        let s = start_sound_samples();
+        assert_eq!(s.len(), 48_000);
+        let peak = s.iter().fold(0f32, |a, v| a.max(v.abs()));
+        assert!(peak < 1.0, "peak {peak}");
+        // A quarter of each cycle high: the share of samples above the mean.
+        let mean = s.iter().sum::<f32>() / s.len() as f32;
+        let high = s.iter().filter(|v| **v > mean).count() as f32 / s.len() as f32;
+        assert!((high - 0.25).abs() < 0.03, "high {high}");
+    }
+}
