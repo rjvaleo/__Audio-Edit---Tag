@@ -74,6 +74,9 @@ pub fn on_the_grid(found: &[(f32, f32, u8, f32)], grid: &Grid, bars: usize) -> V
     out
 }
 
+/// Below this level (RMS, about -50 dB) a step holds no note, however clear its pitch.
+const FLOOR: f32 = 0.003;
+
 /// The melody in `x` (one channel at `rate`), between `lo_hz` and `hi_hz`.
 pub fn read(x: &[f32], rate: f32, grid: &Grid, lo_hz: f32, hi_hz: f32) -> Vec<Note> {
     // A window long enough for two periods of the lowest note and a bit.
@@ -115,7 +118,10 @@ pub fn read(x: &[f32], rate: f32, grid: &Grid, lo_hz: f32, hi_hz: f32) -> Vec<No
     let mut out: Vec<Note> = Vec::new();
     let mut last: Option<usize> = None; // the step the note in hand ended on
     for (g, sp) in steps.iter().enumerate() {
-        let Some((m, r)) = sp.filter(|(_, r)| *r > loud * 0.08) else {
+        // Loud enough beside the stem's loudest, and loud enough at all: a stem with
+        // no voice in it still has a whisper of the others, and that is not a melody
+        // (18 Nov 2026: six stray notes from a silent vocals stem).
+        let Some((m, r)) = sp.filter(|(_, r)| *r > loud * 0.08 && *r > FLOOR) else {
             last = None;
             continue;
         };
@@ -189,6 +195,16 @@ mod tests {
         let x: Vec<f32> = (0..(4.5 * rate) as usize).map(|i| tone(i as f32 / rate)).collect();
         let got: Vec<_> = read(&x, rate, &grid, 80.0, 1000.0).iter().map(|n| (n.bar, n.step, n.steps, n.note)).collect();
         assert_eq!(got, [(0, 0.0, 4.0, 69), (0, 8.0, 8.0, 72)]);
+    }
+
+    #[test]
+    fn what_bleeds_into_an_empty_stem_is_no_melody() {
+        // A clear note, but 60 dB down: what a split leaves in a stem with no voice.
+        let rate = 11_025.0;
+        let beats: Vec<f32> = (0..9).map(|i| 0.5 * i as f32).collect();
+        let grid = Grid { beats_s: &beats, downbeat_beat: 0 };
+        let x: Vec<f32> = (0..(4.5 * rate) as usize).map(|i| 0.001 * (2.0 * std::f32::consts::PI * 440.0 * i as f32 / rate).sin()).collect();
+        assert!(read(&x, rate, &grid, 80.0, 1000.0).is_empty());
     }
 
     #[test]
