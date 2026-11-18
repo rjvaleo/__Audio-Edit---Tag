@@ -9,9 +9,15 @@ set -e
 FX="${FX:-$HOME/Documents/GitHub/prism-fx}"
 MGL="${MGL:-$HOME/Documents/MultiGrainLive}"
 MGL_REF="${MGL_REF:-main}"
+# MGL_REF=WORKTREE: the folder MGL names as it stands, uncommitted edits to
+# tracked or added files included.
+case "$MGL_REF" in
+  WORKTREE) MGL_REV=$(git -C "$MGL" stash create); [ -n "$MGL_REV" ] || MGL_REV=HEAD ;;
+  *) MGL_REV="$MGL_REF" ;;
+esac
 R='~/idmlab-native'
 git -C "$FX" archive --format=tar HEAD | ssh mbp "rm -rf $R/GitHub/prism-fx && mkdir -p $R/GitHub/prism-fx && tar -x -f - -C $R/GitHub/prism-fx"
-git -C "$MGL" archive --format=tar "$MGL_REF" core | ssh mbp "rm -rf $R/MultiGrainLive && mkdir -p $R/MultiGrainLive && tar -x -f - -C $R/MultiGrainLive"
+git -C "$MGL" archive --format=tar "$MGL_REV" core | ssh mbp "rm -rf $R/MultiGrainLive && mkdir -p $R/MultiGrainLive && tar -x -f - -C $R/MultiGrainLive"
 until ssh mbp "mkdir ~/mgl-test/.lock 2>/dev/null"; do sleep 20; done
 trap 'ssh mbp "rm -rf ~/mgl-test/.lock"' EXIT
 ssh mbp "echo 'MGL engine tests (coordinator)' > ~/mgl-test/.lock/who"

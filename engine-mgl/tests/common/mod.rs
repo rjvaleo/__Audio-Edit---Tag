@@ -68,19 +68,32 @@ thread_local! {
 
 struct Counting;
 
-fn count() {
+/// The sizes of the last few things counted, for whoever has to find them:
+/// bytes, negative for a free.
+static SIZES: [std::sync::atomic::AtomicIsize; 8] = [const { std::sync::atomic::AtomicIsize::new(0) }; 8];
+static SEEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn count(bytes: isize) {
     if engine_core::rt::in_audio() {
         let _ = IN_RENDER.try_with(|n| n.set(n.get() + 1));
+        let at = SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SIZES[at % SIZES.len()].store(bytes, std::sync::atomic::Ordering::Relaxed);
     }
+}
+
+/// The sizes of the last eight allocations (and frees, negative) made inside
+/// a render by any test in this file.
+pub fn last_sizes() -> Vec<isize> {
+    SIZES.iter().map(|size| size.load(std::sync::atomic::Ordering::Relaxed)).collect()
 }
 
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        count();
+        count(layout.size() as isize);
         System.alloc(layout)
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        count();
+        count(-(layout.size() as isize));
         System.dealloc(ptr, layout)
     }
 }

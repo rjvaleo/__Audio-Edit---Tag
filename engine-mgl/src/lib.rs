@@ -3,7 +3,9 @@
 //! here, and each is checked against what that code plays on its own.
 
 mod fx;
+pub mod grain;
 mod wave;
 
 pub use crate::fx::Fx;
+pub use crate::grain::{Collector, Grain, GrainThing};
 pub use crate::wave::Wave;

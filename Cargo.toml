@@ -23,6 +23,10 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.audio-core]
 opt-level = 3
+[profile.dev.package.fx]
+opt-level = 3
+[profile.dev.package.engine]
+opt-level = 3
 
 [profile.release]
 opt-level = 3

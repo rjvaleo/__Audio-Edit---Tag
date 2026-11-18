@@ -12,3 +12,10 @@ engine-core = { path = "../engine-core" }
 # find prism-fx in `GitHub/prism-fx`, so this must name the same folder.
 prism-fx = { path = "../../GitHub/prism-fx/crates/prism-fx" }
 wave = { path = "../../MultiGrainLive/core/crates/wave" }
+# MGL's grain deck, without its sound card code, and its effects rack. Both
+# are renamed here: this workspace has an `engine` function and an `fx` module
+# of its own.
+mgl-engine = { package = "engine", path = "../../MultiGrainLive/core/crates/engine", default-features = false }
+mgl-fx = { package = "fx", path = "../../MultiGrainLive/core/crates/fx" }
+audio-core = { path = "../../MultiGrainLive/core/crates/audio-core" }
+prism-grain = { path = "../../GitHub/prism-fx/crates/prism-grain" }
