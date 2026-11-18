@@ -1,0 +1,11 @@
+[package]
+name = "atmos"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Atmosphere's voice: ten physically modelled oscillators, its filter, Amp and LFOs. Native for tests, wasm in the page's AudioWorklet."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
