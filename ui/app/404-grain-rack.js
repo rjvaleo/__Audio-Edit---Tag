@@ -116,7 +116,9 @@ function gsFxMarkRow() {
 }
 
 /// When the row runs out of width the arrows go first, then the names from the
-/// last tile back, and last of all the pictures. The full name is in the tooltip.
+/// last tile back. The full name is in the tooltip. The pictures always stay:
+/// a tile with only its light left had nothing to click but the light, which
+/// switches the effect off instead of opening it (17 Nov 2026).
 function gsFxFit() {
   const strip = $('gsFxStrip'), head = $('gsHead');
   if (!strip || !head) return;
@@ -126,7 +128,6 @@ function gsFxFit() {
   const over = () => head.scrollWidth > head.clientWidth + 1;
   if (over()) strip.classList.add('denser');
   for (let i = tiles.length - 1; i >= 0 && over(); i--) tiles[i].classList.add('nm0');
-  for (let i = tiles.length - 1; i >= 0 && over(); i--) tiles[i].classList.add('ic0');
 }
 
 // ───────────────────────────────────────────────────────────── the page
