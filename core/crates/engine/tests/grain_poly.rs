@@ -68,6 +68,11 @@ fn rig(alg: Algorithm) -> Rig {
     keys.set_mode(KeyMode::Poly);
     keys.set_amp(0.005, 0.01, 1.0, 0.02);
     keys.set_glide(0.0);
+    // Frame by frame, as fast as the test can go: no deadline to miss. Live,
+    // the governor reads a slow block (a debug build, a busy machine) as one,
+    // sheds a voice and steals the oldest note, which is what made these
+    // tests fail about one run in six.
+    shared.voices.set_offline(true);
     stock(&shared, 8, BLOCK, 1);
     let core = Core::new(BLOCK, 1, sp, src).with_keys(Arc::clone(&keys));
     Rig { core, shared, keys }

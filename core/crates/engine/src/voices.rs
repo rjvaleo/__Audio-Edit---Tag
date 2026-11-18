@@ -218,7 +218,8 @@ pub struct VoiceFeed {
     cap: AtomicU32,
     /// A ceiling set by hand, for a test or a slow machine. Nought is none.
     ceiling: AtomicU32,
-    /// An export: there is no deadline, and every voice asked for is played.
+    /// An export: there is no deadline, and every voice asked for (up to a
+    /// ceiling) is played.
     offline: AtomicBool,
     cost_ppm: [AtomicU32; 6],
 }
@@ -267,7 +268,8 @@ impl VoiceFeed {
         self.ceiling.store(n, Ordering::Relaxed);
     }
 
-    /// An export: play every voice, and take no notice of how long it takes.
+    /// An export, or a test run frame by frame: play every voice, and take no
+    /// notice of how long it takes. A ceiling still holds.
     pub fn set_offline(&self, on: bool) {
         self.offline.store(on, Ordering::Relaxed);
     }
@@ -576,7 +578,15 @@ impl Poly {
         }
         let shape = Shape::of(doc);
         let offline = shared.voices.offline.load(Ordering::Relaxed);
-        let cap = if offline { u32::MAX } else { self.cap(shared) };
+        // Offline, how long a block took means nothing: only a ceiling caps it.
+        let cap = if offline {
+            match shared.voices.ceiling.load(Ordering::Relaxed) {
+                0 => u32::MAX,
+                n => n,
+            }
+        } else {
+            self.cap(shared)
+        };
         let sr = doc.sample_rate.max(1) as f32;
         let steal_frames = (STEAL_SECONDS * sr) as u32;
 
