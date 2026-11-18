@@ -1,5 +1,5 @@
 [workspace]
-members = ["engine-core"]
+members = ["engine-core", "engine-capi"]
 resolver = "2"
 
 [workspace.package]
@@ -13,3 +13,5 @@ opt-level = 1
 
 [profile.release]
 opt-level = 3
+# The app links the engine as a static library: a panic has nowhere to unwind to.
+panic = "abort"
