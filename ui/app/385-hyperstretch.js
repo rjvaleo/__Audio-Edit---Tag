@@ -652,7 +652,14 @@ function hsStartRec(t) {
 function hsAddPoint(p, t) {
   if (!hs.rec) return;
   const tick = Math.floor((t - hs.recT0) / HS_TICK);
-  if (tick === hs.lastTick) return;
+  if (tick === hs.lastTick) {
+    // Still in the same tick: the point is where the hand is now, so the take
+    // ends where the drag ended. Keeping the tick's first point dropped the
+    // last moves of a quick drag (it stopped at 0.83 of a drag to 0.9).
+    const q = hs.rec[hs.rec.length - 1];
+    if (q) { q.x = p.x; q.y = p.y; }
+    return;
+  }
   hs.lastTick = tick;
   hs.rec.push({ x: p.x, y: p.y, t: tick * HS_TICK });
 }

@@ -342,10 +342,12 @@ class SeqTap extends AudioWorkletProcessor {
     this.buf = new Float32Array(this.size * 2);
     this.n = 0;
     this.start = 0;
+    this.next = -1;
+    this.off = 0;
     this.port.onmessage = (e) => {
       const m = e.data || {};
       if (m.port) { if (this.out) this.out.close(); this.out = m.port; }
-      if (m.on !== undefined) { this.on = !!m.on; this.n = 0; }
+      if (m.on !== undefined) { this.on = !!m.on; this.n = 0; this.next = -1; this.off = 0; }
       if (m.done) { this.done = true; if (this.out) this.out.close(); this.out = null; }
     };
   }
@@ -356,8 +358,19 @@ class SeqTap extends AudioWorkletProcessor {
     const frames = input.length ? input[0].length : 128;
     const L = input[0];
     const R = input[1] || input[0];
+    // The frame this call begins at, counted here. Every call is the next
+    // render quantum, so it follows on from the last; currentFrame is believed
+    // only at the start, or when it disagrees two calls running. On a busy
+    // machine one call in thousands reported it a quantum stale, and a block
+    // was stamped 128 frames early: the same frames sent twice, then a gap.
+    const cf = currentFrame;
+    if (this.next < 0) this.next = cf;
+    else if (cf !== this.next) { if (++this.off >= 2) { this.next = cf; this.off = 0; } }
+    else this.off = 0;
+    const base = this.next;
+    this.next = base + frames;
     for (let i = 0; i < frames; i++) {
-      if (this.n === 0) this.start = currentFrame + i;
+      if (this.n === 0) this.start = base + i;
       this.buf[this.n * 2] = L ? L[i] : 0;
       this.buf[this.n * 2 + 1] = R ? R[i] : 0;
       if (++this.n === this.size) {
