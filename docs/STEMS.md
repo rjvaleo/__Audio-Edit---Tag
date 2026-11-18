@@ -57,6 +57,14 @@ that has been split and read).
   | Bass | 5 | the bass line, each note to the nearest semitone; **An octave up** moves it |
   | Chords | 6 | the chord of each bar, root below middle C; **Held** until it changes, or **Struck each bar** |
 
+  Two more are read at a press, and kept beside the stems (`notes-melody.json`,
+  `notes-other.json`) so a song is read once:
+
+  | part | channel | from |
+  |---|---|---|
+  | Melody | 7 | the vocals stem, one note at a time: the bass line's pitch reader (YIN) on every sixteenth, octave slips folded back, steps on one semitone joined. A few seconds, on this machine. |
+  | Other notes | 8 | the other stem, many notes at once: **Basic Pitch** (Spotify, Apache 2.0) on the PC, ONNX on the CPU, in `D:\models\basic-pitch` (its own Python 3.11 environment). About a minute. Each note goes to its nearest sixteenth. Needs the GPU machine set. |
+
 - **The notes** shows them over the whole song, with the sections and the chord names along
   the top. Click a section to look closer; **Whole song** goes back.
 - **Timing:** **On the grid** puts every note on the sixteenth it was read on, at the song's
@@ -71,8 +79,11 @@ The file is written by `songprint::midi` (`core/crates/songprint/src/midi.rs`) t
 "up"}`; `GET /api/stems/midi?p=` sends it, and `POST /api/stems/midi/show {p}` shows it in the
 Finder. The page is `ui/app/421-stems-midi.js`, one fixed size (1496 x 640).
 
-Not in it: a melody from the vocals stem, the other stem's notes (many at once: that needs a
-transcription model), hearing the MIDI in the app, and importing it into Seq or the Band.
+`POST /api/stems/notes {p, part: "melody" | "other"}` reads a part (`songprint::melody`; for
+Other, `tools/pc/notes_basic_pitch.py` is sent to the PC with the stem as FLAC and run there);
+`GET /api/stems/notes?p=` gives what has been read.
+
+Not in it: hearing the MIDI in the app, and importing it into Seq or the Band.
 Limits: the chords are a guess; the bass is in semitones, so the song's own tuning is not in
 the file; 4/4 only; kick, snare and hat only.
 

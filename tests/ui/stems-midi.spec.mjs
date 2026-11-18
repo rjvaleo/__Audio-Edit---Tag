@@ -14,15 +14,21 @@ import { join } from 'node:path';
 
 const SONG = 'Midi Song';
 
-/// A second of silence, 16-bit mono: the page draws a lane for each stem.
-function quiet(path) {
-  const n = 8000, b = Buffer.alloc(44 + n * 2);
+/// A 16-bit mono WAV at 8 kHz from a function of time; silence by default (a
+/// second of it: the page draws a lane for each stem).
+function quiet(path, seconds = 1, f = null) {
+  const n = Math.round(8000 * seconds), b = Buffer.alloc(44 + n * 2);
   b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVE', 8);
   b.write('fmt ', 12); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
   b.writeUInt32LE(8000, 24); b.writeUInt32LE(16000, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34);
   b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+  if (f) for (let i = 0; i < n; i++) b.writeInt16LE(Math.round(Math.max(-1, Math.min(1, f(i / 8000))) * 30000), 44 + i * 2);
   writeFileSync(path, b);
 }
+
+/// A voice on A above middle C for the first two beats of bar 1 (the bar starts
+/// half a second in), with a second harmonic as a voice has; then nothing.
+const sung = (t) => (t >= 0.5 && t < 1.5 ? 0.5 * Math.sin(2 * Math.PI * 440 * t) + 0.25 * Math.sin(2 * Math.PI * 880 * t) : 0);
 
 /// Four bars at 120: a kick on every beat, a snare on 2 and 4, hats between;
 /// two bass notes a bar; F major seventh for two bars, then D minor.
@@ -48,7 +54,8 @@ async function laySong(request) {
   const dir = join(st.library, 'Stems', SONG);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
-  for (const s of ['drums', 'bass', 'vocals', 'other']) quiet(join(dir, `${s}.wav`));
+  for (const s of ['drums', 'bass', 'other']) quiet(join(dir, `${s}.wav`));
+  quiet(join(dir, 'vocals.wav'), 9, sung);
   writeFileSync(join(dir, 'stems.json'), JSON.stringify({ source: 'kit/tone.wav', model: 'htdemucs', splitSeconds: 1 }));
   writeFileSync(join(dir, 'songprint.json'), JSON.stringify(analysis()));
   return dir;
@@ -100,8 +107,13 @@ test('the MIDI tab shows the song\'s parts with their notes, and draws them', as
   await laySong(request);
   await open(page);
   // Sixteen kicks, eight snares, sixteen hats; eight bass notes; Fmaj7 is four notes, Dm three.
-  const parts = await page.locator('#smParts .sm-part').evaluateAll((els) => els.map((e) => [e.dataset.part, e.querySelector('.n').textContent]));
-  expect(parts).toEqual([['drums', 'ch 1040 notes'], ['bass', 'ch 58 notes'], ['chords', 'ch 67 notes']]);
+  const parts = await page.locator('#smParts .sm-part').evaluateAll((els) => els.map((e) => [e.dataset.part, e.querySelector('.n')?.textContent ?? null]));
+  expect(parts).toEqual([['drums', 'ch 1040 notes'], ['bass', 'ch 58 notes'], ['chords', 'ch 67 notes'], ['melody', null], ['other', null]]);
+  // The two that are read at a press say so, and are not in the file until they have been.
+  await expect(page.locator('#smParts .sm-part[data-part="melody"] button')).toHaveText('Read it');
+  await expect(page.locator('#smParts .sm-part[data-part="melody"] input')).toBeDisabled();
+  // Other notes is read on the PC, and the scratch server has none.
+  await expect(page.locator('#smParts .sm-part[data-part="other"] button')).toBeDisabled();
   await expect(page.locator('#smSpan')).toHaveText('bars 1 to 4');
   // Something is inked in the pitched area and in the drum rows.
   const inked = await page.evaluate(() => {
@@ -195,4 +207,54 @@ test('a song that has not been read says so, and cannot be written', async ({ pa
   await expect(page.locator('#smWrite')).toBeDisabled();
   const r = await request.post('/api/stems/midi', { data: { p: `Stems/${SONG}` } });
   expect(r.status()).toBe(400);
+});
+
+test('Read it finds the melody in the vocals stem, and it goes into the file on channel 7', async ({ page, request }) => {
+  const dir = await laySong(request);
+  await open(page);
+  await page.locator('#smParts .sm-part[data-part="melody"] button').click();
+  // The voice holds one note for two beats: one note, eight sixteenths long.
+  await expect(page.locator('#smParts .sm-part[data-part="melody"] .n')).toHaveText('ch 71 notes', { timeout: 20_000 });
+  await expect(page.locator('#smParts .sm-part[data-part="melody"] input')).toBeChecked();
+  const kept = JSON.parse(readFileSync(join(dir, 'notes-melody.json'), 'utf8'));
+  expect(kept.notes).toEqual([[0, 0, 8, 69, 1]]);
+  await page.locator('#smWrite').click();
+  await expect(page.locator('#smDone')).toContainText('Written: 4 tracks, 56 notes');
+  const m = readMidi(readFileSync(join(dir, `${SONG}.mid`)));
+  expect(m.tracks.map((t) => t.name)).toEqual([SONG, 'Drums', 'Bass', 'Chords', 'Melody']);
+  expect(m.tracks[4].ons).toEqual([{ tick: 0, ch: 7, note: 69 }]);
+  // It is kept: the song opened again has its melody without reading it again.
+  await page.reload();
+  await page.waitForFunction(() => typeof state !== 'undefined' && typeof stEnter === 'function', null, { timeout: 20_000 });
+  await page.click('#leftRail .rl-item[data-mode="stems"]');
+  await page.locator('#stTabs [role="radio"]', { hasText: 'MIDI' }).click();
+  await page.locator('#smSong').selectOption({ label: SONG });
+  await expect(page.locator('#smParts .sm-part[data-part="melody"] .n')).toHaveText('ch 71 notes');
+});
+
+test('Other notes is read on the PC at a press, and goes into the file on channel 8', async ({ page, request }) => {
+  const dir = await laySong(request);
+  // The PC's part, answered here: Basic Pitch found a C major chord on bar 2.
+  const found = [[1, 0, 4, 60, 1], [1, 0, 4, 64, 0.8], [1, 0, 4, 67, 0.6]];
+  let asked = null;
+  await page.route('**/api/stems/notes**', async (route) => {
+    const req = route.request();
+    if (req.method() === 'GET') return route.fulfill({ json: { melody: null, other: null, gpu: true } });
+    asked = JSON.parse(req.postData());
+    // What the server does on the way back: it keeps them beside the stems.
+    writeFileSync(join(dir, 'notes-other.json'), JSON.stringify({ part: 'other', notes: found }));
+    await route.fulfill({ json: { part: 'other', notes: found } });
+  });
+  await open(page);
+  const row = page.locator('#smParts .sm-part[data-part="other"]');
+  await expect(row.locator('button')).toHaveText('Read it on the PC');
+  await expect(row.locator('button')).toBeEnabled();
+  await row.locator('button').click();
+  await expect(row.locator('.n')).toHaveText('ch 83 notes');
+  expect(asked).toEqual({ p: `Stems/${SONG}`, part: 'other' });
+  await page.locator('#smWrite').click();
+  await expect(page.locator('#smDone')).toContainText('Written: 4 tracks, 58 notes');
+  const m = readMidi(readFileSync(join(dir, `${SONG}.mid`)));
+  expect(m.tracks.map((t) => t.name)).toEqual([SONG, 'Drums', 'Bass', 'Chords', 'Other notes']);
+  expect(m.tracks[4].ons).toEqual([{ tick: 1920, ch: 8, note: 60 }, { tick: 1920, ch: 8, note: 64 }, { tick: 1920, ch: 8, note: 67 }]);
 });

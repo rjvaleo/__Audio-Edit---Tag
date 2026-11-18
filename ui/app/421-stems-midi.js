@@ -5,12 +5,16 @@
 // The drawing is made here from `ST.song.analysis` (songprint.json); the file
 // is the server's (`POST /api/stems/midi`, crate `songprint::midi`). The two
 // agree on what a part is: drums on channel 10 (kick 36, snare 38, hat 42),
-// bass on 5, chords on 6. One fixed size: 1496 x 640.
+// bass on 5, chords on 6, melody on 7, other notes on 8. The last two are read
+// at a press (`POST /api/stems/notes`) and kept beside the stems. One fixed size: 1496 x 640.
 //
 // See `docs/STEMS.md`.
 
 const SM = {
-  parts: { drums: true, bass: true, chords: true },
+  parts: { drums: true, bass: true, chords: true, melody: true, other: true },
+  read: { melody: null, other: null },   // the notes read from the vocals and other stems, null until read
+  reading: '',        // the part being read now
+  gpu: false,         // a GPU machine is set: Other notes is read there
   timing: 'grid',     // 'grid' | 'played'
   chords: 'held',     // 'held' | 'bar'
   bass: 'as',         // 'as' | 'up'
@@ -23,7 +27,14 @@ const SM_PARTS = [
   { k: 'drums', name: 'Drums', from: 'from the drums stem', ch: 10, col: 'var(--look-f-attack)' },
   { k: 'bass', name: 'Bass', from: 'from the bass stem', ch: 5, col: 'var(--look-f-tone)' },
   { k: 'chords', name: 'Chords', from: 'from the other and bass stems', ch: 6, col: 'var(--look-f-space)' },
+  // Read on their own, at a press: the melody here, the other notes by Basic Pitch on the PC.
+  { k: 'melody', name: 'Melody', from: 'from the vocals stem', ch: 7, col: 'var(--look-f-pitch)', read: 'Read it', how: 'one note at a time; a few seconds' },
+  { k: 'other', name: 'Other notes', from: 'from the other stem', ch: 8, col: 'var(--look-f-time)', read: 'Read it on the PC', how: 'many notes at once, by Basic Pitch; about a minute' },
 ];
+/// A part is in the file when it is ticked and, if it has to be read first, has been.
+function smIn(p) {
+  return SM.parts[p.k] && (!p.read || !!SM.read[p.k]);
+}
 const SM_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const SM_SHAPE = { '': [0, 4, 7], m: [0, 3, 7], 5: [0, 7, 12], 7: [0, 4, 7, 10], m7: [0, 3, 7, 10], maj7: [0, 4, 7, 11], sus4: [0, 5, 7], sus2: [0, 2, 7] };
 
@@ -70,6 +81,7 @@ function smBuild() {
   pick('smBass', 'bass', [{ k: 'as', label: 'As played' }, { k: 'up', label: 'An octave up' }]);
   $('smSong').onchange = () => { if ($('smSong').value) stOpenSong($('smSong').value); };
   $('smParts').onchange = (e) => { const k = e.target.dataset?.k; if (k) { SM.parts[k] = e.target.checked; smChanged(); } };
+  $('smParts').onclick = (e) => { const b = e.target.closest('button[data-read]'); if (b) { e.preventDefault(); smRead(b.dataset.read); } };
   $('smWhole').onclick = () => { SM.from = 0; SM.to = smBars(); smDraw(); };
   $('smRoll').onclick = (e) => {
     const a = ST.song?.analysis, r = $('smRoll').getBoundingClientRect();
@@ -105,6 +117,7 @@ function smNotes() {
     if (SM.chords === 'held') { if (end > bar) for (const x of ns) out.push(['chords', bar, 0, (end - bar) * 16, x, 0.7]); }
     else for (let b = bar; b < end; b++) for (const x of ns) out.push(['chords', b, 0, 16, x, 0.7]);
   });
+  for (const k of ['melody', 'other']) for (const [bar, st, len, m, v] of SM.read[k] || []) out.push([k, bar, st, len, m, v]);
   return out;
 }
 
@@ -121,16 +134,22 @@ function smFill() {
   sel.innerHTML = `<option value="">${ST.list.length ? 'Pick a split song' : 'Nothing split yet'}</option>` + ST.list.map((s) => `<option value="${stEsc(s.p)}">${stEsc(s.name)}</option>`).join('');
   sel.value = ST.list.some((s) => s.p === cur) ? cur : '';
   const a = ST.song?.analysis;
-  if (SM.song !== cur) { SM.song = cur; SM.from = 0; SM.to = smBars(); SM.written = null; }
+  if (SM.song !== cur) { SM.song = cur; SM.from = 0; SM.to = smBars(); SM.written = null; SM.read = { melody: null, other: null }; if (cur) smKept(cur); }
   if (!SM.to) SM.to = smBars();
   $('smFacts').textContent = !ST.song ? 'Split a song first, on Split a song.' : !a ? 'This song has not been read yet: press Read again on Split a song.'
     : [a.tempo?.bpm ? `${a.tempo.bpm.toFixed(1)} bpm` : '', a.key?.name || '', `${smBars()} bars`].filter(Boolean).join(' · ');
   const notes = smNotes(), count = (k) => notes.filter((n) => n[0] === k).length;
-  $('smParts').innerHTML = SM_PARTS.map((p) => `<label class="sm-part${SM.parts[p.k] ? '' : ' off'}" data-part="${p.k}" style="--c:${p.col}"><input type="checkbox" data-k="${p.k}"${SM.parts[p.k] ? ' checked' : ''} /><i></i><span class="nm">${p.name}<small>${p.from}</small></span><span class="n">ch ${p.ch}<small>${a ? `${count(p.k)} notes` : ''}</small></span></label>`).join('');
+  $('smParts').innerHTML = SM_PARTS.map((p) => {
+    const unread = p.read && !SM.read[p.k], busy = SM.reading === p.k, noPc = p.k === 'other' && !SM.gpu;
+    const right = unread
+      ? `<button class="st-btn" data-read="${p.k}"${!a || SM.reading || noPc ? ' disabled' : ''} title="${noPc ? 'No GPU machine is set: this is read on the PC' : stEsc(p.how)}">${busy ? 'Reading…' : p.read}</button>`
+      : `<span class="n">ch ${p.ch}<small>${a ? `${count(p.k)} notes` : ''}</small></span>`;
+    return `<label class="sm-part${smIn(p) ? '' : ' off'}${unread ? ' unread' : ''}" data-part="${p.k}" style="--c:${p.col}"><input type="checkbox" data-k="${p.k}"${SM.parts[p.k] ? ' checked' : ''}${unread ? ' disabled' : ''} /><i></i><span class="nm">${p.name}<small>${unread ? (busy ? 'reading…' : `not read yet · ${p.how}`) : p.from}</small></span>${right}</label>`;
+  }).join('');
   $('smTimingNote').textContent = SM.timing === 'grid'
     ? `Every note on the sixteenth it was read on${a?.tempo?.bpm ? `, at ${a.tempo.bpm.toFixed(1)} bpm` : ''}. For a sequencer.`
     : 'The tempo follows the song beat by beat, so the notes line up with the stems in a DAW.';
-  const any = SM_PARTS.some((p) => SM.parts[p.k]);
+  const any = SM_PARTS.some(smIn);
   $('smWrite').disabled = !a || !any || SM.busy;
   $('smWrite').textContent = SM.busy ? 'Writing…' : 'Write the MIDI file';
   smShowDone();
@@ -149,12 +168,36 @@ function smShowDone() {
   };
 }
 
+/// The notes already read for a song, kept beside its stems.
+async function smKept(p) {
+  let r;
+  try { r = await api(`/api/stems/notes?p=${encodeURIComponent(p)}`); } catch { return; }
+  if (ST.song?.p !== p) return;
+  SM.read = { melody: r.melody, other: r.other };
+  SM.gpu = !!r.gpu;
+  smFill();
+}
+
+/// Read a part's notes from its stem: the melody here, the other notes on the PC.
+async function smRead(part) {
+  if (!ST.song || SM.reading) return;
+  const p = ST.song.p;
+  SM.reading = part; smFill();
+  try {
+    const r = await postJSON('/api/stems/notes', { p, part });
+    if (ST.song?.p === p) { SM.read[part] = r.notes; SM.written = null; }
+    if (!r.notes.length) toast(part === 'melody' ? 'No melody was found in the vocals stem.' : 'No notes were found in the other stem.');
+  } catch (e) { toast(e.message); }
+  SM.reading = '';
+  smFill();
+}
+
 async function smWrite() {
   if (!ST.song || SM.busy) return;
   const p = ST.song.p;
   SM.busy = true; SM.written = null; smFill();
   try {
-    const r = await postJSON('/api/stems/midi', { p, parts: SM_PARTS.filter((x) => SM.parts[x.k]).map((x) => x.k), timing: SM.timing, chords: SM.chords, bass: SM.bass });
+    const r = await postJSON('/api/stems/midi', { p, parts: SM_PARTS.filter(smIn).map((x) => x.k), timing: SM.timing, chords: SM.chords, bass: SM.bass });
     if (ST.song?.p === p) SM.written = { ...r, p };
   } catch (e) { toast(e.message); }
   SM.busy = false;
@@ -200,11 +243,13 @@ function smDraw() {
     g.globalAlpha = 1;
     if (x(end) - x(from) > 26) g.fillText(name, x(from) + 4, TOP + 13);
   });
-  const all = smNotes().filter((n) => n[1] >= SM.from && n[1] < SM.to && SM.parts[n[0]]), pitched = all.filter((n) => n[0] !== 'drums');
-  const lo = Math.min(28, ...pitched.map((n) => n[4])) - 1, hi = Math.max(60, ...pitched.map((n) => n[4])) + 1;
+  const all = smNotes().filter((n) => n[1] >= SM.from && n[1] < SM.to && SM.parts[n[0]]).sort((p, q) => (p[0] === 'melody') - (q[0] === 'melody')), pitched = all.filter((n) => n[0] !== 'drums');
+  let lo = 28, hi = 60;
+  for (const n of pitched) { if (n[4] < lo) lo = n[4]; if (n[4] > hi) hi = n[4]; }
+  lo -= 1; hi += 1;
   const y = (m) => py1 - (m - lo) / (hi - lo) * (py1 - py0);
   for (const n of pitched) {
-    g.globalAlpha = n[0] === 'chords' ? 0.45 : 0.5 + 0.5 * n[5];
+    g.globalAlpha = n[0] === 'chords' ? 0.45 : n[0] === 'other' ? 0.35 + 0.5 * n[5] : 0.5 + 0.5 * n[5];
     g.fillStyle = ink[n[0]];
     g.fillRect(x(n[1], n[2]), y(n[4]) - 2, Math.max(2, x(n[1], n[2] + n[3]) - x(n[1], n[2]) - 1), 4);
   }

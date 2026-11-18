@@ -329,10 +329,10 @@ pub(super) fn api_stems_learn(app: &Arc<App>, req: &Request) -> Response {
 
 /// A split song's analysis (`songprint.json`) as the parts of a MIDI file.
 /// `parts` names the tracks wanted, in the file's order: drums (channel 10),
-/// bass (5), chords (6). `played`: the tempo follows the song's own beats;
+/// bass (5), chords (6), melody (7), other (8); the last two come from `read`. `played`: the tempo follows the song's own beats;
 /// otherwise one tempo, on the grid. `each_bar`: chords struck again every bar.
 /// `bass_up`: the bass an octave higher.
-pub(super) fn midi_song(a: &Value, title: &str, parts: &[String], played: bool, each_bar: bool, bass_up: bool) -> Result<songprint::midi::Song, String> {
+pub(super) fn midi_song(a: &Value, title: &str, parts: &[String], played: bool, each_bar: bool, bass_up: bool, read: &dyn Fn(&str) -> Option<Vec<songprint::midi::Note>>) -> Result<songprint::midi::Song, String> {
     use songprint::midi::{self, Note, Part, Timing};
     let num = |v: Option<&Value>| match v {
         Some(Value::Num(n)) => Some(*n),
@@ -374,6 +374,9 @@ pub(super) fn midi_song(a: &Value, title: &str, parts: &[String], played: bool, 
                 let changes: Vec<(u32, String)> = changes.iter().filter_map(|c| Some((num(c.arr()?.first())? as u32, c.arr()?.get(1)?.as_str()?.to_string()))).collect();
                 out.push(Part { name: "Chords".into(), channel: 6, notes: midi::chords(&changes, bar_count, each_bar) });
             }
+            // Read on their own, after the split (`api_stems_notes`), and kept beside the stems.
+            "melody" => out.push(Part { name: "Melody".into(), channel: 7, notes: read("melody").ok_or("the melody has not been read yet")? }),
+            "other" => out.push(Part { name: "Other notes".into(), channel: 8, notes: read("other").ok_or("the other notes have not been read yet")? }),
             other => return Err(format!("no such part: {other}")),
         }
     }
@@ -402,7 +405,7 @@ pub(super) fn api_stems_midi(app: &Arc<App>, req: &Request) -> Response {
         Some(p) => p.iter().filter_map(|x| x.as_str().map(str::to_string)).collect(),
         None => ["drums", "bass", "chords"].map(String::from).to_vec(),
     };
-    let song = match midi_song(&a, &name, &parts, is("timing", "played"), is("chords", "bar"), is("bass", "up")) {
+    let song = match midi_song(&a, &name, &parts, is("timing", "played"), is("chords", "bar"), is("bass", "up"), &|part| notes_kept(&dir, part)) {
         Ok(s) => s,
         Err(e) => return Response::error(400, &e),
     };
@@ -420,6 +423,131 @@ pub(super) fn api_stems_midi(app: &Arc<App>, req: &Request) -> Response {
             .set("parts", Value::Arr(counts))
             .to_string(),
     )
+}
+
+/// Where Basic Pitch is on the GPU machine (its own Python 3.11 environment,
+/// ONNX on the CPU; set up 18 Nov 2026).
+const BASIC_PITCH: &str = "D:/models/basic-pitch";
+/// The script run there, sent with every job.
+const NOTES_PY: &str = include_str!("../../../../../tools/pc/notes_basic_pitch.py");
+
+fn notes_file(dir: &Path, part: &str) -> PathBuf {
+    dir.join(format!("notes-{part}.json"))
+}
+
+/// A part's notes as kept beside the stems: `[bar, step, steps, midi note, velocity]` each.
+fn notes_kept(dir: &Path, part: &str) -> Option<Vec<songprint::midi::Note>> {
+    let v = std::fs::read_to_string(notes_file(dir, part)).ok().and_then(|t| json::parse(&t))?;
+    let num = |x: &Value| if let Value::Num(n) = x { Some(*n as f32) } else { None };
+    Some(
+        v.get("notes")?
+            .arr()?
+            .iter()
+            .filter_map(|n| {
+                let n: Vec<f32> = n.arr()?.iter().filter_map(num).collect();
+                (n.len() >= 5).then(|| songprint::midi::Note { bar: n[0] as u32, step: n[1], steps: n[2], note: n[3].clamp(0.0, 127.0) as u8, vel: n[4] })
+            })
+            .collect(),
+    )
+}
+
+fn notes_value(notes: &[songprint::midi::Note]) -> Value {
+    Value::Arr(notes.iter().map(|n| Value::Arr(vec![(n.bar as f64).into(), (n.step as f64).into(), (n.steps as f64).into(), (n.note as f64).into(), ((n.vel * 100.0).round() as f64 / 100.0).into()])).collect())
+}
+
+/// The notes Basic Pitch finds in a stem, on the GPU machine: (start s, end s, midi note, loudness).
+fn basic_pitch(gpu: &crate::gpu::Gpu, stem: &Path) -> Result<Vec<(f32, f32, u8, f32)>, String> {
+    use crate::gpu::win;
+    let id = format!("mgl-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0));
+    let jobdir = format!("{BASIC_PITCH}/jobs/{id}");
+    let tmp = std::env::temp_dir();
+    let (packed, script) = (tmp.join(format!("{id}-stem.flac")), tmp.join(format!("{id}-notes.py")));
+    let run = || -> Result<String, String> {
+        // Out as FLAC when this machine can pack one: about half the bytes.
+        let (send, name) = if crate::flac::available() && crate::flac::encode(stem, &packed).is_ok() { (packed.as_path(), "stem.flac") } else { (stem, "stem.wav") };
+        gpu.ps(&format!("New-Item -ItemType Directory -Force -Path '{}' | Out-Null", win(&jobdir)))?;
+        std::fs::write(&script, NOTES_PY).map_err(|e| e.to_string())?;
+        gpu.put(&script, &format!("{jobdir}/notes.py"))?;
+        gpu.put(send, &format!("{jobdir}/{name}"))?;
+        gpu.run(&format!("{}\\venv\\Scripts\\python.exe -W ignore {}\\notes.py {}\\{name}", win(BASIC_PITCH), win(&jobdir), win(&jobdir)))
+    };
+    let out = run();
+    let _ = std::fs::remove_file(&packed);
+    let _ = std::fs::remove_file(&script);
+    let _ = gpu.ps(&format!("Remove-Item -Recurse -Force '{}' -ErrorAction SilentlyContinue", win(&jobdir)));
+    let out = out.map_err(|e| if e.is_empty() { "Basic Pitch did not run on the GPU machine".to_string() } else { e })?;
+    let line = out.lines().rev().find(|l| l.trim_start().starts_with('{')).ok_or("Basic Pitch gave no notes back")?;
+    let v = json::parse(line).ok_or("Basic Pitch's answer could not be read")?;
+    let num = |x: &Value| if let Value::Num(n) = x { Some(*n as f32) } else { None };
+    Ok(v.get("notes")
+        .and_then(|n| n.arr())
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|n| {
+            let n: Vec<f32> = n.arr()?.iter().filter_map(num).collect();
+            (n.len() >= 4).then(|| (n[0], n[1], n[2].clamp(0.0, 127.0) as u8, n[3]))
+        })
+        .collect())
+}
+
+/// POST {p, part: "melody" | "other"}: read a part's notes from its stem and
+/// keep them beside the stems (`notes-<part>.json`), for the MIDI tab.
+/// Melody: the vocals stem, one note at a time, read here. Other: the other
+/// stem, many notes at once, by Basic Pitch on the GPU machine.
+pub(super) fn api_stems_notes(app: &Arc<App>, req: &Request) -> Response {
+    let Some(v) = body(req) else { return Response::error(400, "invalid JSON") };
+    let (_, dir, _) = match song_dir(app, v.get("p").and_then(|p| p.as_str()).unwrap_or("")) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let part = v.get("part").and_then(|p| p.as_str()).unwrap_or("").to_string();
+    let Some(a) = std::fs::read_to_string(dir.join("songprint.json")).ok().and_then(|t| json::parse(&t)) else {
+        return Response::error(400, "not analysed yet");
+    };
+    let beats: Vec<f32> = a.get("beats_s").and_then(|b| b.arr()).map(|b| b.iter().filter_map(|x| if let Value::Num(n) = x { Some(*n as f32) } else { None }).collect()).unwrap_or_default();
+    let downbeat = match a.get("downbeat_beat") {
+        Some(Value::Num(n)) => *n as usize,
+        _ => 0,
+    };
+    let grid = songprint::melody::Grid { beats_s: &beats, downbeat_beat: downbeat };
+    if grid.bars() == 0 {
+        return Response::error(400, "the analysis has no beat times: press Read again");
+    }
+    let (stem, from) = match part.as_str() {
+        "melody" => ("vocals", "the vocals stem, one note at a time"),
+        "other" => ("other", "the other stem, by Basic Pitch on the GPU machine"),
+        _ => return Response::error(400, "melody or other"),
+    };
+    let file = dir.join(format!("{stem}.wav"));
+    if !file.is_file() {
+        return Response::error(404, &format!("this song has no {stem} stem"));
+    }
+    let notes = if part == "melody" {
+        songprint::melody::read_file(&file, &grid)
+    } else {
+        let Some(gpu) = crate::gpu::config(&app.data_dir) else { return Response::error(503, "no GPU machine: the other notes are read on the PC") };
+        basic_pitch(&gpu, &file).map(|found| songprint::melody::on_the_grid(&found, &grid, grid.bars()))
+    };
+    let notes = match notes {
+        Ok(n) => n,
+        Err(e) => return Response::error(502, &e),
+    };
+    let kept = Value::obj().set("part", part.as_str()).set("from", from).set("notes", notes_value(&notes));
+    if let Err(e) = std::fs::write(notes_file(&dir, &part), kept.to_string()) {
+        return Response::error(500, &e.to_string());
+    }
+    Response::json(kept.to_string())
+}
+
+/// GET ?p=Stems/<song>: the notes read so far, `{melody, other}`, null where not
+/// read; and whether a GPU machine is set, which Other notes needs.
+pub(super) fn api_stems_notes_get(app: &Arc<App>, req: &Request) -> Response {
+    let (_, dir, _) = match song_dir(app, req.param("p").unwrap_or("")) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let part = |p: &str| notes_kept(&dir, p).map(|n| notes_value(&n)).unwrap_or(Value::Null);
+    Response::json(Value::obj().set("melody", part("melody")).set("other", part("other")).set("gpu", crate::gpu::config(&app.data_dir).is_some()).to_string())
 }
 
 /// The MIDI file `api_stems_midi` wrote for the song at `p`, if it is there.
@@ -1268,7 +1396,7 @@ mod midi_tests {
 
     #[test]
     fn an_analysis_becomes_a_track_a_part_on_its_own_channel() {
-        let s = midi_song(&analysis(), "song", &all(), false, false, false).unwrap();
+        let s = midi_song(&analysis(), "song", &all(), false, false, false, &|_| None).unwrap();
         let got: Vec<_> = s.parts.iter().map(|p| (p.name.as_str(), p.channel, p.notes.len())).collect();
         // Drums: three kicks and a snare. Chords: Fmaj7 has four notes, Dm three.
         assert_eq!(got, [("Drums", 10, 4), ("Bass", 5, 2), ("Chords", 6, 7)]);
@@ -1281,19 +1409,40 @@ mod midi_tests {
 
     #[test]
     fn the_choices_reach_the_file() {
-        let only = midi_song(&analysis(), "song", &["bass".to_string()], true, false, true).unwrap();
+        let only = midi_song(&analysis(), "song", &["bass".to_string()], true, false, true, &|_| None).unwrap();
         assert_eq!(only.parts.len(), 1);
         assert_eq!(only.parts[0].notes[0].note, 42, "an octave up");
         assert!(matches!(only.timing, songprint::midi::Timing::Played { downbeat_beat: 1, .. }));
-        let struck = midi_song(&analysis(), "song", &["chords".to_string()], false, true, false).unwrap();
+        let struck = midi_song(&analysis(), "song", &["chords".to_string()], false, true, false, &|_| None).unwrap();
         // Fmaj7 for two bars, struck each bar, then Dm for one.
         assert_eq!(struck.parts[0].notes.len(), 4 + 4 + 3);
     }
 
     #[test]
+    fn a_melody_and_other_notes_are_tracks_once_they_have_been_read() {
+        let parts = ["melody".to_string(), "other".to_string()];
+        assert_eq!(midi_song(&analysis(), "song", &parts, false, false, false, &|_| None).err().unwrap(), "the melody has not been read yet");
+        let read = |part: &str| Some(vec![songprint::midi::Note { bar: 0, step: 0.0, steps: 4.0, note: if part == "melody" { 69 } else { 60 }, vel: 1.0 }]);
+        let s = midi_song(&analysis(), "song", &parts, false, false, false, &read).unwrap();
+        let got: Vec<_> = s.parts.iter().map(|p| (p.name.as_str(), p.channel, p.notes[0].note)).collect();
+        assert_eq!(got, [("Melody", 7, 69), ("Other notes", 8, 60)]);
+    }
+
+    #[test]
+    fn kept_notes_come_back_as_they_were_written() {
+        let dir = std::env::temp_dir().join(format!("mgl-notes-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(notes_kept(&dir, "melody").is_none());
+        let notes = vec![songprint::midi::Note { bar: 3, step: 6.0, steps: 2.0, note: 64, vel: 0.5 }];
+        std::fs::write(notes_file(&dir, "melody"), Value::obj().set("notes", notes_value(&notes)).to_string()).unwrap();
+        assert_eq!(notes_kept(&dir, "melody").unwrap(), notes);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn what_cannot_be_written_says_why() {
-        assert_eq!(midi_song(&analysis(), "song", &[], false, false, false).err().unwrap(), "no parts chosen");
-        assert_eq!(midi_song(&analysis(), "song", &["flute".to_string()], false, false, false).err().unwrap(), "no such part: flute");
-        assert!(midi_song(&Value::obj(), "song", &all(), false, false, false).is_err());
+        assert_eq!(midi_song(&analysis(), "song", &[], false, false, false, &|_| None).err().unwrap(), "no parts chosen");
+        assert_eq!(midi_song(&analysis(), "song", &["flute".to_string()], false, false, false, &|_| None).err().unwrap(), "no such part: flute");
+        assert!(midi_song(&Value::obj(), "song", &all(), false, false, false, &|_| None).is_err());
     }
 }

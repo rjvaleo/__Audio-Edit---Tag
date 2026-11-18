@@ -180,12 +180,14 @@ body.stemspage #overview { display: none; }
 .sm-body { display: grid; grid-template-columns: 300px 868px 312px; gap: 8px; height: 588px; }
 .sm-body .st-cap i { font-style: normal; font-weight: 400; letter-spacing: 0; text-transform: none; margin-left: 8px; }
 .sm-row { display: flex; align-items: center; gap: 8px; }
-.sm-part { display: grid; grid-template-columns: 18px 10px 1fr auto; gap: 8px; align-items: center; height: 46px; padding: 0 8px; margin-bottom: 4px; border-radius: var(--r-m); background: var(--look-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); cursor: pointer; }
+.sm-part { display: grid; grid-template-columns: 18px 10px minmax(0, 1fr) auto; gap: 8px; align-items: center; height: 46px; padding: 0 8px; margin-bottom: 4px; border-radius: var(--r-m); background: var(--look-well); box-shadow: inset 0 1px 3px rgba(var(--black-rgb), .8); cursor: pointer; }
 .sm-part.off { opacity: .45; }
+.sm-part.unread { opacity: 1; cursor: default; }
+.sm-part.unread .nm, .sm-part.unread i { opacity: .55; }
 .sm-part input { margin: 0; accent-color: var(--on); }
 .sm-part i { width: 10px; height: 10px; border-radius: 0; background: var(--c); }
 .sm-part .nm { font: 500 var(--fs-l) var(--sans); color: var(--look-text); }
-.sm-part small { display: block; font: 400 var(--fs-s) var(--sans); color: var(--look-text-3); }
+.sm-part small { display: block; font: 400 var(--fs-s) var(--sans); color: var(--look-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sm-part .n { font: 400 var(--fs-s) var(--mono); color: var(--look-text-2); text-align: right; }
 .sm-part .n small { font: 400 var(--fs-xs) var(--mono); }
 #smRoll { width: 846px; height: 500px; flex: none; display: block; border-radius: var(--r-m); background: var(--look-well); box-shadow: inset 0 3px 6px rgba(var(--black-rgb), .9), inset 0 0 0 1px rgba(var(--black-rgb), .75); cursor: pointer; }
