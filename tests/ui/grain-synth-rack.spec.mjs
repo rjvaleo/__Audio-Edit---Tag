@@ -6,7 +6,8 @@
 
 import { test, expect } from './test.mjs';
 
-test.use({ viewport: { width: 1440, height: 900 } });
+// Grain is one size (RJ, 17 Nov 2026), so the window is one it fits in.
+test.use({ viewport: { width: 1800, height: 1200 } });
 
 async function openPage(page, { flag = true } = {}) {
   await page.goto('/');

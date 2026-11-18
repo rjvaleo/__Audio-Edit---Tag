@@ -6,6 +6,9 @@
 // than read from the page's own table: a control wired to the wrong place fails.
 
 import { test, expect } from './test.mjs';
+
+// Grain is one size (RJ, 17 Nov 2026), so the window is one it fits in.
+test.use({ viewport: { width: 1800, height: 1200 } });
 import { pbSaveAs, pbName, pbLit, pbPick, pbStep, pbRename, pbDelete } from './preset-bar.helpers.mjs';
 
 /// Where each control's value lives.
