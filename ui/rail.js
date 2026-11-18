@@ -68,6 +68,13 @@ const COMPOSE_LISTED = false;
       icon: 'prism', label: 'Prism', mode: 'edit', page: 'prism',
       title: 'HyperStretch — Hyperprism\'s XY pad on Stretch and Pitch, and the rack pad beside it',
     },
+    // FX: a sound from the library, or the PC's, through the effects suite and
+    // nothing else (RJ, 14 Nov 2026: "not like the granular stuff, like the
+    // suite of reverb, delays, all that kind of thing").
+    {
+      icon: 'fx', label: 'FX', mode: 'edit', page: 'fx',
+      title: 'FX — a sound from your library or the PC\'s, through the reverbs, delays and the rest of the effects, played straight',
+    },
     {
       icon: 'chop', label: 'Chop', mode: 'edit', page: 'chop',
       title: 'Chop — cut the sound at its silences into slices, after Recycle Reborn',
@@ -200,6 +207,9 @@ const COMPOSE_LISTED = false;
     // The Prism pad: a square, and the dot that moves two controls at once.
     prism:
       '<rect x="3.5" y="3.5" width="17" height="17" rx="1.6"/><path d="M3.5 12h17M12 3.5v17" stroke-dasharray="1.5 2"/><circle cx="15" cy="9" r="2.2" fill="currentColor" stroke="none"/>',
+    // A hit and its echoes, fading: the effects.
+    fx:
+      '<path d="M4 4v16"/><path d="M9 7v10" opacity=".75"/><path d="M13.5 9v6" opacity=".55"/><path d="M17.5 10.5v3" opacity=".38"/><path d="M21 11.3v1.4" opacity=".25"/>',
     // A cog, for Settings.
     settings:
       '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/><circle cx="12" cy="12" r="6.2"/>',
@@ -459,7 +469,8 @@ const COMPOSE_LISTED = false;
       if (mode === 'edit') {
         const page = document.body.classList.contains('wavepage') ? 'wave'
           : document.body.classList.contains('choppage') ? 'chop'
-          : document.body.classList.contains('prismpage') ? 'prism' : 'grain';
+          : document.body.classList.contains('prismpage') ? 'prism'
+          : document.body.classList.contains('fxpage') ? 'fx' : 'grain';
         return rail.querySelector(`.rl-item[data-mode="edit"][data-page="${page}"]`);
       }
       return rail.querySelector(`.rl-item[data-mode="${mode}"]`);
@@ -552,7 +563,9 @@ const COMPOSE_LISTED = false;
 
       // `app.js`'s own guard, kept: Grain with nothing open has nothing to
       // show, and it says so rather than arriving empty.
-      if (mode === 'edit' && !state.selectedFile && !state.tabs.length) {
+      // FX is the exception: its own Sources panel is where a sound is picked
+      // from the PC's library, so it opens with nothing open (`425-fx-page.js`).
+      if (mode === 'edit' && item.dataset.page !== 'fx' && !state.selectedFile && !state.tabs.length) {
         toast('Open a sound first — double-click one in the library');
         return false;
       }

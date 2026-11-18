@@ -162,7 +162,8 @@ const fmtBytes = (b) =>
   : b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB'
   : (b / 1e3).toFixed(0) + ' KB';
 
-const fmtDur = (s) =>
+// A file just brought into the library may not have its length read yet.
+const fmtDur = (s) => !Number.isFinite(s) ? '—' :
   s >= 60 ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
   : s.toFixed(2) + 's';
 
@@ -237,7 +238,7 @@ document.querySelectorAll('#leftRail .rail-btn').forEach((b) =>
 /// With the Grain v12 page on, Visuals, Automation and Regions are pages too:
 /// Grain's dock with only that panel out, the way Chop is.
 const GS_SUBPAGES = ['visuals', 'automation', 'regions'];
-const EDIT_PAGES = ['grain', 'prism', 'wave', 'chop', ...GS_SUBPAGES];
+const EDIT_PAGES = ['grain', 'prism', 'fx', 'wave', 'chop', ...GS_SUBPAGES];
 let editPage = (() => {
   try {
     const p = localStorage.getItem('editPage');

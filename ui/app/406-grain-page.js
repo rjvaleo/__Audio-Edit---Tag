@@ -388,10 +388,14 @@ function gsEnter() {
   if (!GS.poll) GS.poll = setInterval(gsPollMaster, 80);
   gsKeysEnter();
   gsLfoEnter();
+  // The FX page is this page's effects view on its own (425).
+  if (editPage === 'fx') fxEnter();
+  else fxExit();
 }
 
 function gsLeave() {
   GS.showing = false;
+  fxExit();
   gsLfoLeave();
   gsKeysLeave();
   gsCloseMenus();

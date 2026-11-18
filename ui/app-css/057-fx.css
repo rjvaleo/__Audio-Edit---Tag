@@ -1,0 +1,37 @@
+/* The FX page (`425-fx-page.js`): the Grain page's effects view on its own,
+   with no grain engine, and a Sources panel on top. */
+
+/* What is the grain engine's, put away. */
+body.fxpage #grainView #gsEngTabs,
+body.fxpage #grainView .gs-head > .gs-cable:first-of-type,
+body.fxpage #grainView #gsTGrain,
+body.fxpage #grainView #gsTSeq,
+body.fxpage #grainView #gsVoicesRo,
+body.fxpage #grainView #gsFxBack,
+body.fxpage #grainView .gs-dock,
+body.fxpage #grainView .gs-lab:has(+ #gsCpHost),
+body.fxpage #grainView #gsCpHost,
+body.fxpage #grainView #gsCpPb,
+body.fxpage #grainView .gs-lab:has(+ #gsCpPb) { display: none !important; }
+
+#grainView .fx-src { flex: none; width: 1360px; height: 176px; display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 14px; padding: 8px 12px; }
+#grainView .fx-src .gs-mh { display: flex; align-items: center; gap: 8px; height: 22px; }
+#grainView .fx-open { display: flex; flex-direction: column; gap: 6px; min-width: 0; border-right: 1px solid var(--gs-line); padding-right: 14px; }
+#grainView .fx-name { font: 600 var(--fs-l) var(--sans); color: var(--gs-t); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#grainView .fx-open .gs-hint { line-height: 1.35; }
+#grainView .fx-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
+#grainView .fx-acts .gs-chip { height: 24px; }
+#grainView .fx-save { color: var(--gs-on); }
+#grainView .fx-save:disabled { opacity: .45; cursor: default; }
+#grainView .fx-pc { display: flex; flex-direction: column; gap: 6px; min-width: 0; min-height: 0; }
+#grainView .fx-filt { display: flex; gap: 8px; align-items: center; }
+#grainView .fx-from { display: flex; gap: 4px; }
+#grainView .fx-q { flex: 1; min-width: 120px; height: 22px; border-radius: var(--r-m); border: 1px solid var(--gs-line); background: var(--gs-well); color: var(--gs-t); font: 400 var(--fs-s) var(--sans); padding: 0 8px; }
+#grainView .fx-list { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 3px 10px; }
+#grainView .fx-row { display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px 0 2px; border-radius: var(--r-s); cursor: pointer; min-width: 0; }
+#grainView .fx-row:hover { background: color-mix(in srgb, var(--gs-on) 8%, transparent); }
+#grainView .fx-row.busy { opacity: .55; }
+#grainView .fx-play { width: 20px; height: 18px; display: grid; place-items: center; font-size: 9px; flex: none; }
+#grainView .fx-w { flex: 1; min-width: 0; font: 400 var(--fs-s) var(--sans); color: var(--gs-t2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#grainView .fx-row .gs-ro { flex: none; }
+#grainView .fx-empty { grid-column: 1 / -1; padding: 6px 2px; }

@@ -52,7 +52,8 @@ function setMode(mode) {
   // like Theme. See `docs/STEMS.md`.
   const stems = mode === 'stems';
   // The Grain v12 page, behind `prefs.grainUi`: the Grain page's new face.
-  const grainPage = editing && editPage === 'grain' && gsOn();
+  // FX is the Grain page's effects view on its own, with no grain engine (425).
+  const grainPage = editing && (editPage === 'grain' || editPage === 'fx') && gsOn();
 
   // Borrowed elements go home before anything is measured or toggled. Leaving
   // this until later would have the mode's own show/hide rules applied to
@@ -111,6 +112,7 @@ function setMode(mode) {
   document.body.classList.toggle('wavepage', editing && editPage === 'wave');
   document.body.classList.toggle('choppage', editing && editPage === 'chop');
   document.body.classList.toggle('prismpage', editing && editPage === 'prism');
+  document.body.classList.toggle('fxpage', editing && editPage === 'fx');
   document.body.classList.toggle('grainpage', grainPage);
   document.body.classList.toggle('grainsub', editing && GS_SUBPAGES.includes(editPage));
   chopPageSync(editing);
