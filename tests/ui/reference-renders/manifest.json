@@ -1,0 +1,2718 @@
+{
+ "format": "mgl-reference-renders/1",
+ "about": "Reference renders of MultiGrainLive's browser instruments, for their Rust ports to match. tests/ui/reference-renders.spec.mjs reads this file, renders every case twice in a clean page, and writes one file a case: a WAV (kind audio) or JSON (kind json: a note plan, or Chop's measures). A case's state is `defaults` with its `set` laid over it (objects merged key by key; lists and numbers replaced).",
+ "rate": 48000,
+ "wav": "RIFF, format tag 3 (IEEE float), 32 bits, interleaved, a 44-byte header. Sequencer cases are stereo at `rate`; Chop cases have the input's channels at its rate.",
+ "random": {
+  "algorithm": "mulberry32",
+  "law": "state a = seed (uint32). Each draw: a = (a + 0x6D2B79F5) mod 2^32; t = a; t = imul(t xor (t >>> 15), t or 1); t = t xor (t + imul(t xor (t >>> 7), t or 61)); value = ((t xor (t >>> 14)) >>> 0) / 4294967296.",
+  "use": "A case with `random` has Math.random replaced by this generator, from its seed, while the case's events are laid or its call is made, and put back before the render runs. The index says how many draws each case took. A case without `random` must draw none; the spec fails it if it does."
+ },
+ "signalLaw": {
+  "about": "A signal is silence of `frames` frames in `channels` channels at `rate`, with every part added, summed in doubles and stored as 32-bit floats. `amp` is per channel; `at` and `len` are seconds, placed at round(at * rate) for round(len * rate) frames; a part that runs past the end is cut. The spec writes each as inputs/<name>.wav: read those rather than making them again, since sin and exp can differ in the last bit between libraries.",
+  "click": "one frame of `amp`",
+  "tone": "frame i: amp * exp(-i / (tau * rate)) * sin(2 pi hz i / rate)",
+  "noise": "frame i: amp * exp(-i / (tau * rate)) * u, where s starts at `seed` (uint32) and for each frame s = (s * 1664525 + 1013904223) mod 2^32, u = s / 2147483648 - 1"
+ },
+ "state": {
+  "about": "How `defaults` and `set` reach the page. Each block has the shape of the page's own state object and is written into the page's controls, read by the page, and checked against that object before anything plays.",
+  "seq": "globals of ui/sequencer/app.js: bpm, stepBeats, numSteps, direction, steps; `scale` is the index into its SCALES (the spec checks `scaleCents` against it); rootHz is the page's 440.",
+  "classic": "globals of app.js, in the units the synth uses: wave -> waveType; adsr and filter.env in ms with s as a share; filter.cutoff Hz -> filterCutoff, q -> filterRes, amount -> filterADSRamt, keyFollow; lfos[i] rate Hz, depth 0-1, wave, target ('' | filter | resonance | volume | pw | delay-wet), phase 0; delay subdiv in beats, feedback, wet, spread, hiCut Hz; tapeIps.",
+  "atmos": "AT of atmos.js: its knobs' raw values (the Space knobs atRev* and atLowCut among them), mode, kindA, kindB, symTune. Its tuning follows Seq's; its own LFOs are off.",
+  "band": "BAND of band.js: swing, arrangeMode, ch (the mixer), bass, chord, arp, drone, patch; `plan` is the section plan (bdPlanText's JSON) or null. A case's own `bassKit` stands a signal in for a song's bass notes, and its `samples` stand signals in for a kit's files.",
+  "drums": "DM of drums.js: kit, rate, seed, slots; `pats` are the patterns A-D and F in the preset's form, a row { len, mute, s } with s a list of 0 (rest) or [velocity, accent, chance, ratchet].",
+  "accompany": "AC of accompany.js.",
+  "journey": "J of journey.js.",
+  "draw": "drawSetState's argument (draw.js).",
+  "smoothing": "The offline graph is built with the state already set, as the film's render builds it. Atmosphere's and Space's settings still glide to their values from the nodes' own starting values (setTargetAtTime at 0, time constant 0.03 s), exactly as in the film."
+ },
+ "events": {
+  "about": "Laid in list order on an OfflineAudioContext(2, round(seconds * rate), rate) that initAudio built the page's graph on, before the render starts; `t` is seconds. Where an event must happen during the render (key after 0, freeze) the render is suspended at `t`, which is a whole second so that it falls on a render quantum.",
+  "note": "playNote(hz, t, hold): Classic's step voice and the filter's envelope; with pulseWidth, currentPW is set first.",
+  "key": "kyClassicOn(hz, vel) at t, noteFilterEnv(hz, t, stepDur), and its release at `release`.",
+  "tapeGlide": "bpmTarget = bpm; tapeGlideDelayTime(t): the delay glides to the new tempo from t.",
+  "freeze": "atFrozen = true; atmosFreezeApply() at t.",
+  "buffer": "the signal, in an AudioBufferSource started at t, into atIn (Atmosphere's Character), after atmosRetuneSympathy().",
+  "atmos": "atmosPlay(hz, t, dur, { into }). into 'direct': a gain of 1 straight to the destination, so the file is the voice alone. into 'page': Atmosphere's own chain (Character, Sympathy, its output).",
+  "band": "bandVoice({ part, hz, dur, n, first, cut }, t).",
+  "drum": "drumHit(slot, t, vel, bdNodes.slots[slot].g), after dmOpenHats = [].",
+  "accompany": "accompanyAt(k, (k - from) * stepDur) for `count` boundaries.",
+  "draw": "drawStop(), then drawAt(k, (k - from) * stepDur) for `count` boundaries."
+ },
+ "order": {
+  "about": "Chromium sums a node's inputs, and takes its first step into a feedback loop, in the order of a hash of their addresses, so one graph renders more than one way. The spec fixes the order (R.ordered in the spec); each file is still a render Chromium could have made on its own.",
+  "sums": "The sources of a node's input, and of a parameter, are added in the order the page connected them: ((a + b) + c) + d, in 32-bit floats. A parameter adds its own value first.",
+  "loops": "A feedback loop costs one render quantum (128 frames): the node Chromium reaches first reads the rest of the loop a quantum late. Each loop is reached first at its earliest-connected node that sends sound out of the loop. The index names it for each case (`info.loopsOpenedAt`): `delayL` for the ping-pong delay, so what delayR hears of delayL is 128 frames late and what delayL hears of delayR is not; `atRev.frzLp` for Space's freeze loop, which is where Chromium always opens it."
+ },
+ "calls": {
+  "about": "A json case's `call`, and the JSON it writes.",
+  "bandPlan": "[{ k, plan: bandPlan(k, k === from) }]",
+  "drumPlan": "[{ k, hits: drumPlan(k) }]",
+  "journey": "{ steps: [{ k, i: k mod numSteps, trip, a (moves in force), step: journeyStep(k, i) }], moves: { trip: journeyPlan(trip) } }. Scale moves name scales by their index in the page's library.",
+  "drawPlan": "[{ k, plan: drawPlan(k, k === from) }]",
+  "clone": "CL.info = `songs`, CL.sel, mode, seed and facets from the call; cloneMake(). { made, plan }, with made.pats in the preset's row form (dmRowsOut).",
+  "performance": "`takes` are the recorded takes, `controls` where the controls they move stand, `variation` perfVariation; perfGenerate(). { duration, gestures }. Its draws include the two its name takes, after the gestures.",
+  "chop": "The `input` signal is loaded as the selected sound (Chop.init(), Chop.set(settings), Chop.loadSamples). `measure` steps each start again from the starting settings: rms (Chop.buildRms), detectSegs, tailParams (getTailParams for each segment), onsets (chopOnsets()), cuts (Chop.slices as [s, e]), tempo ({ bpm: Chop.bpm(), found: Chop.findTempo() }), analyse (chopAnalyseCore). `render`: slice (Chop.sliceAudio(index)), preview, ratchet; `flags` are slices reversed or muted first."
+ },
+ "signals": {
+  "break": {
+   "about": "One bar of 4/4 at 120: kick, hat, snare, hat, twice, with two tones over the second half. Chop's input.",
+   "rate": 48000,
+   "frames": 96000,
+   "channels": 2,
+   "parts": [
+    {"type": "click", "at": 0.0, "amp": [0.5, 0.5]},
+    {"type": "tone", "at": 0.0, "len": 0.22, "hz": 55, "tau": 0.06, "amp": [0.9, 0.9]},
+    {"type": "noise", "at": 0.25, "len": 0.05, "tau": 0.012, "amp": [0.25, 0.35], "seed": 11},
+    {"type": "noise", "at": 0.5, "len": 0.16, "tau": 0.04, "amp": [0.5, 0.45], "seed": 12},
+    {"type": "tone", "at": 0.5, "len": 0.12, "hz": 190, "tau": 0.03, "amp": [0.4, 0.4]},
+    {"type": "noise", "at": 0.75, "len": 0.05, "tau": 0.012, "amp": [0.25, 0.35], "seed": 13},
+    {"type": "click", "at": 1.0, "amp": [0.5, 0.5]},
+    {"type": "tone", "at": 1.0, "len": 0.22, "hz": 55, "tau": 0.06, "amp": [0.9, 0.9]},
+    {"type": "noise", "at": 1.25, "len": 0.05, "tau": 0.012, "amp": [0.25, 0.35], "seed": 14},
+    {"type": "tone", "at": 1.25, "len": 0.2, "hz": 440, "tau": 0.08, "amp": [0.2, 0.3]},
+    {"type": "noise", "at": 1.5, "len": 0.16, "tau": 0.04, "amp": [0.5, 0.45], "seed": 15},
+    {"type": "tone", "at": 1.5, "len": 0.12, "hz": 190, "tau": 0.03, "amp": [0.4, 0.4]},
+    {"type": "noise", "at": 1.75, "len": 0.05, "tau": 0.012, "amp": [0.25, 0.35], "seed": 16},
+    {"type": "tone", "at": 1.75, "len": 0.15, "hz": 660, "tau": 0.05, "amp": [0.25, 0.15]}
+   ]
+  },
+  "pluck": {
+   "about": "Two plucked notes, a second apart in pitch and half a second in time. What Character and Sympathy are fed.",
+   "rate": 48000,
+   "frames": 48000,
+   "channels": 1,
+   "parts": [
+    {"type": "click", "at": 0.0, "amp": [0.5]},
+    {"type": "tone", "at": 0.0, "len": 1.0, "hz": 220, "tau": 0.25, "amp": [0.35]},
+    {"type": "tone", "at": 0.0, "len": 1.0, "hz": 440, "tau": 0.18, "amp": [0.2]},
+    {"type": "tone", "at": 0.0, "len": 1.0, "hz": 1760, "tau": 0.08, "amp": [0.1]},
+    {"type": "tone", "at": 0.5, "len": 0.5, "hz": 330, "tau": 0.2, "amp": [0.3]}
+   ]
+  },
+  "drum-sample": {
+   "about": "A kick-like burst at 44.1 kHz, as a kit's sample is decoded. Stands in for a sample kit's kick.",
+   "rate": 44100,
+   "frames": 17640,
+   "channels": 1,
+   "parts": [
+    {"type": "tone", "at": 0.0, "len": 0.4, "hz": 80, "tau": 0.07, "amp": [0.9]},
+    {"type": "noise", "at": 0.0, "len": 0.02, "tau": 0.004, "amp": [0.4], "seed": 21}
+   ]
+  },
+  "bass-note": {
+   "about": "A held bass note, A1 (MIDI 33), at 44.1 kHz. Stands in for a song's own bass note.",
+   "rate": 44100,
+   "frames": 35280,
+   "channels": 1,
+   "parts": [
+    {"type": "tone", "at": 0.0, "len": 0.8, "hz": 55, "tau": 0.35, "amp": [0.8]},
+    {"type": "tone", "at": 0.0, "len": 0.8, "hz": 110, "tau": 0.2, "amp": [0.2]}
+   ]
+  }
+ },
+ "defaults": {
+  "seq": {
+   "bpm": 120,
+   "stepBeats": 0.5,
+   "numSteps": 8,
+   "direction": "fwd",
+   "scale": 0,
+   "scaleName": "Ionian (Major)",
+   "scaleCents": [0, 200, 400, 500, 700, 900, 1100],
+   "rootHz": 440,
+   "steps": [{"degree": 0}, {"degree": 2}, {"degree": 4}, {"degree": 6}, {"degree": 7}, {"degree": 4}, {"degree": 2}, {"degree": 1}]
+  },
+  "classic": {
+   "wave": "sine",
+   "pulseWidth": 0.5,
+   "adsr": {"a": 10, "d": 80, "s": 0.6, "r": 200},
+   "volume": 0.7,
+   "filter": {"cutoff": 2000, "q": 2, "env": {"a": 10, "d": 150, "s": 0.3, "r": 300}, "amount": 0.5, "keyFollow": 0},
+   "lfos": [
+    {"rate": 1, "depth": 0, "wave": "sine", "target": ""},
+    {"rate": 1, "depth": 0, "wave": "sine", "target": ""},
+    {"rate": 1, "depth": 0, "wave": "sine", "target": ""}
+   ],
+   "delay": {"subdiv": 0.5, "feedback": 0.35, "wet": 0, "spread": 1, "hiCut": 6300},
+   "tapeIps": 7.5
+  },
+  "atmos": {
+   "mode": "classic",
+   "kindA": "choir",
+   "kindB": "spectrum",
+   "symTune": "degrees",
+   "atA1": 20,
+   "atA2": 60,
+   "atA3": 35,
+   "atAOct": 0,
+   "atB1": 80,
+   "atB2": 45,
+   "atB3": 35,
+   "atBOct": 0,
+   "atBlend": 40,
+   "atUnison": 5,
+   "atDetune": 18,
+   "atWidth": 80,
+   "atDrift": 35,
+   "atSub": 20,
+   "atAir": 20,
+   "atHold": 300,
+   "atGlide": 20,
+   "atAtk": 74,
+   "atDec": 70,
+   "atSus": 80,
+   "atRel": 78,
+   "atVol": 70,
+   "atEns": 40,
+   "atEnsRate": 40,
+   "atWow": 15,
+   "atWarm": 15,
+   "atSym": 30,
+   "atSymRing": 55,
+   "atSymMat": 50,
+   "atLowCut": 0,
+   "atRevWet": 0,
+   "atRevSize": 60,
+   "atRevPre": 15,
+   "atRevDamp": 45,
+   "atRevShim": 30,
+   "atRevSpread": 80,
+   "atFltType": 0,
+   "atFltCut": 100,
+   "atFltRes": 10,
+   "atFltKey": 0,
+   "atFltAmt": 0,
+   "atFltAtk": 40,
+   "atFltDec": 60,
+   "atFltSus": 50,
+   "atFltRel": 70,
+   "atL1Depth": 0,
+   "atL2Depth": 0,
+   "atL3Depth": 0
+  },
+  "band": {
+   "swing": 50,
+   "arrangeMode": "off",
+   "plan": null,
+   "ch": {
+    "Mel": {"lv": 80, "pan": 0, "dly": 100, "spc": 100, "mute": false, "solo": false},
+    "Drm": {"lv": 80, "pan": 0, "dly": 0, "spc": 0, "mute": false, "solo": false},
+    "Bas": {"lv": 80, "pan": 0, "dly": 0, "spc": 0, "mute": false, "solo": false},
+    "Chd": {"lv": 70, "pan": 0, "dly": 70, "spc": 25, "mute": false, "solo": false},
+    "Arp": {"lv": 60, "pan": 0, "dly": 40, "spc": 30, "mute": false, "solo": false},
+    "Drn": {"lv": 55, "pan": 0, "dly": 20, "spc": 60, "mute": false, "solo": false}
+   },
+   "bass": {"bsWeight": 10, "bsDrive": 15, "bsLp": 45, "bsOct": 1, "bsAtk": 10, "bsLen": 85, "bsRel": 35, "bsGlide": 0, "lines": {"A": "R-..........R.5."}},
+   "chord": {"chSpread": 30, "chStab": 35, "chCut": 45, "chRes": 30, "chEnv": 35, "chEnvDec": 40, "flt": "lowpass"},
+   "arp": {"apRange": 2, "apGate": 60, "apCut": 60, "apRes": 25, "apEnv": 50, "apDec": 35, "wave": "triangle"},
+   "drone": {"drSwell": 60, "drCut": 55, "drRes": 15, "flt": "lowpass"},
+   "patch": {
+    "chord": {
+     "kindA": "supersaw",
+     "kindB": "classic",
+     "atA1": 20,
+     "atA2": 0,
+     "atA3": 0,
+     "atAOct": 0,
+     "atB1": 100,
+     "atB2": 0,
+     "atB3": 0,
+     "atBOct": -1,
+     "atBlend": 25,
+     "atUnison": 3,
+     "atDetune": 8,
+     "atWidth": 70,
+     "atDrift": 5,
+     "atSub": 0,
+     "atAir": 3,
+     "atAtk": 5,
+     "atDec": 45,
+     "atSus": 10,
+     "atRel": 40,
+     "atVol": 75
+    },
+    "drone": {
+     "kindA": "supersaw",
+     "kindB": "cloud",
+     "atA1": 60,
+     "atA2": 0,
+     "atA3": 0,
+     "atAOct": -1,
+     "atB1": 50,
+     "atB2": 20,
+     "atB3": 50,
+     "atBOct": 0,
+     "atBlend": 60,
+     "atUnison": 7,
+     "atDetune": 25,
+     "atWidth": 85,
+     "atDrift": 50,
+     "atSub": 50,
+     "atAir": 10,
+     "atAtk": 80,
+     "atDec": 75,
+     "atSus": 90,
+     "atRel": 88,
+     "atVol": 68
+    }
+   }
+  },
+  "drums": {
+   "kit": "synth",
+   "rate": 16,
+   "seed": 808,
+   "slots": {
+    "kick": {"tune": 0, "dec": 50, "tone": 45, "lv": 90, "pan": 0, "dly": 0, "spc": 0},
+    "snare": {"tune": 0, "dec": 50, "tone": 60, "lv": 70, "pan": -8, "dly": 0, "spc": 0},
+    "clap": {"tune": 0, "dec": 50, "tone": 50, "lv": 60, "pan": 12, "dly": 0, "spc": 0},
+    "rim": {"tune": 0, "dec": 50, "tone": 50, "lv": 55, "pan": 30, "dly": 0, "spc": 0},
+    "chh": {"tune": 0, "dec": 50, "tone": 60, "lv": 55, "pan": 18, "dly": 0, "spc": 0},
+    "ohh": {"tune": 0, "dec": 50, "tone": 60, "lv": 50, "pan": -15, "dly": 0, "spc": 0},
+    "ltom": {"tune": 0, "dec": 50, "tone": 40, "lv": 60, "pan": -35, "dly": 0, "spc": 0},
+    "mtom": {"tune": 0, "dec": 50, "tone": 40, "lv": 60, "pan": 0, "dly": 0, "spc": 0},
+    "htom": {"tune": 0, "dec": 50, "tone": 40, "lv": 60, "pan": 35, "dly": 0, "spc": 0},
+    "perc": {"tune": 0, "dec": 50, "tone": 50, "lv": 45, "pan": 45, "dly": 0, "spc": 0}
+   },
+   "pats": {"A": {}}
+  },
+  "accompany": {
+   "follow": "melody",
+   "parts": {
+    "drums": {"on": false},
+    "bass": {"on": false, "pat": "fifth"},
+    "chord": {"on": false, "pat": "triad-bar"},
+    "arp": {"on": false, "pat": "up-16"},
+    "drone": {"on": false, "pat": "fifth"}
+   }
+  },
+  "journey": {
+   "on": false,
+   "bars": 32,
+   "wander": 45,
+   "each": 3,
+   "seed": 4127,
+   "curve": [15, 70, 100, 60],
+   "kinds": {"deg": true, "oct": true, "rest": true, "rhythm": false, "root": true, "scale": true, "dir": false, "home": true}
+  },
+  "draw": {"bars": 4, "snap": "degrees", "steps": true, "grain": 64, "marks": []}
+ },
+ "cases": [
+  {
+   "id": "classic-range",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "single notes across the range, a sine: 55, 220, 880 and 3520 Hz, each a step long",
+   "seconds": 2.2,
+   "events": [
+    {"type": "note", "t": 0, "hz": 55, "hold": 1},
+    {"type": "note", "t": 0.5, "hz": 220, "hold": 1},
+    {"type": "note", "t": 1.0, "hz": 880, "hold": 1},
+    {"type": "note", "t": 1.5, "hz": 3520, "hold": 1}
+   ]
+  },
+  {
+   "id": "classic-velocities",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the keys' voice at four velocities (0.2, 0.5, 0.8, 1.0), a saw, each held 0.4 s and let go",
+   "seconds": 4.0,
+   "set": {"classic": {"wave": "sawtooth"}},
+   "events": [
+    {"type": "key", "t": 0, "hz": 220, "vel": 0.2, "release": 0.4},
+    {"type": "key", "t": 1, "hz": 220, "vel": 0.5, "release": 1.4},
+    {"type": "key", "t": 2, "hz": 220, "vel": 0.8, "release": 2.4},
+    {"type": "key", "t": 3, "hz": 220, "vel": 1.0, "release": 3.4}
+   ]
+  },
+  {
+   "id": "classic-chord",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "two chords, three and four notes at once, a saw",
+   "seconds": 2.4,
+   "set": {"classic": {"wave": "sawtooth"}},
+   "events": [
+    {"type": "note", "t": 0, "hz": 220, "hold": 3},
+    {"type": "note", "t": 0, "hz": 277.1826, "hold": 3},
+    {"type": "note", "t": 0, "hz": 329.6276, "hold": 3},
+    {"type": "note", "t": 1.0, "hz": 196, "hold": 2},
+    {"type": "note", "t": 1.0, "hz": 246.9417, "hold": 2},
+    {"type": "note", "t": 1.0, "hz": 293.6648, "hold": 2},
+    {"type": "note", "t": 1.0, "hz": 369.9944, "hold": 2}
+   ]
+  },
+  {
+   "id": "classic-wave-triangle",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the triangle oscillator, low and high",
+   "seconds": 1.6,
+   "set": {"classic": {"wave": "triangle"}},
+   "events": [{"type": "note", "t": 0, "hz": 110, "hold": 2}, {"type": "note", "t": 0.75, "hz": 440, "hold": 2}]
+  },
+  {
+   "id": "classic-wave-sawtooth",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the sawtooth oscillator, low and high",
+   "seconds": 1.6,
+   "set": {"classic": {"wave": "sawtooth"}},
+   "events": [{"type": "note", "t": 0, "hz": 110, "hold": 2}, {"type": "note", "t": 0.75, "hz": 440, "hold": 2}]
+  },
+  {
+   "id": "classic-wave-square",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the square oscillator, low and high",
+   "seconds": 1.6,
+   "set": {"classic": {"wave": "square"}},
+   "events": [{"type": "note", "t": 0, "hz": 110, "hold": 2}, {"type": "note", "t": 0.75, "hz": 440, "hold": 2}]
+  },
+  {
+   "id": "classic-wave-pulse",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the pulse oscillator at four widths (the scheduler sets the width before each note; here each note names its own)",
+   "seconds": 1.9,
+   "set": {"classic": {"wave": "pulse"}},
+   "events": [
+    {"type": "note", "t": 0, "hz": 110, "hold": 1, "pulseWidth": 0.5},
+    {"type": "note", "t": 0.4, "hz": 110, "hold": 1, "pulseWidth": 0.25},
+    {"type": "note", "t": 0.8, "hz": 220, "hold": 1, "pulseWidth": 0.1},
+    {"type": "note", "t": 1.2, "hz": 220, "hold": 1, "pulseWidth": 0.8}
+   ]
+  },
+  {
+   "id": "classic-filter-env",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the filter's envelope opening a low cutoff, with resonance",
+   "seconds": 2.6,
+   "set": {"classic": {"wave": "sawtooth", "filter": {"cutoff": 300, "q": 6, "env": {"a": 60, "d": 250, "s": 0.2, "r": 400}, "amount": 0.8}}},
+   "events": [{"type": "note", "t": 0, "hz": 110, "hold": 4}, {"type": "note", "t": 1.5, "hz": 220, "hold": 2}]
+  },
+  {
+   "id": "classic-filter-resonance-keyfollow",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "high resonance, full key follow and a negative envelope amount, on three notes",
+   "seconds": 2.0,
+   "set": {
+    "classic": {"wave": "sawtooth", "filter": {"cutoff": 500, "q": 18, "env": {"a": 20, "d": 120, "s": 0.5, "r": 200}, "amount": -0.6, "keyFollow": 1}}
+   },
+   "events": [
+    {"type": "note", "t": 0, "hz": 110, "hold": 2},
+    {"type": "note", "t": 0.6, "hz": 440, "hold": 2},
+    {"type": "note", "t": 1.2, "hz": 1760, "hold": 2}
+   ]
+  },
+  {
+   "id": "classic-lfo-filter",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "LFO 1, a sine at 4 Hz, on the filter's cutoff",
+   "seconds": 2.4,
+   "set": {
+    "classic": {
+     "wave": "sawtooth",
+     "lfos": [
+      {"rate": 4, "depth": 0.5, "wave": "sine", "target": "filter"},
+      {"rate": 1, "depth": 0, "wave": "sine", "target": ""},
+      {"rate": 1, "depth": 0, "wave": "sine", "target": ""}
+     ]
+    }
+   },
+   "events": [{"type": "note", "t": 0, "hz": 220, "hold": 8}]
+  },
+  {
+   "id": "classic-lfo-resonance",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "LFO 1, a triangle at 3 Hz, on the filter's resonance",
+   "seconds": 2.4,
+   "set": {
+    "classic": {
+     "wave": "sawtooth",
+     "lfos": [
+      {"rate": 3, "depth": 0.8, "wave": "triangle", "target": "resonance"},
+      {"rate": 1, "depth": 0, "wave": "sine", "target": ""},
+      {"rate": 1, "depth": 0, "wave": "sine", "target": ""}
+     ]
+    }
+   },
+   "events": [{"type": "note", "t": 0, "hz": 220, "hold": 8}]
+  },
+  {
+   "id": "classic-lfo-volume",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "LFO 2, a square at 5 Hz, on the volume",
+   "seconds": 2.4,
+   "set": {
+    "classic": {
+     "wave": "sawtooth",
+     "lfos": [
+      {"rate": 1, "depth": 0, "wave": "sine", "target": ""},
+      {"rate": 5, "depth": 0.6, "wave": "square", "target": "volume"},
+      {"rate": 1, "depth": 0, "wave": "sine", "target": ""}
+     ]
+    }
+   },
+   "events": [{"type": "note", "t": 0, "hz": 220, "hold": 8}]
+  },
+  {
+   "id": "classic-lfo-delay-wet",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "LFO 3, a saw at 2 Hz, on the delay's wet level",
+   "seconds": 3.0,
+   "set": {
+    "classic": {
+     "wave": "sawtooth",
+     "delay": {"wet": 0.4, "feedback": 0.5},
+     "lfos": [
+      {"rate": 1, "depth": 0, "wave": "sine", "target": ""},
+      {"rate": 1, "depth": 0, "wave": "sine", "target": ""},
+      {"rate": 2, "depth": 1, "wave": "sawtooth", "target": "delay-wet"}
+     ]
+    }
+   },
+   "events": [{"type": "note", "t": 0, "hz": 220, "hold": 4}]
+  },
+  {
+   "id": "classic-delay-pingpong",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the ping-pong delay: 1/8 at 120, feedback 0.6, full spread",
+   "seconds": 4.0,
+   "set": {"classic": {"wave": "triangle", "delay": {"wet": 0.5, "feedback": 0.6, "spread": 1, "hiCut": 6300, "subdiv": 0.5}}},
+   "events": [{"type": "note", "t": 0, "hz": 440, "hold": 1}, {"type": "note", "t": 1.0, "hz": 660, "hold": 1}]
+  },
+  {
+   "id": "classic-delay-hicut",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the delay's hi-cut at 800 Hz in the loop, feedback 0.8, dotted 1/8, narrow spread",
+   "seconds": 4.0,
+   "set": {"classic": {"wave": "sawtooth", "delay": {"wet": 0.5, "feedback": 0.8, "spread": 0.3, "hiCut": 800, "subdiv": 0.75}}},
+   "events": [{"type": "note", "t": 0, "hz": 220, "hold": 1}]
+  },
+  {
+   "id": "classic-delay-tape-glide",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "a tempo change, 120 to 90 at 0.5 s: the delay's tape glide at 7.5 IPS re-pitches what is in the loop",
+   "seconds": 4.0,
+   "set": {"classic": {"delay": {"wet": 0.5, "feedback": 0.7}}},
+   "events": [{"type": "note", "t": 0, "hz": 440, "hold": 1}, {"type": "note", "t": 0.25, "hz": 660, "hold": 1}, {"type": "tapeGlide", "t": 0.5, "bpm": 90}]
+  },
+  {
+   "id": "classic-delay-tape-glide-cassette",
+   "instrument": "classic",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "a tempo change the other way, 120 to 160 at 0.5 s, at cassette speed (1.875 IPS)",
+   "seconds": 4.0,
+   "set": {"classic": {"tapeIps": 1.875, "delay": {"wet": 0.5, "feedback": 0.7}}},
+   "events": [{"type": "note", "t": 0, "hz": 440, "hold": 1}, {"type": "note", "t": 0.25, "hz": 660, "hold": 1}, {"type": "tapeGlide", "t": 0.5, "bpm": 160}]
+  },
+  {
+   "id": "space-hall",
+   "instrument": "space",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Space's Hall on a Classic note: pre-delay, convolver, damp, limiter, shimmer",
+   "seconds": 4.0,
+   "set": {"classic": {"wave": "sawtooth"}, "atmos": {"atRevWet": 32, "atRevSize": 55, "atRevPre": 15, "atRevDamp": 45, "atRevShim": 25, "atRevSpread": 85}},
+   "events": [{"type": "note", "t": 0, "hz": 220, "hold": 2}]
+  },
+  {
+   "id": "space-room-lowcut",
+   "instrument": "space",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Space's Room with the low cut in, on two notes",
+   "seconds": 2.5,
+   "set": {
+    "classic": {"wave": "sawtooth"},
+    "atmos": {"atRevWet": 40, "atRevSize": 22, "atRevPre": 5, "atRevDamp": 55, "atRevShim": 10, "atRevSpread": 60, "atLowCut": 40}
+   },
+   "events": [{"type": "note", "t": 0, "hz": 110, "hold": 2}, {"type": "note", "t": 0.5, "hz": 330, "hold": 2}]
+  },
+  {
+   "id": "space-freeze",
+   "instrument": "space",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Freeze at 1 s: the gate closes and the tail goes round the loop of a delay and four allpasses",
+   "seconds": 4.0,
+   "set": {"classic": {"wave": "sawtooth"}, "atmos": {"atRevWet": 42, "atRevSize": 60, "atRevPre": 26, "atRevDamp": 35, "atRevShim": 55, "atRevSpread": 100}},
+   "events": [{"type": "note", "t": 0, "hz": 220, "hold": 2}, {"type": "freeze", "t": 1}]
+  },
+  {
+   "id": "character-warmth",
+   "instrument": "atmosphere-character",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Warmth alone: the wave shaper at 2x oversampling",
+   "seconds": 1.5,
+   "set": {"atmos": {"atWarm": 80, "atWow": 0, "atEns": 0, "atSym": 0}},
+   "events": [{"type": "buffer", "t": 0, "signal": "pluck", "into": "atmosphere"}]
+  },
+  {
+   "id": "character-wow",
+   "instrument": "atmosphere-character",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Tape wow alone: a delay whose time two LFOs move",
+   "seconds": 1.5,
+   "set": {"atmos": {"atWarm": 0, "atWow": 90, "atEns": 0, "atSym": 0}},
+   "events": [{"type": "buffer", "t": 0, "signal": "pluck", "into": "atmosphere"}]
+  },
+  {
+   "id": "character-ensemble",
+   "instrument": "atmosphere-character",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Ensemble alone: three swept delays, left, centre and right, beside the dry",
+   "seconds": 1.5,
+   "set": {"atmos": {"atWarm": 0, "atWow": 0, "atEns": 80, "atSym": 0, "atEnsRate": 70}},
+   "events": [{"type": "buffer", "t": 0, "signal": "pluck", "into": "atmosphere"}]
+  },
+  {
+   "id": "character-all",
+   "instrument": "atmosphere-character",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Character as the page starts: warmth 15, wow 15, ensemble 40",
+   "seconds": 1.5,
+   "set": {"atmos": {"atSym": 0}},
+   "events": [{"type": "buffer", "t": 0, "signal": "pluck", "into": "atmosphere"}]
+  },
+  {
+   "id": "sympathy-degrees",
+   "instrument": "atmosphere-sympathy",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Sympathy on the scale's degrees, string, character out",
+   "seconds": 3.0,
+   "set": {"atmos": {"atWarm": 0, "atWow": 0, "atEns": 0, "atSym": 60, "atSymRing": 55, "atSymMat": 50, "symTune": "degrees"}},
+   "events": [{"type": "buffer", "t": 0, "signal": "pluck", "into": "atmosphere"}]
+  },
+  {
+   "id": "sympathy-fifths-glass",
+   "instrument": "atmosphere-sympathy",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Sympathy on root and fifth, glass, a short ring",
+   "seconds": 3.0,
+   "set": {"atmos": {"atWarm": 0, "atWow": 0, "atEns": 0, "atSym": 80, "atSymRing": 30, "atSymMat": 90, "symTune": "fifths"}},
+   "events": [{"type": "buffer", "t": 0, "signal": "pluck", "into": "atmosphere"}]
+  },
+  {
+   "id": "sympathy-root-felt",
+   "instrument": "atmosphere-sympathy",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Sympathy on the root alone, felt, a long ring",
+   "seconds": 3.0,
+   "set": {"atmos": {"atWarm": 0, "atWow": 0, "atEns": 0, "atSym": 80, "atSymRing": 80, "atSymMat": 10, "symTune": "root"}},
+   "events": [{"type": "buffer", "t": 0, "signal": "pluck", "into": "atmosphere"}]
+  },
+  {
+   "id": "atmos-voice-classic",
+   "instrument": "atmosphere-voice",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the classic kind alone on oscillator A (a unison of saws), with unison, drift, sub and air",
+   "seconds": 2.4,
+   "set": {
+    "atmos": {
+     "kindB": "classic",
+     "atB1": 0,
+     "atB2": 0,
+     "atB3": 0,
+     "atAOct": 0,
+     "atBOct": 0,
+     "atBlend": 0,
+     "atUnison": 3,
+     "atDetune": 12,
+     "atWidth": 70,
+     "atDrift": 30,
+     "atSub": 15,
+     "atAir": 10,
+     "atGlide": 0,
+     "atAtk": 30,
+     "atDec": 50,
+     "atSus": 70,
+     "atRel": 50,
+     "atVol": 70,
+     "kindA": "classic",
+     "atA1": 66,
+     "atA2": 0,
+     "atA3": 0
+    }
+   },
+   "random": {"seed": 1000},
+   "events": [{"type": "atmos", "t": 0, "hz": 220, "dur": 1.5, "into": "direct"}]
+  },
+  {
+   "id": "atmos-voice-supersaw",
+   "instrument": "atmosphere-voice",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the supersaw kind alone on oscillator A (detuned saws, spread), with unison, drift, sub and air",
+   "seconds": 2.4,
+   "set": {
+    "atmos": {
+     "kindB": "classic",
+     "atB1": 0,
+     "atB2": 0,
+     "atB3": 0,
+     "atAOct": 0,
+     "atBOct": 0,
+     "atBlend": 0,
+     "atUnison": 3,
+     "atDetune": 12,
+     "atWidth": 70,
+     "atDrift": 30,
+     "atSub": 15,
+     "atAir": 10,
+     "atGlide": 0,
+     "atAtk": 30,
+     "atDec": 50,
+     "atSus": 70,
+     "atRel": 50,
+     "atVol": 70,
+     "kindA": "supersaw",
+     "atA1": 50,
+     "atA2": 0,
+     "atA3": 0
+    }
+   },
+   "random": {"seed": 1001},
+   "events": [{"type": "atmos", "t": 0, "hz": 220, "dur": 1.5, "into": "direct"}]
+  },
+  {
+   "id": "atmos-voice-spectrum",
+   "instrument": "atmosphere-voice",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the spectrum kind alone on oscillator A (partials fitted to the scale's intervals), with unison, drift, sub and air",
+   "seconds": 2.4,
+   "set": {
+    "atmos": {
+     "kindB": "classic",
+     "atB1": 0,
+     "atB2": 0,
+     "atB3": 0,
+     "atAOct": 0,
+     "atBOct": 0,
+     "atBlend": 0,
+     "atUnison": 3,
+     "atDetune": 12,
+     "atWidth": 70,
+     "atDrift": 30,
+     "atSub": 15,
+     "atAir": 10,
+     "atGlide": 0,
+     "atAtk": 30,
+     "atDec": 50,
+     "atSus": 70,
+     "atRel": 50,
+     "atVol": 70,
+     "kindA": "spectrum",
+     "atA1": 80,
+     "atA2": 45,
+     "atA3": 35
+    }
+   },
+   "random": {"seed": 1002},
+   "events": [{"type": "atmos", "t": 0, "hz": 220, "dur": 1.5, "into": "direct"}]
+  },
+  {
+   "id": "atmos-voice-choir",
+   "instrument": "atmosphere-voice",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the choir kind alone on oscillator A (stacked saws through three vowel formants, with breath and vibrato), with unison, drift, sub and air",
+   "seconds": 2.4,
+   "set": {
+    "atmos": {
+     "kindB": "classic",
+     "atB1": 0,
+     "atB2": 0,
+     "atB3": 0,
+     "atAOct": 0,
+     "atBOct": 0,
+     "atBlend": 0,
+     "atUnison": 3,
+     "atDetune": 12,
+     "atWidth": 70,
+     "atDrift": 30,
+     "atSub": 15,
+     "atAir": 10,
+     "atGlide": 0,
+     "atAtk": 30,
+     "atDec": 50,
+     "atSus": 70,
+     "atRel": 50,
+     "atVol": 70,
+     "kindA": "choir",
+     "atA1": 20,
+     "atA2": 60,
+     "atA3": 35
+    }
+   },
+   "random": {"seed": 1003},
+   "events": [{"type": "atmos", "t": 0, "hz": 220, "dur": 1.5, "into": "direct"}]
+  },
+  {
+   "id": "atmos-voice-glass",
+   "instrument": "atmosphere-voice",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the glass kind alone on oscillator A (noise struck and bowed through six resonators), with unison, drift, sub and air",
+   "seconds": 2.4,
+   "set": {
+    "atmos": {
+     "kindB": "classic",
+     "atB1": 0,
+     "atB2": 0,
+     "atB3": 0,
+     "atAOct": 0,
+     "atBOct": 0,
+     "atBlend": 0,
+     "atUnison": 3,
+     "atDetune": 12,
+     "atWidth": 70,
+     "atDrift": 30,
+     "atSub": 15,
+     "atAir": 10,
+     "atGlide": 0,
+     "atAtk": 30,
+     "atDec": 50,
+     "atSus": 70,
+     "atRel": 50,
+     "atVol": 70,
+     "kindA": "glass",
+     "atA1": 80,
+     "atA2": 50,
+     "atA3": 70
+    }
+   },
+   "random": {"seed": 1004},
+   "events": [{"type": "atmos", "t": 0, "hz": 220, "dur": 1.5, "into": "direct"}]
+  },
+  {
+   "id": "atmos-voice-breath",
+   "instrument": "atmosphere-voice",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the breath kind alone on oscillator A (noise tuned to the pitch by two band-passes), with unison, drift, sub and air",
+   "seconds": 2.4,
+   "set": {
+    "atmos": {
+     "kindB": "classic",
+     "atB1": 0,
+     "atB2": 0,
+     "atB3": 0,
+     "atAOct": 0,
+     "atBOct": 0,
+     "atBlend": 0,
+     "atUnison": 3,
+     "atDetune": 12,
+     "atWidth": 70,
+     "atDrift": 30,
+     "atSub": 15,
+     "atAir": 10,
+     "atGlide": 0,
+     "atAtk": 30,
+     "atDec": 50,
+     "atSus": 70,
+     "atRel": 50,
+     "atVol": 70,
+     "kindA": "breath",
+     "atA1": 50,
+     "atA2": 30,
+     "atA3": 0
+    }
+   },
+   "random": {"seed": 1005},
+   "events": [{"type": "atmos", "t": 0, "hz": 220, "dur": 1.5, "into": "direct"}]
+  },
+  {
+   "id": "atmos-voice-cloud",
+   "instrument": "atmosphere-voice",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the cloud kind alone on oscillator A (two random-phase waves trading places), with unison, drift, sub and air",
+   "seconds": 2.4,
+   "set": {
+    "atmos": {
+     "kindB": "classic",
+     "atB1": 0,
+     "atB2": 0,
+     "atB3": 0,
+     "atAOct": 0,
+     "atBOct": 0,
+     "atBlend": 0,
+     "atUnison": 3,
+     "atDetune": 12,
+     "atWidth": 70,
+     "atDrift": 30,
+     "atSub": 15,
+     "atAir": 10,
+     "atGlide": 0,
+     "atAtk": 30,
+     "atDec": 50,
+     "atSus": 70,
+     "atRel": 50,
+     "atVol": 70,
+     "kindA": "cloud",
+     "atA1": 50,
+     "atA2": 20,
+     "atA3": 50
+    }
+   },
+   "random": {"seed": 1006},
+   "events": [{"type": "atmos", "t": 0, "hz": 220, "dur": 1.5, "into": "direct"}]
+  },
+  {
+   "id": "atmos-voice-endless",
+   "instrument": "atmosphere-voice",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the endless kind alone on oscillator A (Shepard octaves rising half an octave over the note), with unison, drift, sub and air",
+   "seconds": 2.4,
+   "set": {
+    "atmos": {
+     "kindB": "classic",
+     "atB1": 0,
+     "atB2": 0,
+     "atB3": 0,
+     "atAOct": 0,
+     "atBOct": 0,
+     "atBlend": 0,
+     "atUnison": 3,
+     "atDetune": 12,
+     "atWidth": 70,
+     "atDrift": 30,
+     "atSub": 15,
+     "atAir": 10,
+     "atGlide": 0,
+     "atAtk": 30,
+     "atDec": 50,
+     "atSus": 70,
+     "atRel": 50,
+     "atVol": 70,
+     "kindA": "endless",
+     "atA1": 75,
+     "atA2": 50,
+     "atA3": 0
+    }
+   },
+   "random": {"seed": 1007},
+   "events": [{"type": "atmos", "t": 0, "hz": 220, "dur": 1.5, "into": "direct"}]
+  },
+  {
+   "id": "atmos-voice-filter-glide",
+   "instrument": "atmosphere-voice",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the voice's own filter (low-pass, envelope, key follow) and glide between two notes",
+   "seconds": 2.6,
+   "set": {
+    "atmos": {
+     "kindB": "classic",
+     "atB1": 0,
+     "atB2": 0,
+     "atB3": 0,
+     "atAOct": 0,
+     "atBOct": 0,
+     "atBlend": 0,
+     "atUnison": 3,
+     "atDetune": 12,
+     "atWidth": 70,
+     "atDrift": 30,
+     "atSub": 15,
+     "atAir": 10,
+     "atGlide": 50,
+     "atAtk": 30,
+     "atDec": 50,
+     "atSus": 70,
+     "atRel": 50,
+     "atVol": 70,
+     "kindA": "classic",
+     "atA1": 66,
+     "atFltType": 0,
+     "atFltCut": 55,
+     "atFltRes": 40,
+     "atFltAmt": 60,
+     "atFltKey": 50
+    }
+   },
+   "random": {"seed": 1100},
+   "events": [{"type": "atmos", "t": 0, "hz": 220, "dur": 0.8, "into": "direct"}, {"type": "atmos", "t": 1.0, "hz": 330, "dur": 0.8, "into": "direct"}]
+  },
+  {
+   "id": "atmos-voice-blend",
+   "instrument": "atmosphere-voice",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "A and B blended: a choir and a scale spectrum an octave up, the page's starting sound",
+   "seconds": 4.0,
+   "set": {"atmos": {"atBOct": 1, "atGlide": 0}},
+   "random": {"seed": 1101},
+   "events": [{"type": "atmos", "t": 0, "hz": 220, "dur": 2.0, "into": "direct"}]
+  },
+  {
+   "id": "atmos-voice-page",
+   "instrument": "atmosphere-voice",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the same note through the page: Character, Sympathy and Atmosphere's output",
+   "seconds": 4.0,
+   "set": {"atmos": {"atBOct": 1, "atGlide": 0}},
+   "random": {"seed": 1101},
+   "events": [{"type": "atmos", "t": 0, "hz": 220, "dur": 2.0, "into": "page"}]
+  },
+  {
+   "id": "band-bass",
+   "instrument": "band",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the bass: a sine with a touch of its octave, drive and a low-pass",
+   "seconds": 2.0,
+   "events": [
+    {"type": "band", "part": "bass", "t": 0, "hz": 55, "dur": 0.45},
+    {"type": "band", "part": "bass", "t": 0.5, "hz": 82.4069, "dur": 0.2},
+    {"type": "band", "part": "bass", "t": 1.0, "hz": 65.4064, "dur": 0.45}
+   ]
+  },
+  {
+   "id": "band-bass-glide-drive",
+   "instrument": "band",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the bass with glide between notes, more weight, hard drive and a slower attack",
+   "seconds": 2.4,
+   "set": {"band": {"bass": {"bsGlide": 60, "bsDrive": 80, "bsWeight": 60, "bsLp": 70, "bsAtk": 40, "bsRel": 60}}},
+   "events": [
+    {"type": "band", "part": "bass", "t": 0, "hz": 55, "dur": 0.45},
+    {"type": "band", "part": "bass", "t": 0.5, "hz": 82.4069, "dur": 0.2},
+    {"type": "band", "part": "bass", "t": 1.0, "hz": 65.4064, "dur": 0.45}
+   ]
+  },
+  {
+   "id": "band-bass-sampled",
+   "instrument": "band",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the bass from a held note (a stand-in for a song's own): the buffer played at the rate that puts it on each note",
+   "seconds": 2.0,
+   "bassKit": {"id": "m:reference", "notes": [{"signal": "bass-note", "midi": 33}]},
+   "events": [
+    {"type": "band", "part": "bass", "t": 0, "hz": 55, "dur": 0.45},
+    {"type": "band", "part": "bass", "t": 0.5, "hz": 82.4069, "dur": 0.2},
+    {"type": "band", "part": "bass", "t": 1.0, "hz": 65.4064, "dur": 0.45}
+   ]
+  },
+  {
+   "id": "band-arp",
+   "instrument": "band",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the arp: a triangle plucked through its own filter, eight 16ths",
+   "seconds": 1.6,
+   "events": [
+    {"type": "band", "part": "arp", "t": 0.0, "hz": 220, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.125, "hz": 261.6256, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.25, "hz": 329.6276, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.375, "hz": 440, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.5, "hz": 523.2511, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.625, "hz": 659.2551, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.75, "hz": 880, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.875, "hz": 659.2551, "dur": 0.1}
+   ]
+  },
+  {
+   "id": "band-arp-square-reso",
+   "instrument": "band",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the arp as a square, short gate, high resonance and a deep filter envelope",
+   "seconds": 1.6,
+   "set": {"band": {"arp": {"wave": "square", "apRes": 85, "apEnv": 90, "apDec": 60, "apGate": 30, "apCut": 40}}},
+   "events": [
+    {"type": "band", "part": "arp", "t": 0.0, "hz": 220, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.125, "hz": 261.6256, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.25, "hz": 329.6276, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.375, "hz": 440, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.5, "hz": 523.2511, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.625, "hz": 659.2551, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.75, "hz": 880, "dur": 0.1},
+    {"type": "band", "part": "arp", "t": 0.875, "hz": 659.2551, "dur": 0.1}
+   ]
+  },
+  {
+   "id": "band-chord-dub",
+   "instrument": "band",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Chords: two dub stabs on the Dub chord patch (supersaw and classic), the filter opening with each",
+   "seconds": 2.5,
+   "random": {"seed": 2001},
+   "events": [
+    {"type": "band", "part": "chord", "t": 0, "hz": 220, "dur": 0.125, "n": 3, "first": true, "cut": 1.0},
+    {"type": "band", "part": "chord", "t": 0, "hz": 261.6256, "dur": 0.125, "n": 3, "first": false, "cut": 1.0},
+    {"type": "band", "part": "chord", "t": 0, "hz": 329.6276, "dur": 0.125, "n": 3, "first": false, "cut": 1.0},
+    {"type": "band", "part": "chord", "t": 1.0, "hz": 220, "dur": 0.125, "n": 3, "first": true, "cut": 1.0},
+    {"type": "band", "part": "chord", "t": 1.0, "hz": 261.6256, "dur": 0.125, "n": 3, "first": false, "cut": 1.0},
+    {"type": "band", "part": "chord", "t": 1.0, "hz": 329.6276, "dur": 0.125, "n": 3, "first": false, "cut": 1.0}
+   ]
+  },
+  {
+   "id": "band-chord-pad",
+   "instrument": "band",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Chords held on the Warm pad patch (supersaw and choir), band-pass, no filter envelope",
+   "seconds": 4.0,
+   "set": {
+    "band": {
+     "patch": {
+      "chord": {
+       "kindA": "supersaw",
+       "kindB": "choir",
+       "atA1": 40,
+       "atA2": 0,
+       "atA3": 0,
+       "atAOct": 0,
+       "atB1": 30,
+       "atB2": 50,
+       "atB3": 20,
+       "atBOct": 0,
+       "atBlend": 45,
+       "atUnison": 5,
+       "atDetune": 14,
+       "atWidth": 85,
+       "atDrift": 25,
+       "atSub": 10,
+       "atAir": 10,
+       "atAtk": 60,
+       "atDec": 70,
+       "atSus": 80,
+       "atRel": 70,
+       "atVol": 70
+      }
+     },
+     "chord": {"flt": "bandpass", "chRes": 50, "chEnv": 0, "chCut": 60}
+    }
+   },
+   "random": {"seed": 2002},
+   "events": [
+    {"type": "band", "part": "chord", "t": 0, "hz": 220, "dur": 2.0, "n": 3, "first": true, "cut": 1.0},
+    {"type": "band", "part": "chord", "t": 0, "hz": 261.6256, "dur": 2.0, "n": 3, "first": false, "cut": 1.0},
+    {"type": "band", "part": "chord", "t": 0, "hz": 329.6276, "dur": 2.0, "n": 3, "first": false, "cut": 1.0}
+   ]
+  },
+  {
+   "id": "band-drone",
+   "instrument": "band",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the Drone: root and fifth on the Dark drone patch (supersaw and cloud), swelling in over a second",
+   "seconds": 4.0,
+   "set": {"band": {"drone": {"drSwell": 20}}},
+   "random": {"seed": 2003},
+   "events": [
+    {"type": "band", "part": "drone", "t": 0, "hz": 55, "dur": 2.0, "n": 2},
+    {"type": "band", "part": "drone", "t": 0, "hz": 82.4069, "dur": 2.0, "n": 2}
+   ]
+  },
+  {
+   "id": "band-mix",
+   "instrument": "band",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the whole Band for two bars, as the scheduler plays it: drums, a dub bass, seventh stabs and an arp, through the mixer with its sends to the delay and Space",
+   "seconds": 4.5,
+   "set": {
+    "seq": {"scale": 5, "scaleName": "Aeolian (Natural Minor)", "scaleCents": [0, 200, 300, 500, 700, 800, 1000]},
+    "classic": {"delay": {"wet": 0.3, "feedback": 0.5, "subdiv": 0.75}},
+    "atmos": {"atRevWet": 20},
+    "band": {"swing": 56},
+    "drums": {
+     "pats": {
+      "A": {
+       "kick": {"len": 16, "mute": 0, "s": [[127, 0, 100, 1], 0, 0, 0, [127, 0, 100, 1], 0, 0, 0, [127, 0, 100, 1], 0, 0, 0, [127, 0, 100, 1], 0, 0, 0]},
+       "chh": {
+        "len": 16,
+        "mute": 0,
+        "s": [0, 0, [70, 0, 100, 1], 0, 0, 0, [70, 0, 100, 1], 0, 0, 0, [70, 0, 100, 1], 0, 0, 0, [70, 0, 100, 1], [90, 0, 100, 2]]
+       },
+       "ohh": {"len": 16, "mute": 0, "s": [0, 0, 0, 0, 0, 0, [85, 0, 100, 1], 0, 0, 0, 0, 0, 0, 0, [85, 0, 100, 1], 0]},
+       "rim": {"len": 16, "mute": 0, "s": [0, 0, 0, 0, [60, 0, 100, 1], 0, 0, 0, 0, 0, 0, 0, [60, 0, 100, 1], 0, 0, 0]},
+       "clap": {"len": 16, "mute": 0, "s": [0, 0, 0, 0, [70, 1, 100, 1], 0, 0, 0, 0, 0, 0, 0, [70, 0, 100, 1], 0, 0, 0]}
+      }
+     },
+     "slots": {"rim": {"dly": 50, "spc": 15}}
+    },
+    "accompany": {
+     "follow": "melody",
+     "parts": {"drums": {"on": true}, "bass": {"on": true, "pat": "dub"}, "chord": {"on": true, "pat": "seventh-stab"}, "arp": {"on": true, "pat": "up-16"}}
+    }
+   },
+   "random": {"seed": 2004},
+   "events": [{"type": "accompany", "from": 0, "count": 16}]
+  },
+  {
+   "id": "drums-kick",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the synthesised kick (a falling sine and a click) at velocity 1 and 0.45, through its strip",
+   "seconds": 3.2,
+   "events": [{"type": "drum", "slot": "kick", "t": 0, "vel": 1}, {"type": "drum", "slot": "kick", "t": 1.6, "vel": 0.45}]
+  },
+  {
+   "id": "drums-snare",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the synthesised snare (two tuned bodies and noise) at velocity 1 and 0.45, through its strip",
+   "seconds": 1.2,
+   "events": [{"type": "drum", "slot": "snare", "t": 0, "vel": 1}, {"type": "drum", "slot": "snare", "t": 0.6, "vel": 0.45}]
+  },
+  {
+   "id": "drums-clap",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the synthesised clap (three bursts and a tail) at velocity 1 and 0.45, through its strip",
+   "seconds": 1.2,
+   "events": [{"type": "drum", "slot": "clap", "t": 0, "vel": 1}, {"type": "drum", "slot": "clap", "t": 0.6, "vel": 0.45}]
+  },
+  {
+   "id": "drums-rim",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the synthesised rim (a triangle and a square, high-passed) at velocity 1 and 0.45, through its strip",
+   "seconds": 0.5,
+   "events": [{"type": "drum", "slot": "rim", "t": 0, "vel": 1}, {"type": "drum", "slot": "rim", "t": 0.25, "vel": 0.45}]
+  },
+  {
+   "id": "drums-chh",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the synthesised closed hat (six squares, band-passed) at velocity 1 and 0.45, through its strip",
+   "seconds": 0.5,
+   "events": [{"type": "drum", "slot": "chh", "t": 0, "vel": 1}, {"type": "drum", "slot": "chh", "t": 0.25, "vel": 0.45}]
+  },
+  {
+   "id": "drums-ohh",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the synthesised open hat at velocity 1 and 0.45, through its strip",
+   "seconds": 1.6,
+   "events": [{"type": "drum", "slot": "ohh", "t": 0, "vel": 1}, {"type": "drum", "slot": "ohh", "t": 0.8, "vel": 0.45}]
+  },
+  {
+   "id": "drums-ltom",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the synthesised low tom at velocity 1 and 0.45, through its strip",
+   "seconds": 2.2,
+   "events": [{"type": "drum", "slot": "ltom", "t": 0, "vel": 1}, {"type": "drum", "slot": "ltom", "t": 1.1, "vel": 0.45}]
+  },
+  {
+   "id": "drums-mtom",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the synthesised mid tom at velocity 1 and 0.45, through its strip",
+   "seconds": 1.8,
+   "events": [{"type": "drum", "slot": "mtom", "t": 0, "vel": 1}, {"type": "drum", "slot": "mtom", "t": 0.9, "vel": 0.45}]
+  },
+  {
+   "id": "drums-htom",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the synthesised high tom at velocity 1 and 0.45, through its strip",
+   "seconds": 1.6,
+   "events": [{"type": "drum", "slot": "htom", "t": 0, "vel": 1}, {"type": "drum", "slot": "htom", "t": 0.8, "vel": 0.45}]
+  },
+  {
+   "id": "drums-perc",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "the synthesised cowbell (two squares, band-passed) at velocity 1 and 0.45, through its strip",
+   "seconds": 0.8,
+   "events": [{"type": "drum", "slot": "perc", "t": 0, "vel": 1}, {"type": "drum", "slot": "perc", "t": 0.4, "vel": 0.45}]
+  },
+  {
+   "id": "drums-hat-choke",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "a closed hat choking the open one 0.2 s in",
+   "seconds": 1.0,
+   "events": [{"type": "drum", "slot": "ohh", "t": 0, "vel": 1}, {"type": "drum", "slot": "chh", "t": 0.2, "vel": 0.8}]
+  },
+  {
+   "id": "drums-knobs",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Tune, Decay, Tone, Level and Pan moved on the kick, snare, open hat and cowbell",
+   "seconds": 2.0,
+   "set": {
+    "drums": {
+     "slots": {
+      "kick": {"tune": 7, "dec": 30, "tone": 90, "lv": 70, "pan": -40},
+      "snare": {"tune": -5, "dec": 80, "tone": 10, "pan": 40},
+      "ohh": {"tune": 4, "dec": 20, "tone": 20, "lv": 80},
+      "perc": {"tune": -7, "dec": 90, "tone": 85, "pan": -60}
+     }
+    }
+   },
+   "events": [
+    {"type": "drum", "slot": "kick", "t": 0, "vel": 1},
+    {"type": "drum", "slot": "snare", "t": 0.5, "vel": 1},
+    {"type": "drum", "slot": "ohh", "t": 1.0, "vel": 1},
+    {"type": "drum", "slot": "perc", "t": 1.5, "vel": 1}
+   ]
+  },
+  {
+   "id": "drums-sample-kick",
+   "instrument": "drums",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "a sample kit's hit: a 44.1 kHz buffer (a stand-in) as the 909's kick, tuned up three semitones, at two velocities",
+   "seconds": 1.2,
+   "set": {"drums": {"kit": "r909", "slots": {"kick": {"tune": 3, "dec": 60, "tone": 70}}}},
+   "samples": {"kick": "drum-sample"},
+   "events": [{"type": "drum", "slot": "kick", "t": 0, "vel": 1}, {"type": "drum", "slot": "kick", "t": 0.5, "vel": 0.5}]
+  },
+  {
+   "id": "draw-grain-pen",
+   "instrument": "draw",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "a Pen line in Grain ink: a stream of grains along it, smudged from its seed; twelve boundaries, so the one-bar loop comes round",
+   "seconds": 3.4,
+   "set": {
+    "draw": {
+     "bars": 1,
+     "marks": [
+      {
+       "id": 1,
+       "brush": "pen",
+       "ink": "grain",
+       "snap": "degrees",
+       "level": 0.8,
+       "thick": 0.6,
+       "smudge": 0.3,
+       "oct": 0,
+       "seed": 11,
+       "kal": 1,
+       "pts": [[0, 1.5, 0.5], [1, 2.0, 0.8], [2, 2.4286, 0.6], [3, 1.8571, 0.3]]
+      }
+     ]
+    }
+   },
+   "events": [{"type": "draw", "from": 0, "count": 12}]
+  },
+  {
+   "id": "draw-grain-cloud",
+   "instrument": "draw",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "a Cloud of twelve specks, each a grain, with two kaleidoscope copies and a wide smudge",
+   "seconds": 3.4,
+   "set": {
+    "draw": {
+     "bars": 1,
+     "marks": [
+      {
+       "id": 2,
+       "brush": "cloud",
+       "ink": "grain",
+       "snap": "degrees",
+       "level": 0.8,
+       "thick": 0.6,
+       "smudge": 0.5,
+       "oct": 0,
+       "seed": 22,
+       "kal": 2,
+       "pts": [
+        [0.1, 2.1, 0.4],
+        [0.35, 2.6, 0.7],
+        [0.6, 1.9, 0.2],
+        [0.9, 2.3, 0.9],
+        [1.2, 2.8, 0.5],
+        [1.45, 2.0, 0.6],
+        [1.8, 2.5, 0.3],
+        [2.1, 3.0, 0.8],
+        [2.5, 2.2, 0.5],
+        [2.8, 2.7, 0.4],
+        [3.2, 1.7, 0.7],
+        [3.6, 2.4, 0.6]
+       ]
+      }
+     ]
+    }
+   },
+   "events": [{"type": "draw", "from": 0, "count": 12}]
+  },
+  {
+   "id": "draw-grain-dots",
+   "instrument": "draw",
+   "kind": "audio",
+   "page": "sequencer",
+   "exercises": "Dots in Grain ink, free pitch, an octave up, three kaleidoscope copies: each note a run of grains",
+   "seconds": 3.4,
+   "set": {
+    "draw": {
+     "bars": 1,
+     "grain": 80,
+     "marks": [
+      {
+       "id": 3,
+       "brush": "dots",
+       "ink": "grain",
+       "snap": "free",
+       "level": 0.8,
+       "thick": 1.0,
+       "smudge": 0,
+       "oct": 1,
+       "seed": 33,
+       "kal": 3,
+       "pts": [[0, 2.0, 0.5], [1.5, 2.5714, 0.25], [2.5, 1.4286, 0.75]]
+      }
+     ]
+    }
+   },
+   "events": [{"type": "draw", "from": 0, "count": 12}]
+  },
+  {
+   "id": "plan-drums",
+   "instrument": "drums",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "the drum plan over eight bars: velocity, accent, chance (a hash of the seed), ratchets, rows of their own length, swing at 62",
+   "set": {
+    "band": {"swing": 62},
+    "drums": {
+     "pats": {
+      "A": {
+       "kick": {
+        "len": 16,
+        "mute": 0,
+        "s": [[127, 0, 100, 1], 0, 0, [85, 0, 100, 1], 0, 0, [90, 0, 50, 1], 0, 0, 0, [127, 0, 100, 1], 0, [90, 0, 50, 1], 0, 0, 0]
+       },
+       "snare": {"len": 16, "mute": 0, "s": [0, 0, 0, 0, [113, 1, 100, 1], 0, 0, [85, 0, 100, 2], 0, [90, 0, 50, 1], 0, 0, [113, 0, 100, 1], 0, 0, 0]},
+       "chh": {
+        "len": 13,
+        "mute": 0,
+        "s": [
+         [70, 0, 100, 1],
+         [90, 0, 50, 1],
+         [42, 0, 100, 1],
+         [85, 0, 100, 3],
+         [70, 0, 100, 1],
+         [90, 0, 50, 1],
+         [42, 0, 100, 1],
+         0,
+         [70, 0, 100, 1],
+         [90, 0, 50, 1],
+         [42, 0, 100, 1],
+         [85, 0, 100, 2],
+         [70, 0, 100, 1],
+         0,
+         0,
+         0
+        ]
+       },
+       "rim": {"len": 11, "mute": 0, "s": [0, 0, [90, 0, 30, 1], 0, 0, [56, 0, 100, 1], 0, 0, 0, [90, 0, 70, 1], 0, 0, 0, 0, 0, 0]},
+       "ltom": {"len": 7, "mute": 0, "s": [0, 0, 0, [90, 0, 50, 1], 0, 0, [85, 0, 100, 4], 0, 0, 0, 0, 0, 0, 0, 0, 0]}
+      }
+     },
+     "seed": 808
+    },
+    "accompany": {"parts": {"drums": {"on": true}}}
+   },
+   "call": {"type": "drumPlan", "from": 0, "count": 64}
+  },
+  {
+   "id": "plan-drums-32",
+   "instrument": "drums",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "the same grid at 1/32 with another seed, a row muted, steps a quarter note long",
+   "set": {
+    "seq": {"stepBeats": 1},
+    "band": {"swing": 55},
+    "drums": {
+     "rate": 32,
+     "seed": 4242,
+     "pats": {
+      "A": {
+       "kick": {
+        "len": 16,
+        "mute": 0,
+        "s": [[127, 0, 100, 1], 0, 0, [85, 0, 100, 1], 0, 0, [90, 0, 50, 1], 0, 0, 0, [127, 0, 100, 1], 0, [90, 0, 50, 1], 0, 0, 0]
+       },
+       "snare": {"len": 16, "mute": 1, "s": [0, 0, 0, 0, [113, 1, 100, 1], 0, 0, [85, 0, 100, 2], 0, [90, 0, 50, 1], 0, 0, [113, 0, 100, 1], 0, 0, 0]},
+       "chh": {
+        "len": 13,
+        "mute": 0,
+        "s": [
+         [70, 0, 100, 1],
+         [90, 0, 50, 1],
+         [42, 0, 100, 1],
+         [85, 0, 100, 3],
+         [70, 0, 100, 1],
+         [90, 0, 50, 1],
+         [42, 0, 100, 1],
+         0,
+         [70, 0, 100, 1],
+         [90, 0, 50, 1],
+         [42, 0, 100, 1],
+         [85, 0, 100, 2],
+         [70, 0, 100, 1],
+         0,
+         0,
+         0
+        ]
+       },
+       "rim": {"len": 11, "mute": 0, "s": [0, 0, [90, 0, 30, 1], 0, 0, [56, 0, 100, 1], 0, 0, 0, [90, 0, 70, 1], 0, 0, 0, 0, 0, 0]},
+       "ltom": {"len": 7, "mute": 0, "s": [0, 0, 0, [90, 0, 50, 1], 0, 0, [85, 0, 100, 4], 0, 0, 0, 0, 0, 0, 0, 0, 0]}
+      }
+     }
+    },
+    "accompany": {"parts": {"drums": {"on": true}}}
+   },
+   "call": {"type": "drumPlan", "from": 0, "count": 16}
+  },
+  {
+   "id": "plan-band-triads",
+   "instrument": "accompaniment",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "the Band's plan over eight bars, following the melody: a walking bass, triads on each change, an up-down arp, a root-and-fifth drone, drums",
+   "set": {
+    "seq": {
+     "numSteps": 16,
+     "steps": [
+      {"degree": 0},
+      {"degree": 2},
+      {"degree": 4},
+      {"degree": 2},
+      {"degree": 5},
+      {"degree": 4},
+      {"degree": 2},
+      {"degree": 0},
+      {"degree": 3},
+      {"degree": 5},
+      {"degree": 7},
+      {"degree": 5, "rest": true},
+      {"degree": 4},
+      {"degree": 2},
+      {"degree": 1},
+      {"degree": 0}
+     ]
+    },
+    "drums": {
+     "pats": {
+      "A": {
+       "kick": {"len": 16, "mute": 0, "s": [[127, 0, 100, 1], 0, 0, 0, [127, 0, 100, 1], 0, 0, 0, [127, 0, 100, 1], 0, 0, 0, [127, 0, 100, 1], 0, 0, 0]},
+       "chh": {
+        "len": 16,
+        "mute": 0,
+        "s": [0, 0, [70, 0, 100, 1], 0, 0, 0, [70, 0, 100, 1], 0, 0, 0, [70, 0, 100, 1], 0, 0, 0, [70, 0, 100, 1], [90, 0, 100, 2]]
+       },
+       "ohh": {"len": 16, "mute": 0, "s": [0, 0, 0, 0, 0, 0, [85, 0, 100, 1], 0, 0, 0, 0, 0, 0, 0, [85, 0, 100, 1], 0]},
+       "rim": {"len": 16, "mute": 0, "s": [0, 0, 0, 0, [60, 0, 100, 1], 0, 0, 0, 0, 0, 0, 0, [60, 0, 100, 1], 0, 0, 0]},
+       "clap": {"len": 16, "mute": 0, "s": [0, 0, 0, 0, [70, 1, 100, 1], 0, 0, 0, 0, 0, 0, 0, [70, 0, 100, 1], 0, 0, 0]}
+      }
+     }
+    },
+    "accompany": {
+     "follow": "melody",
+     "parts": {
+      "drums": {"on": true},
+      "bass": {"on": true, "pat": "walk"},
+      "chord": {"on": true, "pat": "triad-change"},
+      "arp": {"on": true, "pat": "updown-16"},
+      "drone": {"on": true, "pat": "fifth"}
+     }
+    }
+   },
+   "call": {"type": "bandPlan", "from": 0, "count": 64}
+  },
+  {
+   "id": "plan-band-dub",
+   "instrument": "accompaniment",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "the Band's plan over sixteen bars in Maqam Rast with the Journey on and followed: a bass line by hand (A and B), seventh two-bar stabs, a random 1/32 arp, the section plan choosing patterns, lines, parts and the fill, swing at 62",
+   "set": {
+    "seq": {
+     "numSteps": 16,
+     "steps": [
+      {"degree": 0},
+      {"degree": 2},
+      {"degree": 4},
+      {"degree": 2},
+      {"degree": 5},
+      {"degree": 4},
+      {"degree": 2},
+      {"degree": 0},
+      {"degree": 3},
+      {"degree": 5},
+      {"degree": 7},
+      {"degree": 5, "rest": true},
+      {"degree": 4},
+      {"degree": 2},
+      {"degree": 1},
+      {"degree": 0}
+     ],
+     "scale": 48,
+     "scaleName": "Maqam Rast",
+     "scaleCents": [0, 204, 351, 498, 702, 906, 1053]
+    },
+    "band": {
+     "swing": 62,
+     "arrangeMode": "plan",
+     "plan": {
+      "secs": [
+       {"l": "A", "b": 2, "drums": "A", "bass": "A", "chord": 1, "drone": 1, "arp": 0, "melody": 1, "fill": 1, "open": 0.3},
+       {"l": "B", "b": 2, "drums": "B", "bass": "B", "chord": 1, "drone": 0, "arp": 1, "melody": 0, "fill": 0, "open": 0.9}
+      ]
+     },
+     "bass": {"bsOct": 2, "lines": {"A": "R-..3...5.4.R.8.", "B": "R---..7.R.5-..4."}},
+     "chord": {"chSpread": 70, "chStab": 60},
+     "arp": {"apRange": 3}
+    },
+    "drums": {
+     "pats": {
+      "A": {
+       "kick": {"len": 16, "mute": 0, "s": [[127, 0, 100, 1], 0, 0, 0, [127, 0, 100, 1], 0, 0, 0, [127, 0, 100, 1], 0, 0, 0, [127, 0, 100, 1], 0, 0, 0]},
+       "chh": {
+        "len": 16,
+        "mute": 0,
+        "s": [0, 0, [70, 0, 100, 1], 0, 0, 0, [70, 0, 100, 1], 0, 0, 0, [70, 0, 100, 1], 0, 0, 0, [70, 0, 100, 1], [90, 0, 100, 2]]
+       },
+       "ohh": {"len": 16, "mute": 0, "s": [0, 0, 0, 0, 0, 0, [85, 0, 100, 1], 0, 0, 0, 0, 0, 0, 0, [85, 0, 100, 1], 0]},
+       "rim": {"len": 16, "mute": 0, "s": [0, 0, 0, 0, [60, 0, 100, 1], 0, 0, 0, 0, 0, 0, 0, [60, 0, 100, 1], 0, 0, 0]},
+       "clap": {"len": 16, "mute": 0, "s": [0, 0, 0, 0, [70, 1, 100, 1], 0, 0, 0, 0, 0, 0, 0, [70, 0, 100, 1], 0, 0, 0]}
+      },
+      "B": {
+       "kick": {
+        "len": 16,
+        "mute": 0,
+        "s": [[127, 0, 100, 1], 0, 0, [85, 0, 100, 1], 0, 0, [90, 0, 50, 1], 0, 0, 0, [127, 0, 100, 1], 0, [90, 0, 50, 1], 0, 0, 0]
+       },
+       "snare": {"len": 16, "mute": 0, "s": [0, 0, 0, 0, [113, 1, 100, 1], 0, 0, [85, 0, 100, 2], 0, [90, 0, 50, 1], 0, 0, [113, 0, 100, 1], 0, 0, 0]},
+       "chh": {
+        "len": 13,
+        "mute": 0,
+        "s": [
+         [70, 0, 100, 1],
+         [90, 0, 50, 1],
+         [42, 0, 100, 1],
+         [85, 0, 100, 3],
+         [70, 0, 100, 1],
+         [90, 0, 50, 1],
+         [42, 0, 100, 1],
+         0,
+         [70, 0, 100, 1],
+         [90, 0, 50, 1],
+         [42, 0, 100, 1],
+         [85, 0, 100, 2],
+         [70, 0, 100, 1],
+         0,
+         0,
+         0
+        ]
+       },
+       "rim": {"len": 11, "mute": 0, "s": [0, 0, [90, 0, 30, 1], 0, 0, [56, 0, 100, 1], 0, 0, 0, [90, 0, 70, 1], 0, 0, 0, 0, 0, 0]},
+       "ltom": {"len": 7, "mute": 0, "s": [0, 0, 0, [90, 0, 50, 1], 0, 0, [85, 0, 100, 4], 0, 0, 0, 0, 0, 0, 0, 0, 0]}
+      },
+      "F": {
+       "snare": {
+        "len": 16,
+        "mute": 0,
+        "s": [
+         [113, 0, 100, 1],
+         [113, 0, 100, 1],
+         [60, 0, 100, 1],
+         [60, 0, 100, 1],
+         [113, 0, 100, 1],
+         [113, 0, 100, 1],
+         [60, 0, 100, 1],
+         [60, 0, 100, 1],
+         [113, 0, 100, 1],
+         [113, 0, 100, 1],
+         [113, 0, 100, 1],
+         [113, 0, 100, 1],
+         [127, 1, 100, 1],
+         [127, 1, 100, 1],
+         [127, 1, 100, 1],
+         [127, 1, 100, 1]
+        ]
+       }
+      }
+     }
+    },
+    "accompany": {
+     "follow": "root",
+     "parts": {
+      "drums": {"on": true},
+      "bass": {"on": true, "pat": "hand"},
+      "chord": {"on": true, "pat": "seventh-stab2"},
+      "arp": {"on": true, "pat": "random-32"},
+      "drone": {"on": true, "pat": "root"}
+     }
+    },
+    "journey": {"on": true, "bars": 16, "wander": 70, "each": 5, "seed": 31337, "kinds": {"root": true, "scale": true, "dir": true, "rhythm": true}}
+   },
+   "call": {"type": "bandPlan", "from": 0, "count": 128}
+  },
+  {
+   "id": "plan-journey",
+   "instrument": "journey",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "a sixteen-bar trip and the start of the next: degrees, octaves, rests, rhythm, root, scale and direction moves, coming home",
+   "set": {
+    "journey": {
+     "on": true,
+     "bars": 16,
+     "wander": 80,
+     "each": 6,
+     "seed": 4127,
+     "curve": [30, 80, 100, 60],
+     "kinds": {"deg": true, "oct": true, "rest": true, "rhythm": true, "root": true, "scale": true, "dir": true, "home": true}
+    }
+   },
+   "call": {"type": "journey", "from": 0, "count": 160}
+  },
+  {
+   "id": "plan-journey-no-home",
+   "instrument": "journey",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "a trip in Maqam Rast that does not come home, another seed, sixteen steps",
+   "set": {
+    "seq": {
+     "numSteps": 16,
+     "steps": [
+      {"degree": 0},
+      {"degree": 2},
+      {"degree": 4},
+      {"degree": 2},
+      {"degree": 5},
+      {"degree": 4},
+      {"degree": 2},
+      {"degree": 0},
+      {"degree": 3},
+      {"degree": 5},
+      {"degree": 7},
+      {"degree": 5, "rest": true},
+      {"degree": 4},
+      {"degree": 2},
+      {"degree": 1},
+      {"degree": 0}
+     ],
+     "scale": 48,
+     "scaleName": "Maqam Rast",
+     "scaleCents": [0, 204, 351, 498, 702, 906, 1053]
+    },
+    "journey": {
+     "on": true,
+     "bars": 16,
+     "wander": 100,
+     "each": 8,
+     "seed": 99,
+     "curve": [40, 60, 100, 75],
+     "kinds": {"deg": true, "oct": true, "rest": true, "rhythm": true, "root": true, "scale": true, "dir": true, "home": false}
+    }
+   },
+   "call": {"type": "journey", "from": 0, "count": 144}
+  },
+  {
+   "id": "plan-draw",
+   "instrument": "draw",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "the drawing's plan over two passes of a two-bar loop: Pen in Degrees and Glide, Dots with a kaleidoscope, a Shape's rhythm wheel in Drums ink, a Cloud, a drum roll; the smudge from each seed",
+   "set": {
+    "draw": {
+     "bars": 2,
+     "marks": [
+      {
+       "id": 1,
+       "brush": "pen",
+       "ink": "classic",
+       "snap": "degrees",
+       "level": 0.8,
+       "thick": 0.6,
+       "smudge": 0.2,
+       "oct": 0,
+       "seed": 5,
+       "kal": 1,
+       "pts": [[0, 2.0, 0.5], [0.5, 2.1429, 0.7], [1.0, 2.4286, 0.9], [1.5, 2.2857, 0.4], [2.0, 2.0, 0.6]]
+      },
+      {
+       "id": 2,
+       "brush": "pen",
+       "ink": "bass",
+       "snap": "glide",
+       "level": 0.8,
+       "thick": 0.6,
+       "smudge": 0,
+       "oct": 0,
+       "seed": 6,
+       "kal": 1,
+       "pts": [[2.0, 0.5, 0.6], [2.6, 0.7, 0.8], [3.4, 1.0, 0.5], [4.0, 0.6, 0.7]]
+      },
+      {
+       "id": 3,
+       "brush": "dots",
+       "ink": "arp",
+       "snap": "degrees",
+       "level": 0.8,
+       "thick": 0.6,
+       "smudge": 0,
+       "oct": -1,
+       "seed": 7,
+       "kal": 2,
+       "pts": [[0.25, 3.0, 0.2], [1.25, 3.2857, 0.6], [5.5, 2.7143, 0.9]]
+      },
+      {
+       "id": 4,
+       "brush": "shape",
+       "ink": "drums",
+       "snap": "degrees",
+       "level": 0.8,
+       "thick": 0.6,
+       "smudge": 0,
+       "oct": 0,
+       "seed": 8,
+       "kal": 1,
+       "pts": [[4.5, 0.2, 1], [5.5, 0.9, 1], [6.5, 0.2, 1], [5.5, 0.05, 1]]
+      },
+      {
+       "id": 5,
+       "brush": "cloud",
+       "ink": "grain",
+       "snap": "degrees",
+       "level": 0.8,
+       "thick": 0.6,
+       "smudge": 0.6,
+       "oct": 0,
+       "seed": 9,
+       "kal": 1,
+       "pts": [[6.1, 2.2, 0.5], [6.4, 2.9, 0.8], [6.9, 2.5, 0.3], [7.3, 3.1, 0.6]]
+      },
+      {
+       "id": 6,
+       "brush": "pen",
+       "ink": "drums",
+       "snap": "degrees",
+       "level": 0.8,
+       "thick": 0.6,
+       "smudge": 0,
+       "oct": 0,
+       "seed": 10,
+       "kal": 1,
+       "pts": [[0, 3.7, 0.5], [1, 3.9, 1.0]]
+      }
+     ]
+    }
+   },
+   "call": {"type": "drawPlan", "from": 0, "count": 32}
+  },
+  {
+   "id": "plan-clone-habits",
+   "instrument": "clone",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "a Clone of one song at 'your habits' (30): tempo, learned scale, drum bars drawn by how often they were used, bass lines a step at a time, sections drawn from the song's",
+   "songs": {
+    "Stems/Reference Song": {
+     "format": "songprint/1",
+     "title": "Reference Song (An Album)",
+     "bar_count": 16,
+     "tempo": {"bpm": 118, "map": [[15, 118, 0.9]]},
+     "key": {"name": "D minor", "tonic_pc": 2, "minor": true, "regions": []},
+     "tuning": {"offset_cents_from_a440": 0, "scale_cents_above_tonic": [204, 316, 498, 702, 814, 1018, 1190]},
+     "drums": {
+      "swing_16th_pct": 54,
+      "bar_families": 4,
+      "common_bars": [
+       {"bars": 10, "first_bar": 0, "kick": "X...X...X...X...", "snare": "....X.......X...", "hat": "..x...x...x...x."},
+       {"bars": 9, "first_bar": 1, "kick": "X..XX...X..X....", "snare": "....X..x....X...", "hat": "xxxxxxxxxxxxxxxx"},
+       {"bars": 8, "first_bar": 2, "kick": "X.......X.......", "snare": "........X.......", "hat": "................"},
+       {"bars": 7, "first_bar": 3, "kick": "XX..X...XX..X...", "snare": "....X.......X..x", "hat": "x.x.x.x.x.x.x.x."}
+      ]
+     },
+     "bass": {
+      "range": "D1 to D3",
+      "notes": [
+       [0, 0, 4, 38, 0.8],
+       [0, 8, 2, 45, 0.6],
+       [1, 0, 4, 38, 0.8],
+       [1, 8, 2, 45, 0.6],
+       [2, 0, 8, 38, 0.8],
+       [2, 12, 2, 41, 0.7],
+       [3, 0, 4, 50, 0.8],
+       [3, 6, 2, 43, 0.6]
+      ]
+     },
+     "chords": {"changes": [[0, "Dm7"], [8, "Gm7"]]},
+     "change": {"sections": 3, "section_bars_median": 4, "entries_exits_per_minute": 1.2},
+     "sections": [
+      {"label": "A", "start_bar": 0, "bars": 4, "stems_on": ["bass"], "mix_db": -10},
+      {"label": "B", "start_bar": 4, "bars": 8, "stems_on": ["drums", "bass"], "mix_db": -4},
+      {"label": "C", "start_bar": 12, "bars": 4, "stems_on": ["drums", "bass", "other", "vocals"], "mix_db": -2}
+     ],
+     "texture": {
+      "stems": [{"stem": "other", "brightness_hz": 1200}],
+      "smear_mean": 0.3,
+      "width_mean": 0.2,
+      "hiss_floor_db": -70,
+      "echoes_other_stem": [{"delay": "1/8", "beats": 0.5, "strength": 0.2}, {"delay": "dotted 1/8", "beats": 0.75, "strength": 0.6}]
+     },
+     "bars": [
+      {
+       "bar": 0,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 1,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 2,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 3,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [1, 1, 1, 1, 1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5, 1, 1, 1, 1],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 4,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 5,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 6,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 7,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.5],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 8,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 9,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 10,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 11,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [1, 1, 1, 1, 1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5, 1, 1, 1, 1],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 12,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 13,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 14,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 15,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.5],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      }
+     ]
+    }
+   },
+   "call": {
+    "type": "clone",
+    "sel": ["Stems/Reference Song"],
+    "mode": "clone",
+    "seed": 7,
+    "facets": {
+     "tempo": {"from": "", "v": 30},
+     "key": {"from": "", "v": 30},
+     "drums": {"from": "", "v": 30},
+     "bass": {"from": "", "v": 30},
+     "chords": {"from": "", "v": 30},
+     "arr": {"from": "", "v": 30},
+     "tex": {"from": "", "v": 30}
+    }
+   }
+  },
+  {
+   "id": "plan-clone-shape",
+   "instrument": "clone",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "the same song at 'your shape' (60), another seed: the hits move, the bass keeps its rhythm on roots and fifths, the key moves",
+   "songs": {
+    "Stems/Reference Song": {
+     "format": "songprint/1",
+     "title": "Reference Song (An Album)",
+     "bar_count": 16,
+     "tempo": {"bpm": 118, "map": [[15, 118, 0.9]]},
+     "key": {"name": "D minor", "tonic_pc": 2, "minor": true, "regions": []},
+     "tuning": {"offset_cents_from_a440": 0, "scale_cents_above_tonic": [204, 316, 498, 702, 814, 1018, 1190]},
+     "drums": {
+      "swing_16th_pct": 54,
+      "bar_families": 4,
+      "common_bars": [
+       {"bars": 10, "first_bar": 0, "kick": "X...X...X...X...", "snare": "....X.......X...", "hat": "..x...x...x...x."},
+       {"bars": 9, "first_bar": 1, "kick": "X..XX...X..X....", "snare": "....X..x....X...", "hat": "xxxxxxxxxxxxxxxx"},
+       {"bars": 8, "first_bar": 2, "kick": "X.......X.......", "snare": "........X.......", "hat": "................"},
+       {"bars": 7, "first_bar": 3, "kick": "XX..X...XX..X...", "snare": "....X.......X..x", "hat": "x.x.x.x.x.x.x.x."}
+      ]
+     },
+     "bass": {
+      "range": "D1 to D3",
+      "notes": [
+       [0, 0, 4, 38, 0.8],
+       [0, 8, 2, 45, 0.6],
+       [1, 0, 4, 38, 0.8],
+       [1, 8, 2, 45, 0.6],
+       [2, 0, 8, 38, 0.8],
+       [2, 12, 2, 41, 0.7],
+       [3, 0, 4, 50, 0.8],
+       [3, 6, 2, 43, 0.6]
+      ]
+     },
+     "chords": {"changes": [[0, "Dm7"], [8, "Gm7"]]},
+     "change": {"sections": 3, "section_bars_median": 4, "entries_exits_per_minute": 1.2},
+     "sections": [
+      {"label": "A", "start_bar": 0, "bars": 4, "stems_on": ["bass"], "mix_db": -10},
+      {"label": "B", "start_bar": 4, "bars": 8, "stems_on": ["drums", "bass"], "mix_db": -4},
+      {"label": "C", "start_bar": 12, "bars": 4, "stems_on": ["drums", "bass", "other", "vocals"], "mix_db": -2}
+     ],
+     "texture": {
+      "stems": [{"stem": "other", "brightness_hz": 1200}],
+      "smear_mean": 0.3,
+      "width_mean": 0.2,
+      "hiss_floor_db": -70,
+      "echoes_other_stem": [{"delay": "1/8", "beats": 0.5, "strength": 0.2}, {"delay": "dotted 1/8", "beats": 0.75, "strength": 0.6}]
+     },
+     "bars": [
+      {
+       "bar": 0,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 1,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 2,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 3,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [1, 1, 1, 1, 1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5, 1, 1, 1, 1],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 4,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 5,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 6,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 7,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.5],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 8,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 9,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 10,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 11,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [1, 1, 1, 1, 1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5, 1, 1, 1, 1],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 12,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 13,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 14,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 15,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.5],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      }
+     ]
+    }
+   },
+   "call": {
+    "type": "clone",
+    "sel": ["Stems/Reference Song"],
+    "mode": "clone",
+    "seed": 4242,
+    "facets": {
+     "tempo": {"from": "", "v": 60},
+     "key": {"from": "", "v": 60},
+     "drums": {"from": "", "v": 60},
+     "bass": {"from": "", "v": 60},
+     "chords": {"from": "", "v": 60},
+     "arr": {"from": "", "v": 60},
+     "tex": {"from": "", "v": 60}
+    }
+   }
+  },
+  {
+   "id": "plan-clone-same",
+   "instrument": "clone",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "the same song at 0, 'the same': its bars, its lines, its sections",
+   "songs": {
+    "Stems/Reference Song": {
+     "format": "songprint/1",
+     "title": "Reference Song (An Album)",
+     "bar_count": 16,
+     "tempo": {"bpm": 118, "map": [[15, 118, 0.9]]},
+     "key": {"name": "D minor", "tonic_pc": 2, "minor": true, "regions": []},
+     "tuning": {"offset_cents_from_a440": 0, "scale_cents_above_tonic": [204, 316, 498, 702, 814, 1018, 1190]},
+     "drums": {
+      "swing_16th_pct": 54,
+      "bar_families": 4,
+      "common_bars": [
+       {"bars": 10, "first_bar": 0, "kick": "X...X...X...X...", "snare": "....X.......X...", "hat": "..x...x...x...x."},
+       {"bars": 9, "first_bar": 1, "kick": "X..XX...X..X....", "snare": "....X..x....X...", "hat": "xxxxxxxxxxxxxxxx"},
+       {"bars": 8, "first_bar": 2, "kick": "X.......X.......", "snare": "........X.......", "hat": "................"},
+       {"bars": 7, "first_bar": 3, "kick": "XX..X...XX..X...", "snare": "....X.......X..x", "hat": "x.x.x.x.x.x.x.x."}
+      ]
+     },
+     "bass": {
+      "range": "D1 to D3",
+      "notes": [
+       [0, 0, 4, 38, 0.8],
+       [0, 8, 2, 45, 0.6],
+       [1, 0, 4, 38, 0.8],
+       [1, 8, 2, 45, 0.6],
+       [2, 0, 8, 38, 0.8],
+       [2, 12, 2, 41, 0.7],
+       [3, 0, 4, 50, 0.8],
+       [3, 6, 2, 43, 0.6]
+      ]
+     },
+     "chords": {"changes": [[0, "Dm7"], [8, "Gm7"]]},
+     "change": {"sections": 3, "section_bars_median": 4, "entries_exits_per_minute": 1.2},
+     "sections": [
+      {"label": "A", "start_bar": 0, "bars": 4, "stems_on": ["bass"], "mix_db": -10},
+      {"label": "B", "start_bar": 4, "bars": 8, "stems_on": ["drums", "bass"], "mix_db": -4},
+      {"label": "C", "start_bar": 12, "bars": 4, "stems_on": ["drums", "bass", "other", "vocals"], "mix_db": -2}
+     ],
+     "texture": {
+      "stems": [{"stem": "other", "brightness_hz": 1200}],
+      "smear_mean": 0.3,
+      "width_mean": 0.2,
+      "hiss_floor_db": -70,
+      "echoes_other_stem": [{"delay": "1/8", "beats": 0.5, "strength": 0.2}, {"delay": "dotted 1/8", "beats": 0.75, "strength": 0.6}]
+     },
+     "bars": [
+      {
+       "bar": 0,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 1,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 2,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 3,
+       "mix_db": -10,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [1, 1, 1, 1, 1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5, 1, 1, 1, 1],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 4,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 5,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 6,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 7,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.5],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 8,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 9,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 10,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 11,
+       "mix_db": -4,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [1, 1, 1, 1, 1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5, 1, 1, 1, 1],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 12,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 13,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0, 0],
+       "hat": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 14,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+       "hat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      },
+      {
+       "bar": 15,
+       "mix_db": -2,
+       "on": [true, true, false, false],
+       "kick": [1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0],
+       "snare": [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.5],
+       "hat": [0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0.5, 0],
+       "bass": [[0, 4, 38, 0.8]]
+      }
+     ]
+    }
+   },
+   "call": {
+    "type": "clone",
+    "sel": ["Stems/Reference Song"],
+    "mode": "clone",
+    "seed": 7,
+    "facets": {
+     "tempo": {"from": "", "v": 0},
+     "key": {"from": "", "v": 0},
+     "drums": {"from": "", "v": 0},
+     "bass": {"from": "", "v": 0},
+     "chords": {"from": "", "v": 0},
+     "arr": {"from": "", "v": 0},
+     "tex": {"from": "", "v": 0}
+    }
+   }
+  },
+  {
+   "id": "plan-clone-dub",
+   "instrument": "clone",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "no song, every facet from the dub techno style: the research's patterns and 128-bar shape",
+   "songs": {},
+   "call": {
+    "type": "clone",
+    "sel": [],
+    "mode": "clone",
+    "seed": 12,
+    "facets": {
+     "tempo": {"from": "dub", "v": 50},
+     "key": {"from": "dub", "v": 50},
+     "drums": {"from": "dub", "v": 50},
+     "bass": {"from": "dub", "v": 50},
+     "chords": {"from": "dub", "v": 50},
+     "arr": {"from": "dub", "v": 50},
+     "tex": {"from": "dub", "v": 50}
+    }
+   }
+  },
+  {
+   "id": "plan-performance",
+   "instrument": "performance",
+   "kind": "json",
+   "page": "sequencer",
+   "exercises": "the Performance brain's generated take from two recorded ones: gaps, a Markov choice of control, jittered lengths and moves, the sections' leanings, structural moves",
+   "random": {"seed": 3001},
+   "call": {
+    "type": "performance",
+    "variation": 0.35,
+    "takes": [
+     {
+      "id": "perf_reference_1",
+      "name": "Reference take 1",
+      "created": 0,
+      "generated": false,
+      "duration": 40,
+      "startAt": 0,
+      "wasPlaying": true,
+      "snapshot": {"sliders": {}, "selects": {}},
+      "gestures": [
+       {"kind": "slider", "id": "cutoffSlider", "t0": 2, "t1": 4, "points": [[2, 67], [3, 75], [4, 85]], "gen": false},
+       {"kind": "slider", "id": "resSlider", "t0": 6, "t1": 7, "points": [[6, 10], [7, 30]], "gen": false},
+       {"kind": "slider", "id": "delayWetSlider", "t0": 12, "t1": 14, "points": [[12, 25], [13, 40], [14, 55]], "gen": false},
+       {"kind": "discrete", "t": 18, "type": "select", "id": "waveSelect", "v": "sawtooth", "gen": false},
+       {"kind": "slider", "id": "cutoffSlider", "t0": 20, "t1": 23, "points": [[20, 85], [23, 50]], "gen": false},
+       {"kind": "slider", "id": "atRevWetSlider", "t0": 26, "t1": 30, "points": [[26, 0], [30, 35]], "gen": false},
+       {"kind": "slider", "id": "cutoffSlider", "t0": 34, "t1": 36, "points": [[34, 50], [36, 30]], "gen": false}
+      ]
+     },
+     {
+      "id": "perf_reference_2",
+      "name": "Reference take 2",
+      "created": 0,
+      "generated": false,
+      "duration": 52,
+      "startAt": 0,
+      "wasPlaying": true,
+      "snapshot": {"sliders": {}, "selects": {}},
+      "gestures": [
+       {"kind": "slider", "id": "resSlider", "t0": 3, "t1": 5, "points": [[3, 10], [5, 45]], "gen": false},
+       {"kind": "slider", "id": "cutoffSlider", "t0": 9, "t1": 10.5, "points": [[9, 67], [10.5, 90]], "gen": false},
+       {"kind": "slider", "id": "delayWetSlider", "t0": 16, "t1": 19, "points": [[16, 25], [19, 60]], "gen": false},
+       {"kind": "slider", "id": "resSlider", "t0": 24, "t1": 25, "points": [[24, 45], [25, 20]], "gen": false},
+       {"kind": "discrete", "t": 27, "type": "select", "id": "waveSelect", "v": "square", "gen": false},
+       {"kind": "slider", "id": "cutoffSlider", "t0": 30, "t1": 34, "points": [[30, 90], [34, 40]], "gen": false},
+       {"kind": "slider", "id": "delayWetSlider", "t0": 40, "t1": 44, "points": [[40, 60], [44, 20]], "gen": false},
+       {"kind": "slider", "id": "atRevWetSlider", "t0": 46, "t1": 50, "points": [[46, 0], [50, 25]], "gen": false}
+      ]
+     }
+    ],
+    "controls": {"cutoffSlider": 67, "resSlider": 10, "delayWetSlider": 25, "atRevWetSlider": 0}
+   }
+  },
+  {
+   "id": "chop-cuts",
+   "instrument": "chop",
+   "kind": "json",
+   "page": "chop",
+   "exercises": "Chop's measures of the break: RMS frames, the silences' segments at three settings and their tails, the hits at three sensitivities, the grid's cuts (straight, shuffled and nudged, triplet 16ths), the tempo",
+   "input": "break",
+   "measure": [
+    {"what": "rms"},
+    {"what": "detectSegs", "topDb": 40, "minDur": 40, "pad": 12},
+    {"what": "detectSegs", "topDb": 25, "minDur": 40, "pad": 12},
+    {"what": "detectSegs", "topDb": 60, "minDur": 100, "pad": 30},
+    {"what": "tailParams", "topDb": 40, "minDur": 40, "pad": 12, "tailMs": 80},
+    {"what": "onsets", "set": {"mode": "transient", "sens": 30, "minDur": 40}},
+    {"what": "onsets", "set": {"mode": "transient", "sens": 60, "minDur": 40}},
+    {"what": "onsets", "set": {"mode": "transient", "sens": 90, "minDur": 20}},
+    {"what": "cuts", "set": {"mode": "transient", "sens": 60, "minDur": 40}},
+    {"what": "cuts", "set": {"mode": "silence", "topDb": 40, "minDur": 40, "pad": 12}},
+    {"what": "cuts", "set": {"mode": "grid", "div": "8", "feel": "straight", "bars": 1}},
+    {"what": "cuts", "set": {"mode": "grid", "div": "8", "feel": "straight", "bars": 1, "shuffle": 62, "nudge": 10}},
+    {"what": "cuts", "set": {"mode": "grid", "div": "16", "feel": "trip", "bars": 1}},
+    {"what": "tempo", "set": {"sig": 4}}
+   ]
+  },
+  {
+   "id": "chop-analysis",
+   "instrument": "chop",
+   "kind": "json",
+   "page": "chop",
+   "exercises": "Chop's frame measures of the break (the bands, centroid, flatness, zero crossings, RMS, rise, YIN pitch and clarity, pulse, hits per second)",
+   "input": "break",
+   "measure": [{"what": "analyse"}]
+  },
+  {
+   "id": "chop-slice-plain",
+   "instrument": "chop",
+   "kind": "audio",
+   "page": "chop",
+   "exercises": "a slice with nothing on: its own samples (the second quarter of the bar)",
+   "input": "break",
+   "settings": {"mode": "grid", "div": "4", "feel": "straight", "bars": 1},
+   "render": {"what": "slice", "index": 1}
+  },
+  {
+   "id": "chop-slice-tail",
+   "instrument": "chop",
+   "kind": "audio",
+   "page": "chop",
+   "exercises": "the ping-pong loop tail on the first quarter, 80 ms",
+   "input": "break",
+   "settings": {"mode": "grid", "div": "4", "feel": "straight", "bars": 1, "tail": true, "tailMs": 80},
+   "render": {"what": "slice", "index": 0}
+  },
+  {
+   "id": "chop-slice-shape",
+   "instrument": "chop",
+   "kind": "audio",
+   "page": "chop",
+   "exercises": "a slice gated to 80 %, reversed, pitched up five semitones, through the envelope and the transient shaper, smoothed 3 ms",
+   "input": "break",
+   "settings": {
+    "mode": "grid",
+    "div": "4",
+    "feel": "straight",
+    "bars": 1,
+    "gate": 80,
+    "pitch": 5,
+    "smooth": 3,
+    "envOn": true,
+    "attack": 4,
+    "decay": 180,
+    "trOn": true,
+    "trThresh": -30,
+    "trAmount": 60,
+    "trAttack": 20,
+    "trRelease": 100,
+    "trGain": -2
+   },
+   "flags": {"rev": [1]},
+   "render": {"what": "slice", "index": 1}
+  },
+  {
+   "id": "chop-slice-tone",
+   "instrument": "chop",
+   "kind": "audio",
+   "page": "chop",
+   "exercises": "a slice through the EQ (low cut, two bells, high cut) and the chop filter (band-pass, drive, gain, mix)",
+   "input": "break",
+   "settings": {
+    "mode": "grid",
+    "div": "4",
+    "feel": "straight",
+    "bars": 1,
+    "eqOn": true,
+    "loCut": 80,
+    "lowF": 120,
+    "lowG": 5,
+    "lowQ": 1,
+    "highF": 3000,
+    "highG": -4,
+    "highQ": 1.2,
+    "hiCut": 9000,
+    "fltOn": true,
+    "fltType": "bp",
+    "fltFreq": 1200,
+    "fltQ": 2,
+    "drive": 40,
+    "gain": -3,
+    "mix": 70
+   },
+   "render": {"what": "slice", "index": 2}
+  },
+  {
+   "id": "chop-preview",
+   "instrument": "chop",
+   "kind": "audio",
+   "page": "chop",
+   "exercises": "Preview at 100 BPM of a bar that is at 120: the hits' slices where they fall, stretched 60 % into their room, one muted, gated and smoothed",
+   "input": "break",
+   "settings": {"mode": "transient", "sens": 60, "minDur": 40, "bars": 1, "tempo": 100, "stretch": 60, "gate": 90, "smooth": 2},
+   "flags": {"muted": [2]},
+   "render": {"what": "preview"}
+  },
+  {
+   "id": "chop-ratchet",
+   "instrument": "chop",
+   "kind": "audio",
+   "page": "chop",
+   "exercises": "Ratchet: the chop from S firing on every 1/16 for a bar, shuffled to 58 %, each fire 60 % of a step",
+   "input": "break",
+   "settings": {"mode": "grid", "div": "16", "feel": "straight", "bars": 1, "shuffle": 58, "gate": 60, "smooth": 2},
+   "render": {"what": "ratchet"}
+  }
+ ]
+}
