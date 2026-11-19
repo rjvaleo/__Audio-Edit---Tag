@@ -417,7 +417,7 @@ pub(super) fn api_soundmap(app: &Arc<App>) -> Response {
         .enumerate()
         .map(|(i, o)| {
             let p = map.points.get(i).filter(|_| fits);
-            o.set("at", p.and_then(|p| p.at).map(|a| Value::Arr(vec![Value::Num(a[0] as f64), Value::Num(a[1] as f64)])).unwrap_or(Value::Null))
+            o.set("at", p.and_then(|p| p.at).map(|a| Value::Arr(a.iter().map(|v| Value::Num(*v as f64)).collect())).unwrap_or(Value::Null))
                 .set("cluster", p.and_then(|p| p.cluster).map(|c| Value::Num(c as f64)).unwrap_or(Value::Null))
                 .set("near", Value::Arr(p.map(|p| p.near.iter().map(|n| Value::Num(*n as f64)).collect()).unwrap_or_default()))
         })
@@ -430,7 +430,7 @@ pub(super) fn api_soundmap(app: &Arc<App>) -> Response {
                 .set("name", c.name.clone())
                 .set("family", c.family.clone())
                 .set("size", c.members.len() as f64)
-                .set("centre", Value::Arr(vec![Value::Num(c.centre[0] as f64), Value::Num(c.centre[1] as f64)]))
+                .set("centre", Value::Arr(c.centre.iter().map(|v| Value::Num(*v as f64)).collect()))
         })
         .collect();
     Response::json(

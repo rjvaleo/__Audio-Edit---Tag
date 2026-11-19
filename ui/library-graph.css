@@ -18,9 +18,27 @@
 .lgraph.hidden { display: none; }
 
 .lg-stage { position: relative; min-height: 0; overflow: hidden; }
-.lg-canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
-.lg-canvas.point { cursor: pointer; }
-.lg-canvas.drag { cursor: grabbing; }
+.lg-scene { position: absolute; inset: 0; }
+.lg-scene canvas { display: block; outline: none; }
+/* Names and rings over the 3D scene. The pointer goes through to it. */
+.lg-over { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.lg-crumb { color: var(--text-dim); }
+.lg-crumb b { color: var(--text); font-weight: 600; }
+.lg-up { color: var(--accent); cursor: pointer; }
+
+/* What is under the pointer: its waveform, name and group, and a playhead
+ * while it sounds. Always in the same place, so the eye knows where to look. */
+.lg-panel {
+  position: absolute; left: 8px; bottom: 44px; width: 340px;
+  background: color-mix(in oklch, var(--surface) 92%, transparent);
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px 7px;
+  display: none; pointer-events: none;
+}
+.lg-panel.on { display: block; }
+.lg-wave { display: block; width: 100%; height: 56px; }
+.lg-pname { font-weight: 600; font-size: var(--fs-l); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lg-pmeta { color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lg-pmeta .d { color: var(--text-dimmer); }
 
 /* ── the strip ─────────────────────────────────────────────────────── */
 

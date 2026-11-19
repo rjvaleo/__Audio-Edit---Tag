@@ -86,6 +86,9 @@ pub const RIDGE_DATA_JS: &str = include_str!("../../../../../ui/ridge-data.js");
 /// `include_str` because nothing here needs it as text and validating eight
 /// megabytes as UTF-8 at compile time buys nothing.
 pub const BABYLON_JS: &[u8] = include_bytes!("../../../../../ui/vendor/babylon.js");
+/// 3d-force-graph 1.73.4 (MIT, Vasco Asturiano), three.js inside: the sound
+/// map's 3D views. See `docs/THIRD-PARTY.md`.
+pub const FORCE_GRAPH_JS: &[u8] = include_bytes!("../../../../../ui/vendor/3d-force-graph.min.js");
 pub const ROOM3D_JS: &str = include_str!("../../../../../ui/room3d.js");
 pub const STAGE_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/stage.js"));
 pub const VIS_REGISTRY_JS: &str = include_str!("../../../../../ui/vis-registry.js");

@@ -50,6 +50,7 @@ These ship inside the binary via `include_str!` and are invisible to
 | **Poppins** (`visualiser/fonts.css`, base64) | SIL OFL 1.1 | Embedding and redistribution in a commercial product are expressly permitted. The OFL text and copyright must accompany it. No blocker. |
 | **Lora** (same) | SIL OFL 1.1 | As above. |
 | **Babylon.js 9.22.0** (`ui/vendor/babylon.js`, `include_bytes!`) | Apache-2.0 | Attribution and the licence text must ship with it. No blocker. |
+| **3d-force-graph 1.73.4** (`ui/vendor/3d-force-graph.min.js`, `include_bytes!`), with three.js and d3-force-3d inside | MIT | Copyright notice ships in the file's header. No blocker. |
 | **YAMNet weights** (`models/yamnet.onnx`, 15 MB) | believed Apache-2.0 via `tensorflow/models` | **Verify before shipping.** The weights go inside a product being sold, and "believed" is not a standard to ship on. Note that AudioSet's own terms cover the *dataset*, not the trained model — do not confuse the two when checking. |
 
 None of these blocks a sale. All five need a notice, and one — p5's missing

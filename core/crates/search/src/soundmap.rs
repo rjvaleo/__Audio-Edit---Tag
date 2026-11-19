@@ -10,7 +10,7 @@
 //! AudioStellar, the Infinite Drum Machine) are all built on fingerprints of
 //! this kind, flattened to two dimensions the same way, by t-SNE.
 //!
-//! Nothing here knows about a screen. Positions are in a unit square; the
+//! Nothing here knows about a screen. Positions are in a unit cube; the
 //! interface scales them, draws them, and plays what is under the pointer.
 
 /// YAMNet's fingerprint of a sound, a byte a number against its own largest
@@ -54,8 +54,9 @@ pub struct Input {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Point {
-    /// Where it goes, 0..1 each way; None until it has been listened to.
-    pub at: Option<[f32; 2]>,
+    /// Where it goes in the sound space, 0..1 each way, three ways; None
+    /// until it has been listened to.
+    pub at: Option<[f32; 3]>,
     /// The cluster it belongs to, if any; a stray between clusters has none.
     pub cluster: Option<usize>,
     /// Its closest matches by fingerprint, best first. Worked out up front
@@ -70,8 +71,8 @@ pub struct Cluster {
     /// The family most of its sounds are in.
     pub family: String,
     pub members: Vec<usize>,
-    /// Its middle, in the same unit square.
-    pub centre: [f32; 2],
+    /// Its middle, in the same unit cube.
+    pub centre: [f32; 3],
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -239,17 +240,21 @@ pub fn build_with(inputs: &[Input], exact_max: usize) -> SoundMap {
                     best.truncate(3);
                 }
             }
-            let (mut x, mut y, mut wsum) = (0.0f32, 0.0f32, 0.0f32);
+            let (mut at, mut wsum) = ([0.0f32; 3], 0.0f32);
             for &(dd, a) in &best {
                 let w = 1.0 / (dd + 1e-4);
-                x += at_marks[a][0] * w;
-                y += at_marks[a][1] * w;
+                for c in 0..3 {
+                    at[c] += at_marks[a][c] * w;
+                }
                 wsum += w;
             }
-            let h = (i as u64).wrapping_mul(0x9e3779b97f4a7c15);
-            let jx = ((h >> 40) as f32 / (1u64 << 24) as f32 - 0.5) * 0.006;
-            let jy = (((h >> 16) & 0xff_ffff) as f32 / (1u64 << 24) as f32 - 0.5) * 0.006;
-            ([(x / wsum + jx).clamp(0.0, 1.0), (y / wsum + jy).clamp(0.0, 1.0)], cluster_of_mark[best[0].1])
+            let mut h = (i as u64).wrapping_mul(0x9e3779b97f4a7c15);
+            for v in &mut at {
+                h = h.rotate_left(21).wrapping_mul(0xbf58476d1ce4e5b9);
+                let jitter = ((h >> 40) as f32 / (1u64 << 24) as f32 - 0.5) * 0.006;
+                *v = (*v / wsum + jitter).clamp(0.0, 1.0);
+            }
+            (at, cluster_of_mark[best[0].1])
         });
         for (&i, (at, c)) in rest.iter().zip(placed) {
             map.points[i].at = Some(at);
@@ -260,18 +265,19 @@ pub fn build_with(inputs: &[Input], exact_max: usize) -> SoundMap {
     }
 
     let mut clusters_out: Vec<Cluster> = (0..groups.len())
-        .map(|_| Cluster { name: String::new(), family: String::new(), members: vec![], centre: [0.0, 0.0] })
+        .map(|_| Cluster { name: String::new(), family: String::new(), members: vec![], centre: [0.0; 3] })
         .collect();
     for (i, p) in map.points.iter().enumerate() {
         if let (Some(c), Some(at)) = (p.cluster, p.at) {
             clusters_out[c].members.push(i);
-            clusters_out[c].centre[0] += at[0];
-            clusters_out[c].centre[1] += at[1];
+            for k in 0..3 {
+                clusters_out[c].centre[k] += at[k];
+            }
         }
     }
     for c in &mut clusters_out {
         let k = c.members.len().max(1) as f32;
-        c.centre = [c.centre[0] / k, c.centre[1] / k];
+        c.centre = c.centre.map(|v| v / k);
         c.family = majority_family(inputs, &c.members);
     }
     // Biggest first, so the order means something; points renumbered to match.
@@ -392,9 +398,9 @@ impl Lcg {
 /// fingerprint space become probabilities, and points in the plane are moved
 /// until their own similarities match. Every pair is compared each step,
 /// which is quick for a few thousand sounds.
-fn tsne(d: &[f32], n: usize) -> Vec<[f32; 2]> {
+fn tsne(d: &[f32], n: usize) -> Vec<[f32; 3]> {
     if n == 1 {
-        return vec![[0.0, 0.0]];
+        return vec![[0.0; 3]];
     }
     let perp = PERPLEXITY.min((n as f32 - 1.0) / 3.0).max(1.5);
     let target = perp.ln();
@@ -446,9 +452,9 @@ fn tsne(d: &[f32], n: usize) -> Vec<[f32; 2]> {
     }
 
     let mut rng = Lcg(0x5eed);
-    let mut y: Vec<[f32; 2]> = (0..n).map(|_| [(rng.next() - 0.5) * 1e-2, (rng.next() - 0.5) * 1e-2]).collect();
-    let mut step = vec![[0.0f32; 2]; n];
-    let mut gain = vec![[1.0f32; 2]; n];
+    let mut y: Vec<[f32; 3]> = (0..n).map(|_| [(rng.next() - 0.5) * 1e-2, (rng.next() - 0.5) * 1e-2, (rng.next() - 0.5) * 1e-2]).collect();
+    let mut step = vec![[0.0f32; 3]; n];
+    let mut gain = vec![[1.0f32; 3]; n];
     // The rate scikit-learn settled on: a fixed 200 throws a small library
     // apart instead of letting it settle.
     let rate = (n as f32 / 12.0 / 4.0).max(50.0);
@@ -465,8 +471,7 @@ fn tsne(d: &[f32], n: usize) -> Vec<[f32; 2]> {
             let mut s = 0.0f32;
             for j in 0..n {
                 if j != i {
-                    let (dx, dy) = (yy[i][0] - yy[j][0], yy[i][1] - yy[j][1]);
-                    s += 1.0 / (1.0 + dx * dx + dy * dy);
+                    s += 1.0 / (1.0 + sq(&yy[i], &yy[j]));
                 }
             }
             s
@@ -476,69 +481,61 @@ fn tsne(d: &[f32], n: usize) -> Vec<[f32; 2]> {
         .max(1e-12);
         let pp = &p;
         let grads = parallel_map(&rows, |&i| {
-            let (mut gx, mut gy) = (0.0f32, 0.0f32);
+            let mut g = [0.0f32; 3];
             for j in 0..n {
                 if i == j {
                     continue;
                 }
-                let (dx, dy) = (yy[i][0] - yy[j][0], yy[i][1] - yy[j][1]);
-                let v = 1.0 / (1.0 + dx * dx + dy * dy);
+                let v = 1.0 / (1.0 + sq(&yy[i], &yy[j]));
                 let m = (exaggerate * pp[i * n + j] - v / z) * v;
-                gx += m * dx;
-                gy += m * dy;
+                for c in 0..3 {
+                    g[c] += m * (yy[i][c] - yy[j][c]);
+                }
             }
-            [4.0 * gx, 4.0 * gy]
+            g.map(|x| 4.0 * x)
         });
         for i in 0..n {
-            for c in 0..2 {
+            for c in 0..3 {
                 let g = grads[i][c];
                 gain[i][c] = if (g > 0.0) == (step[i][c] > 0.0) { (gain[i][c] * 0.8).max(0.01) } else { gain[i][c] + 0.2 };
                 step[i][c] = momentum * step[i][c] - rate * gain[i][c] * g;
             }
         }
         for i in 0..n {
-            y[i][0] += step[i][0];
-            y[i][1] += step[i][1];
+            for c in 0..3 {
+                y[i][c] += step[i][c];
+            }
         }
         // Keep the whole centred, so nothing drifts.
-        let (mx, my) = y.iter().fold((0.0, 0.0), |(a, b), v| (a + v[0], b + v[1]));
+        let mut mean = [0.0f32; 3];
+        for v in &y {
+            for c in 0..3 {
+                mean[c] += v[c] / n as f32;
+            }
+        }
         for v in &mut y {
-            v[0] -= mx / n as f32;
-            v[1] -= my / n as f32;
+            for c in 0..3 {
+                v[c] -= mean[c];
+            }
         }
     }
     y
 }
 
-/// Into the unit square, the same scale both ways so the shape is kept, and
-/// turned so its long side lies across. t-SNE's answer has no up or down of
-/// its own, and a screen is wider than it is tall.
-fn unit(y: &[[f32; 2]]) -> Vec<[f32; 2]> {
-    let n = y.len().max(1) as f32;
-    let (mx, my) = y.iter().fold((0.0, 0.0), |(a, b), v| (a + v[0] / n, b + v[1] / n));
-    let (mut sxx, mut syy, mut sxy) = (0.0f32, 0.0f32, 0.0f32);
+/// Into the unit cube, the same scale every way so the shape is kept and
+/// centred in it.
+fn unit(y: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    let mut lo = [f32::INFINITY; 3];
+    let mut hi = [f32::NEG_INFINITY; 3];
     for v in y {
-        let (dx, dy) = (v[0] - mx, v[1] - my);
-        sxx += dx * dx;
-        syy += dy * dy;
-        sxy += dx * dy;
+        for c in 0..3 {
+            lo[c] = lo[c].min(v[c]);
+            hi[c] = hi[c].max(v[c]);
+        }
     }
-    let angle = 0.5 * (2.0 * sxy).atan2(sxx - syy);
-    let (c, s) = (angle.cos(), angle.sin());
-    let y: Vec<[f32; 2]> = y.iter().map(|v| {
-        let (dx, dy) = (v[0] - mx, v[1] - my);
-        [dx * c + dy * s, -dx * s + dy * c]
-    }).collect();
-    let (mut x0, mut y0, mut x1, mut y1) = (f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
-    for v in &y {
-        x0 = x0.min(v[0]);
-        y0 = y0.min(v[1]);
-        x1 = x1.max(v[0]);
-        y1 = y1.max(v[1]);
-    }
-    let span = (x1 - x0).max(y1 - y0).max(1e-9);
-    let (ox, oy) = ((1.0 - (x1 - x0) / span) / 2.0, (1.0 - (y1 - y0) / span) / 2.0);
-    y.iter().map(|v| [ox + (v[0] - x0) / span, oy + (v[1] - y0) / span]).collect()
+    let span = (0..3).map(|c| hi[c] - lo[c]).fold(1e-9f32, f32::max);
+    let off: Vec<f32> = (0..3).map(|c| (1.0 - (hi[c] - lo[c]) / span) / 2.0).collect();
+    y.iter().map(|v| [0, 1, 2].map(|c| off[c] + (v[c] - lo[c]) / span)).collect()
 }
 
 /// Clusters as they stand on the map: dots within reach of one another, by
@@ -546,12 +543,12 @@ fn unit(y: &[[f32; 2]]) -> Vec<[f32; 2]> {
 /// distance to a dot's fourth neighbour — so it works whatever the library's
 /// size. A stray near a cluster joins it; one far from all of
 /// them belongs to none.
-fn clusters(at: &[[f32; 2]]) -> Vec<Vec<usize>> {
+fn clusters(at: &[[f32; 3]]) -> Vec<Vec<usize>> {
     let n = at.len();
     if n < MIN_CLUSTER {
         return vec![];
     }
-    let dist = |a: usize, b: usize| ((at[a][0] - at[b][0]).powi(2) + (at[a][1] - at[b][1]).powi(2)).sqrt();
+    let dist = |a: usize, b: usize| sq(&at[a], &at[b]).sqrt();
     let mut fourth: Vec<f32> = (0..n)
         .map(|a| {
             let mut r: Vec<f32> = (0..n).filter(|&b| b != a).map(|b| dist(a, b)).collect();

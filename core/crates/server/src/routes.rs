@@ -295,6 +295,11 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
             BABYLON_JS.to_vec(),
         )
         .with("Cache-Control", "public, max-age=31536000, immutable"),
+        ("GET" | "HEAD", "/vendor/3d-force-graph.min.js") => Response::ok(
+            "text/javascript; charset=utf-8",
+            FORCE_GRAPH_JS.to_vec(),
+        )
+        .with("Cache-Control", "public, max-age=31536000, immutable"),
         ("GET" | "HEAD", "/vis-registry.js") => {
             Response::ok("text/javascript; charset=utf-8", VIS_REGISTRY_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
