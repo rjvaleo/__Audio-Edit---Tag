@@ -666,10 +666,10 @@ const MAX_SMOOTHED: usize = 96;
 
 /// Frames between control updates while something is moving.
 ///
-/// Delay reads and modulation phases can expose even eight held samples as
-/// an edge. Move the input controls on every sample; kernels retain their
-/// original still-setting behavior. Settled racks still run in whole blocks.
-const CONTROL_CHUNK: usize = 1;
+/// Eight frames bound the host control steps without charging every effect
+/// per-sample call overhead. Pitch Time Changer has its own per-sample ramp;
+/// settled racks still run in whole blocks.
+const CONTROL_CHUNK: usize = 8;
 
 /// How long a rack swap takes to cross over.
 ///

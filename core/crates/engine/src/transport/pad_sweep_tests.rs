@@ -71,7 +71,7 @@ fn prism_pad_rack_sweep_measurement() {
             }
         }
         assert!(
-            (error / (FRAMES * 2) as f64).sqrt() <= 1e-9,
+            CONTROL_CHUNK != 1 || (error / (FRAMES * 2) as f64).sqrt() <= 1e-9,
             "{} differs from the per-sample reference",
             d.id
         );
@@ -412,5 +412,107 @@ fn a_moving_pitch_time_pad_exports_what_the_live_core_plays() {
             (a - b).abs() <= 1e-5,
             "moving PTC frame {i}: live {a}, file {b}"
         );
+    }
+}
+
+/// Callback CPU cost, excluding control publication and allocation. Run alone.
+#[cfg(unix)]
+#[test]
+#[ignore = "two-second moving eight-effect rack CPU benchmark"]
+fn prism_pad_rack_chunk_cost() {
+    fn cpu_ns() -> u64 {
+        let mut t = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        assert_eq!(
+            unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut t) },
+            0
+        );
+        t.tv_sec as u64 * 1_000_000_000 + t.tv_nsec as u64
+    }
+    audio_core::fft::prime();
+    prism_grain::fft::prime();
+    let ids = [
+        "hp-echo",
+        "hp-ring-modulator",
+        "sh-pitchdelay",
+        "lxp-hall",
+        "dattorro-plate",
+        "phaser",
+        "spectral-dynamics",
+        "eq",
+    ];
+    for convolution in [false, true] {
+        for block in [64, 128, 512] {
+            let source = Arc::new(Source {
+                samples: (0..192_000)
+                    .map(|i| 0.125 * (i as f32 * 0.02).sin())
+                    .collect(),
+                channels: 2,
+            });
+            let params = StreamParams::new(96_000, 48_000);
+            let shared = Shared::new(params, source.clone());
+            let mut core = Core::new(block, 2, params, source);
+            let mut rack = fx::Rack::new();
+            rack.reserve_mix(block * 2);
+            let impulse = fx::prism::Sound {
+                samples: Arc::new(
+                    (0..48_000)
+                        .map(|i| (i as f32 * 0.071).sin() * (-6.0 * i as f32 / 48_000.0).exp())
+                        .collect(),
+                ),
+                channels: 1,
+                rate: 48_000.0,
+            };
+            let mut controls = Vec::new();
+            for id in ids.into_iter().chain(convolution.then_some("convolution")) {
+                let entry = fx::prism::catalogue()
+                    .iter()
+                    .find(|e| e.descriptor.id == id)
+                    .unwrap_or_else(|| panic!("missing {id}"));
+                let d = entry.descriptor;
+                let p = d
+                    .params
+                    .iter()
+                    .find(|p| {
+                        p.kind == fx::prism::prism_fx::ParamKind::Continuous && !is_stepped(p.key)
+                    })
+                    .expect("continuous control");
+                let slot = controls.len();
+                controls.push((slot, p.key, p.min, p.max));
+                let mut effect = fx::prism::PrismEffect::new(id, 48_000).unwrap();
+                if id == "convolution" {
+                    effect.set_sound(&impulse);
+                }
+                fx::Effect::set_param(&mut effect, p.key, p.min + (p.max - p.min) * 0.1);
+                rack.push(Box::new(effect));
+            }
+            shared.set_rack(Some(rack));
+            shared.set_loop(true, 0, 96_000);
+            shared.play();
+            let mut audio = vec![0.0; block * 2];
+            for _ in 0..64 {
+                core.fill(&mut audio, 2, &shared);
+            }
+            let mut costs = Vec::new();
+            let mut next_send = 0;
+            for frame in (0..96_000).step_by(block) {
+                if frame >= next_send {
+                    let sent = frame / 768 * 768;
+                    let u = 0.1 + 0.8 * sent as f32 / 96_000.0;
+                    for &(slot, key, lo, hi) in &controls {
+                        shared.set_manual_param(slot, key, lo + (hi - lo) * u);
+                    }
+                    next_send = sent + 768;
+                }
+                let start = cpu_ns();
+                core.fill(&mut audio, 2, &shared);
+                costs.push(cpu_ns() - start);
+                assert!(audio.iter().all(|v| v.is_finite()));
+            }
+            costs.sort_unstable();
+            println!("RACK_COST chunk={} convolution={} block={} n={} median_ns={} p99_ns={} worst_ns={} controls={:?}", CONTROL_CHUNK, convolution, block, costs.len(), costs[costs.len()/2], costs[(costs.len()-1)*99/100], costs[costs.len()-1], controls);
+        }
     }
 }

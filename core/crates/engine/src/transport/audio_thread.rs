@@ -152,9 +152,9 @@ impl Core {
             return;
         }
         let sr = self.params.sample_rate.max(1) as f32;
-        // The same one-pole time constant at any piece size. Moving controls
-        // are written per sample so delay and modulation kernels never see
-        // a staircase introduced by the host's control chunks.
+        // The same one-pole time constant at any piece size. Eight-frame
+        // updates bound the control edges while keeping rack call overhead
+        // affordable; PTC smooths its separate controls per sample.
         let k = (1.0 - (-(frames as f32) / (SMOOTH_SECONDS * sr)).exp()).clamp(0.0, 1.0);
         let Some(rack) = self.rack.as_mut() else { return };
         for s in &mut self.smoothing {
