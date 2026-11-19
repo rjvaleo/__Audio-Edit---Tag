@@ -235,6 +235,35 @@ fn a_stopped_transport_keeps_processing_the_chain() {
     );
 }
 
+/// The page keeps the meters, the spectrum and the visualiser moving while
+/// anything leaves the bus: while playing, and while a tail rings on after a
+/// stop. `sounding` is what tells it. (RJ, 18 Nov 2026: a reverb went on being
+/// heard after a stop while every display had frozen.)
+#[test]
+fn a_tail_ringing_after_a_stop_is_still_sounding() {
+    let (mut core, shared) = playing_core(1);
+    shared.set_rack(Some(fx::Rack::new()));
+    let mut buf = vec![0.0; 512];
+    core.fill(&mut buf, 1, &shared);
+    assert!(shared.sounding(), "playing is sounding");
+    shared.pause();
+    core.fill(&mut buf, 1, &shared);
+    assert!(shared.sounding(), "the first block after a stop, with the chain still ringing, is sounding");
+    // The chain runs on silence until its tail has been quiet long enough.
+    for _ in 0..100_000 {
+        if core.tail_left == 0 {
+            break;
+        }
+        core.fill(&mut buf, 1, &shared);
+    }
+    assert_eq!(core.tail_left, 0, "the tail never ended");
+    core.fill(&mut buf, 1, &shared);
+    assert!(!shared.sounding(), "long quiet after a stop is not sounding");
+    shared.play();
+    core.fill(&mut buf, 1, &shared);
+    assert!(shared.sounding(), "playing again is sounding");
+}
+
 /// A stop used to be silence from the next block's first sample: a step from
 /// wherever the wave stood. Now the sound leaves from its last frame.
 #[test]
