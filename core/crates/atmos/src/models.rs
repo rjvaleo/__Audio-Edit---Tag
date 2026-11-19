@@ -235,28 +235,30 @@ impl Osc {
     // ─── The modal models: bar, bell, glass, membrane ───────────────────────
     fn modal_setup(&mut self, vel: f32, scale: &[f32]) {
         let p = self.p;
-        let (ratios, t60, decay_slope, hard, strike): (Vec<f32>, f32, f32, f32, f32) = match MODELS[self.kind].0 {
+        let (ratios, count, t60, decay_slope, hard, strike): ([f32; 10], usize, f32, f32, f32, f32) = match MODELS[self.kind].0 {
             // Wood (tuned like a marimba's bar, 1 : 4 : 10) to metal (a free bar's own).
             "bar" => {
                 let wood = [1.0, 3.99, 9.9, 17.6, 27.0, 37.9];
                 let metal = [1.0, 2.756, 5.404, 8.933, 13.34, 18.64];
                 let m = p[0];
-                (wood.iter().zip(metal).map(|(a, b)| a + (b - a) * m).collect(), 0.4 + p[3] * 4.0 * (0.4 + m), 1.6 - m * 1.2, p[1], p[2])
+                ({ let mut ratios = [0.0; 10];
+                    for (k, (a, b)) in wood.iter().zip(metal).enumerate() { ratios[k] = a + (b - a) * m; }
+                    ratios }, 6, 0.4 + p[3] * 4.0 * (0.4 + m), 1.6 - m * 1.2, p[1], p[2])
             }
             // Hum, prime, tierce (minor to major), quint, nominal, and above.
-            "bell" => (vec![0.5, 1.0, 1.183 + p[1] * 0.077, 1.506, 2.0, 2.514, 2.662, 3.011, 4.166, 5.433], 1.5 + p[3] * 9.0 * (0.5 + p[0]), 0.35, 0.7, p[2]),
+            "bell" => ([0.5, 1.0, 1.183 + p[1] * 0.077, 1.506, 2.0, 2.514, 2.662, 3.011, 4.166, 5.433], 10, 1.5 + p[3] * 9.0 * (0.5 + p[0]), 0.35, 0.7, p[2]),
             // A wine glass; Fill pulls the upper modes in, as water does.
             "glass" => {
                 let f = 1.0 - p[1] * 0.12;
-                (vec![1.0, 2.32 * f, 4.25 * f, 6.63 * f, 9.38 * f], 1.0 + p[2] * 9.0, 0.5, 0.3 + p[3] * 0.6, 0.3)
+                ([1.0, 2.32 * f, 4.25 * f, 6.63 * f, 9.38 * f, 0.0, 0.0, 0.0, 0.0, 0.0], 5, 1.0 + p[2] * 9.0, 0.5, 0.3 + p[3] * 0.6, 0.3)
             }
             // A drumhead's Bessel ratios; struck in the centre only the round modes sound.
             _ => {
                 let all = [1.0, 1.594, 2.136, 2.296, 2.653, 2.918, 3.156, 3.501, 3.600, 3.652];
-                (all.to_vec(), 0.15 + (1.0 - p[1]) * 1.6 * (0.5 + p[3]), 0.6, 0.6, p[2])
+                (all, 10, 0.15 + (1.0 - p[1]) * 1.6 * (0.5 + p[3]), 0.6, 0.6, p[2])
             }
         };
-        self.n_modes = ratios.len().min(MODES);
+        self.n_modes = count.min(MODES);
         for k in 0..self.n_modes {
             let mut q = ratios[k];
             // Fit: each mode moved toward the nearest interval the scale has.

@@ -293,10 +293,19 @@ impl Synth {
 
     /// A key down, `delay` samples from the start of the next render.
     pub fn note_on(&mut self, id: i32, hz: f32, vel: f32, delay: u32) {
-        self.events.push(Event::On { at: delay, id, hz, vel });
+        // Invalid note inputs cannot be allowed into oscillator memory.
+        if !hz.is_finite() || hz <= 0.0 || !vel.is_finite() || vel <= 0.0 {
+            self.note_off(id, delay);
+            return;
+        }
+        if self.events.len() < self.events.capacity() {
+            self.events.push(Event::On { at: delay, id, hz, vel });
+        }
     }
     pub fn note_off(&mut self, id: i32, delay: u32) {
-        self.events.push(Event::Off { at: delay, id });
+        if self.events.len() < self.events.capacity() {
+            self.events.push(Event::Off { at: delay, id });
+        }
     }
     /// Every voice let go.
     pub fn all_off(&mut self) {
@@ -339,7 +348,7 @@ impl Synth {
         let from = if p.glide > 0.0 && self.last_hz > 0.0 { self.last_hz } else { hz };
         self.last_hz = hz;
         self.last_voice = i;
-        let scale = self.scale.clone();
+        let scale = &self.scale;
         let v = &mut self.voices[i];
         let was_sounding = !v.amp.idle();
         if was_sounding {
@@ -359,7 +368,7 @@ impl Synth {
         for o in 0..2 {
             for u in 0..UNISON {
                 v.osc[o][u].fit = p.fit;
-                v.osc[o][u].start(p.model[o], from * 2f32.powf(p.oct[o]), vel, p.p[o], &scale);
+                v.osc[o][u].start(p.model[o], from * 2f32.powf(p.oct[o]), vel, p.p[o], scale);
             }
         }
     }
