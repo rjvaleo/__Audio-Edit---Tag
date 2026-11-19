@@ -5,16 +5,6 @@ const RETIRED_ROOM: usize = 16;
 
 use super::*;
 
-/// The slot if nobody is in it, without waiting. A slot whose last holder
-/// panicked is still taken: what it holds is only ever replaced whole.
-fn free<T>(slot: &Mutex<T>) -> Option<std::sync::MutexGuard<'_, T>> {
-    match slot.try_lock() {
-        Ok(g) => Some(g),
-        Err(std::sync::TryLockError::Poisoned(p)) => Some(p.into_inner()),
-        Err(std::sync::TryLockError::WouldBlock) => None,
-    }
-}
-
 impl Shared {
     pub fn new(params: StreamParams, source: Arc<Source>) -> Self {
         let shared = Shared::unlocked(params, source);
@@ -547,7 +537,7 @@ impl Shared {
     /// at that instant, for the host to offer again.
     #[allow(clippy::type_complexity)]
     pub fn put_rack(&self, mut rack: Option<fx::Rack>) -> Result<Option<Option<fx::Rack>>, Option<fx::Rack>> {
-        let Some(mut g) = free(&self.pending_rack) else { return Err(rack) };
+        let Some(mut g) = try_lock(&self.pending_rack) else { return Err(rack) };
         if let Some(r) = rack.as_mut() {
             r.set_meters(Arc::clone(&self.rack_meters));
         }
@@ -560,7 +550,7 @@ impl Shared {
         &self,
         bank: crate::stretcher::LayerBank,
     ) -> Result<Option<crate::stretcher::LayerBank>, crate::stretcher::LayerBank> {
-        let Some(mut g) = free(&self.pending_bank) else { return Err(bank) };
+        let Some(mut g) = try_lock(&self.pending_bank) else { return Err(bank) };
         self.bank_layers.store(bank.layers.max(1), Ordering::Release);
         Ok(g.replace(bank))
     }
@@ -588,7 +578,7 @@ impl Shared {
         &self,
         map: Option<Arc<fx::transient::TimeMap>>,
     ) -> Result<Option<Option<Arc<fx::transient::TimeMap>>>, Option<Arc<fx::transient::TimeMap>>> {
-        let Some(mut g) = free(&self.pending_map) else { return Err(map) };
+        let Some(mut g) = try_lock(&self.pending_map) else { return Err(map) };
         Ok(g.replace(map))
     }
 
