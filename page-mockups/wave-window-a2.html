@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wave: whole window A2</title>
+<style>
+:root {
+  --chassis: #121316; --panel: #1b1d21; --panel-hi: #262a30; --well: #06070a; --line: #2c3036;
+  --t: #e8eaee; --t2: #b9bec6; --t3: #858b94; --acc: #7cf0d0; --on: #ffb547; --mod: #8aa0c8; --track: #2a2e34;
+  --note: #ffd23f;
+  --sans: Inter, -apple-system, system-ui, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #08090b; color: var(--t); font: 12px/1.3 var(--sans); user-select: none; }
+
+.mock { position: fixed; inset: 0 0 auto 0; height: 34px; display: flex; align-items: center; gap: 14px; padding: 0 12px;
+  background: #2b2010; border-bottom: 1px solid #5a4318; color: #ffe2a8; z-index: 10; font-size: 12px; }
+.mock b { font-weight: 700; letter-spacing: .04em; }
+.mock .seg { display: flex; border: 1px solid #6b5020; border-radius: 6px; overflow: hidden; }
+.mock .seg button { background: none; border: 0; color: #ffe2a8; font: 600 11px var(--sans); padding: 5px 10px; cursor: pointer; }
+.mock .seg button + button { border-left: 1px solid #6b5020; }
+.mock .seg button.on { background: #ffb547; color: #1a1206; }
+.mock label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.mock .sp { flex: 1; }
+
+.stage { position: fixed; inset: 34px 0 0 0; overflow: auto; }
+.win { position: relative; overflow: auto; background: radial-gradient(120% 80% at 30% 0%, var(--panel), var(--chassis) 60%); }
+.stage.fill .win { width: 100%; height: 100%; }
+.stage.sized .win { outline: 2px dashed #6b5020; margin: 18px; }
+
+.app { position: absolute; inset: 0; display: grid; grid-template-rows: 40px 1fr 112px 44px; }
+.app.t-play { min-width: 2050px; min-height: 860px; }
+.app.t-fx { min-width: 1240px; min-height: 720px; }
+.bar { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); background: linear-gradient(var(--panel-hi), var(--panel)); }
+.tab { height: 26px; padding: 0 12px; display: flex; align-items: center; gap: 6px; border-radius: 6px; color: var(--t2); font-weight: 600; cursor: pointer; }
+.tab.on { background: #23262c; color: var(--t); box-shadow: inset 0 -2px 0 var(--on); }
+.pill { height: 26px; padding: 0 10px; display: flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; color: var(--t2); background: #15171b; }
+.grow { flex: 1; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.panel { background: linear-gradient(180deg, var(--panel-hi), var(--panel) 30%); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 6px 14px rgba(0,0,0,.45); position: relative; }
+.ph { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; font: 700 10px var(--mono); letter-spacing: .12em; color: var(--t2); white-space: nowrap; }
+.pw { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--on); flex: none; display: inline-block; cursor: pointer; }
+.pw.off { border-color: #555b63; }
+
+/* the one knob: 44 px with the picture inside, 26 px with the picture beside */
+.k44 { display: grid; justify-items: center; gap: 2px; width: 64px; }
+.k44 .kv { font: 600 10px var(--mono); color: var(--t); }
+.k44 .kk { font: 600 9px var(--sans); color: var(--t3); white-space: nowrap; }
+.k26 { display: grid; grid-template-columns: 26px 26px; grid-template-rows: auto auto; column-gap: 4px; align-items: center; width: 100px; }
+.k26 svg.cap { grid-row: 1 / 3; }
+.k26 .kv { font: 600 10px var(--mono); color: var(--t); }
+.k26 .kk { grid-column: 2 / 4; font: 600 9px var(--sans); color: var(--t3); white-space: nowrap; }
+.k26 .pic { width: 26px; height: 18px; }
+
+.keys { display: flex; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--panel); }
+.kb { width: 780px; flex: none; display: flex; position: relative; }
+.kb i { flex: 1; background: linear-gradient(#f3f3f1, #d9d9d5); border: 1px solid #222; border-radius: 0 0 3px 3px; margin-right: -1px; }
+.kb s { position: absolute; top: 0; width: 13px; height: 58%; background: #111; border-radius: 0 0 2px 2px; }
+.macros { display: grid; grid-template-columns: repeat(4, 64px); gap: 0 8px; align-content: center; }
+.tbar { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-top: 1px solid var(--line); background: #0d0e11; }
+
+.n { position: absolute; z-index: 5; background: var(--note); color: #1a1600; font: 600 11px/1.3 var(--sans); padding: 5px 8px; border-radius: 5px;
+  box-shadow: 0 3px 10px rgba(0,0,0,.5); max-width: 280px; pointer-events: none; }
+.hide-notes .n { display: none; }
+
+/* FX tab */
+.fxmain { display: grid; grid-template-columns: 1fr 440px; gap: 10px; padding: 10px; min-height: 0; position: relative; }
+.board { display: grid; grid-template-rows: 30px 1fr; min-height: 0; overflow: hidden; }
+.chain { display: flex; align-items: center; gap: 4px; padding: 0 8px; border-bottom: 1px solid var(--line); font: 600 10px var(--mono); color: var(--t3); }
+.chain span { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--t2); background: #15171b; cursor: pointer; }
+.chain span.sel { border-color: var(--acc); color: var(--acc); }
+.well { position: relative; overflow: hidden; cursor: grab; border-radius: 0 0 8px 8px;
+  background-image: linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px),
+    radial-gradient(120% 90% at 50% 0%, #0c0d10, var(--well) 70%);
+  background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px, auto; }
+.well.drag { cursor: grabbing; }
+.plane { position: absolute; left: 0; top: 0; width: 3000px; height: 2000px; }
+.plane > svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.node { position: absolute; width: 196px; padding: 6px 8px 8px; border-radius: 8px; cursor: pointer; }
+.node.sel { box-shadow: 0 0 0 2px var(--on), 0 6px 14px rgba(0,0,0,.5); }
+.node .nn { font: 600 11px var(--sans); display: flex; gap: 6px; align-items: center; }
+.node .nk { font: 600 9px var(--mono); color: var(--t3); letter-spacing: .06em; }
+.node .ks { display: flex; justify-content: space-between; margin-top: 6px; }
+.node .ks .k44 { width: 58px; }
+.zoom { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 4px; z-index: 3; }
+.insp { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; overflow: hidden; }
+.insp .title { display: flex; align-items: center; gap: 8px; font: 700 12px var(--mono); letter-spacing: .12em; }
+.insp .title i { width: 3px; height: 16px; border-radius: 2px; }
+.insp .sub { font: 600 10px var(--mono); color: var(--t3); letter-spacing: .06em; }
+.face { width: 416px; display: flex; flex-direction: column; gap: 6px; }
+.sec { background: #101215; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px 8px; }
+.sec h4 { margin: 0 0 4px; font: 700 9px var(--mono); letter-spacing: .14em; color: var(--t3); text-transform: uppercase; }
+.sec .row { display: flex; justify-content: space-between; align-items: end; gap: 4px; }
+.segs { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; height: 26px; flex: 1; background: #15171b; }
+.segs span { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; font: 600 10px var(--sans); color: var(--t2); cursor: pointer; }
+.segs span + span { border-left: 1px solid var(--line); }
+.segs span.on { background: color-mix(in srgb, var(--acc) 18%, #15171b); color: var(--acc); box-shadow: inset 0 -2px 0 var(--acc); }
+.segs svg { width: 18px; height: 12px; }
+.swatch { height: 64px; border-radius: 6px; background: #07080a; position: relative; overflow: hidden; border: 1px solid var(--line); }
+
+/* Play tab */
+.playmain { display: grid; grid-template-columns: 1460px 560px; gap: 10px; padding: 10px; min-height: 0; position: relative; }
+.mods { position: relative; width: 1460px; min-height: 640px; }
+.mods .panel { position: absolute; }
+.wt { position: absolute; inset: 30px 8px 70px; border-radius: 6px; background: #07080a; overflow: hidden; }
+.wt::before { content: ""; position: absolute; inset: 10% 4% 6%; background: repeating-linear-gradient(170deg, transparent 0 7px, color-mix(in srgb, var(--c) 60%, transparent) 7px 8px);
+  transform: skewX(-18deg); opacity: .75; mask-image: linear-gradient(transparent, #000 30%, #000 80%, transparent); }
+.kr { position: absolute; left: 6px; right: 6px; bottom: 6px; display: flex; justify-content: space-between; }
+.fxsec { display: flex; flex-direction: column; min-height: 0; }
+.fxsec .list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 0 8px 8px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.fxr { display: grid; grid-template-columns: 112px 1fr; gap: 6px; padding: 6px 6px 6px 8px; border-radius: 6px; background: #101215; border: 1px solid var(--line); border-left: 3px solid var(--c); }
+.fxr.off { opacity: .45; }
+.fxr .who { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fxr .who b { font: 600 12px var(--sans); display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.fxr .who em { font: 600 9px var(--mono); color: var(--t3); font-style: normal; letter-spacing: .06em; }
+.fxr .who a { font: 600 10px var(--mono); color: var(--acc); cursor: pointer; margin-top: auto; }
+.fxr .ctl { display: grid; grid-template-columns: repeat(4, 100px); gap: 2px 0; align-content: center; }
+.flow { display: flex; justify-content: center; color: var(--t3); font: 600 10px var(--mono); height: 6px; align-items: center; margin: -4px 0; }
+
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="mock">
+  <b>MOCK-UP A2 · every control with its picture · effects as a section of the synth · SoundHack in the app's look</b>
+  <div class="seg" id="tabsel"><button data-t="play" class="on">Play</button><button data-t="fx">FX</button></div>
+  <span>Window:</span>
+  <div class="seg" id="winsel"><button data-w="fill" class="on">This window</button><button data-w="imac">iMac 2080×1100</button><button data-w="lap">Laptop 1440×900</button></div>
+  <label><input type="checkbox" id="notes" checked> notes</label>
+  <span class="sp"></span><span>Nothing here makes sound</span>
+</div>
+
+<div class="stage fill" id="stage">
+  <div class="win" id="win">
+    <div class="app t-play" id="app">
+      <div class="bar">
+        <div class="tab on" data-t="play">∿ Play</div><div class="tab">✎ Create</div><div class="tab"># Matrix</div><div class="tab" data-t="fx">⋀ FX</div>
+        <div class="pill">MIDI 1 ▾</div><div class="pill" style="width:300px">‹ &nbsp;Init <span class="grow"></span>▾ ›</div>
+        <div class="pill">A</div><div class="pill">B</div><div class="pill">Save</div>
+        <span class="grow"></span><span class="mono" style="color:var(--t3)">0 voices</span>
+      </div>
+
+      <div class="playmain" id="play">
+        <div class="mods" id="mods"></div>
+        <div class="fxsec panel">
+          <div class="ph"><span class="pw"></span>EFFECTS · VOICE → OUT<span class="grow"></span><span style="letter-spacing:0;color:var(--t3);font-family:var(--sans);font-weight:500">⋀ FX opens one on the board</span></div>
+          <div class="list" id="fxlist"></div>
+        </div>
+        <div class="n" style="left:1500px; top:640px">The effects are a section of the synth, in its own style, beside Filters: every effect in the chain, in order, each with its four main controls. One size; seven fit, more scroll.</div>
+      </div>
+
+      <div class="fxmain" id="fx" hidden>
+        <div class="board panel">
+          <div class="chain" id="chain"></div>
+          <div class="well" id="well">
+            <div class="plane" id="plane"><svg id="cables"></svg></div>
+            <div class="zoom"><span class="pill">−</span><span class="pill mono">100 %</span><span class="pill">+</span><span class="pill">Fit</span></div>
+          </div>
+        </div>
+        <div class="insp panel" id="insp"></div>
+        <div class="n" style="right:30px; bottom:30px">Spectral Dynamics in the app's own look: the same panels, knobs with their pictures and buttons as everything else. All the SoundHack faces would follow it.</div>
+      </div>
+
+      <div class="keys">
+        <div style="display:flex;gap:6px"><div style="width:16px;background:#111;border-radius:3px"></div><div style="width:16px;background:#111;border-radius:3px"></div></div>
+        <div class="kb" id="kb"></div>
+        <div class="macros" id="macros"></div>
+      </div>
+      <div class="tbar">
+        <div class="pill">▶</div><div class="pill">■</div><div class="pill">⟲</div><div class="pill">●</div>
+        <div class="pill" style="color:var(--on)">GRAIN</div><div class="pill" style="color:var(--on)">SEQ</div>
+        <div class="pill mono">00:03.125</div><span style="color:var(--t3)">ASOOR[24bit].aif · 7:32</span>
+        <span class="grow"></span><span class="mono" style="color:var(--t3)">OUT −23.1 dB</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+
+// ---- the pictures: what each control does, drawn from its value (v, 0..1)
+// in a 26 x 18 box, in the control's colour, the context dim.
+const DIM = '#4a5058';
+const P = {
+  drive: (v, c) => { let d = ''; for (let i = 0; i <= 26; i++) { const x = i, s = Math.sin(i / 26 * Math.PI * 2) * (1 + v * 5); const y = 9 - Math.max(-1, Math.min(1, s)) * 6; d += (i ? 'L' : 'M') + x + ' ' + y.toFixed(1); } return `<path d="${d}" stroke="${c}"/>`; },
+  tone: (v, c) => `<path d="M2 ${16 - v * 10} L24 ${4 + v * 10}" stroke="${c}"/><path d="M2 16H24" stroke="${DIM}"/>`,
+  mix: (v, c) => `<circle cx="9" cy="9" r="6" stroke="${DIM}"/><circle cx="${9 + v * 8}" cy="9" r="6" stroke="${c}"/>`,
+  rate: (v, c) => { let d = ''; const f = 1 + v * 4; for (let i = 0; i <= 26; i++) d += (i ? 'L' : 'M') + i + ' ' + (9 - Math.sin(i / 26 * Math.PI * 2 * f) * 6).toFixed(1); return `<path d="${d}" stroke="${c}"/>`; },
+  depth: (v, c) => { let d = ''; for (let i = 0; i <= 26; i++) d += (i ? 'L' : 'M') + i + ' ' + (9 - Math.sin(i / 26 * Math.PI * 4) * (1 + v * 6)).toFixed(1); return `<path d="M0 9H26" stroke="${DIM}"/><path d="${d}" stroke="${c}"/>`; },
+  fdbk: (v, c) => [0, 1, 2, 3, 4].map((i) => `<path d="M${3 + i * 5} 16V${16 - 12 * Math.pow(0.25 + v * 0.7, i)}" stroke="${i ? c : DIM}"/>`).join(''),
+  delay: (v, c) => `<path d="M3 16V4" stroke="${DIM}"/><path d="M${5 + v * 18} 16V8" stroke="${c}"/>`,
+  wet: (v, c) => `<path d="M4 16V${16 - 12 * (1 - v)}" stroke="${DIM}"/><path d="M12 16V${16 - 12 * v}" stroke="${c}"/>`,
+  thresh: (v, c) => `<path d="M0 12 Q4 2 8 12 T16 12 T26 12" stroke="${DIM}"/><path d="M0 ${16 - v * 13}H26" stroke="${c}" stroke-dasharray="2 2"/>`,
+  ratio: (v, c) => `<path d="M2 16 L13 6 L24 ${6 - 9 / (1 + v * 10)}" stroke="${c}"/><path d="M13 6 L24 -3" stroke="${DIM}"/>`,
+  bands: (v, c) => { const n = 3 + Math.round(v * 9); let d = ''; for (let i = 0; i < n; i++) d += `M${2 + i * 22 / (n - 1)} 15V${15 - 4 - (i % 3) * 3}`; return `<path d="${d}" stroke="${c}"/>`; },
+  att: (v, c) => `<path d="M2 16 L${3 + v * 14} 3 L24 9" stroke="${c}"/>`,
+  decay: (v, c) => { let d = 'M2 3'; for (let i = 1; i <= 24; i++) d += ` L${2 + i} ${(16 - 13 * Math.exp(-i / (2 + v * 14))).toFixed(1)}`; return `<path d="${d}" stroke="${c}"/>`; },
+  damp: (v, c) => `<path d="M2 5 H${12 + (1 - v) * 10} Q24 5 24 16" stroke="${c}"/>`,
+  pre: (v, c) => `<path d="M2 16V4" stroke="${DIM}"/><path d="M${4 + v * 12} 16V6 Q20 16 25 16" stroke="${c}"/>`,
+  low: (v, c) => `<path d="M2 ${9 - (v - .5) * 12} Q8 ${9 - (v - .5) * 12} 12 9 H24" stroke="${c}"/>`,
+  bell: (v, c) => `<path d="M2 9 Q9 9 13 ${9 - (v - .5) * 14} Q17 9 24 9" stroke="${c}"/>`,
+  high: (v, c) => `<path d="M2 9 H12 Q16 ${9 - (v - .5) * 12} 24 ${9 - (v - .5) * 12}" stroke="${c}"/>`,
+  q: (v, c) => `<path d="M2 15 Q${13 - 10 * (1 - v)} 15 13 3 Q${13 + 10 * (1 - v)} 15 24 15" stroke="${c}"/>`,
+  spacing: (v, c) => [0, 1, 2, 3].map((i) => `<path d="M${3 + i * (3 + v * 4)} 16V5" stroke="${c}"/>`).join(''),
+  out: (v, c) => `<path d="M3 16H${3 + v * 20}" stroke="${c}" stroke-width="4"/><path d="M3 16H23" stroke="${DIM}" stroke-width="1"/>`,
+  freq: (v, c) => `<path d="M2 15H24" stroke="${DIM}"/><path d="M${2 + v * 22} 15V4" stroke="${c}"/>`,
+  pitch: (v, c) => `<path d="M2 ${15 - v * 12}H24" stroke="${c}"/><path d="M2 9H24" stroke="${DIM}" stroke-dasharray="1 2"/>`,
+  width: (v, c) => `<path d="M${13 - v * 11} 9H${13 + v * 11}" stroke="${c}"/><path d="M13 4V14" stroke="${DIM}"/>`,
+  air: (v, c) => [0, 1, 2].map((i) => `<path d="M${6 + i * 7} 15 L${8 + i * 7} ${15 - 5 - v * 7 * (i + 1) / 3}" stroke="${c}"/>`).join(''),
+};
+const pic = (kind, v, c, w = 26, h = 18) => `<svg class="pic" viewBox="0 0 26 18" width="${w}" height="${h}" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${(P[kind] || P.mix)(v, c)}</svg>`;
+
+function ring(size, v, c) {
+  const cx = size / 2, r = cx - 4, a0 = Math.PI * .75, a1 = a0 + Math.PI * 1.5 * v;
+  const pt = (a) => `${(cx + r * Math.cos(a)).toFixed(2)} ${(cx + r * Math.sin(a)).toFixed(2)}`;
+  const end = a0 + Math.PI * 1.5;
+  return `<path d="M${pt(a0)}A${r} ${r} 0 1 1 ${pt(end)}" stroke="var(--track)" stroke-width="2.4" fill="none" stroke-linecap="round"/>`
+    + (v > 0.002 ? `<path d="M${pt(a0)}A${r} ${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${pt(a1)}" stroke="${c}" stroke-width="2.4" fill="none" stroke-linecap="round" style="filter:drop-shadow(0 0 2px ${c})"/>` : '');
+}
+/// The main controls' knob: the picture in a dark well, the ring round it.
+function k44(kind, label, val, v, c) {
+  return `<div class="k44"><svg width="44" height="44">${ring(44, v, c)}<circle cx="22" cy="22" r="13.5" fill="#07080a" stroke="#20242a"/>`
+    + `<g transform="translate(11 13) scale(.85)">${pic(kind, v, c).replace(/<\/?svg[^>]*>/g, '')}</g></svg><div class="kv">${val}</div><div class="kk">${label}</div></div>`;
+}
+/// The rows-of-many knob: the brushed cap and its pointer, the picture beside.
+function k26(kind, label, val, v, c) {
+  const a = Math.PI * .75 + Math.PI * 1.5 * v;
+  return `<div class="k26"><svg class="cap" width="26" height="26">${ring(26, v, c)}<circle cx="13" cy="13" r="7.5" fill="url(#brush)" stroke="#111"/>`
+    + `<path d="M13 13L${(13 + 6 * Math.cos(a)).toFixed(1)} ${(13 + 6 * Math.sin(a)).toFixed(1)}" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>`
+    + `${pic(kind, v, c)}<span class="kv">${val}</span><span class="kk">${label}</span></div>`;
+}
+
+const FX = [
+  { id: 'drive', n: 'Drive', k: 'Distortion', c: '#ff6fae', x: 140, y: 20, ks: [['drive', 'Drive', '40%', .4], ['tone', 'Tone', '30%', .3], ['mix', 'Mix', '70%', .7], ['out', 'Out', '0 dB', .6]] },
+  { id: 'chorus', n: 'White Chorus', k: 'Modulation', c: '#c58bff', x: 360, y: 20, ks: [['rate', 'Rate', '0.36 Hz', .2], ['depth', 'Depth', '4.0 ms', .5], ['fdbk', 'Fdbk', '0%', 0], ['mix', 'Mix', '50%', .5]] },
+  { id: 'echo', n: 'Echo', k: 'Delay', c: '#7cf0d0', x: 590, y: 40, ks: [['delay', 'Delay', '412 ms', .4], ['fdbk', 'Fdbk', '43%', .43], ['wet', 'Wet', '15%', .15], ['tone', 'Tone', '60%', .6]] },
+  { id: 'spec', n: 'Spectral Dynamics', k: 'Spectral', c: '#2bb39a', x: 830, y: 60, ks: [['thresh', 'Thresh', '−60 dB', .25], ['ratio', 'Ratio', '11.5:1', .7], ['bands', 'Bands', '512', .8], ['att', 'Attack', '0 ms', 0]] },
+  { id: 'mesh', n: 'Mesh 16', k: 'Reverb', c: '#8aa0c8', x: 360, y: 250, ks: [['mix', 'Mix', '100%', 1], ['delay', 'Delay', '1.17 s', .6], ['spacing', 'Spacing', '81%', .81], ['damp', 'Damp', '40%', .4]] },
+  { id: 'plate', n: 'Plate', k: 'Reverb', c: '#8aa0c8', x: 590, y: 270, ks: [['decay', 'Decay', '52%', .52], ['damp', 'Damp', '40%', .4], ['pre', 'Pre', '14 ms', .2], ['wet', 'Wet', '31%', .31]] },
+  { id: 'eq', n: 'EQ', k: 'Filter', c: '#ffb547', x: 820, y: 260, ks: [['low', 'Low', '0.0 dB', .5], ['bell', 'Bell', '0.0 dB', .5], ['high', 'High', '0.0 dB', .5], ['q', 'Q', '0.7', .3]] },
+];
+const IO = [{ id: 'voice', n: 'Voice', k: 'main', x: 10, y: 20 }, { id: 'out', n: 'Out', k: 'master', x: 990, y: 380 }];
+const CABLES = [['voice', 'drive'], ['drive', 'chorus'], ['chorus', 'echo'], ['echo', 'spec'], ['spec', 'eq'], ['drive', 'mesh'], ['mesh', 'plate'], ['plate', 'eq'], ['eq', 'out']];
+let sel = 'spec', tab = 'play';
+const off = new Set();
+
+function face(f) {
+  if (f.id === 'spec') {
+    const C = f.c;
+    const seg = (items, on) => `<div class="segs">${items.map(([k, n], i) => `<span class="${i === on ? 'on' : ''}">${pic(k, i === on ? .7 : .4, i === on ? C : '#858b94').replace('class="pic"', '')}${n}</span>`).join('')}</div>`;
+    return `<div class="face"><div class="swatch"><svg width="414" height="62" viewBox="0 0 414 62">${Array.from({ length: 64 }, (_, i) => { const h = 8 + Math.abs(Math.sin(i * .7) * 30 + Math.cos(i * .23) * 14); return `<rect x="${4 + i * 6.4}" y="${58 - h}" width="4" height="${h}" fill="${h > 30 ? C : '#3a4048'}" opacity="${h > 30 ? .9 : .7}"/>`; }).join('')}<path d="M0 28H414" stroke="${C}" stroke-dasharray="3 3"/></svg></div>`
+      + `<div class="sec"><h4>Threshold sound</h4><div class="row" style="align-items:center"><span style="color:var(--t2)">none: levels only</span><span class="pill" style="height:22px">Pick…</span></div></div>`
+      + `<div class="sec"><h4>Process</h4><div class="row" style="align-items:center">${seg([['thresh', 'gate-duck'], ['att', 'expand'], ['ratio', 'compress']], 1)}${k44('bands', 'Bands', '512', .8, C)}</div></div>`
+      + `<div class="sec"><h4>Bands</h4><div class="row">${k44('freq', 'Lowest', '20 Hz', 0, C)}${k44('freq', 'Highest', '20.0 kHz', 1, C)}${k44('bands', '3rd oct. groups', 'off', 0, C)}${k44('width', 'Spread', '0%', 0, C)}</div></div>`
+      + `<div class="sec"><h4>Amount</h4><div class="row">${k44('ratio', 'Ratio', '2.0:1', .3, C)}${k44('out', 'Gain/red.', '−60.0 dB', .1, C)}${k44('decay', 'Smoothed', 'off', 0, C)}${k44('att', 'Att/Dec', '0 ms', 0, C)}</div></div>`
+      + `<div class="sec"><h4>Threshold</h4><div class="row" style="align-items:center">${seg([['thresh', 'below'], ['pitch', 'above']], 0)}${k44('thresh', 'Threshold', '−60.0 dB', .25, C)}${k44('mix', 'Relative', 'off', 0, C)}</div></div></div>`;
+  }
+  return `<div class="face"><div class="sec"><h4>${f.k}</h4><div class="row">${f.ks.map(([k, l, val, v]) => k44(k, l, val, v, f.c)).join('')}</div></div>`
+    + `<div class="sec"><h4>More</h4><div class="row">${f.ks.map(([k, l, val, v]) => k44(k, l + ' 2', val, 1 - v, f.c)).join('')}</div></div></div>`;
+}
+
+function inspector(el) {
+  const f = FX.find((x) => x.id === sel);
+  el.innerHTML = `<div class="title"><i style="background:${f.c};box-shadow:0 0 6px ${f.c}"></i>${f.n.toUpperCase()}<span class="grow"></span><span class="pw"></span></div>`
+    + `<div class="sub">${f.k.toUpperCase()} SUITE · SOUNDHACK · 13 CONTROLS</div>${face(f)}`
+    + `<div class="sub" style="margin-top:auto">MAPPED SOURCES</div><div style="color:var(--t3)">None yet: drag a source onto any control.</div>`;
+}
+
+function board() {
+  const plane = $('#plane');
+  plane.querySelectorAll('.node').forEach((n) => n.remove());
+  const all = [...IO, ...FX];
+  for (const f of all) {
+    const io = !f.ks, d = document.createElement('div');
+    d.className = 'node panel' + (f.id === sel ? ' sel' : '');
+    d.style.left = f.x + 40 + 'px'; d.style.top = f.y + 60 + 'px';
+    if (io) d.style.width = '110px';
+    d.innerHTML = `<div class="nn">${io ? '' : `<span class="pw${off.has(f.id) ? ' off' : ''}"></span>`}${f.n}</div><div class="nk">${f.k.toUpperCase()}${io ? '' : ' · MGL'}</div>`
+      + (io ? '' : `<div class="ks">${f.ks.slice(0, 3).map(([k, l, val, v]) => k44(k, l, val, v, f.c)).join('')}</div>`);
+    if (!io) d.onclick = () => { sel = f.id; draw(); };
+    plane.appendChild(d);
+  }
+  const at = (id) => { const f = all.find((x) => x.id === id); return { x: f.x + 40, y: f.y + 60, w: f.ks ? 196 : 110 }; };
+  $('#cables').innerHTML = CABLES.map(([a, b]) => {
+    const A = at(a), B = at(b), x1 = A.x + A.w, y1 = A.y + 30, x2 = B.x, y2 = B.y + 30, dx = Math.max(40, (x2 - x1) / 2);
+    return `<path d="M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}" fill="none" stroke="#c9a46a" stroke-width="2" opacity=".75"/>`;
+  }).join('');
+  $('#chain').innerHTML = 'MAIN PATH &nbsp;' + ['Voice', 'Drive', 'White Chorus', 'Echo', 'Spectral Dynamics', 'EQ', 'Out']
+    .map((n) => `<span class="${FX.find((f) => f.n === n)?.id === sel ? 'sel' : ''}">${n}</span>`).join(' › ');
+}
+
+function mods() {
+  const m = $('#mods');
+  const Pn = (x, y, w, h, title, inner = '') => `<div class="panel" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"><div class="ph"><span class="pw"></span>${title}</div>${inner}</div>`;
+  const kr = (ks, c) => `<div class="kr">${ks.map(([k, l, v]) => k44(k, l, Math.round(v * 100) + '', v, c)).join('')}</div>`;
+  m.innerHTML = Pn(0, 0, 347, 350, 'OSC A · FORMANT SWEEP', `<div class="wt" style="--c:#7cf0d0"></div>${kr([['pitch', 'Bend', .3], ['width', 'Unison', .5], ['rate', 'Chorus', .45], ['pitch', 'Pitch', .5], ['width', 'Pan', .2]], 'var(--acc)')}`)
+    + Pn(357, 0, 347, 350, 'OSC B · VOWEL AH-OO', `<div class="wt" style="--c:#9fe870"></div>${kr([['rate', 'Sync', .18], ['depth', 'FM', .17], ['width', 'Unison', .4], ['drive', 'Crush', .75], ['width', 'Pan', .5]], '#9fe870')}`)
+    + Pn(714, 0, 347, 350, 'OSC C · GLASS ORGAN', `<div class="wt" style="--c:#5aa0ff"></div>${kr([['drive', 'Fold', .2], ['width', 'Unison', .1], ['delay', 'Delay', .46], ['pitch', 'Pitch', .5], ['width', 'Pan', .5]], '#5aa0ff')}`)
+    + Pn(1071, 0, 389, 350, 'FILTERS · ENV 2 → F1 CUTOFF', `<div class="wt" style="--c:#ffb547;bottom:200px"></div><div class="wt" style="--c:#ffb547;top:170px;bottom:70px"></div>${kr([['freq', 'Cutoff', .8], ['q', 'Res', .2], ['drive', 'Drive', .2], ['tone', 'Key', .5]], 'var(--on)')}`)
+    + Pn(0, 360, 476, 280, 'ENVELOPES', `<div class="wt" style="--c:#fff;inset:30px 8px 34px"></div>`)
+    + Pn(486, 360, 476, 280, 'LFOS', `<div class="wt" style="--c:#5ad0ff;inset:30px 8px 34px"></div>`)
+    + Pn(972, 360, 488, 160, 'MIX', ['OSC A', 'OSC B', 'OSC C', 'SUB', 'NOISE'].map((n, i) => `<div style="position:absolute;left:12px;right:12px;top:${30 + i * 24}px;display:flex;gap:8px;align-items:center;font:600 10px var(--mono);color:var(--t2)"><span style="width:50px">${n}</span><span style="flex:1;height:4px;background:var(--track);border-radius:2px;position:relative"><span style="position:absolute;left:0;top:0;bottom:0;width:${70 - i * 9}%;background:var(--t2);border-radius:2px"></span></span></div>`).join(''))
+    + Pn(972, 530, 488, 110, 'VOICE · POLY · GLIDE 494 MS')
+    + Pn(0, 650, 1460, 40, 'MORE SOURCES · VEL · NOTE · MW · AT · RAND · M1–M8 · DRAG ONTO A CONTROL')
+    + `<div class="n" style="left:20px;top:710px">The height left under the synth, when the window has it, is where the next modules you add go (RJ: "so that we can add different modules"). Nothing in it grows.</div>`;
+}
+
+function fxlist() {
+  $('#fxlist').innerHTML = FX.map((f) => `<div class="fxr ${off.has(f.id) ? 'off' : ''}" style="--c:${f.c}"><div class="who"><b><span class="pw${off.has(f.id) ? ' off' : ''}" data-pw="${f.id}"></span>${f.n}</b><em>${f.k.toUpperCase()}</em><a data-go="${f.id}">⋀ FX ›</a></div>`
+    + `<div class="ctl">${f.ks.map(([k, l, val, v]) => k26(k, l, val, v, f.c)).join('')}</div></div>`).join('<div class="flow">↓</div>');
+  $('#fxlist').querySelectorAll('[data-go]').forEach((a) => a.onclick = () => { sel = a.dataset.go; tab = 'fx'; draw(); });
+  $('#fxlist').querySelectorAll('[data-pw]').forEach((a) => a.onclick = () => { const id = a.dataset.pw; off.has(id) ? off.delete(id) : off.add(id); draw(); });
+}
+
+function keyboard() {
+  const kb = $('#kb'); let w = '', b = '';
+  const whites = 29; for (let i = 0; i < whites; i++) w += '<i></i>';
+  const pat = [1, 1, 0, 1, 1, 1, 0];
+  for (let i = 0; i < whites - 1; i++) if (pat[i % 7]) b += `<s style="left:${(i + 1) * (780 / whites) - 6.5}px"></s>`;
+  kb.innerHTML = w + b;
+  $('#macros').innerHTML = [['tone', 'Brightness', .83], ['rate', 'Movement', .97], ['width', 'Width', .89], ['drive', 'Grit', .48], ['decay', 'Space', .4], ['mix', 'Morph', .5], ['att', 'Attack', .3], ['air', 'Air', .25]]
+    .map(([k, l, v]) => k26(k, l, Math.round(v * 100) + '', v, '#b9bec6')).join('');
+}
+
+function draw() {
+  $('#fx').hidden = tab !== 'fx'; $('#play').hidden = tab !== 'play';
+  $('#app').className = 'app t-' + tab;
+  document.querySelectorAll('[data-t]').forEach((t) => t.classList.toggle('on', t.dataset.t === tab));
+  if (tab === 'fx') { board(); inspector($('#insp')); } else { mods(); fxlist(); }
+}
+
+(() => {
+  const well = $('#well'), plane = $('#plane'); let x = 0, y = 0, sx, sy, on = false;
+  well.onpointerdown = (e) => { if (e.target.closest('.node, .zoom')) return; on = true; sx = e.clientX - x; sy = e.clientY - y; well.classList.add('drag'); well.setPointerCapture(e.pointerId); };
+  well.onpointermove = (e) => { if (!on) return; x = Math.min(0, e.clientX - sx); y = Math.min(0, e.clientY - sy); plane.style.transform = `translate(${x}px,${y}px)`; };
+  well.onpointerup = () => { on = false; well.classList.remove('drag'); };
+})();
+
+document.querySelectorAll('[data-t]').forEach((t) => t.onclick = () => { tab = t.dataset.t; draw(); });
+$('#winsel').onclick = (e) => {
+  const w = e.target.dataset.w; if (!w) return;
+  $('#winsel').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.target));
+  $('#stage').className = 'stage ' + (w === 'fill' ? 'fill' : 'sized');
+  const win = $('#win');
+  win.style.width = w === 'imac' ? '2080px' : w === 'lap' ? '1440px' : '';
+  win.style.height = w === 'imac' ? '1100px' : w === 'lap' ? '860px' : '';
+};
+$('#notes').onchange = (e) => document.body.classList.toggle('hide-notes', !e.target.checked);
+document.body.insertAdjacentHTML('beforeend', '<svg width="0" height="0" style="position:absolute"><defs><radialGradient id="brush" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#5a6068"/><stop offset="1" stop-color="#22262b"/></radialGradient></defs></svg>');
+keyboard(); draw();
+</script>
+</body>
+</html>
