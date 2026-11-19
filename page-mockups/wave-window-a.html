@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wave: whole window</title>
+<style>
+:root {
+  --chassis: #121316; --panel: #1b1d21; --panel-hi: #262a30; --well: #06070a; --line: #2c3036;
+  --t: #e8eaee; --t2: #b9bec6; --t3: #858b94; --acc: #7cf0d0; --on: #ffb547; --mod: #8aa0c8; --track: #2a2e34;
+  --note: #ffd23f;
+  --sans: Inter, -apple-system, system-ui, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #08090b; color: var(--t); font: 12px/1.3 var(--sans); user-select: none; }
+
+/* the mock-up's own bar, not part of the page */
+.mock { position: fixed; inset: 0 0 auto 0; height: 34px; display: flex; align-items: center; gap: 14px; padding: 0 12px;
+  background: #2b2010; border-bottom: 1px solid #5a4318; color: #ffe2a8; z-index: 10; font-size: 12px; }
+.mock b { font-weight: 700; letter-spacing: .04em; }
+.mock .seg { display: flex; border: 1px solid #6b5020; border-radius: 6px; overflow: hidden; }
+.mock .seg button { background: none; border: 0; color: #ffe2a8; font: 600 11px var(--sans); padding: 5px 10px; cursor: pointer; }
+.mock .seg button + button { border-left: 1px solid #6b5020; }
+.mock .seg button.on { background: #ffb547; color: #1a1206; }
+.mock label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.mock .sp { flex: 1; }
+
+/* the window being simulated */
+.stage { position: fixed; inset: 34px 0 0 0; overflow: auto; }
+.win { position: relative; background: radial-gradient(120% 80% at 30% 0%, var(--panel), var(--chassis) 60%); }
+.win { overflow: auto; }
+.stage.fill .win { width: 100%; height: 100%; }
+.stage.sized .win { outline: 2px dashed #6b5020; outline-offset: 0; margin: 18px; }
+
+/* the page fills the window; inside it, everything is one size */
+/* the page fills the window, and never gets smaller than its parts: below that it scrolls */
+.app { position: absolute; inset: 0; display: grid; grid-template-rows: 40px 1fr 112px 44px; }
+.app.t-play { min-width: 1952px; min-height: 1080px; }
+.app.t-fx { min-width: 1240px; min-height: 720px; }
+.bar { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); background: linear-gradient(var(--panel-hi), var(--panel)); }
+.tab { height: 26px; padding: 0 12px; display: flex; align-items: center; gap: 6px; border-radius: 6px; color: var(--t2); font-weight: 600; cursor: pointer; }
+.tab.on { background: #23262c; color: var(--t); box-shadow: inset 0 -2px 0 var(--on); }
+.pill { height: 26px; padding: 0 10px; display: flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; color: var(--t2); background: #15171b; }
+.grow { flex: 1; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.panel { background: linear-gradient(180deg, var(--panel-hi), var(--panel) 30%); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 6px 14px rgba(0,0,0,.45); position: relative; }
+.ph { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; font: 700 10px var(--mono); letter-spacing: .12em; color: var(--t2); }
+.ph .pw { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--on); }
+
+/* keyboard and transport, docked */
+.keys { display: flex; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--panel); }
+.kb { width: 780px; flex: none; display: flex; position: relative; }
+.kb i { flex: 1; background: linear-gradient(#f3f3f1, #d9d9d5); border: 1px solid #222; border-radius: 0 0 3px 3px; margin-right: -1px; }
+.kb s { position: absolute; top: 0; width: 13px; height: 58%; background: #111; border-radius: 0 0 2px 2px; }
+.macros { display: grid; grid-template-columns: repeat(4, 64px); gap: 2px 8px; align-content: center; }
+.tbar { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-top: 1px solid var(--line); background: #0d0e11; }
+
+/* notes, the yellow ones, which the bar can hide */
+.n { position: absolute; z-index: 5; background: var(--note); color: #1a1600; font: 600 11px/1.3 var(--sans); padding: 5px 8px; border-radius: 5px;
+  box-shadow: 0 3px 10px rgba(0,0,0,.5); max-width: 270px; pointer-events: none; }
+.hide-notes .n { display: none; }
+
+/* ---------------- FX tab ---------------- */
+.fxmain { display: grid; grid-template-columns: 1fr 440px; gap: 10px; padding: 10px; min-height: 0; }
+.board { display: grid; grid-template-rows: 30px 1fr; min-height: 0; overflow: hidden; }
+.chain { display: flex; align-items: center; gap: 4px; padding: 0 8px; border-bottom: 1px solid var(--line); font: 600 10px var(--mono); color: var(--t3); }
+.chain span { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--t2); background: #15171b; cursor: pointer; }
+.chain span.sel { border-color: var(--acc); color: var(--acc); }
+.well { position: relative; overflow: hidden; cursor: grab; border-radius: 0 0 8px 8px;
+  background-image: linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px),
+    radial-gradient(120% 90% at 50% 0%, #0c0d10, var(--well) 70%);
+  background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px, auto; }
+.well.drag { cursor: grabbing; }
+.plane { position: absolute; left: 0; top: 0; width: 3000px; height: 2000px; }
+.plane > svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.node { position: absolute; width: 152px; padding: 6px 8px 8px; border-radius: 8px; cursor: pointer; }
+.node.sel { box-shadow: 0 0 0 2px var(--on), 0 6px 14px rgba(0,0,0,.5); }
+.node .nn { font: 600 11px var(--sans); }
+.node .nk { font: 600 9px var(--mono); color: var(--t3); letter-spacing: .06em; }
+.node .pic { height: 34px; margin: 5px 0; border-radius: 4px; background: #0b0c0f; position: relative; overflow: hidden; }
+.node .pic::after { content: ""; position: absolute; inset: 8px 6px; background: linear-gradient(90deg, transparent, var(--c, var(--acc)) 50%, transparent); opacity: .55; clip-path: polygon(0 60%, 10% 30%, 20% 70%, 30% 20%, 40% 80%, 50% 40%, 60% 65%, 70% 25%, 80% 75%, 90% 45%, 100% 55%, 100% 100%, 0 100%); }
+.node .ks { display: flex; justify-content: space-around; }
+.zoom { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 4px; z-index: 3; }
+.zoom .pill { height: 24px; cursor: pointer; }
+
+.insp { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; overflow: hidden; }
+.insp .title { display: flex; align-items: center; gap: 8px; font: 700 12px var(--mono); letter-spacing: .12em; }
+.insp .title i { width: 3px; height: 16px; background: var(--acc); box-shadow: 0 0 6px var(--acc); border-radius: 2px; }
+.insp .sub { font: 600 10px var(--mono); color: var(--t3); letter-spacing: .06em; }
+.face { width: 416px; flex: none; }
+
+/* a SoundHack-style face, all of it visible */
+.sh { background: #ecece8; color: #111; border: 1px solid #000; border-radius: 3px; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+.sh .tag { display: flex; gap: 6px; align-items: center; }
+.sh .tag b { background: #2bb39a; color: #fff; border: 1.5px solid #000; border-radius: 999px; padding: 2px 10px; font: 800 12px "Arial Black", sans-serif; }
+.sh .tag b + b { background: #111; }
+.sh .sec { background: #fff; border: 1.5px solid #111; border-radius: 5px; padding: 2px 6px 6px; }
+.sh .sec h4 { margin: 0 0 4px; font: 800 10px "Arial Black", sans-serif; text-transform: lowercase; }
+.sh .row { display: flex; justify-content: space-between; align-items: end; gap: 6px; }
+.sh .cell { display: grid; justify-items: center; gap: 1px; width: 74px; }
+.sh .cell .v { font: 700 10px var(--mono); }
+.sh .cell .k { font: 800 9px "Arial Black", sans-serif; color: #333; text-transform: lowercase; white-space: nowrap; }
+.sh .segs { display: flex; border: 1.5px solid #111; border-radius: 6px; overflow: hidden; flex: 1; }
+.sh .segs span { flex: 1; text-align: center; padding: 6px 0; font: 800 9px "Arial Black", sans-serif; text-transform: lowercase; }
+.sh .segs span + span { border-left: 1.5px solid #111; }
+.sh .segs span.on { background: #2bb39a; color: #fff; }
+
+/* ---------------- Play tab ---------------- */
+.playmain { display: grid; grid-template-rows: 1fr 214px; gap: 10px; padding: 10px; min-height: 0; }
+.top { display: grid; grid-template-columns: 1460px minmax(452px, 1fr); gap: 10px; min-height: 640px; }
+.mods { position: relative; width: 1460px; height: 100%; min-height: 640px; }
+.mods .panel { position: absolute; }
+.wt { position: absolute; inset: 30px 8px 70px; border-radius: 6px; background: #07080a; overflow: hidden; }
+.wt::before { content: ""; position: absolute; inset: 10% 4% 6%; background: repeating-linear-gradient(170deg, transparent 0 7px, color-mix(in srgb, var(--c) 60%, transparent) 7px 8px);
+  transform: skewX(-18deg); opacity: .75; mask-image: linear-gradient(transparent, #000 30%, #000 80%, transparent); }
+.kr { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; justify-content: space-between; }
+.dock { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; overflow: hidden; min-width: 0; }
+.dock .face { width: 416px; }
+.strip { display: flex; flex-direction: column; min-height: 0; }
+.strip .row { flex: 1; display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; padding: 0 10px 10px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.card { width: 214px; height: 168px; flex: none; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; }
+.card.sel { box-shadow: 0 0 0 2px var(--on), 0 6px 14px rgba(0,0,0,.45); }
+.card .ct { display: flex; align-items: center; gap: 6px; }
+.card .ct .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); box-shadow: 0 0 6px var(--c); }
+.card .ct b { font: 600 12px var(--sans); }
+.card .ct em { margin-left: auto; font: 600 9px var(--mono); color: var(--t3); font-style: normal; letter-spacing: .06em; }
+.card .kg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 2px; }
+.card .go { margin-top: auto; display: flex; justify-content: space-between; font: 600 10px var(--mono); color: var(--t3); }
+.card .go a { color: var(--acc); cursor: pointer; }
+.arrow { align-self: center; color: var(--t3); font: 600 14px var(--mono); flex: none; }
+
+.knob { display: grid; justify-items: center; gap: 1px; }
+.knob .kv { font: 600 9px var(--mono); color: var(--t2); }
+.knob .kk { font: 600 9px var(--sans); color: var(--t3); white-space: nowrap; }
+
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="mock">
+  <b>MOCK-UP A · Wave fills the window, everything in it one size</b>
+  <div class="seg" id="tabsel"><button data-t="play">Play</button><button data-t="fx" class="on">FX</button></div>
+  <span>Window:</span>
+  <div class="seg" id="winsel"><button data-w="fill" class="on">This window</button><button data-w="imac">iMac 2080×1100</button><button data-w="lap">Laptop 1440×900</button></div>
+  <label><input type="checkbox" id="notes" checked> notes</label>
+  <span class="sp"></span>
+  <span>Nothing here makes sound</span>
+</div>
+
+<div class="stage fill" id="stage">
+  <div class="win" id="win">
+    <div class="app t-fx" id="app">
+      <div class="bar">
+        <div class="tab" data-t="play">∿ Play</div><div class="tab">✎ Create</div><div class="tab"># Matrix</div><div class="tab on" data-t="fx">⋀ FX</div>
+        <div class="pill">MIDI 1 ▾</div><div class="pill" style="width:300px">‹ &nbsp;Init <span class="grow"></span>▾ ›</div>
+        <div class="pill">A</div><div class="pill">B</div><div class="pill">Save</div>
+        <span class="grow"></span><span class="mono" style="color:var(--t3)">0 voices</span>
+      </div>
+
+      <!-- FX tab -->
+      <div class="fxmain" id="fx">
+        <div class="board panel">
+          <div class="chain" id="chain">MAIN PATH</div>
+          <div class="well" id="well">
+            <div class="plane" id="plane"><svg id="cables"></svg></div>
+            <div class="zoom"><span class="pill">−</span><span class="pill mono">100 %</span><span class="pill">+</span><span class="pill">Fit</span></div>
+            <div class="n" style="left:20px; top:14px">The board takes all the width and height the window has. The boxes on it stay one size: drag the grid to move around, as now.</div>
+          </div>
+        </div>
+        <div class="insp panel" id="insp"></div>
+        <div class="n" style="right:28px; bottom:30px">The effect's panel is one width (440), wide enough for every face, so nothing is cut off.</div>
+      </div>
+
+      <!-- Play tab -->
+      <div class="playmain" id="play" hidden>
+        <div class="top">
+          <div class="mods" id="mods"></div>
+          <div class="dock panel" id="pdock"></div>
+        </div>
+        <div class="strip panel">
+          <div class="ph">EFFECTS · VOICE → OUT, IN ORDER <span class="grow"></span><span style="letter-spacing:0;color:var(--t3);font-family:var(--sans);font-weight:500">click one to open it above · ⋀ FX opens it on the board</span></div>
+          <div class="row" id="strip"></div>
+        </div>
+        <div class="n" style="left:1500px; top:600px">The space right of the synth: the effect you clicked, with its whole face. One width; a wider window shows more of the dock, never a bigger face.</div>
+        <div class="n" style="left:40px; bottom:250px">Every effect in the chain, in order, each card one size with its main controls. A wider window shows more cards; the rest scroll.</div>
+      </div>
+
+      <div class="keys">
+        <div style="display:flex;gap:6px"><div style="width:16px;background:#111;border-radius:3px"></div><div style="width:16px;background:#111;border-radius:3px"></div></div>
+        <div class="kb" id="kb"></div>
+        <div class="macros" id="macros"></div>
+        <span class="grow"></span>
+      </div>
+      <div class="tbar">
+        <div class="pill">▶</div><div class="pill">■</div><div class="pill">⟲</div><div class="pill">●</div>
+        <div class="pill" style="color:var(--on)">GRAIN</div><div class="pill" style="color:var(--on)">SEQ</div>
+        <div class="pill mono">00:03.125</div><span style="color:var(--t3)">ASOOR[24bit].aif · 7:32</span>
+        <span class="grow"></span><span class="mono" style="color:var(--t3)">OUT −23.1 dB</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const FX = [
+  { id: 'drive', n: 'Drive', k: 'Distortion · MGL', c: '#ff6fae', x: 150, y: 20, ks: [['Drive', '40%'], ['Tone', '30%'], ['Mix', '70%'], ['Out', '0 dB']] },
+  { id: 'chorus', n: 'White Chorus', k: 'Modulation · MGL', c: '#c58bff', x: 330, y: 20, ks: [['Rate', '0.36 Hz'], ['Depth', '4.0 ms'], ['Fdbk', '0%'], ['Mix', '50%']] },
+  { id: 'echo', n: 'Echo', k: 'Delay · MGL', c: '#7cf0d0', x: 560, y: 40, ks: [['Delay', '412 ms'], ['Fdbk', '43%'], ['Wet', '15%'], ['Tone', '60%']] },
+  { id: 'spec', n: 'Spectral Dynamics', k: 'Spectral · SoundHack', c: '#2bb39a', x: 800, y: 60, ks: [['Thresh', '−60 dB'], ['Ratio', '11.5:1'], ['Bands', '512'], ['Att', '0 ms']] },
+  { id: 'mesh', n: 'Mesh 16', k: 'Reverb · MGL', c: '#8aa0c8', x: 340, y: 240, ks: [['Mix', '100%'], ['Delay', '1.17 s'], ['Spacing', '81%'], ['Damp', '40%']] },
+  { id: 'plate', n: 'Plate', k: 'Reverb · MGL', c: '#8aa0c8', x: 560, y: 260, ks: [['Decay', '52%'], ['Damp', '40%'], ['Pre', '14 ms'], ['Wet', '31%']] },
+  { id: 'eq', n: 'EQ', k: 'Filter · MGL', c: '#ffb547', x: 760, y: 240, ks: [['Low', '0.0 dB'], ['Bell', '0.0 dB'], ['High', '0.0 dB'], ['Q', '0.7']] },
+];
+const IO = [{ id: 'voice', n: 'Voice', k: 'main', x: 10, y: 20 }, { id: 'out', n: 'Out', k: 'master', x: 900, y: 360 }];
+const CABLES = [['voice', 'drive'], ['drive', 'chorus'], ['chorus', 'echo'], ['echo', 'spec'], ['spec', 'eq'], ['drive', 'mesh'], ['mesh', 'plate'], ['plate', 'eq'], ['eq', 'out']];
+let sel = 'spec', tab = 'fx';
+
+function knob(name, val, color = 'var(--acc)', size = 30) {
+  const v = 0.2 + ((name.length * 37 + val.length * 11) % 70) / 100;
+  const r = size / 2 - 3, c = size / 2, a0 = Math.PI * 0.75, a1 = a0 + Math.PI * 1.5 * v;
+  const p = (a) => `${c + r * Math.cos(a)},${c + r * Math.sin(a)}`;
+  const big = a1 - a0 > Math.PI ? 1 : 0;
+  return `<div class="knob"><svg width="${size}" height="${size}"><circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--track)" stroke-width="3"/>`
+    + `<path d="M${p(a0)} A${r},${r} 0 ${big} 1 ${p(a1)}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round"/>`
+    + `<circle cx="${c}" cy="${c}" r="${r - 5}" fill="#2a2e34"/></svg><div class="kv">${val}</div><div class="kk">${name}</div></div>`;
+}
+
+function face(f) {
+  if (f.id === 'spec') {
+    const cell = (v, k) => `<div class="cell">${knob('', '', '#2bb39a', 38).replace('<div class="kv"></div><div class="kk"></div>', '')}<div class="v">${v}</div><div class="k">${k}</div></div>`;
+    return `<div class="face sh"><div class="tag"><b>soundhack</b><b>++spectral dynamics</b><span style="margin-left:auto;font:600 10px var(--mono)">v. 9</span></div>`
+      + `<div style="font:700 10px var(--mono)">Threshold sound &nbsp; none <span style="float:right;border:1.5px solid #111;border-radius:4px;padding:0 6px">Pick…</span></div>`
+      + `<div class="sec"><h4>process</h4><div class="row"><div class="segs"><span>gate-duck</span><span class="on">expand</span><span>compress</span></div>${cell('512', 'bands')}</div></div>`
+      + `<div class="sec"><h4>bands</h4><div class="row">${cell('20 Hz', 'lowest band')}${cell('20.00 kHz', 'highest band')}${cell('off', '3rd octave group')}</div></div>`
+      + `<div class="sec"><h4>amount</h4><div class="row">${cell('2.0:1', 'ratio')}${cell('−60.0 dB', 'gain/reduction')}${cell('off', 'smoothed')}${cell('0 ms', 'attack/decay')}</div></div>`
+      + `<div class="sec"><h4>threshold</h4><div class="row"><div class="segs" style="flex:0 0 120px"><span class="on">below</span><span>above</span></div>${cell('off', 'relative')}${cell('−60.0 dB', 'threshold')}${cell('off', 'use thresh')}</div></div></div>`;
+  }
+  return `<div class="face panel" style="padding:10px"><div class="ph" style="padding:0"><span class="pw"></span>${f.n.toUpperCase()}<span class="grow"></span><span style="color:var(--t3)">${f.k}</span></div>`
+    + `<div style="height:120px;margin:8px 0;border-radius:6px;background:#07080a;position:relative;overflow:hidden"><div style="position:absolute;inset:20px 12px;background:linear-gradient(90deg,transparent,${f.c},transparent);opacity:.5;clip-path:polygon(0 70%,8% 40%,16% 75%,24% 25%,32% 60%,40% 30%,48% 72%,56% 35%,64% 66%,72% 28%,80% 70%,88% 45%,100% 60%,100% 100%,0 100%)"></div></div>`
+    + `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">${f.ks.map(([k, v]) => knob(k, v, f.c, 40)).join('')}${f.ks.map(([k, v]) => knob(k + ' 2', v, f.c, 40)).join('')}</div></div>`;
+}
+
+function inspector(el) {
+  const f = FX.find((x) => x.id === sel);
+  el.innerHTML = `<div class="title"><i style="background:${f.c};box-shadow:0 0 6px ${f.c}"></i>${f.n.toUpperCase()}<span class="grow"></span><span class="pw" style="width:14px;height:14px;border-radius:50%;border:2px solid var(--on)"></span></div>`
+    + `<div class="sub">${f.k.toUpperCase()} · ${f.ks.length * 2} CONTROLS</div>${face(f)}`
+    + `<div class="sub" style="margin-top:auto">MAPPED SOURCES</div><div style="color:var(--t3)">None yet: drag a source onto any control.</div>`;
+}
+
+function board() {
+  const plane = $('#plane');
+  plane.querySelectorAll('.node').forEach((n) => n.remove());
+  const all = [...IO, ...FX];
+  for (const f of all) {
+    const io = !f.ks;
+    const d = document.createElement('div');
+    d.className = 'node panel' + (f.id === sel ? ' sel' : '');
+    d.style.left = f.x + 40 + 'px'; d.style.top = f.y + 60 + 'px'; d.style.setProperty('--c', f.c || '#fff');
+    if (io) d.style.width = '110px';
+    d.innerHTML = `<div class="nn">${f.n}</div><div class="nk">${f.k}</div>` + (io ? '<div class="pic" style="height:20px"></div>'
+      : `<div class="pic"></div><div class="ks">${f.ks.slice(0, 3).map(([k, v]) => knob(k, v, f.c, 24)).join('')}</div>`);
+    if (!io) d.onclick = (e) => { e.stopPropagation(); sel = f.id; draw(); };
+    plane.appendChild(d);
+  }
+  const svg = $('#cables');
+  const at = (id) => { const f = all.find((x) => x.id === id); return { x: f.x + 40, y: f.y + 60, w: f.ks ? 152 : 110 }; };
+  svg.innerHTML = CABLES.map(([a, b]) => {
+    const A = at(a), B = at(b), x1 = A.x + A.w, y1 = A.y + 40, x2 = B.x, y2 = B.y + 40, dx = Math.max(40, (x2 - x1) / 2);
+    return `<path d="M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}" fill="none" stroke="#c9a46a" stroke-width="2" opacity=".75"/>`;
+  }).join('');
+  $('#chain').innerHTML = 'MAIN PATH &nbsp;' + ['Voice', ...FX.filter((f) => !['mesh', 'plate'].includes(f.id)).map((f) => f.n), 'Out']
+    .map((n) => `<span class="${FX.find((f) => f.n === n)?.id === sel ? 'sel' : ''}">${n}</span>`).join(' › ');
+}
+
+function mods() {
+  const m = $('#mods');
+  const P = (x, y, w, h, title, inner = '') => `<div class="panel" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"><div class="ph"><span class="pw"></span>${title}</div>${inner}</div>`;
+  const kr = (names, c) => `<div class="kr">${names.map((n) => knob(n, '50', c, 28)).join('')}</div>`;
+  m.innerHTML = P(0, 0, 347, 350, 'OSC A · FORMANT SWEEP', `<div class="wt" style="--c:#7cf0d0"></div>${kr(['Bend', 'Unison', 'Chorus', 'Pitch', 'Pan'], 'var(--acc)')}`)
+    + P(357, 0, 347, 350, 'OSC B · VOWEL AH-OO', `<div class="wt" style="--c:#9fe870"></div>${kr(['Sync', 'FM', 'Unison', 'Crush', 'Pan'], '#9fe870')}`)
+    + P(714, 0, 347, 350, 'OSC C · GLASS ORGAN', `<div class="wt" style="--c:#5aa0ff"></div>${kr(['Fold', 'Unison', 'Delay', 'Pitch', 'Pan'], '#5aa0ff')}`)
+    + P(1071, 0, 389, 350, 'FILTERS · ENV 2 → F1 CUTOFF', `<div class="wt" style="--c:#ffb547;bottom:200px"></div><div class="wt" style="--c:#ffb547;top:170px;bottom:60px"></div>${kr(['Cutoff', 'Res', 'Drive', 'Key'], 'var(--on)')}`)
+    + P(0, 360, 476, 260, 'ENVELOPES', `<div class="wt" style="--c:#fff;inset:30px 8px 34px"></div>`)
+    + P(486, 360, 476, 260, 'LFOS', `<div class="wt" style="--c:#5ad0ff;inset:30px 8px 34px"></div>`)
+    + P(972, 360, 488, 150, 'MIX', ['OSC A', 'OSC B', 'OSC C', 'SUB', 'NOISE'].map((n, i) => `<div style="position:absolute;left:12px;right:12px;top:${28 + i * 22}px;display:flex;gap:8px;align-items:center;font:600 10px var(--mono);color:var(--t2)"><span style="width:50px">${n}</span><span style="flex:1;height:4px;background:var(--track);border-radius:2px;position:relative"><span style="position:absolute;left:0;top:0;bottom:0;width:${70 - i * 9}%;background:var(--t2);border-radius:2px"></span></span></div>`).join(''))
+    + P(972, 520, 488, 100, 'VOICE · POLY · GLIDE 494 MS');
+}
+
+function strip() {
+  const row = $('#strip');
+  row.innerHTML = '<div class="card panel" style="width:110px;cursor:default"><div class="ct"><span class="dot" style="--c:#fff"></span><b>Voice</b></div><div class="go"><span>in</span></div></div><span class="arrow">›</span>'
+    + FX.map((f) => `<div class="card panel ${f.id === sel ? 'sel' : ''}" data-id="${f.id}" style="--c:${f.c}"><div class="ct"><span class="dot"></span><b>${f.n}</b><em>${f.k.split(' · ')[0].toUpperCase()}</em></div>`
+      + `<div class="kg">${f.ks.map(([k, v]) => knob(k, v, f.c, 34)).join('')}</div><div class="go"><span>⏻ on</span><a data-go="${f.id}">⋀ FX ›</a></div></div>`).join('<span class="arrow">›</span>')
+    + '<span class="arrow">›</span><div class="card panel" style="width:110px;cursor:default"><div class="ct"><span class="dot" style="--c:#fff"></span><b>Out</b></div><div class="go"><span>master</span></div></div>';
+  row.querySelectorAll('.card[data-id]').forEach((c) => c.onclick = (e) => {
+    sel = c.dataset.id;
+    if (e.target.dataset.go) { tab = 'fx'; }
+    draw();
+  });
+}
+
+function keyboard() {
+  const kb = $('#kb'); let w = '', b = '';
+  const whites = 29; for (let i = 0; i < whites; i++) w += '<i></i>';
+  const pat = [1, 1, 0, 1, 1, 1, 0];
+  for (let i = 0; i < whites - 1; i++) if (pat[i % 7]) b += `<s style="left:${(i + 1) * (780 / whites) - 6.5}px"></s>`;
+  kb.innerHTML = w + b;
+  $('#macros').innerHTML = [['Brightness', '83'], ['Movement', '97'], ['Width', '89'], ['Grit', '48'], ['Space', '40'], ['Morph', '50'], ['Attack', '30'], ['Air', '25']]
+    .map(([k, v]) => knob(k, v, 'var(--t2)', 26)).join('');
+}
+
+function draw() {
+  $('#fx').hidden = tab !== 'fx'; $('#play').hidden = tab !== 'play';
+  $('#app').className = 'app t-' + tab;
+  document.querySelectorAll('[data-t]').forEach((t) => t.classList.toggle('on', t.dataset.t === tab));
+  if (tab === 'fx') { board(); inspector($('#insp')); } else { mods(); strip(); inspector($('#pdock')); }
+}
+
+// panning the board, as on the real one
+(() => {
+  const well = $('#well'), plane = $('#plane'); let x = 0, y = 0, sx, sy, on = false;
+  well.onpointerdown = (e) => { if (e.target.closest('.node, .zoom')) return; on = true; sx = e.clientX - x; sy = e.clientY - y; well.classList.add('drag'); well.setPointerCapture(e.pointerId); };
+  well.onpointermove = (e) => { if (!on) return; x = Math.min(0, e.clientX - sx); y = Math.min(0, e.clientY - sy); plane.style.transform = `translate(${x}px,${y}px)`; };
+  well.onpointerup = () => { on = false; well.classList.remove('drag'); };
+})();
+
+document.querySelectorAll('[data-t]').forEach((t) => t.onclick = () => { tab = t.dataset.t; draw(); });
+$('#winsel').onclick = (e) => {
+  const w = e.target.dataset.w; if (!w) return;
+  $('#winsel').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === e.target));
+  const st = $('#stage'), win = $('#win');
+  st.className = 'stage ' + (w === 'fill' ? 'fill' : 'sized');
+  win.style.width = w === 'imac' ? '2080px' : w === 'lap' ? '1440px' : '';
+  win.style.height = w === 'imac' ? '1100px' : w === 'lap' ? '860px' : '';
+};
+$('#notes').onchange = (e) => document.body.classList.toggle('hide-notes', !e.target.checked);
+keyboard(); draw();
+</script>
+</body>
+</html>
