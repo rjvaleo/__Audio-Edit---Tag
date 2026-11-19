@@ -645,6 +645,10 @@ impl Rack {
         if !all_finite(buf) {
             buf.fill(0.0);
             self.tripped = self.tripped.wrapping_add(1);
+            // A generator or a ringing effect can make sound from silence.
+            // The whole rejected input block must stay silent at the output.
+            if let Some(m) = &self.meters { m.clear(); }
+            return;
         }
         if let Some(m) = &self.meters {
             m.write(0, buf, channels);
