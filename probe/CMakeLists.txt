@@ -45,7 +45,8 @@ target_link_libraries(probe PRIVATE
 
 # What a Rust static library needs from each system.
 if(WIN32)
-  target_link_libraries(probe PRIVATE ws2_32 userenv ntdll bcrypt)
+  # synchronization: WaitOnAddress and WakeByAddress*, which Rust's locks use.
+  target_link_libraries(probe PRIVATE ws2_32 userenv ntdll bcrypt synchronization)
 elseif(UNIX AND NOT APPLE)
   target_link_libraries(probe PRIVATE pthread dl m)
 endif()
