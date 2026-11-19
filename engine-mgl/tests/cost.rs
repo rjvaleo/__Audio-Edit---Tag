@@ -353,3 +353,26 @@ fn stamped_message_bursts() {
     println!("{}", line("4096 stamps: next block", &second));
     println!("BURST_WORST_MS {:.6}", first[63].max(second[63]));
 }
+
+/// Sixteen four-effect branches, half fed the source and half unconnected.
+/// Non-unity gains exercise the complete kernel rather than its identity exit.
+#[test]
+#[ignore = "a measurement: run it alone, in a release build"]
+fn what_a_half_silent_patch_costs() {
+    let (mut ctl, mut audio) = engine(RATE, exact());
+    input(&mut ctl);
+    for branch in 0..16u32 {
+        let first = 100 + branch * 4;
+        for i in 0..4u32 {
+            let id = first + i;
+            ctl.add(id, Box::new(Fx::new("gain", RATE).unwrap().set(0, -6.0))).unwrap();
+            if i > 0 { ctl.connect(port(id - 1, 0), port(id, 0)).unwrap(); }
+            else if branch % 2 == 0 { ctl.connect(port(2, 0), port(id, 0)).unwrap(); }
+        }
+        ctl.connect_out(port(first + 3, 0)).unwrap();
+    }
+    ctl.commit().unwrap();
+    timed(&mut audio, 200);
+    let times = timed(&mut audio, 6000);
+    println!("{}", line("64 effects, half silent", &times));
+}
