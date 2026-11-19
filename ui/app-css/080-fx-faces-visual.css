@@ -224,47 +224,35 @@
 .lex-tab.on { box-shadow: inset 0 2px 0 #3d9eff; color: #fff; }
 
 /* SoundHack: one grid of six cells, every row full. */
-.sh-face { --pc: var(--hue); --pf: #8a8a85; background: #ecece8; color: #111; border: 1px solid #000; padding: 5px 6px 6px; border-radius: 3px; }
-.sh-top { display: flex; align-items: center; gap: 6px; }
-.sh-pill { display: inline-flex; border: 2px solid #111; border-radius: 16px; overflow: hidden; font: 800 13px/1 "Arial Rounded MT Bold", "Arial Black", sans-serif; }
-.sh-pill .a { background: var(--hue); color: #111; padding: 2px 6px 3px; }
-.sh-pill .b { background: #111; color: #fff; padding: 2px 7px 3px; }
-.sh-ver { margin-left: auto; font: 800 var(--fs-xs) "Arial Black", sans-serif; color: #555; }
-.sh-face .prism-sound-wrap { border-bottom-color: #111; }
-.sh-face .prism-sound .k, .sh-face .prism-sound-name { color: #111; }
+.sh-face { --pc: var(--hue); --pf: var(--look-text-2); background: var(--look-panel, #171b20); color: var(--look-text, #dde3e8); border: 1px solid var(--look-line, #343b43); padding: 6px; border-radius: 4px; }
+.sh-top { display: flex; align-items: center; gap: 6px; padding: 2px 0 6px; }
+.sh-pill { display: flex; gap: 8px; font: 600 var(--fs-s) var(--mono); }
+.sh-pill .a { color: var(--hue); }
+.sh-pill .b { color: var(--look-text); }
 .sh-row { display: flex; gap: 4px; }
-.prism-group.sh-sec { flex: var(--n) 1 0; min-width: 0; display: grid; align-content: start; background: #fff; border: 1.5px solid #111; border-radius: 5px; padding: 0 2px 3px; }
-.sh-sec > .prism-group-label { font: 800 var(--fs-xs) "Arial Black", sans-serif; text-transform: lowercase; letter-spacing: 0; color: #fff; background: #111; margin: 0 -2px 3px; padding: 1px 6px 2px; border-radius: 3px 3px 0 0; }
-.sh-cells { display: flex; }
-.sh-cells > * { flex: var(--w, 1) 1 0; min-width: 0; }
+.prism-group.sh-sec { flex: var(--n) 1 0; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; background: var(--look-well, #11151a); border: 1px solid var(--look-line, #343b43); border-radius: 4px; padding: 3px 2px; }
+.sh-sec > .prism-group-label { font: 600 var(--fs-xs) var(--mono); color: var(--look-text-2); margin: 0 0 5px; padding: 1px 3px; }
+.sh-cells { display: flex; flex-wrap: wrap; gap: 2px; min-width: 0; }
+.sh-cells > * { flex: var(--w, 1) 1 52px; min-width: 0; }
 .param.sh-cell { display: grid; grid-template-columns: none; justify-items: center; align-content: start; gap: 0; padding: 0; min-width: 0; }
-.sh-ring { width: 42px; height: 42px; display: block; cursor: ns-resize; touch-action: none; }
-.sh-track { fill: none; stroke: #c8c8c3; stroke-width: 5; stroke-linecap: round; }
-.sh-arc { fill: none; stroke: var(--hue); stroke-width: 5; stroke-linecap: round; }
-.sh-tip { fill: #111; }
-.sh-cap { fill: #fff; stroke: #111; stroke-width: 1.5; }
-.sh-cell .v { font: 700 var(--fs-s) var(--mono); color: #111; white-space: nowrap; max-width: 100%; overflow: hidden; text-align: center; }
-.sh-cell .k { text-transform: lowercase; font: 800 var(--fs-xs) "Arial Black", sans-serif; color: #333; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-align: center; }
-.sh-key { width: 42px; height: 42px; display: grid; justify-items: center; align-content: center; background: #fff; border: 1.5px solid #111; border-radius: 6px; cursor: pointer; padding: 0; --pc: #999; }
-.sh-key svg.pic { width: 30px; height: 22px; }
-.sh-key i { font: 800 var(--fs-xs) "Arial Black", sans-serif; font-style: normal; color: #999; }
-.sh-key.on { background: var(--hue); --pc: #111; --pf: #111; }
-.sh-key.on i { color: #111; }
-.sh-switch .k { margin-top: 12px; }
+.sh-cell .ui-lab { width: 100%; min-width: 0; }
+.sh-cell .v, .sh-cell .k { font-family: var(--mono); color: var(--look-text); white-space: normal; overflow-wrap: anywhere; text-align: center; }
+.sh-key { box-sizing: border-box; width: min(42px, 100%); min-height: 42px; display: grid; justify-items: center; align-content: center; background: var(--look-panel, #171b20); color: var(--look-text); border: 1px solid var(--look-line, #343b43); border-radius: 4px; cursor: pointer; padding: 2px; --pc: var(--look-text-2); }
+.sh-key svg.pic { max-width: 100%; width: 30px; height: 22px; }
+.sh-key i { font: normal var(--fs-xs) var(--mono); color: var(--look-text-2); }
+.sh-key.on { border-color: var(--hue); --pc: var(--hue); --pf: var(--hue); }
+.sh-switch .k { margin-top: 4px; }
 .param.sh-choice { display: grid; grid-template-columns: none; align-content: center; gap: 4px; padding: 0 2px; }
-.sh-choice .k { text-transform: lowercase; order: 2; font: 800 var(--fs-xs) "Arial Black", sans-serif; color: #333; text-align: center; }
-.sh-choice .seg { display: flex; width: 100%; margin-top: 10px; border: 1.5px solid #111; border-radius: 6px; overflow: hidden; background: #fff; padding: 0; }
-.fx-module-controls .sh-choice .seg-btn { flex: 1 1 0; width: auto; min-width: 0; overflow: hidden; text-overflow: clip; white-space: nowrap; letter-spacing: -.04em; background: #fff; border: 0; border-left: 1.5px solid #111; border-radius: 0; color: #111; font: 800 var(--fs-xs) "Arial Black", sans-serif; padding: 6px 0; margin: 0; text-transform: lowercase; }
+.sh-choice .k { order: 2; font: 600 var(--fs-xs) var(--mono); color: var(--look-text-2); text-align: center; }
+.sh-choice .seg { display: flex; width: 100%; border: 1px solid var(--look-line, #343b43); border-radius: 4px; overflow: hidden; background: var(--look-panel, #171b20); padding: 0; }
+.fx-module-controls .sh-choice .seg-btn { flex: 1 1 0; width: auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; background: transparent; border: 0; border-left: 1px solid var(--look-line, #343b43); border-radius: 0; color: var(--look-text); font: 600 var(--fs-xs) var(--mono); padding: 6px 2px; margin: 0; }
 .fx-module-controls .sh-choice .seg-btn:first-child { border-left: 0; }
-.fx-module-controls .sh-choice .seg-btn { margin: 0; }
-.fx-module-controls .sh-choice .seg-btn.active { background: var(--hue); color: #111; }
-.sh-keys .sh-cells { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); border: 1.5px solid #111; border-radius: 4px; overflow: hidden; margin: 2px 2px 0; }
-.sh-keycap { padding: 0; }
-.sh-keycap .sh-key { width: 100%; height: 36px; border: 0; border-left: 1px solid #111; border-radius: 0; }
-.sh-keycap:first-child .sh-key { border-left: 0; }
-.sh-keycap .sh-key svg.pic, .sh-keycap .sh-key i { display: none; }
-.sh-keycap .sh-key::after { content: attr(aria-label); font: 800 var(--fs-xs) "Arial Black", sans-serif; color: #111; }
-.sh-keycap .k { display: none; }
+.fx-module-controls .sh-choice .seg-btn.active { background: var(--look-well, #11151a); color: var(--hue); }
+.sh-choice .seg-btn svg.pic { display: block; width: 28px; height: 20px; max-width: 100%; margin: 0 auto 3px; }
+.sh-keys .sh-cells { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 2px; }
+.sh-keycap .sh-key { width: 100%; }
+.sh-keycap .sh-key::after { content: attr(aria-label); font: 600 var(--fs-xs) var(--mono); overflow-wrap: anywhere; }
+.sh-keycap .sh-key i, .sh-keycap .k { display: none; }
 
 /* Hyperprism: the blue window, then System 7 controls. */
 .hp-face { --pc: #1f4fd8; --pf: #555; background: #c9c9c9; color: #000; border: 1px solid #000; padding: 0 0 5px; font-family: Charcoal, Chicago, Geneva, sans-serif; }

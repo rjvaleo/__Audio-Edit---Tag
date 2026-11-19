@@ -1,6 +1,6 @@
 // ===================================================== the three suites' faces
 //
-// Hyperprism, SoundHack and Lexicon, each in the look of the original plug-in,
+// Hyperprism and Lexicon retain their original panels; SoundHack uses the app look,
 // with every control the program gives them drawn in that look and with the
 // picture of what its value does (`075-fx-faces.js`). Approved as a mock-up on
 // 1 Nov 2026; SoundHack after a design critique.
@@ -9,10 +9,10 @@
 //   impulse (which is also its Size × Reverb Time pad), and its edit pages of
 //   knobs with an LCD reading over each — Soft Row first, then the original's
 //   own pages.
-// - **SoundHack** is Tom Erbe's name pill and colour on one grid: six equal
+// - **SoundHack** uses the app's pictured knobs and dark sections: six equal
 //   cells to a row, a dial, a switch or a level taking one, a choice a bar
 //   across whole cells, sections sharing rows so none ends half empty, and a
-//   run of interval switches as one keyboard.
+//   run of interval switches in a wrapped keyboard.
 // - **Hyperprism** is the blue window — its two edges' limits in the corners —
 //   and its controls as System 7 sliders, radio buttons and boxes.
 //
@@ -127,53 +127,27 @@ function fxHyperprismFace(box, slot, shaper, byKey, groups, pad, rows, refresh) 
 
 // ──────────────────────────────────────────────────────────────── SoundHack
 
-/// A SoundHack dial: a thin ring in the plug-in's colour, the picture in a
-/// white cap, the reading and the name under it. A `.param` with its `.k` and
-/// `.v` like every rack control, so presets, resets and the dimming reach it.
+/// Shared app knobs keep the same SoundHack parameter ranges and live writes.
 function fxShDial(slot, p, hue, moved) {
-  const el = document.createElement('div');
-  el.className = 'param sh-cell';
-  el.dataset.key = p.key;
-  el.innerHTML = '<svg class="sh-ring" viewBox="0 0 60 60" role="slider" tabindex="0"></svg><span class="v"></span><span class="k"></span>';
-  el.querySelector('.k').textContent = p.label;
-  el.title = `${p.label} — drag up or down, double-click to reset`;
-  const ring = el.querySelector('.sh-ring');
-  ring.setAttribute('aria-label', p.label);
-  const log = fxIsLog(p) && !(p.step === 1), pk = FXP.picFor(p);
+  const log = fxIsLog(p) && p.step !== 1, pk = FXP.picFor(p);
   const unit = () => automationUnit(slot.params[p.key], p.min, p.max, log);
-  const paint = () => {
-    const u = unit(), v = slot.params[p.key], a0 = Math.PI * .75, a = a0 + u * Math.PI * 1.5, r = 26, c = 30;
-    const pt = (x) => `${(c + r * Math.cos(x)).toFixed(2)} ${(c + r * Math.sin(x)).toFixed(2)}`;
-    const arc = (f, t, cls) => t - f < .001 ? '' : `<path d="M${pt(f)}A${r} ${r} 0 ${t - f > Math.PI ? 1 : 0} 1 ${pt(t)}" class="${cls}"/>`;
-    ring.innerHTML = arc(a0, a0 + Math.PI * 1.5, 'sh-track') + arc(a0, a, 'sh-arc')
-      + `<circle cx="${(c + r * Math.cos(a)).toFixed(2)}" cy="${(c + r * Math.sin(a)).toFixed(2)}" r="3.6" class="sh-tip"/><circle cx="30" cy="30" r="20" class="sh-cap"/>`
-      + `<svg x="12" y="17" width="36" height="27" viewBox="0 0 64 48" class="pic" overflow="visible">${FXP.noText(FXP.PIC[pk](u, v, p))}</svg>`;
-    ring.setAttribute('aria-valuetext', fxFormat(p, v));
-    el.querySelector('.v').textContent = fxFormat(p, v);
-  };
   const to = (u) => {
     let v = unitValue(Math.max(0, Math.min(1, u)), p.min, p.max, log);
     if (p.step === 1) v = Math.round(v);
     slot.params[p.key] = v;
     liveParam(slot.id, p.key, v);
-    paint();
     moved();
   };
-  let y0 = 0, u0 = 0;
-  ring.addEventListener('pointerdown', (e) => { y0 = e.clientY; u0 = unit(); ring.setPointerCapture(e.pointerId); e.preventDefault(); });
-  ring.addEventListener('pointermove', (e) => { if (ring.hasPointerCapture(e.pointerId)) to(u0 + (y0 - e.clientY) / (e.shiftKey ? 600 : 160)); });
-  ring.addEventListener('pointerup', (e) => { if (ring.hasPointerCapture(e.pointerId)) { ring.releasePointerCapture(e.pointerId); commitRack(); } });
-  ring.addEventListener('dblclick', () => { to(automationUnit(p.default ?? p.min, p.min, p.max, log)); commitRack(); });
-  ring.addEventListener('keydown', (e) => {
-    const d = { ArrowUp: .01, ArrowRight: .01, ArrowDown: -.01, ArrowLeft: -.01 }[e.key];
-    if (!d) return;
-    e.preventDefault();
-    to(unit() + d * (e.shiftKey ? .2 : 1));
-    commitRack();
+  const el = uiKnob({
+    label: p.label, key: p.key, cls: 'param sh-cell fxk',
+    size: gsFxKnobs() ? 26 : 44, col: hue, fine: 3.75,
+    get: unit, set: to, commit: commitRack,
+    def: automationUnit(p.default ?? p.min, p.min, p.max, log),
+    text: () => fxFormat(p, slot.params[p.key]),
+    pic: (u) => FXP.noText(FXP.PIC[pk](u, slot.params[p.key], p))
   });
-  el.sync = paint;
-  el.style.setProperty('--hue', hue);
-  paint();
+  el.querySelector('.ui-kname').classList.add('k');
+  el.querySelector('.ui-kval').classList.add('v');
   return el;
 }
 
@@ -182,6 +156,7 @@ function fxShDial(slot, p, hue, moved) {
 function fxShSwitch(slot, p, moved) {
   const el = document.createElement('div');
   el.className = 'param sh-cell sh-switch';
+  el.dataset.key = p.key;
   el.innerHTML = '<button type="button" class="sh-key"></button><span class="k"></span>';
   el.querySelector('.k').textContent = p.label;
   const b = el.querySelector('button');
@@ -199,7 +174,7 @@ function fxShSwitch(slot, p, moved) {
   return el;
 }
 
-/// Tom Erbe's panel on one grid. See the header for why it is laid out so.
+/// SoundHack parameters on the app's dark section grid.
 function fxSoundHackFace(box, slot, shaper, byKey, groups, rows, refresh) {
   const kind = slot.kind.replace(/^prism:/, ''), hue = FX_SH_HUE[kind] || '#6fae3f';
   const name = shaper.label.toLowerCase().replace(/^\+\+/, '');
@@ -207,7 +182,7 @@ function fxSoundHackFace(box, slot, shaper, byKey, groups, rows, refresh) {
   box.style.setProperty('--hue', hue);
   const top = document.createElement('div');
   top.className = 'sh-top';
-  top.innerHTML = '<span class="sh-pill"><span class="a">soundhack</span><span class="b"></span></span><span class="sh-ver">v. 9 · tom erbe</span>';
+  top.innerHTML = '<span class="sh-pill"><span class="a">soundhack</span><span class="b"></span></span>';
   top.querySelector('.b').textContent = `++${name}`;
   box.appendChild(top);
   if (shaper.sound) box.appendChild(prismSoundRow(slot, shaper.sound));
@@ -225,7 +200,7 @@ function fxSoundHackFace(box, slot, shaper, byKey, groups, rows, refresh) {
     // A run of seven or more switches is a keyboard of them: one strip.
     if (ps.length >= 7 && ps.every((p) => p.toggle)) {
       sec.classList.add('sh-keys');
-      cells.style.setProperty('--n', ps.length);
+      cells.style.setProperty('--n', Math.min(7, ps.length));
       for (const p of ps) {
         const c = fxShSwitch(slot, p, moved);
         c.classList.add('sh-keycap');
@@ -240,6 +215,12 @@ function fxSoundHackFace(box, slot, shaper, byKey, groups, rows, refresh) {
         else if (p.choices && p.choices.length <= 4) {
           c = prismModuleControl(slot, p, rows, moved);
           c.classList.add('sh-choice');
+          c.dataset.key = p.key;
+          const pk = FXP.picFor(p);
+          for (const b of c.querySelectorAll('.seg-btn')) {
+            const u = automationUnit(b._val, p.min, p.max);
+            b.insertAdjacentHTML('afterbegin', FXP.svg(FXP.noText(FXP.PIC[pk](u, b._val, p))));
+          }
           c.style.setProperty('--w', Math.min(3, p.choices.length));
           w += Math.min(3, p.choices.length) - 1;
         } else c = fxShDial(slot, p, hue, moved);

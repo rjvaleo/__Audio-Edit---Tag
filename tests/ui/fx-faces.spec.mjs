@@ -151,14 +151,14 @@ test('a knob\'s own range is set on Advanced and kept with the rack', async ({ p
   expect((await stored(page)).slot.params.delayMs).toBeCloseTo(300, 0);
 });
 
-test('Hyperprism, SoundHack and Lexicon draw their originals\' faces, a picture on every control', async ({ page }) => {
+test('Hyperprism, SoundHack and Lexicon draw pictured faces, a picture on every control', async ({ page }) => {
   await openRack(page);
   for (const [kind, face] of [['prism:hp-echo', '.hp-face'], ['prism:sh-delay', '.sh-face'], ['prism:lxp-hall', '.lex-face']]) {
     const module = await add(page, kind);
     await expect(module.locator(face)).toHaveCount(1);
     expect(Math.round((await module.boundingBox()).width)).toBe(348);
     const bare = await module.evaluate((m) => [...m.querySelectorAll('.param')]
-      .filter((r) => !r.querySelector('svg.pic, .fx-pic svg') && !r.matches('.prism-sound, .seg-param, .lex-choice, .sh-choice'))
+      .filter((r) => !r.querySelector('svg.pic, .fx-pic svg, .ui-pic') && !r.matches('.prism-sound, .seg-param, .lex-choice, .sh-choice'))
       .map((r) => r.textContent.trim()));
     expect(bare, `${kind}: controls without a picture`).toEqual([]);
   }
@@ -169,11 +169,54 @@ test('Hyperprism Multi Delay has Feedback, and it stores', async ({ page }) => {
   const module = await add(page, 'prism:hp-multi-delay');
   const row = module.locator('.hp-face .param', { hasText: 'Feedback' });
   await expect(row).toHaveCount(1);
-  await expect(row.locator('svg.pic, .fx-pic svg')).not.toHaveCount(0);
+  await expect(row.locator('svg.pic, .fx-pic svg, .ui-pic')).not.toHaveCount(0);
   await row.locator('input[type=range]').evaluate((el) => {
     el.value = '40';
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
   });
   await expect.poll(async () => (await stored(page)).slot?.params?.feedback).toBe(40);
+});
+
+async function soundHackContract(page, kind) {
+  const module = await add(page, kind);
+  const face = module.locator('.sh-face');
+  await expect(face).toBeVisible();
+  const contract = await module.evaluate((el, kind) => {
+    const face = el.querySelector('.sh-face'), params = state.shapers[kind].params;
+    const fonts = [face, ...face.querySelectorAll('*')].filter((e) => getComputedStyle(e).fontFamily.includes('Arial Black')).map((e) => e.className);
+    const rgb = getComputedStyle(face).backgroundColor.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const lin = rgb.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+    return { fonts, luminance: lin[0] * .2126 + lin[1] * .7152 + lin[2] * .0722,
+      keys: [...face.querySelectorAll('.param[data-key]')].map((e) => e.dataset.key).sort(), expected: params.map((p) => p.key).sort(),
+      move: params.find((p) => !p.toggle && !p.choices && p.max > p.min && p.default < p.max)?.key };
+  }, kind);
+  expect(contract.fonts, kind).toEqual([]);
+  expect(contract.luminance, kind).toBeLessThan(.1);
+  expect(contract.keys, kind).toEqual(contract.expected);
+  const blank = await face.evaluate((el) => [...el.querySelectorAll('.ui-kn')].filter((kn) => {
+    const pic = kn.closest('.ui-knob')?.querySelector('.ui-pic');
+    return !pic?.querySelector('path[d], line, polyline, polygon, circle, rect');
+  }).length);
+  expect(blank, `${kind}: blank knobs`).toBe(0);
+  expect(await face.locator('.ui-kn').count(), `${kind}: shared knobs`).toBeGreaterThan(0);
+  if (contract.move) {
+    const before = (await stored(page)).slot.params[contract.move];
+    await turn(face.locator(`.param[data-key="${contract.move}"]`), 16);
+    await expect.poll(async () => (await stored(page)).slot.params[contract.move]).not.toBe(before);
+  }
+}
+for (const kind of ['sh-bubbler', 'sh-chebyshev', 'sh-compand', 'sh-decimate', 'sh-delay', 'sh-flipper', 'sh-matrix', 'sh-phasor', 'sh-pitchdelay']) {
+  test(`SoundHack ${kind} uses the app face and preserves every parameter`, async ({ page }) => {
+    await openRack(page);
+    await soundHackContract(page, `prism:${kind}`);
+  });
+}
+test('SoundHack spectral modes use the app face with their exact controls', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openRack(page);
+  const kinds = await page.evaluate(() => [...new Set(state.suites.flatMap((s) => s.families.flatMap((f) => f.modes))
+    .filter((m) => m.listed && m.kernel === 'spectral-dynamics' && state.shapers[m.kind]).map((m) => m.kind))]);
+  expect(kinds.length).toBeGreaterThan(0);
+  for (const kind of kinds) await soundHackContract(page, kind);
 });
