@@ -173,7 +173,7 @@ page never talks to the PC. Configure it with `AUDIOLAB_GPU_HOST=pc` (and option
   use downloads about 10 GB to the PC). Each has its own folder and venv on the PC
   (`sao`, `tangoflux`, `acestep\ACE-Step-1.5\.venv`); one is loaded at a time, and choosing
   another closes it. TangoFlux checked: two 4 s tries in 47 s, model load included. ACE-Step's
-  first run (14 Nov): download and load 847 s, then 88 s for 15 s of music. My sounds always uses Small, the only one that takes a guide sound.
+  first run (14 Nov): download and load 847 s, then 88 s for 15 s of music, with its 1.7B planner. Since 19 Nov MGL starts it without the planner (`--lm none`, `gpu::serve_command`), as the PC Controller does: about 2 s for 30 s of music once loaded, and tempo and key come only from the words. My sounds always uses Small, the only one that takes a guide sound.
 - **Nothing made on the PC is thrown away** (RJ: "Keep all the sounds in the library that are
   created on the server"). After each job the tries folder there gets a `meta.json` (model, way,
   each file's words, seed, length) and moves into `agent-net\pc-sounds-inbox`; the PC Controller

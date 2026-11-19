@@ -181,6 +181,16 @@ pub fn maker(name: &str) -> Option<(&'static str, &'static str, &'static str)> {
     MAKERS.iter().copied().find(|m| m.0 == name)
 }
 
+/// The line that starts a maker on the GPU machine, in its folder there.
+/// ACE-Step runs without its 1.7B planner (RJ: "faster without the planner"):
+/// about 2 s a piece instead of 88, and well inside the 12 GB card, as the PC
+/// Controller runs it. Its tempo and key then come only from the words.
+pub fn serve_command(dir: &str, name: &str) -> Option<String> {
+    let (model, folder, python) = maker(name)?;
+    let extra = if model == "acestep" { " --lm none" } else { "" };
+    Some(format!("cd /d {} & set \"HF_HUB_OFFLINE=1\"& {python} make.py --serve{extra}", win(&format!("{dir}/{folder}"))))
+}
+
 /// Where a request's tries land there, to tidy up after.
 pub fn tries_dir(gpu: &Gpu, model: &str, id: &str) -> String {
     format!("{}/{}/tries/mgl/{id}", gpu.dir, maker(model).map_or("sao", |m| m.1))
@@ -254,7 +264,7 @@ pub struct Made {
 /// request loads the model.
 pub fn words(gpu: &Gpu, id: &str, req: Value) -> Result<Vec<Made>, String> {
     let name = req.get("model").and_then(|m| m.as_str()).unwrap_or("sao").to_string();
-    let (model, folder, python) = maker(&name).ok_or_else(|| format!("no sound maker called {name}"))?;
+    let (model, folder, _) = maker(&name).ok_or_else(|| format!("no sound maker called {name}"))?;
     let mut guard = WORDS.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(w) = guard.as_mut() {
         if !matches!(w.child.try_wait(), Ok(None)) {
@@ -266,8 +276,8 @@ pub fn words(gpu: &Gpu, id: &str, req: Value) -> Result<Vec<Made>, String> {
     }
     if guard.is_none() {
         gpu.free_gpu();
-        let dir = win(&format!("{}/{folder}", gpu.dir));
-        let mut child = gpu.spawn(&format!("cd /d {dir} & set \"HF_HUB_OFFLINE=1\"& {python} make.py --serve"), true)?;
+        let line = serve_command(&gpu.dir, model).ok_or("no such sound maker")?;
+        let mut child = gpu.spawn(&line, true)?;
         let stdin = child.stdin.take().ok_or("no stdin")?;
         let mut out = BufReader::new(child.stdout.take().ok_or("no stdout")?);
         if let Some(err) = child.stderr.take() {
@@ -350,6 +360,21 @@ pub fn words(gpu: &Gpu, id: &str, req: Value) -> Result<Vec<Made>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ace_step_starts_without_its_planner_and_the_others_as_they_were() {
+        let dir = "C:/Users/rjval/agent-net";
+        assert_eq!(
+            super::serve_command(dir, "acestep").unwrap(),
+            "cd /d C:\\Users\\rjval\\agent-net\\acestep & set \"HF_HUB_OFFLINE=1\"& ACE-Step-1.5\\.venv\\Scripts\\python.exe make.py --serve --lm none"
+        );
+        assert_eq!(
+            super::serve_command(dir, "sao").unwrap(),
+            "cd /d C:\\Users\\rjval\\agent-net\\sao & set \"HF_HUB_OFFLINE=1\"& venv\\Scripts\\python.exe make.py --serve"
+        );
+        assert!(super::serve_command(dir, "tangoflux").unwrap().ends_with("make.py --serve"));
+        assert!(super::serve_command(dir, "nothing").is_none());
+    }
+
     use super::*;
 
     #[test]

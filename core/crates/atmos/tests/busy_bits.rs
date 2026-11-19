@@ -39,6 +39,13 @@ fn every_busy_atmos_model_keeps_every_bit() {
         println!("{name}: {hash:016x} energy {energy:.12}");
         hashes.push(hash);
     }
+    // The bits were recorded on Apple silicon. They do not survive another
+    // processor's maths library (the PC's `powf` and `exp` land a few ulps
+    // apart), so they are held on aarch64 only, as `fx`'s goldens are; every
+    // model still has to render finite sound everywhere.
+    if !cfg!(target_arch = "aarch64") {
+        return;
+    }
     assert_eq!(hashes, [
         0x9606c2cdc13c4764, 0xaab1dc9657c777e6, 0x2e799b59f7608e66,
         0xb486c95f6107e40e, 0x1556af7ff5561d0c, 0xd30ba8dd02ea012e,
