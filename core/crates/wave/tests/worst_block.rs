@@ -3,12 +3,14 @@ mod bench_support;
 use bench_support::*;
 use engine::{SynthDeck, WaveEvent, WaveShared};
 use std::sync::Arc;
-use wave::{Patch, PatchState};
+use wave::{Patch, PatchState, Wavetable, builtin_frames};
 
 #[test]
 #[ignore = "a measurement: run it alone, in a release build"]
 fn wave_worst_block() {
     let mut rows = Vec::new();
+    let tables: Vec<_> = ["Formant Sweep", "Vowel Ah–Oo", "Glass Organ"].iter()
+        .map(|name| Arc::new(Wavetable::from_frames(&builtin_frames(name).unwrap()))).collect();
     for notes in [1, 8, 16, 32] {
         for unison in [1, 16] {
             for block in [64, 128, 512] {
@@ -18,6 +20,7 @@ fn wave_worst_block() {
                 patch.set_num("amp.s", 1.0);
                 let shared = Arc::new(WaveShared::new());
                 shared.set_patch(PatchState::new(&patch));
+                for (i, table) in tables.iter().enumerate() { shared.set_table(i, table.clone()); }
                 let mut deck = SynthDeck::new(SR as f32, block, 2, shared.clone());
                 for n in 0..notes { assert!(shared.push(WaveEvent::NoteOn { note: 36 + n, vel: 0.8 })); }
                 rows.push(measure(&format!("wave-notes{notes}-unison{unison}"), block, |n| {

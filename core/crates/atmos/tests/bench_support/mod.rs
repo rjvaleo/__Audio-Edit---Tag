@@ -37,7 +37,7 @@ pub fn measure(case: &str, block: usize, mut render: impl FnMut(usize)) -> Value
 }
 fn command(cmd: &str, args: &[&str]) -> String {
     let out = Command::new(cmd).args(args).output().expect("measurement metadata");
-    assert!(out.status.success());
+    assert!(out.status.success(), "{cmd} {args:?}: {}", String::from_utf8_lossy(&out.stderr));
     String::from_utf8(out.stdout).unwrap().trim().to_owned()
 }
 pub fn write(name: &str, rows: Vec<Value>) {

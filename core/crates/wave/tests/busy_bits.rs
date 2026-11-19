@@ -1,6 +1,7 @@
 //! Five seconds of chords, unison, envelopes and a moving filter. The expected
 //! bits are recorded on the unmodified task-017 baseline before optimization.
 use wave::*;
+use std::sync::Arc;
 
 #[test]
 fn busy_wave_patch_keeps_every_bit() {
@@ -12,6 +13,9 @@ fn busy_wave_patch_keeps_every_bit() {
     let mut synth = Synth::new(48_000.0, 128);
     synth.set_seed(0x1748);
     synth.adopt(PatchState::new(&patch));
+    for (i, name) in ["Formant Sweep", "Vowel Ah–Oo", "Glass Organ"].iter().enumerate() {
+        synth.set_table(i, Arc::new(Wavetable::from_frames(&builtin_frames(name).unwrap())));
+    }
     let (mut l, mut r) = ([0.0;128], [0.0;128]);
     let mut hash = 0xcbf29ce484222325u64;
     let mut energy = 0.0f64;
@@ -35,5 +39,5 @@ fn busy_wave_patch_keeps_every_bit() {
     }
     assert!(energy > 1.0, "the busy patch must sound");
     println!("busy Wave baseline hash {hash:016x}, energy {energy:.12}");
-    assert_eq!(hash, 0xc280a5f58d64aba1, "task-017 baseline 92b39b0: no output bit may change");
+    assert_eq!(hash, 0xbb8f38b574ddcb1a, "task-017 baseline 92b39b0: no output bit may change");
 }
