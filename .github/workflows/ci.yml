@@ -1,10 +1,12 @@
 # Build it and run everything, on every push.
 #
-# One job. The browser tests drive the binary the Rust step just built — the
-# interface is `include_str!`-embedded, so testing a second build would be
-# testing a second interface — and handing a 30 MB binary between two jobs
-# meant an upload, a download, a second checkout and a few hundred megabytes a
-# day against the artifact quota, to run two things that were serial anyway.
+# Four jobs side by side, each a quarter of the browser suite. Each builds its
+# own binary and its tests drive that one — the interface is
+# `include_str!`-embedded, so testing a second build would be testing a second
+# interface, and handing a 30 MB binary between jobs meant an upload, a
+# download and a few hundred megabytes a day against the artifact quota. The
+# Rust tests run in the first only. One job in a row passed an hour on 19 Nov
+# 2026 (1,031 browser tests) and was cancelled half way through.
 
 name: CI
 
@@ -22,14 +24,18 @@ env:
 
 jobs:
   build-and-test:
-    name: Build and test
+    name: Build and test (${{ matrix.shard }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     # macOS, where the app is made and used. On Linux the suite measured the
     # runner more than the app: no AAC encoder in its Chromium, WebGL in
     # software, and the server going quiet through the prism tests (31 Oct
     # 2026: 54 failures, every one of which passes on the Mac).
     runs-on: macos-latest
-    # The browser suite alone is past half an hour on a runner, which draws
-    # WebGL in software; 30 cancelled it two thirds of the way through.
+    # The whole browser suite is past an hour and a half on a runner, which
+    # draws WebGL in software; a quarter of it and the build fit well inside.
     timeout-minutes: 60
 
     steps:
@@ -70,6 +76,7 @@ jobs:
         run: cargo build --release --manifest-path core/Cargo.toml
 
       - name: Rust tests
+        if: matrix.shard == 1
         run: cargo test --release --manifest-path core/Cargo.toml
 
       - uses: actions/setup-node@v4
@@ -82,6 +89,7 @@ jobs:
       # The static check first: it reads the source for references that do not
       # resolve, and it is seconds against the browser suite's half-minute.
       - name: Check the interface's references
+        if: matrix.shard == 1
         run: npm run check
 
       - name: Install Chromium
@@ -91,13 +99,13 @@ jobs:
       # builds its own library and data directory in a temp dir and spawns the
       # binary above on a port of its own. Nothing here needs a real library.
       - name: Browser tests
-        run: npx playwright test
+        run: npx playwright test --shard=${{ matrix.shard }}/4
 
       - name: Keep the report if it failed
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/

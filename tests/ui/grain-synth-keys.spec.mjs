@@ -91,7 +91,9 @@ test('a computer key plays a note and letting go releases it, and neither is an 
   expect(n[0]).toEqual({ on: true, key: 60, velocity: 0.8 });
   expect(n[1]).toEqual({ on: false, key: 60 });
   await expect(page.locator('#gsVelRo')).toHaveText('vel 102');
-  expect(requests.filter((p) => !p.startsWith('/api/engine/'))).toEqual([]);
+  // The engine's own calls, and the usage counts the page posts on a timer of
+  // its own, are not edits.
+  expect(requests.filter((p) => !p.startsWith('/api/engine/') && !p.startsWith('/api/analytics/'))).toEqual([]);
   expect(await page.evaluate(() => JSON.stringify([state.stretchDraft, state.edit]))).toBe(before);
 });
 

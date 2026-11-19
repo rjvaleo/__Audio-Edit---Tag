@@ -34,9 +34,12 @@ test('the overview is not on Grain, Prism, Chop, Visual or Seq, and stays on Edi
 });
 
 test('Chop has its own overview again, with the sound on it', async ({ page }) => {
+  // Coming onto Chop chops the whole sound, which on CI's runner (WebGL in
+  // software) has taken longer than 20 s.
+  test.slow();
   await open(page);
   await go(page, '[data-page="chop"]');
-  await page.waitForFunction(() => window.Chop.state.slices > 0, null, { timeout: 20_000 });
+  await page.waitForFunction(() => window.Chop.state.slices > 0, null, { timeout: 60_000 });
   await expect(page.locator('#chopOverview')).toBeVisible();
   const ink = await page.evaluate(() => {
     const cv = document.getElementById('chopOverview'), d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;

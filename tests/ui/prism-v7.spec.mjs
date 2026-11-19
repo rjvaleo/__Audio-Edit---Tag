@@ -64,8 +64,9 @@ test('choosing a Hyperprism process not in the chain adds it and puts it on the 
   await page.locator('#prismPickBtn').click();
   await page.locator('#prismPickMenu .ppick-i', { hasText: 'Flanger' }).click();
   await expect.poll(() => page.evaluate(() => prismDeck.rack.slots.map((s) => s.kind))).toContain('prism:hp-flanger');
-  const onPad = await page.evaluate(() => prismDeck.rack.slots.find((s) => s.kind === 'prism:hp-flanger').id === prismPad.source);
-  expect(onPad).toBe(true);
+  // The pad moves to it once the rack has it, which on a slow machine is a
+  // poll or two later.
+  await expect.poll(() => page.evaluate(() => prismDeck.rack.slots.find((s) => s.kind === 'prism:hp-flanger').id === prismPad.source)).toBe(true);
   await expect(page.locator('#prismPickBtn')).toContainText('Flanger');
   // Its every setting is a knob with its picture, the pad's two first.
   const keys = await page.locator('#prismSettings .prism-bar').evaluateAll((els) => els.map((e) => e.dataset.key));
