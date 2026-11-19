@@ -127,6 +127,12 @@ pattern. What each face controls, and how, is unchanged.
   largest tab, so the dock is drawn the same width on every tab. The rail and
   the transport belong to the whole app and keep their size. Only Wave's frame
   (the middle, the dock and the keys) scales.
+- **Every envelope and LFO control stays on Play** (RJ: "Keep every
+  control"). Each of the eight cells carries all of today's tile's controls:
+  the drawn shape you edit by dragging, its readings, and for an LFO
+  Free/Trig/Env and Hz/Sync. A5's four-knob cells were only the mock-up's
+  shorthand. The cells grow to hold them, and Play is packed tighter to keep
+  the iMac at 1:1.
 - **Fit the iMac at 1:1.** The breakpoint is measured against the page's real
   area in RJ's browser (about 2080 × 1100 by his screenshot; the builder
   measures it). If Play doesn't fit at 1:1 there, its panels are packed
