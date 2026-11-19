@@ -103,8 +103,11 @@ test('Map a stretch control: its ring is the LFO colour, it moves, the document 
   expect(ring.shadow).not.toBe('none');
 
   // Heard moves, repeatedly, and the setting stays where the hand left it.
+  // Sampled until it has moved four times, for up to 4 s: twelve reads 90 ms
+  // apart saw only three moves once in a full MacBook run (19 Nov), when the
+  // engine's reading came back unchanged between busy polls.
   let last = null, moved = 0;
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 45 && moved <= 3; i++) {
     const v = await heard(page, 'stretch.grain.scan');
     if (last != null && v !== last) moved++;
     last = v;
