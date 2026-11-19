@@ -34,6 +34,7 @@ impl SuiteThing {
 /// mode that is running (the one coming in, during a switch).
 pub struct Suite {
     module: ModuleKernel,
+    rate: f32,
     /// A switch that could not start yet (the one before it is still
     /// fading), in its box, tried again before every piece of audio.
     waiting: Option<Box<SuiteThing>>,
@@ -49,7 +50,13 @@ impl Suite {
     /// suite or mode.
     pub fn new(suite: &str, mode: &str, rate: f32) -> Option<Suite> {
         let module = ModuleKernel::new(find_mode(suite, mode)?, rate)?;
-        Some(Suite { module, waiting: None, carrier: None, done: None })
+        Some(Suite {
+            module,
+            rate,
+            waiting: None,
+            carrier: None,
+            done: None,
+        })
     }
 
     /// Start with a knob at this value.
@@ -91,6 +98,19 @@ impl Module for Suite {
     }
     fn outputs(&self) -> Vec<Kind> {
         vec![Kind::Audio]
+    }
+    fn latency(&self) -> usize {
+        self.module.latency_frames() as usize
+    }
+    fn tail(&self) -> usize {
+        let seconds = self.module.tail_seconds();
+        if seconds.is_finite() && seconds >= 0.0 {
+            (seconds as f64 * self.rate as f64)
+                .ceil()
+                .min(usize::MAX as f64) as usize
+        } else {
+            usize::MAX
+        }
     }
     fn prepare(&mut self, _rate: f32, _max_block: usize) {
         self.module.reset();

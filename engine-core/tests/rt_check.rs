@@ -522,3 +522,209 @@ fn all_failed_output_kinds_are_empty_before_the_downstream_module_runs() {
     ctl.collect();
     assert_eq!(ctl.take_failures(), vec![Failure::ModulePanicked { id: 1 }]);
 }
+
+struct DeclaredDelay {
+    ring: Vec<f32>,
+    at: usize,
+}
+impl DeclaredDelay {
+    fn new(n: usize) -> Self {
+        Self {
+            ring: vec![0.0; n],
+            at: 0,
+        }
+    }
+}
+impl Module for DeclaredDelay {
+    fn inputs(&self) -> Vec<Kind> {
+        vec![Kind::Audio]
+    }
+    fn outputs(&self) -> Vec<Kind> {
+        vec![Kind::Audio]
+    }
+    fn latency(&self) -> usize {
+        self.ring.len()
+    }
+    fn process(&mut self, io: &mut Io) {
+        let (input, _) = io.ins.audio(0);
+        let (l, r) = io.outs.audio(0);
+        for i in 0..l.len() {
+            l[i] = self.ring[self.at];
+            r[i] = l[i];
+            self.ring[self.at] = input[i];
+            self.at = (self.at + 1) % self.ring.len();
+        }
+    }
+}
+#[test]
+fn latency_compensation_aligns_rejoins_and_outputs_and_survives_plan_transfers_without_allocating()
+{
+    for rejoin in [false, true] {
+        let (mut ctl, mut audio) = engine(
+            RATE,
+            Config {
+                max_block: 64,
+                ..exact()
+            },
+        );
+        ctl.add(1, Box::new(Impulse::new())).unwrap();
+        ctl.add(2, Box::new(engine_core::basics::Gain::new(1.0)))
+            .unwrap();
+        ctl.add(3, Box::new(DeclaredDelay::new(73))).unwrap();
+        ctl.connect(port(1, 0), port(2, 0)).unwrap();
+        ctl.connect(port(1, 0), port(3, 0)).unwrap();
+        if rejoin {
+            ctl.add(4, Box::new(engine_core::basics::Mix::new(2)))
+                .unwrap();
+            ctl.connect(port(2, 0), port(4, 0)).unwrap();
+            ctl.connect(port(3, 0), port(4, 1)).unwrap();
+            ctl.connect_out(port(4, 0)).unwrap();
+        } else {
+            ctl.connect_out(port(2, 0)).unwrap();
+            ctl.connect_out(port(3, 0)).unwrap();
+        }
+        ctl.commit().unwrap();
+        let mut l = [0.0; 140];
+        let mut r = [0.0; 140];
+        let before = counted();
+        audio.render(&mut l[..21], &mut r[..21]);
+        assert_eq!(counted(), before);
+        ctl.commit().unwrap(); // compile-time allocations are deliberately outside the render check.
+        let before = counted();
+        for start in (21..140).step_by(7) {
+            let end = (start + 7).min(140);
+            audio.render(&mut l[start..end], &mut r[start..end]);
+        }
+        assert_eq!(counted(), before);
+        for i in 0..140 {
+            assert_eq!(
+                l[i],
+                if i == 73 { 2.0 } else { 0.0 },
+                "rejoin={rejoin}, sample={i}"
+            );
+            assert_eq!(r[i], l[i]);
+        }
+    }
+}
+
+struct FiniteTail {
+    left: usize,
+    sleep: bool,
+    calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+impl Module for FiniteTail {
+    fn inputs(&self) -> Vec<Kind> {
+        vec![Kind::Audio]
+    }
+    fn outputs(&self) -> Vec<Kind> {
+        vec![Kind::Audio]
+    }
+    fn tail(&self) -> usize {
+        48000
+    }
+    fn can_sleep(&self) -> bool {
+        self.sleep
+    }
+    fn process(&mut self, io: &mut Io) {
+        self.calls
+            .fetch_add(io.n, std::sync::atomic::Ordering::Relaxed);
+        let (input, _) = io.ins.audio(0);
+        let (l, r) = io.outs.audio(0);
+        for i in 0..l.len() {
+            if input[i] != 0.0 {
+                self.left = 48000;
+            }
+            l[i] = if self.left > 0 { 0.5 } else { 0.0 };
+            r[i] = l[i];
+            self.left = self.left.saturating_sub(1);
+        }
+    }
+}
+struct Trigger(bool);
+impl Module for Trigger {
+    fn inputs(&self) -> Vec<Kind> {
+        vec![]
+    }
+    fn outputs(&self) -> Vec<Kind> {
+        vec![Kind::Audio]
+    }
+    fn handle(&mut self, _: &EventKind) {
+        self.0 = true;
+    }
+    fn process(&mut self, io: &mut Io) {
+        let (l, r) = io.outs.audio(0);
+        l.fill(0.0);
+        r.fill(0.0);
+        if self.0 {
+            l[0] = 1.0;
+            r[0] = 1.0;
+            self.0 = false;
+        }
+    }
+}
+#[test]
+fn a_one_second_tail_finishes_then_sleeps_and_wakes_bit_identically() {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+    let make = |sleep| {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (mut ctl, audio) = engine(
+            RATE,
+            Config {
+                max_block: 64,
+                ..exact()
+            },
+        );
+        ctl.add(1, Box::new(Trigger(true))).unwrap();
+        ctl.add(
+            2,
+            Box::new(FiniteTail {
+                left: 0,
+                sleep,
+                calls: Arc::clone(&calls),
+            }),
+        )
+        .unwrap();
+        ctl.connect(port(1, 0), port(2, 0)).unwrap();
+        ctl.connect_out(port(2, 0)).unwrap();
+        ctl.commit().unwrap();
+        (ctl, audio, calls)
+    };
+    let (mut ctl, mut audio, calls) = make(true);
+    let (mut ctl_ref, mut reference, _) = make(false);
+    let (mut l, mut r, mut a, mut b) = ([0.0; 64], [0.0; 64], [0.0; 64], [0.0; 64]);
+    for block in 0..2000 {
+        if block == 1500 {
+            let event = EventKind::Param {
+                index: 0,
+                value: 1.0,
+            };
+            ctl.send(1, event).unwrap();
+            ctl_ref.send(1, event).unwrap();
+        }
+        let before = counted();
+        audio.render(&mut l, &mut r);
+        reference.render(&mut a, &mut b);
+        assert_eq!(counted(), before);
+        assert!(
+            l.iter()
+                .zip(&a)
+                .chain(r.iter().zip(&b))
+                .all(|(x, y)| x.to_bits() == y.to_bits()),
+            "block {block}"
+        );
+        if block == 1000 {
+            assert!(
+                calls.load(Ordering::Relaxed) >= 48000 && calls.load(Ordering::Relaxed) <= 48128
+            );
+        }
+        if block == 1499 {
+            assert!(calls.load(Ordering::Relaxed) <= 48128);
+        }
+        if block == 1500 {
+            assert_eq!(l[0], 0.5);
+        }
+    }
+}

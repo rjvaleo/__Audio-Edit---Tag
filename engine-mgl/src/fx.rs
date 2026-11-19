@@ -32,7 +32,11 @@ impl Fx {
     /// The effect with that catalogue id, at its defaults, made for `rate`
     /// (the engine's). None when the catalogue has no such effect.
     pub fn new(id: &str, rate: f32) -> Option<Fx> {
-        prism_fx::make(id, rate).map(|kernel| Fx { kernel, rate, place: None })
+        prism_fx::make(id, rate).map(|kernel| Fx {
+            kernel,
+            rate,
+            place: None,
+        })
     }
 
     /// Start with a knob at this value, in the effect's own units.
@@ -55,7 +59,10 @@ impl Fx {
         // Place is made for the effect's own rate. It allocates its memory
         // here, before the module goes into the patch.
         let mut place = Place::new(self.rate);
-        place.set(PlaceSettings { on: false, ..PlaceSettings::default() });
+        place.set(PlaceSettings {
+            on: false,
+            ..PlaceSettings::default()
+        });
         self.place = Some(place);
         self
     }
@@ -73,6 +80,23 @@ impl Module for Fx {
     fn outputs(&self) -> Vec<Kind> {
         vec![Kind::Audio]
     }
+    fn latency(&self) -> usize {
+        self.kernel.latency_frames() as usize
+    }
+    fn tail(&self) -> usize {
+        let seconds = self.kernel.tail_seconds();
+        if seconds.is_finite() && seconds >= 0.0 {
+            (seconds as f64 * self.rate as f64)
+                .ceil()
+                .min(usize::MAX as f64) as usize
+        } else {
+            usize::MAX
+        }
+    }
+    fn can_sleep(&self) -> bool {
+        // Audited memoryless kernels: no time, smoothing or signed-zero inversion.
+        self.place.is_none() && matches!(self.kernel.descriptor().id, "gain" | "swap")
+    }
     /// Going into the patch: the knobs set so far are where the effect
     /// starts, with no glide up to them.
     fn prepare(&mut self, _rate: f32, _max_block: usize) {
@@ -82,12 +106,16 @@ impl Module for Fx {
         }
     }
     fn handle(&mut self, event: &EventKind) {
-        let EventKind::Param { index, value } = *event else { return };
+        let EventKind::Param { index, value } = *event else {
+            return;
+        };
         if index < Self::PLACE_ON {
             self.kernel.set_param(index as usize, value);
             return;
         }
-        let Some(place) = self.place.as_mut() else { return };
+        let Some(place) = self.place.as_mut() else {
+            return;
+        };
         let mut s = place.settings();
         match index {
             Self::PLACE_ON => s.on = value >= 0.5,

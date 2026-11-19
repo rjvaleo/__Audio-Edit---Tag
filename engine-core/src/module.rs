@@ -47,7 +47,7 @@ impl<'a> Inputs<'a> {
 
     pub fn audio(&self, input: usize) -> (&'a [f32], &'a [f32]) {
         match self.buf(input) {
-            Buf::Audio { l, r } => (&l[..self.n], &r[..self.n]),
+            Buf::Audio { l, r, .. } => (&l[..self.n], &r[..self.n]),
             _ => panic!("input {input} is not audio"),
         }
     }
@@ -92,7 +92,7 @@ impl Outputs<'_> {
     pub fn audio(&mut self, output: usize) -> (&mut [f32], &mut [f32]) {
         let n = self.n;
         match &mut self.bufs[output] {
-            Buf::Audio { l, r } => (&mut l[..n], &mut r[..n]),
+            Buf::Audio { l, r, .. } => (&mut l[..n], &mut r[..n]),
             _ => panic!("output {output} is not audio"),
         }
     }
@@ -151,6 +151,19 @@ pub trait Module: Send {
 
     /// The kind of each output, in port order.
     fn outputs(&self) -> Vec<Kind>;
+
+    /// Output delay and the longest response after input stops, in frames.
+    /// Metadata is read while compiling the plan, off the audio thread.
+    fn latency(&self) -> usize {
+        0
+    }
+    fn tail(&self) -> usize {
+        0
+    }
+    /// Only effects whose silent, settled state may safely stop advancing.
+    fn can_sleep(&self) -> bool {
+        false
+    }
 
     /// Size whatever depends on the rate or the largest block. Off the audio
     /// thread, before the module is first heard.

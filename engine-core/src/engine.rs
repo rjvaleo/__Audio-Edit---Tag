@@ -215,6 +215,9 @@ impl Controller {
                 inputs: module.inputs(),
                 outputs: module.outputs(),
                 feedback_delay: module.feedback_delay(),
+                latency: module.latency(),
+                tail: module.tail(),
+                can_sleep: module.can_sleep(),
             },
         );
         self.staged.insert(id, module);
@@ -362,6 +365,11 @@ impl Controller {
     pub fn send(&mut self, module: ModuleId, kind: EventKind) -> Result<u64, PatchError> {
         if let Some(staged) = self.staged.get_mut(&module) {
             staged.handle(&kind);
+            if let Some(info) = self.now.infos.get_mut(&module) {
+                info.latency = staged.latency();
+                info.tail = staged.tail();
+                info.can_sleep = staged.can_sleep();
+            }
             return Ok(self.seq);
         }
         self.push(0, Msg::Event { module, kind })

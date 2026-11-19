@@ -31,6 +31,9 @@ pub(crate) struct Info {
     pub inputs: Vec<Kind>,
     pub outputs: Vec<Kind>,
     pub feedback_delay: usize,
+    pub latency: usize,
+    pub tail: usize,
+    pub can_sleep: bool,
 }
 
 /// A patch as the controller holds it: which modules, which cables, and
@@ -305,6 +308,46 @@ enum Op {
     Absorb(usize),
 }
 
+/// Ring and scratch storage are made during compile. Running only replaces samples.
+struct AudioDelay {
+    l: Box<[f32]>,
+    r: Box<[f32]>,
+    left: Box<[f32]>,
+    right: Box<[f32]>,
+    at: usize,
+}
+impl AudioDelay {
+    fn new(frames: usize, block: usize) -> Self {
+        Self {
+            l: vec![0.0; frames].into_boxed_slice(),
+            r: vec![0.0; frames].into_boxed_slice(),
+            left: vec![0.0; block].into_boxed_slice(),
+            right: vec![0.0; block].into_boxed_slice(),
+            at: 0,
+        }
+    }
+    fn run<'a>(&'a mut self, l: &[f32], r: &[f32]) -> (&'a [f32], &'a [f32]) {
+        for i in 0..l.len() {
+            self.left[i] = self.l[self.at];
+            self.right[i] = self.r[self.at];
+            self.l[self.at] = l[i];
+            self.r[self.at] = r[i];
+            self.at += 1;
+            if self.at == self.l.len() {
+                self.at = 0;
+            }
+        }
+        (&self.left[..l.len()], &self.right[..r.len()])
+    }
+}
+fn inherit_delay(now: &mut Src, old: &mut Src) {
+    if let (Some(now), Some(old)) = (&mut now.delay, &mut old.delay) {
+        if now.l.len() == old.l.len() {
+            std::mem::swap(now, old);
+        }
+    }
+}
+
 /// One cable into an input, or one output on its way to the sound card.
 struct Src {
     place: usize,
@@ -313,6 +356,7 @@ struct Src {
     gain: f32,
     target: f32,
     inherit: bool,
+    delay: Option<AudioDelay>,
 }
 
 impl Src {
@@ -330,6 +374,7 @@ impl Src {
             gain,
             target,
             inherit: mark.inherit,
+            delay: None,
         }
     }
 
@@ -359,6 +404,10 @@ struct Node {
     ghost: bool,
     dead: bool,
     panic: Option<Thing>,
+    tail: usize,
+    tail_left: usize,
+    asleep: bool,
+    can_sleep: bool,
     /// Where each input reads from, as a place in the pool.
     inputs: Vec<usize>,
     mixes: Vec<Mix>,
@@ -495,6 +544,26 @@ impl Plan {
             return Err(PatchError::Cycle(stuck));
         }
 
+        let mut arrival = vec![0usize; count];
+        let mut input_latency = vec![0usize; count];
+        for &(node, half) in &steps {
+            if half != 0 || on_loop[node] {
+                continue;
+            }
+            let latest = spec
+                .cables
+                .keys()
+                .filter(|c| {
+                    c.to.module == ids[node]
+                        && infos[&ids[node]].inputs[c.to.port as usize] == Kind::Audio
+                })
+                .map(|c| arrival[node_of[&c.from.module]])
+                .max()
+                .unwrap_or(0);
+            input_latency[node] = latest;
+            arrival[node] = latest.saturating_add(infos[&ids[node]].latency);
+        }
+
         // The pool: the silent inputs, then for each module its mixing
         // buffers and its outputs side by side. An audio or control input
         // with any cable gets a mixing buffer, in case the cable must fade.
@@ -565,7 +634,17 @@ impl Plan {
                         fades: matches!(kind, Kind::Audio | Kind::Control),
                         sources: from
                             .iter()
-                            .map(|(port, mark)| Src::new(place(port), *port, *mark))
+                            .map(|(port, mark)| {
+                                let mut src = Src::new(place(port), *port, *mark);
+                                if *kind == Kind::Audio && !on_loop[node] {
+                                    let frames = input_latency[node]
+                                        .saturating_sub(arrival[node_of[&port.module]]);
+                                    if frames > 0 {
+                                        src.delay = Some(AudioDelay::new(frames, max_block));
+                                    }
+                                }
+                                src
+                            })
                             .collect(),
                     });
                     buffer
@@ -577,6 +656,13 @@ impl Plan {
                 ghost: spec.ghosts.contains(&id),
                 dead: false,
                 panic: None,
+                tail: info.tail,
+                tail_left: 0,
+                asleep: false,
+                can_sleep: info.can_sleep
+                    && !on_loop[node]
+                    && !info.inputs.is_empty()
+                    && info.inputs.iter().all(|k| *k == Kind::Audio),
                 inputs,
                 mixes,
                 out_start: out_start[node],
@@ -601,10 +687,23 @@ impl Plan {
             .map(|node| infos[&ids[node]].feedback_delay)
             .min()
             .unwrap_or(usize::MAX);
+        let output_latency = spec
+            .outs
+            .keys()
+            .map(|port| arrival[node_of[&port.module]])
+            .max()
+            .unwrap_or(0);
         let out = spec
             .outs
             .iter()
-            .map(|(port, mark)| Src::new(place(port), *port, *mark))
+            .map(|(port, mark)| {
+                let mut src = Src::new(place(port), *port, *mark);
+                let frames = output_latency.saturating_sub(arrival[node_of[&port.module]]);
+                if frames > 0 {
+                    src.delay = Some(AudioDelay::new(frames, max_block));
+                }
+                src
+            })
             .collect();
 
         // Nothing can fail from here, so the new modules may move in.
@@ -660,26 +759,29 @@ impl Plan {
             if node.module.is_none() {
                 node.module = old.nodes[from].module.take();
                 node.dead = old.nodes[from].dead;
+                node.tail_left = old.nodes[from].tail_left;
             }
-            let before = &old.nodes[from];
+            let before = &mut old.nodes[from];
             for mix in node.mixes.iter_mut().filter(|mix| mix.fades) {
                 let Some(old_mix) = before
                     .mixes
-                    .iter()
+                    .iter_mut()
                     .find(|m| m.fades && m.input == mix.input)
                 else {
                     continue;
                 };
                 for src in mix.sources.iter_mut().filter(|src| src.inherit) {
-                    if let Some(was) = old_mix.sources.iter().find(|was| was.from == src.from) {
+                    if let Some(was) = old_mix.sources.iter_mut().find(|was| was.from == src.from) {
                         src.gain = was.gain;
+                        inherit_delay(src, was);
                     }
                 }
             }
         }
         for src in self.out.iter_mut().filter(|src| src.inherit) {
-            if let Some(was) = old.out.iter().find(|was| was.from == src.from) {
+            if let Some(was) = old.out.iter_mut().find(|was| was.from == src.from) {
                 src.gain = was.gain;
+                inherit_delay(src, was);
             }
         }
     }
@@ -691,6 +793,7 @@ impl Plan {
                 return;
             }
             if let Some(module) = node.module.as_mut() {
+                node.tail_left = node.tail;
                 if let Err(payload) = catch_unwind(AssertUnwindSafe(|| module.handle(event))) {
                     node.dead = true;
                     node.panic = Some(payload);
@@ -791,6 +894,33 @@ impl Plan {
             if takes_in {
                 mix_inputs(pool, &mut node.mixes, &mut node.inputs, n, step);
             }
+            if node.can_sleep && matches!(op, Op::Process(_)) {
+                let quiet = node.inputs.iter().all(|input| pool[*input].is_silent());
+                let settled = pool[node.out_start..node.out_start + node.out_count]
+                    .iter()
+                    .all(Buf::is_silent);
+                if quiet && node.tail_left == 0 && settled {
+                    if !node.asleep {
+                        // Clear the full capacity once: the next piece can
+                        // be longer than the piece that first became silent.
+                        for buf in &mut pool[node.out_start..node.out_start + node.out_count] {
+                            if let Buf::Audio { l, r, silent } = buf {
+                                l.fill(0.0);
+                                r.fill(0.0);
+                                *silent = true;
+                            }
+                        }
+                        node.asleep = true;
+                    }
+                    continue;
+                }
+                node.asleep = false;
+                if quiet {
+                    node.tail_left = node.tail_left.saturating_sub(n);
+                } else {
+                    node.tail_left = node.tail;
+                }
+            }
             let out_count = if gives_out { node.out_count } else { 0 };
             let (before, rest) = pool.split_at_mut(node.out_start);
             let (outs, after) = rest.split_at_mut(out_count);
@@ -836,7 +966,7 @@ impl Plan {
             let mut bad = false;
             for buf in outs.iter_mut() {
                 match buf {
-                    Buf::Audio { l, r } if !(all_finite(&l[..n]) && all_finite(&r[..n])) => {
+                    Buf::Audio { l, r, .. } if !(all_finite(&l[..n]) && all_finite(&r[..n])) => {
                         l[..n].fill(0.0);
                         r[..n].fill(0.0);
                         bad = true;
@@ -856,10 +986,13 @@ impl Plan {
                 }
                 *tripped += 1;
             }
+            for buf in outs.iter_mut() {
+                buf.mark_silence(n);
+            }
         }
         let mut any = false;
         for src in out.iter_mut() {
-            if let Buf::Audio { l, r } = &pool[src.place] {
+            if let Buf::Audio { l, r, .. } = &pool[src.place] {
                 any |= add_stereo(
                     &mut left[..n],
                     &mut right[..n],
@@ -904,10 +1037,26 @@ fn add_stereo(
     step: f32,
     first: bool,
 ) -> bool {
-    if src.silent() {
+    let (from_l, from_r) = match &mut src.delay {
+        Some(delay) => delay.run(from_l, from_r),
+        None => (from_l, from_r),
+    };
+    mix_stereo(l, r, from_l, from_r, &mut src.gain, src.target, step, first)
+}
+fn mix_stereo(
+    l: &mut [f32],
+    r: &mut [f32],
+    from_l: &[f32],
+    from_r: &[f32],
+    level: &mut f32,
+    target: f32,
+    step: f32,
+    first: bool,
+) -> bool {
+    if *level == 0.0 && target == 0.0 {
         return false;
     }
-    if src.full() {
+    if *level == 1.0 && target == 1.0 {
         if first {
             l.copy_from_slice(from_l);
             r.copy_from_slice(from_r);
@@ -919,7 +1068,7 @@ fn add_stereo(
         }
         return true;
     }
-    let mut gain = src.gain;
+    let mut gain = *level;
     for i in 0..l.len() {
         if first {
             l[i] = from_l[i] * gain;
@@ -928,9 +1077,9 @@ fn add_stereo(
             l[i] += from_l[i] * gain;
             r[i] += from_r[i] * gain;
         }
-        gain = moved(gain, src.target, step);
+        gain = moved(gain, target, step);
     }
-    src.gain = gain;
+    *level = gain;
     true
 }
 
@@ -976,7 +1125,11 @@ fn pair(pool: &mut [Buf], write: usize, read: usize) -> (&mut Buf, &Buf) {
 /// input with one cable at full level reads its source directly.
 fn mix_inputs(pool: &mut [Buf], mixes: &mut [Mix], inputs: &mut [usize], n: usize, step: f32) {
     for mix in mixes.iter_mut() {
-        if mix.fades && mix.sources.len() == 1 && mix.sources[0].full() {
+        if mix.fades
+            && mix.sources.len() == 1
+            && mix.sources[0].full()
+            && mix.sources[0].delay.is_none()
+        {
             inputs[mix.input] = mix.sources[0].place;
             continue;
         }
@@ -988,10 +1141,11 @@ fn mix_inputs(pool: &mut [Buf], mixes: &mut [Mix], inputs: &mut [usize], n: usiz
         for src in mix.sources.iter_mut() {
             match pair(pool, mix.scratch, src.place) {
                 (
-                    Buf::Audio { l, r },
+                    Buf::Audio { l, r, .. },
                     Buf::Audio {
                         l: from_l,
                         r: from_r,
+                        ..
                     },
                 ) => {
                     any |= add_stereo(
@@ -1016,7 +1170,7 @@ fn mix_inputs(pool: &mut [Buf], mixes: &mut [Mix], inputs: &mut [usize], n: usiz
             }
         }
         match &mut pool[mix.scratch] {
-            Buf::Audio { l, r } if !any => {
+            Buf::Audio { l, r, .. } if !any => {
                 l[..n].fill(0.0);
                 r[..n].fill(0.0);
             }
@@ -1024,6 +1178,7 @@ fn mix_inputs(pool: &mut [Buf], mixes: &mut [Mix], inputs: &mut [usize], n: usiz
             Buf::Notes(notes) => sort_by_offset(notes.as_mut_slice()),
             _ => {}
         }
+        pool[mix.scratch].mark_silence(n);
     }
 }
 
@@ -1043,7 +1198,8 @@ fn sort_by_offset(events: &mut [NoteEvent]) {
 fn silence(bufs: &mut [Buf], n: usize) {
     for buf in bufs {
         match buf {
-            Buf::Audio { l, r } => {
+            Buf::Audio { l, r, silent } => {
+                *silent = true;
                 l[..n].fill(0.0);
                 r[..n].fill(0.0);
             }

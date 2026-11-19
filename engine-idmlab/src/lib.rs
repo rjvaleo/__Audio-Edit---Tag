@@ -264,7 +264,7 @@ impl Module for Wrapped {
             self.module.process(&ctx, &mut Ports { inputs: &self.ins, outputs: &mut self.outs, params });
 
             for (k, &(l, r)) in self.layout.outs.iter().enumerate() {
-                if let Buf::Audio { l: left, r: right } = &mut io.outs.bufs[k] {
+                if let Buf::Audio { l: left, r: right, .. } = &mut io.outs.bufs[k] {
                     left[i] = self.outs[l].sum();
                     right[i] = self.outs[r].sum();
                 }

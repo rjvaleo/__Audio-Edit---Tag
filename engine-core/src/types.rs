@@ -20,7 +20,13 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 5] = [Kind::Audio, Kind::Control, Kind::Notes, Kind::Clock, Kind::Sound];
+    pub const ALL: [Kind; 5] = [
+        Kind::Audio,
+        Kind::Control,
+        Kind::Notes,
+        Kind::Clock,
+        Kind::Sound,
+    ];
 
     pub(crate) fn index(self) -> usize {
         self as usize
@@ -67,11 +73,25 @@ pub struct NoteEvent {
 
 impl NoteEvent {
     pub fn on(note: u8, velocity: f32) -> Self {
-        Self { offset: 0, kind: NoteKind::On, note, channel: 0, velocity, detune_cents: 0.0 }
+        Self {
+            offset: 0,
+            kind: NoteKind::On,
+            note,
+            channel: 0,
+            velocity,
+            detune_cents: 0.0,
+        }
     }
 
     pub fn off(note: u8) -> Self {
-        Self { offset: 0, kind: NoteKind::Off, note, channel: 0, velocity: 0.0, detune_cents: 0.0 }
+        Self {
+            offset: 0,
+            kind: NoteKind::Off,
+            note,
+            channel: 0,
+            velocity: 0.0,
+            detune_cents: 0.0,
+        }
     }
 }
 
@@ -88,7 +108,11 @@ pub struct ClockState {
 }
 
 impl ClockState {
-    pub const STOPPED: ClockState = ClockState { playing: false, bpm: 120.0, beat: 0.0 };
+    pub const STOPPED: ClockState = ClockState {
+        playing: false,
+        bpm: 120.0,
+        beat: 0.0,
+    };
 
     /// Beats per sample.
     pub fn step(&self, rate: f32) -> f64 {
@@ -114,7 +138,9 @@ pub struct NoteBuf {
 
 impl NoteBuf {
     pub(crate) fn new() -> Self {
-        Self { events: Vec::with_capacity(NOTE_CAP) }
+        Self {
+            events: Vec::with_capacity(NOTE_CAP),
+        }
     }
 
     /// False when the cable is full and the note was left out.
@@ -142,7 +168,11 @@ impl NoteBuf {
 
 /// One port's storage for one piece of audio.
 pub enum Buf {
-    Audio { l: Box<[f32]>, r: Box<[f32]> },
+    Audio {
+        l: Box<[f32]>,
+        r: Box<[f32]>,
+        silent: bool,
+    },
     Control(Box<[f32]>),
     Notes(NoteBuf),
     Clock(ClockState),
@@ -150,9 +180,21 @@ pub enum Buf {
 }
 
 impl Buf {
+    /// Positive zero only: treating negative zero as skippable would change
+    /// the bits carried by transparent effects and cables.
+    pub fn is_silent(&self) -> bool {
+        matches!(self, Buf::Audio { silent: true, .. })
+    }
+    pub(crate) fn mark_silence(&mut self, n: usize) {
+        if let Buf::Audio { l, r, silent } = self {
+            *silent = l[..n].iter().chain(&r[..n]).all(|x| x.to_bits() == 0);
+        }
+    }
+
     pub(crate) fn new(kind: Kind, len: usize) -> Self {
         match kind {
             Kind::Audio => Buf::Audio {
+                silent: true,
                 l: vec![0.0; len].into_boxed_slice(),
                 r: vec![0.0; len].into_boxed_slice(),
             },
