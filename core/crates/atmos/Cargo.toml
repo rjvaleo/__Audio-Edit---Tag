@@ -9,3 +9,9 @@ description = "Atmosphere's voice: ten physically modelled oscillators, its filt
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+
+[dev-dependencies]
+serde_json = "1"
+
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
