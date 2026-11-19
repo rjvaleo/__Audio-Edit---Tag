@@ -239,7 +239,7 @@ fn a_gain_jump_is_a_ramp_not_a_step() {
 }
 
 #[test]
-fn every_one_of_the_82_effects_builds_and_renders_finite_audio() {
+fn every_effect_on_the_board_builds_and_renders_finite_audio() {
     let (l, r) = signal(24_000);
     let mut n = 0;
     for e in fx_entries() {
@@ -253,7 +253,11 @@ fn every_one_of_the_82_effects_builds_and_renders_finite_audio() {
         assert!(ol.iter().chain(&or).all(|v| v.is_finite()), "{id} is not finite");
         assert!(ol.iter().chain(&or).all(|v| v.abs() < 100.0), "{id} blows up");
     }
-    assert_eq!(n, 82, "FX-LIST.md has 82 effects");
+    // The board offers every prism-fx effect that is not retired, so the
+    // count grows whenever prism-fx gains one (82 on 10 Nov, 97 on 19 Nov).
+    // A saved board names its effects by id, so none may go: the count only
+    // ever rises.
+    assert!(n >= 97, "the board offers {n} effects; it offered 97 on 19 Nov");
     for id in RETIRED {
         assert!(prism_fx::find(id).is_some(), "{id} is still in prism-fx for the rack");
     }
