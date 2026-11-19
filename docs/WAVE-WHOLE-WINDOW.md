@@ -1,8 +1,9 @@
-# Wave fills the window: the design (A5)
+# Wave fills the window: the design (A6)
 
-*18 November 2026. Agreed with RJ over five clickable mock-ups; he said "Yes,
-build A5". The mock-ups are in `page-mockups/wave-window-a*.html` on this
-branch (`wave-layout`); A5 is the one to build. His words are quoted as he
+*18 November 2026. Agreed with RJ over six clickable mock-ups; he said "Yes,
+build A5", then asked to keep A4's row of effects as well. The mock-ups are in
+`page-mockups/wave-window-a*.html` on this branch (`wave-layout`); A6 (A5 with
+that row) is the one to build. His words are quoted as he
 said them.*
 
 ## Why
@@ -54,8 +55,13 @@ one size and never scaled to the window, still holds above the breakpoint.)
   - Where the chain splits, its paths sit one under the other in a dashed box,
     each labelled ("path 1 · 3 effects"), until they meet again.
   - Each effect has its power button and "⋀ FX ›", which opens it on the board.
-- The space under the synth, when the window has it, is left for modules added
-  later. Nothing grows into it.
+- **A row of every effect under the synth stays as well** (A4's row, under
+  More Sources): one card per effect in order, each with its power button and
+  four main controls with their pictures. A click on a card takes the dock to
+  that effect and marks it there. RJ, pointing at the row and at the dock:
+  "this should remain - and this should be also".
+- Any height left under that, when the window has it, is left for modules
+  added later. Nothing grows into it.
 
 **Every control has its picture.** RJ: "make sure everything always has the
 little icons on it. I'm seeing some modules and some controls that don't have
@@ -106,7 +112,7 @@ pattern. What each face controls, and how, is unchanged.
 ## Left to the builder
 
 - The breakpoint's exact size: the frame's smallest size on each tab, worked
-  out from the panels. A5 needs about 2002 × 920 on Play.
+  out from the panels. A6 needs about 2002 × 1080 on Play.
 - How the dock's chain is read from the FX board's graph (`395-wave-board.js`)
   and kept in step with it, including sends and more than one split.
 - Which of today's Wave controls lack a picture (the audit), and the pictures
