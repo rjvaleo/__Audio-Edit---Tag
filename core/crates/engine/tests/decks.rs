@@ -129,3 +129,24 @@ fn each_deck_has_its_own_transport() {
     assert!(ms.is_playing(), "pausing Prism stopped the grain deck");
     assert!(ms.position() > 0);
 }
+
+#[test]
+fn an_overloaded_main_deck_never_leaves_full_scale() {
+    let src = tone(220.0, SR as usize);
+    let (mc, ms) = deck(&src);
+    let (pc, ps) = deck(&src);
+    ms.set_gain(4.0);
+    ms.play();
+    let mut decks = Decks::new(mc, pc, BLOCK, CH);
+    let mut buf = vec![0.0; BLOCK * CH];
+    assert!(src.samples.iter().any(|v| v.abs() * 4.0 > 1.0), "gain drives the main deck above full scale before its ceiling");
+    let mut peak = 0.0f32;
+    for _ in 0..20 {
+        decks.fill(&mut buf, CH, &ms, &ps);
+        assert!(buf.iter().all(|v| v.is_finite() && v.abs() <= 1.0));
+        peak = buf.iter().fold(peak, |p, v| p.max(v.abs()));
+    }
+    assert!(peak > 0.5, "the overloaded deck must be audible");
+    assert_eq!(ms.bad_blocks.load(std::sync::atomic::Ordering::Relaxed), 0);
+    assert_eq!(ps.bad_blocks.load(std::sync::atomic::Ordering::Relaxed), 0);
+}

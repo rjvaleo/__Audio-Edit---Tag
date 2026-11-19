@@ -257,6 +257,35 @@ fn a_stop_leaves_from_the_last_frame_rather_than_cutting() {
     assert!(buf.iter().all(|s| *s == 0.0));
 }
 
+#[test]
+fn a_seek_while_playing_leaves_from_the_last_frame() {
+    let src = Arc::new(Source {
+        samples: (0..96_000).map(|i| (i as f32 * 30.0 * std::f32::consts::TAU / 48_000.0).sin() * 0.5).collect(),
+        channels: 1,
+    });
+    let sp = StreamParams::new(96_000, 48_000);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let straight = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(512, 1, sp, Arc::clone(&src));
+    let mut reference = Core::new(512, 1, sp, Arc::clone(&src));
+    shared.play();
+    let mut buf = vec![0.0; 512];
+    core.fill(&mut buf, 1, &shared);
+    let last = buf[511];
+    shared.request_seek(1_200);
+    straight.request_seek(1_200);
+    straight.play();
+    let mut expected = vec![0.0; 512];
+    reference.fill(&mut expected, 1, &straight);
+    core.fill(&mut buf, 1, &shared);
+    assert!((expected[0] - last).abs() > 0.1, "the seek really changes the wave's level");
+    assert_eq!(buf[0], last);
+    let sine_step = src.samples.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
+    let worst = buf.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
+    assert!(worst <= sine_step + 0.5 * 0.02, "step {worst}, sine step {sine_step}");
+    assert_eq!(&buf[240..], &expected[240..], "after five milliseconds only the sought audio remains");
+}
+
 /// A new level arrives over a short ramp, not on one sample.
 #[test]
 fn turning_the_level_down_is_a_ramp_not_a_step() {
@@ -268,7 +297,14 @@ fn turning_the_level_down_is_a_ramp_not_a_step() {
     core.fill(&mut buf, 1, &shared);
     let worst = buf.windows(2).map(|w| (w[1] - w[0]).abs()).fold((buf[0] - full).abs(), f32::max);
     assert!(worst < full.abs() * 0.01, "a step of {worst} from a level of {full}");
-    assert!((buf[511] - full * 0.25).abs() < full.abs() * 1e-3, "it did not arrive: {}", buf[511]);
+    // Compare at the same source frame and through the same soft ceiling:
+    // the ceiling is not linear in the level.
+    let (mut reference, straight) = playing_core(1);
+    straight.set_gain(0.25);
+    let mut expected = vec![0.0; 512];
+    reference.fill(&mut expected, 1, &straight);
+    reference.fill(&mut expected, 1, &straight);
+    assert_eq!(&buf[480..], &expected[480..], "the ramp did not arrive at the steady level");
     // Mute is the same ramp, to nothing.
     shared.set_mute(true);
     core.fill(&mut buf, 1, &shared);
