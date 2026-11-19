@@ -83,6 +83,23 @@ test('Wave patch: the bar saves, renames and deletes through the engine, and loa
   expect((await (await page.request.get('/api/wave/patch')).json()).name).toBe('Init');
 });
 
+test('Wave patch: the bar says it is busy while a save is still going, and not after', async ({ page }) => {
+  await home(page);
+  await page.locator('#leftRail .rl-item[data-mode="synth"]').click();
+  await page.waitForFunction(() => WV.connected && WV.built, null, { timeout: 8_000 });
+  // The engine takes its time over the save, as on a slow machine.
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await page.route('**/api/wave/presets', async (route) => {
+    if (route.request().method() === 'POST') await held;
+    await route.continue();
+  });
+  await pbSaveAs(page, 'wv', `Busy patch ${stamp()}`, { settled: false });
+  await expect(page.locator('#wvPb')).toHaveAttribute('aria-busy', 'true');
+  release();
+  await expect(page.locator('#wvPb')).toHaveAttribute('aria-busy', 'false');
+});
+
 test('Wave FX board: the bar saves to the engine and loads it back', async ({ page }) => {
   await home(page);
   await page.locator('#leftRail .rl-item[data-mode="synth"]').click();

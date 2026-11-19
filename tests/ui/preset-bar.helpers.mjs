@@ -31,15 +31,18 @@ export async function pbMenu(page, id, item) {
   await pop(page).locator(`[data-mi="${item}"]`).click();
 }
 
-/// Save as… (or Rename…), with the name typed into the ask.
-export async function pbAsk(page, id, item, name) {
+/// Save as… (or Rename…), with the name typed into the ask; then, unless told
+/// not to, wait until the bar has finished it (`aria-busy` false), so a change
+/// made next is not taken as part of what was saved.
+export async function pbAsk(page, id, item, name, { settled = true } = {}) {
   await pbMenu(page, id, item);
   const field = pop(page).locator('.pbar-field');
   await field.fill(name);
   await field.press('Enter');
+  if (settled) await page.waitForFunction((sel) => document.querySelector(sel)?.getAttribute('aria-busy') !== 'true', `#${id}Pb`, { timeout: 10_000 });
 }
-export const pbSaveAs = (page, id, name) => pbAsk(page, id, 'saveAs', name);
-export const pbRename = (page, id, name) => pbAsk(page, id, 'rename', name);
+export const pbSaveAs = (page, id, name, opts) => pbAsk(page, id, 'saveAs', name, opts);
+export const pbRename = (page, id, name, opts) => pbAsk(page, id, 'rename', name, opts);
 
 /// Delete…, and yes when it asks.
 export async function pbDelete(page, id) {

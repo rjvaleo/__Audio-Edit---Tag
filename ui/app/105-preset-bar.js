@@ -119,12 +119,18 @@ function pbarMake(o) {
     if (o.ab) el.querySelectorAll('.pbar-seg [data-ab]').forEach((b) => b.classList.toggle('on', b.dataset.ab === o.ab.get()));
   };
   /// Run one of the adapter's verbs: the bar repainted after, and a failure
-  /// said rather than thrown.
+  /// said rather than thrown. `aria-busy` is true from the first moment until
+  /// it has settled: what is loaded or saved is not the clean state till then.
+  bar.busy = 0;
+  el.setAttribute('aria-busy', 'false');
   bar.run = async (f, settle = true, landing = false) => {
+    bar.busy++;
+    el.setAttribute('aria-busy', 'true');
     try { await f(); } catch (e) { pbarSay(e?.message || String(e)); }
     if (settle) bar.settle(landing);
     bar.shown = '';
     bar.mark();
+    if (--bar.busy === 0) el.setAttribute('aria-busy', 'false');
   };
   bar.load = (p) => bar.run(() => a.load(p), true, true);
   bar.step = async (by) => {
