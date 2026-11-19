@@ -195,13 +195,29 @@ pub fn write(song: &Song) -> Vec<u8> {
     for part in &song.parts {
         let ch = part.channel.clamp(1, 16) - 1;
         let mut ev = vec![(0, 0, meta(0x03, part.name.as_bytes()))];
-        for n in &part.notes {
+        let mut notes: Vec<_> = part.notes.iter().enumerate().map(|(index, n)| {
             let on = at(n.bar, n.step);
             let off = at(n.bar, n.step + n.steps).max(on + 1);
-            let vel = (30.0 + n.vel.clamp(0.0, 1.0) * 97.0).round() as u8;
-            // A note's end sorts before another's start on the same tick, so a repeated note is struck again.
-            ev.push((on, 2, vec![0x90 | ch, n.note.min(127), vel.clamp(1, 127)]));
-            ev.push((off, 1, vec![0x80 | ch, n.note.min(127), 0]));
+            (n.note.min(127), on, off, (30.0 + n.vel.clamp(0.0, 1.0) * 97.0).round() as u8, index)
+        }).collect();
+        // Stable order keeps the last strike when quantization puts two of
+        // the same pitch on one tick. There is no earlier note left to sound.
+        notes.sort_by_key(|n| (n.0, n.1));
+        let mut ready = Vec::with_capacity(notes.len());
+        for (i, &(pitch, on, mut off, vel, index)) in notes.iter().enumerate() {
+            if let Some(next) = notes.get(i + 1).filter(|next| next.0 == pitch) {
+                if next.1 == on { continue; }
+                off = off.min(next.1);
+            }
+            ready.push((index, pitch, on, off, vel));
+        }
+        // Keep the caller's event order when unrelated notes share a tick.
+        ready.sort_by_key(|n| n.0);
+        for (_, pitch, on, off, vel) in ready {
+            // A note ends before the next strike of its pitch, including when
+            // both land on the same tick. Other pitches keep their full length.
+            ev.push((on, 2, vec![0x90 | ch, pitch, vel.clamp(1, 127)]));
+            ev.push((off, 1, vec![0x80 | ch, pitch, 0]));
         }
         track(ev, &mut out);
     }
