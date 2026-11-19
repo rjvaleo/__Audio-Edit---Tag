@@ -2,6 +2,8 @@
 //! one-pole filter, a DC blocker, a two-pole resonator, a state-variable
 //! filter, an envelope, a noise source. No allocation after construction.
 
+use crate::memo::Memo;
+
 /// The longest note period the delay lines hold: 20 Hz at 96 kHz, and some.
 pub const MAX_DELAY: usize = 8192;
 
@@ -151,6 +153,7 @@ impl Mode {
 /// stable however fast its cutoff moves.
 #[derive(Clone, Default)]
 pub struct Svf {
+    coefficients: Memo<3, [f32; 4]>,
     ic1: f32,
     ic2: f32,
 }
@@ -158,11 +161,23 @@ impl Svf {
     /// One sample at `hz` and `q`; `kind` 0 low, 1 band, 2 high.
     #[inline]
     pub fn tick(&mut self, x: f32, hz: f32, q: f32, kind: u8, sr: f32) -> f32 {
-        let g = (std::f32::consts::PI * (hz / sr).clamp(1e-5, 0.49)).tan();
-        let k = 1.0 / q.max(0.3);
-        let a1 = 1.0 / (1.0 + g * (g + k));
-        let a2 = g * a1;
-        let a3 = g * a2;
+        self.tick_coefficients(x, hz, q, kind, sr, false)
+    }
+    #[inline]
+    pub(crate) fn tick_coefficients(&mut self, x: f32, hz: f32, q: f32, kind: u8, sr: f32, cache: bool) -> f32 {
+        let calculate = || {
+            let g = (std::f32::consts::PI * (hz / sr).clamp(1e-5, 0.49)).tan();
+            let k = 1.0 / q.max(0.3);
+            let a1 = 1.0 / (1.0 + g * (g + k));
+            let a2 = g * a1;
+            let a3 = g * a2;
+            [k, a1, a2, a3]
+        };
+        let [k, a1, a2, a3] = if cache {
+            self.coefficients.get([hz, q, sr], calculate)
+        } else {
+            calculate()
+        };
         let v3 = x - self.ic2;
         let v1 = a1 * self.ic1 + a2 * v3;
         let v2 = self.ic2 + a2 * self.ic1 + a3 * v3;
@@ -181,6 +196,9 @@ impl Svf {
 #[derive(Clone, Default)]
 pub struct Adsr {
     pub level: f32,
+    attack_math: Memo<2, f32>,
+    decay_math: Memo<2, f32>,
+    release_math: Memo<2, f32>,
     stage: u8, // 0 idle, 1 attack, 2 decay/sustain, 3 release
 }
 impl Adsr {
@@ -203,18 +221,18 @@ impl Adsr {
     pub fn tick(&mut self, a: f32, d: f32, s: f32, r: f32, sr: f32) -> f32 {
         match self.stage {
             1 => {
-                self.level += 1.0 / (a.max(0.0005) * sr);
+                self.level += self.attack_math.get([a, sr], || 1.0 / (a.max(0.0005) * sr));
                 if self.level >= 1.0 {
                     self.level = 1.0;
                     self.stage = 2;
                 }
             }
             2 => {
-                let c = 1.0 - (-4.6 / (d.max(0.001) * sr)).exp();
+                let c = self.decay_math.get([d, sr], || 1.0 - (-4.6 / (d.max(0.001) * sr)).exp());
                 self.level += (s - self.level) * c;
             }
             3 => {
-                let c = 1.0 - (-6.9 / (r.max(0.002) * sr)).exp();
+                let c = self.release_math.get([r, sr], || 1.0 - (-6.9 / (r.max(0.002) * sr)).exp());
                 self.level -= self.level * c;
                 if self.level < 1e-5 {
                     self.level = 0.0;

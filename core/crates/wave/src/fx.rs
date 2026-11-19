@@ -87,8 +87,10 @@ impl OscFx {
         let rp = w as f32 + len as f32 - d;
         let i = rp as usize;
         let u = rp - i as f32;
-        let a = c[i % len];
-        let b = c[(i + 1) % len];
+        let i = if i >= len { i - len } else { i };
+        let next = if i + 1 == len { 0 } else { i + 1 };
+        let a = c[i];
+        let b = c[next];
         a + (b - a) * u
     }
 
@@ -107,7 +109,8 @@ impl OscFx {
             for i in 0..n {
                 self.buf[0][self.w] = l[i];
                 self.buf[1][self.w] = r[i];
-                self.w = (self.w + 1) % len;
+                self.w += 1;
+                    if self.w == len { self.w = 0; }
             }
             self.dirty += n;
         }
@@ -124,7 +127,8 @@ impl OscFx {
                     let (x0, x1) = (l[i], r[i]);
                     self.buf[0][self.w] = x0;
                     self.buf[1][self.w] = x1;
-                    self.w = (self.w + 1) % len;
+                    self.w += 1;
+                    if self.w == len { self.w = 0; }
                     // Taps at 0, ½, ¼ and ¾ of the sweep: one sine and one
                     // cosine give all four.
                     let (sn, cs) = (tau * self.lfo).sin_cos();
@@ -149,7 +153,8 @@ impl OscFx {
                     let wr = Self::read(&self.buf[1], self.w, self.delay);
                     self.buf[0][self.w] = l[i] + fb * wl;
                     self.buf[1][self.w] = r[i] + fb * wr;
-                    self.w = (self.w + 1) % len;
+                    self.w += 1;
+                    if self.w == len { self.w = 0; }
                     l[i] += a * wl;
                     r[i] += a * wr;
                 }

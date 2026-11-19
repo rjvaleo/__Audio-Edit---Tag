@@ -14,6 +14,8 @@
 //! Controls are set by name ([`Synth::set`]); notes start and stop by an id
 //! (the key) at a sample offset, so a key lands where it was played.
 
+mod memo;
+use memo::Memo;
 pub mod dsp;
 pub mod models;
 
@@ -147,6 +149,7 @@ struct Voice {
     target_hz: f32,
     vel: f32,
     osc: [[Osc; UNISON]; 2],
+    pitch_math: [Memo<1, f32>; 2],
     sub_phase: f32,
     drift: f32,
     drift_v: f32,
@@ -169,6 +172,7 @@ impl Voice {
             target_hz: 220.0,
             vel: 0.0,
             osc: [[mk(0), mk(1), mk(2)], [mk(3), mk(4), mk(5)]],
+            pitch_math: [Memo::new(); 2],
             sub_phase: 0.0,
             drift: 0.0,
             drift_v: 0.0,
@@ -206,11 +210,17 @@ pub struct Synth {
     /// was, over a few milliseconds, under the new note's own fade in.
     carry: [f32; 2],
     carry_k: f32,
+    glide_math: Memo<2, f32>,
+    ratio_math: [[Memo<1, f32>; UNISON]; 2],
+    pan_math: [[Memo<1, [f32; 2]>; UNISON]; 2],
 }
 
 impl Synth {
     pub fn new(sr: f32) -> Self {
         Synth {
+            glide_math: Memo::new(),
+            ratio_math: [[Memo::new(); UNISON]; 2],
+            pan_math: [[Memo::new(); UNISON]; 2],
             sr,
             params: Params::default(),
             voices: (0..VOICES as u32).map(|n| Voice::new(sr, n)).collect(),
@@ -454,7 +464,7 @@ impl Synth {
             v.age += 1;
             // Glide, then drift: a slow wander of its own.
             if p.glide > 0.0 {
-                let c = 1.0 - (-1.0 / (p.glide * sr * 0.3)).exp();
+                let c = self.glide_math.get([p.glide, sr], || 1.0 - (-1.0 / (p.glide * sr * 0.3)).exp());
                 v.hz += (v.target_hz - v.hz) * c;
             } else {
                 v.hz = v.target_hz;
@@ -470,11 +480,19 @@ impl Synth {
                 if g < 1e-4 {
                     continue;
                 }
-                let base = v.hz * 2f32.powf(p.oct[o] + (p.fine[o] + cents) / 1200.0);
+                let exponent = p.oct[o] + (p.fine[o] + cents) / 1200.0;
+                let ratio = if p.drift == 0.0 && m.detune == 0.0 {
+                    v.pitch_math[o].get([exponent], || 2f32.powf(exponent))
+                } else {
+                    2f32.powf(exponent)
+                };
+                let base = v.hz * ratio;
                 for u in 0..uni {
                     let spread = if uni > 1 { u as f32 / (uni - 1) as f32 * 2.0 - 1.0 } else { 0.0 };
                     let osc = &mut v.osc[o][u];
-                    osc.set_hz(base * 2f32.powf(spread * p.detune * 0.5 / 1200.0));
+                    let exponent = spread * p.detune * 0.5 / 1200.0;
+                    let ratio = self.ratio_math[o][u].get([exponent], || 2f32.powf(exponent));
+                    osc.set_hz(base * ratio);
                     if vowel_shift != 0.0 && i % 32 == 0 {
                         let mut pp = p.p[o];
                         pp[0] = (pp[0] + vowel_shift).clamp(0.0, 1.0);
@@ -486,8 +504,13 @@ impl Synth {
                     // A to the left of B, the copies spread across Width.
                     let pan = ((spread * 0.7 + if o == 0 { -0.3 } else { 0.3 }) * p.width + m.pan).clamp(-1.0, 1.0);
                     let a = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
-                    vl += y * a.cos();
-                    vr += y * a.sin();
+                    let [left, right] = if m.pan == 0.0 {
+                        self.pan_math[o][u].get([a], || [a.cos(), a.sin()])
+                    } else {
+                        [a.cos(), a.sin()]
+                    };
+                    vl += y * left;
+                    vr += y * right;
                 }
             }
             // Sub, an octave down; air, noise over the top.
@@ -509,8 +532,10 @@ impl Synth {
             if filter_on {
                 let key = 2f32.powf(p.flt_key * (12.0 * (v.hz / 261.63).log2()) / 12.0);
                 let hz = p.flt_cut * key * 2f32.powf(4.0 * p.flt_amt * fe + m.cutoff / 1200.0);
-                vl = v.svf[0].tick(vl, hz, p.flt_q, p.flt_type, sr);
-                vr = v.svf[1].tick(vr, hz, p.flt_q, p.flt_type, sr);
+                // Envelopes, cutoff LFOs and a gliding key-tracked cutoff move each sample.
+                let cache = p.flt_amt == 0.0 && m.cutoff == 0.0 && (p.flt_key == 0.0 || p.glide == 0.0);
+                vl = v.svf[0].tick_coefficients(vl, hz, p.flt_q, p.flt_type, sr, cache);
+                vr = v.svf[1].tick_coefficients(vr, hz, p.flt_q, p.flt_type, sr, cache);
             }
             let mut g = amp * v.vel * p.vol * 0.32 * (1.0 + m.volume).max(0.0);
             if v.steal > 0 {

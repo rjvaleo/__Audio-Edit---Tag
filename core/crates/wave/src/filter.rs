@@ -205,11 +205,14 @@ impl Filter {
                         let rp = w as f32 + len as f32 - dl;
                         let i = rp as usize;
                         let u = rp - i as f32;
-                        let a = c[i % len];
-                        let b = c[(i + 1) % len];
+                        let i = if i >= len { i - len } else { i };
+                        let next = if i + 1 == len { 0 } else { i + 1 };
+                        let a = c[i];
+                        let b = c[next];
                         let y = v0 + f * (a + (b - a) * u);
                         c[w] = y;
-                        w = (w + 1) % len;
+                        w += 1;
+                        if w == len { w = 0; }
                         y * (1.0 - f * f).max(0.0).sqrt()
                     }
                 };

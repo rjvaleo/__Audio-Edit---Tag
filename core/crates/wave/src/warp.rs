@@ -217,6 +217,18 @@ pub fn eval<R: Fn(f32) -> f32, M: Fn(f32) -> f32>(warps: &[Warp; 2], x: f32, rea
     apply(&warps[1], x, |x1| apply(&warps[0], x1, read, modulator), modulator)
 }
 
+/// The caller selects the mode outside its sample loop. Setting the copied
+/// slot's discriminant lets the inlined maps fold to that mode's expression.
+#[inline(always)]
+fn apply_mode<const MODE: usize, F: Fn(f32) -> f32, M: Fn(f32) -> f32>(w: &Warp, x: f32, inner: F, modulator: &M) -> f32 {
+    let w = Warp { mode: WarpMode::ALL[MODE], ..*w };
+    apply(&w, x, inner, modulator)
+}
+#[inline(always)]
+pub(crate) fn eval_modes<const A: usize, const B: usize, R: Fn(f32) -> f32, M: Fn(f32) -> f32>(warps: &[Warp; 2], x: f32, read: &R, modulator: &M) -> f32 {
+    apply_mode::<B, _, _>(&warps[1], x, |x1| apply_mode::<A, _, _>(&warps[0], x1, read, modulator), modulator)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

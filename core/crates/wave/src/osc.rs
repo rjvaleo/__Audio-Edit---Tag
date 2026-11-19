@@ -49,9 +49,12 @@
 //! since fold, quant and crush can all leave DC behind.
 
 use crate::cache::Last;
+use crate::warp::eval_modes;
 use crate::fx::{js_round, Shaper};
 use crate::table::{Wavetable, FRAME_LEN, FRAME_MASK, MIP_LEVELS};
-use crate::warp::{eval, fract, Warp, WarpMode};
+use crate::warp::{fract, Warp, WarpMode};
+#[cfg(test)]
+use crate::warp::eval;
 
 pub const MAX_UNISON: usize = 16;
 
@@ -176,7 +179,7 @@ fn frame_at(pos: f32, frames: usize) -> (usize, usize, f32) {
 fn read_at(d0: &[f32], d1: &[f32], xw: f32, fa: usize, fb: usize, fu: f32, x: f32) -> f32 {
     let p = fract(x) * FRAME_LEN as f32;
     let i = (p as usize) & FRAME_MASK;
-    let t = p - p.floor();
+    let t = p - (p as usize) as f32;
     let mut q = points(d0, fa, i);
     if fu > 0.0 {
         q = blend(q, points(d0, fb, i), fu);
@@ -253,6 +256,179 @@ impl OscVoice {
 
     /// Render a block into `l` and `r`, overwriting them.
     pub fn render(&mut self, p: &OscParams, l: &mut [f32], r: &mut [f32]) {
+        match p.warps[0].mode {
+            WarpMode::Off => self.render_second::<0>(p, l, r),
+            WarpMode::Bend => self.render_second::<1>(p, l, r),
+            WarpMode::Sync => self.render_second::<2>(p, l, r),
+            WarpMode::Pwm => self.render_second::<3>(p, l, r),
+            WarpMode::Fold => self.render_second::<4>(p, l, r),
+            WarpMode::Mirror => self.render_second::<5>(p, l, r),
+            WarpMode::Asym => self.render_second::<6>(p, l, r),
+            WarpMode::Quant => self.render_second::<7>(p, l, r),
+            WarpMode::Fm => self.render_second::<8>(p, l, r),
+        }
+    }
+
+    fn render_second<const A: usize>(&mut self, p: &OscParams, l: &mut [f32], r: &mut [f32]) {
+        match p.warps[1].mode {
+            WarpMode::Off => self.render_shaper::<A, 0>(p, l, r),
+            WarpMode::Bend => self.render_shaper::<A, 1>(p, l, r),
+            WarpMode::Sync => self.render_shaper::<A, 2>(p, l, r),
+            WarpMode::Pwm => self.render_shaper::<A, 3>(p, l, r),
+            WarpMode::Fold => self.render_shaper::<A, 4>(p, l, r),
+            WarpMode::Mirror => self.render_shaper::<A, 5>(p, l, r),
+            WarpMode::Asym => self.render_shaper::<A, 6>(p, l, r),
+            WarpMode::Quant => self.render_shaper::<A, 7>(p, l, r),
+            WarpMode::Fm => self.render_shaper::<A, 8>(p, l, r),
+        }
+    }
+
+    fn render_shaper<const A: usize, const B: usize>(&mut self, p: &OscParams, l: &mut [f32], r: &mut [f32]) {
+        match p.shaper {
+            Shaper::None => self.render_modes::<A, B, 0>(p, l, r),
+            Shaper::Drive { .. } => self.render_modes::<A, B, 1>(p, l, r),
+            Shaper::Ring { .. } => self.render_modes::<A, B, 2>(p, l, r),
+            Shaper::Crush { .. } => self.render_modes::<A, B, 3>(p, l, r),
+            Shaper::Comb { .. } => self.render_modes::<A, B, 4>(p, l, r),
+        }
+    }
+
+    fn render_modes<const A: usize, const B: usize, const SHAPER: usize>(&mut self, p: &OscParams, l: &mut [f32], r: &mut [f32]) {
+        let len = l.len().min(r.len());
+        l[..len].iter_mut().for_each(|v| *v = 0.0);
+        r[..len].iter_mut().for_each(|v| *v = 0.0);
+        if len == 0 {
+            return;
+        }
+        let table = p.table;
+        let frames = table.frame_count();
+        let n = p.uni.clamp(1, MAX_UNISON);
+        let gain = 1.0 / (n as f32).sqrt();
+        let warps = p.warps;
+        // Extract coefficients once; SHAPER removes the per-sample mode match.
+        let (a, drive, norm, q, hold, ring, comb) = match p.shaper {
+            Shaper::None => (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            Shaper::Drive { a, d, norm } => (a, d, norm, 0.0, 0.0, 0.0, 0.0),
+            Shaper::Ring { a, r } => (a, 0.0, 0.0, 0.0, 0.0, r, 0.0),
+            Shaper::Crush { a, q, hold } => (a, 0.0, 0.0, q, hold, 0.0, 0.0),
+            Shaper::Comb { a, d } => (a, 0.0, 0.0, 0.0, 0.0, 0.0, d),
+        };
+        let base_slope = warps[0].slope() * warps[1].slope();
+        let fm_k = warps[0].fm_depth().max(warps[1].fm_depth());
+        let has_fm = warps.iter().any(|w| w.mode == WarpMode::Fm);
+        let (ma, mb, mu) = frame_at(p.fm.pos, p.fm.table.frame_count());
+
+        // The position ramp, shared by every copy.
+        let mut fa = [0usize; 64];
+        let mut fb = [0usize; 64];
+        let mut fu = [0f32; 64];
+        let blen = len.min(64);
+        for i in 0..blen {
+            let pos = p.pos0 + (p.pos1 - p.pos0) * (i + 1) as f32 / blen as f32;
+            let (a, b, u) = frame_at(pos, frames);
+            fa[i] = a;
+            fb[i] = b;
+            fu[i] = u;
+        }
+
+        for u in 0..n {
+            let d = if n == 1 { 0.0 } else { -1.0 + 2.0 * u as f32 / (n - 1) as f32 };
+            let cents = d * p.det * 60.0;
+            let hz = p.hz * self.detune[u].get([cents], || (cents / 1200.0).exp2());
+            let inc_f = hz / p.sr;
+            // Pan for this copy, ramped from last block's.
+            let off = if n == 1 || (n % 2 == 1 && u == n / 2) {
+                0.0
+            } else if u % 2 == 0 {
+                -p.spr
+            } else {
+                p.spr
+            };
+            let pan = (p.pan + off).clamp(-1.0, 1.0);
+            let th = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
+            let trig = self.pan_math[u].get([th], || [th.cos(), th.sin()]);
+            let target = [trig[0] * gain, trig[1] * gain];
+            let start = if self.fresh || u >= self.n { target } else { self.pan[u] };
+            self.pan[u] = target;
+            if !(inc_f > 0.0 && inc_f < 0.5) {
+                // Above Nyquist (or nonsense): silent, but keep time.
+                self.phase[u] = self.phase[u].wrapping_add(((inc_f.abs().fract()) * 4_294_967_296.0) as u32);
+                continue;
+            }
+            let inc = (inc_f as f64 * 4_294_967_296.0) as u32;
+
+            let mut slope = base_slope;
+            let mf = 2.0 * inc_f;
+            let (mlevel, _) = self.mip[u][0].get([mf], || mip_for(mf));
+            if has_fm {
+                slope *= 1.0 + 2.0 * fm_k * p.fm.table.max_slope(mlevel);
+            }
+            let lf = inc_f * slope;
+            let (level, xw) = self.mip[u][1].get([lf], || mip_for(lf));
+            let d0 = table.data(level);
+            let d1 = table.data((level + 1).min(MIP_LEVELS - 1));
+            let md = p.fm.table.data(mlevel);
+            let modr = |x: f32| read_at(md, md, 0.0, ma, mb, mu, x);
+
+            let (mut gl, mut gr) = (start[0], start[1]);
+            let dgl = (target[0] - start[0]) / blen as f32;
+            let dgr = (target[1] - start[1]) / blen as f32;
+            let mut ph = self.phase[u];
+            self.crush_k[u] = -1;
+            let norm_glide = self.norm_glide.get([p.sr], || 1.0 - (-1.0 / (0.005 * p.sr)).exp());
+            for i in 0..blen {
+                let (a0, b0, u0) = (fa[i], fb[i], fu[i]);
+                let read = |x: f32| read_at(d0, d1, xw, a0, b0, u0, x);
+                let x = (ph >> 8) as f32 * (1.0 / 16_777_216.0);
+                let mut y = eval_modes::<A, B, _, _>(&warps, x, &read, &modr);
+                match SHAPER {
+                    0 => {}
+                    1 => y = y * (1.0 - a) + (y * drive).tanh() * norm * a,
+                    2 => y = y * (1.0 - a) + y * (std::f32::consts::TAU * ring * x).sin() * a,
+                    3 => {
+                        // x is a nonnegative phase below 1; hold is at least 1.
+                        let k = (x * 256.0 / hold) as i32;
+                        if k != self.crush_k[u] {
+                            self.crush_k[u] = k;
+                            let xh = k as f32 * hold / 256.0;
+                            self.crush_v[u] = js_round(eval_modes::<A, B, _, _>(&warps, xh, &read, &modr) * q) / q;
+                        }
+                        y = y * (1.0 - a) + self.crush_v[u] * a;
+                    }
+                    4 => {
+                        let side = eval_modes::<A, B, _, _>(&warps, x + 1.0 / comb, &read, &modr) + eval_modes::<A, B, _, _>(&warps, x - 1.0 / comb, &read, &modr);
+                        y = (1.0 - 0.45 * a) * y - 0.225 * a * side;
+                        self.peak[u] = self.peak[u].max(y.abs());
+                        self.norm[u] += (self.norm_target[u] - self.norm[u]) * norm_glide;
+                        y *= self.norm[u];
+                    }
+                    _ => unreachable!(),
+                }
+                l[i] += y * gl;
+                r[i] += y * gr;
+                gl += dgl;
+                gr += dgr;
+                let next = ph.wrapping_add(inc);
+                if next < ph {
+                    if SHAPER == 4 {
+                        self.norm_target[u] = 1.0 / self.peak[u].max(0.125);
+                        self.peak[u] = 0.0;
+                    }
+                }
+                ph = next;
+            }
+            self.phase[u] = ph;
+        }
+        self.n = n;
+        self.fresh = false;
+        let rdc = self.dc_pole.get([p.sr], || dc_pole(p.sr));
+        for i in 0..blen {
+            l[i] = self.dc[0].tick(l[i], rdc);
+            r[i] = self.dc[1].tick(r[i], rdc);
+        }
+    }
+    #[cfg(test)]
+    fn render_reference(&mut self, p: &OscParams, l: &mut [f32], r: &mut [f32]) {
         let len = l.len().min(r.len());
         l[..len].iter_mut().for_each(|v| *v = 0.0);
         r[..len].iter_mut().for_each(|v| *v = 0.0);
@@ -452,4 +628,32 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn every_specialised_combination_matches_the_original_loop() {
+        let table = Wavetable::from_frames(&crate::table::builtin_frames("Grit Saw").unwrap());
+        for first in WarpMode::ALL {
+            for second in WarpMode::ALL {
+                for mode in [FxMode::Off, FxMode::Drive, FxMode::Ring, FxMode::Crush, FxMode::Comb] {
+                    let mut original = OscVoice::new();
+                    original.start(0.93, 0.6, &mut 17);
+                    let mut specialised = original;
+                    for block in 0..6 {
+                        let p = OscParams {
+                            table: &table, pos0: 0.2 + block as f32 * 0.03, pos1: 0.7,
+                            warps: [Warp::new(first, 0.63), Warp::new(second, 0.48)],
+                            fm: FmSource { table: &table, pos: 0.3 }, hz: 317.0 + block as f32 * 19.0,
+                            uni: if block < 3 { 3 } else { 16 }, det: 0.37, spr: 0.6,
+                            pan: -0.2 + block as f32 * 0.05, shaper: Shaper::new(mode, 0.8, 0.6), sr: 48_000.0,
+                        };
+                        let (mut a, mut b, mut c, mut d) = ([0.0;64], [0.0;64], [0.0;64], [0.0;64]);
+                        original.render_reference(&p, &mut a, &mut b);
+                        specialised.render(&p, &mut c, &mut d);
+                        assert!(a.iter().chain(&b).zip(c.iter().chain(&d)).all(|(a,b)| a.to_bits() == b.to_bits()),
+                            "{first:?}/{second:?}/{mode:?}, block{block}");
+                    }
+                }
+            }
+        }
+    }
+
 }
