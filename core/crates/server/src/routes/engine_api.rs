@@ -342,6 +342,9 @@ pub(super) fn api_engine_grains(app: &Arc<App>) -> Response {
             .set("ratio", h.shared.params().map(|p| p.ratio as f64).unwrap_or(1.0))
             .set("sampleRate", sr)
             .set("playing", h.shared.is_playing())
+            // Playing, or a tail still ringing after a stop: the page keeps its
+            // meters and pictures moving for as long as this is true.
+            .set("sounding", h.shared.sounding())
             // How far ahead of the speaker the counter is. A playhead drawn
             // straight from `position` leads the sound by this much.
             .set("latency", h.shared.latency_frames() as f64)

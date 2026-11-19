@@ -141,7 +141,7 @@ function drawVisualiser(canvas) {
   ctx.clearRect(0, 0, w, h);
 
   const bins = engine.spectrum;
-  if (!engine.playing || !bins || !bins.length) {
+  if (!outSounding() || !bins || !bins.length) {
     ctx.fillStyle = 'rgba(255,255,255,0.18)';
     ctx.font = '10px system-ui, sans-serif';
     ctx.fillText('press play to see the live spectrum', 8, h / 2);

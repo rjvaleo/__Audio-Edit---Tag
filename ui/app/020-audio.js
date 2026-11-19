@@ -18,6 +18,9 @@ const engine = {
   /// or pressing play in the editor would resume the audition.
   raw: false,
   playing: false,
+  /// The engine says sound is still leaving the bus: playing, or a tail ringing
+  /// on after a stop. The meters and pictures keep moving while it is.
+  sounding: false,
   /// The ratio the engine's position is counted at, from its own reports.
   ratio: 0,
   /// Engine output frames, at the device's rate. Authoritative.
@@ -401,9 +404,9 @@ function startPlayback() {
 function pausePlayback() {
   engine.playing = false;
   engine.rolling = false;
-  // After the poll loop has stopped, not before: a request already in flight
-  // lands with the last levels that were heard and paints them back on.
-  setTimeout(resetRackMeters, 120);
+  // The tail rings on: the poll goes on until the engine says it has died
+  // away, and resets the meters then.
+  engine.sounding = true;
   captureFollow(false);
   reflectTransport();
   enginePost({ play: false });
@@ -421,7 +424,7 @@ function reflectTransport() {
   const b = $('playBtn');
   b.classList.toggle('on', nbPlaying());
   nbPaintPlay();
-  if (engine.playing) nbMeterRun();
+  if (outSounding()) nbMeterRun();
   const pp = $('perfPlayBtn');
   if (pp) {
     pp.textContent = engine.playing ? '⏸ PLAYING' : '▶ PLAY PERF';
@@ -451,15 +454,26 @@ function markPlaying() {
 
 let pollTimer = null;
 
+/// Something is leaving the bus: the transport, or a tail after it.
+const outSounding = () => engine.playing || engine.sounding;
+
 function startPolling() {
   if (pollTimer) return;
   pollTimer = setInterval(async () => {
-    // A held note on the Grain page sounds with the transport stopped.
-    if ((!engine.playing && !gsPollWanted()) || noAudio()) { stopPolling(); return; }
+    // A held note on the Grain page sounds with the transport stopped, and a
+    // reverb's tail goes on after a stop: both are still worth drawing.
+    if ((!outSounding() && !gsPollWanted()) || noAudio()) {
+      stopPolling();
+      // After the loop, not before: a request already in flight lands with
+      // the last levels that were heard and paints them back on.
+      if (!engine.playing) setTimeout(resetRackMeters, 120);
+      return;
+    }
     try {
       const asked = performance.now();
       const r = await api('/api/engine/grains');
       gsPicFeed(r);
+      engine.sounding = !!r.sounding;
       engine.deviceRate = r.sampleRate || engine.deviceRate;
       // A new stretch moves the engine's count to keep the same moment of the
       // file (`Stretcher::rescale`). The clock here does the same, so the

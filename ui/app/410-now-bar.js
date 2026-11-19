@@ -140,14 +140,15 @@ function nbSetTempo(f = state.selectedFile) {
 
 // ───────────────────────────────────────────────────────────── the meter
 
-/// The master's level, asked for only while something plays: a meter on every
-/// page must not poll the engine forever while nothing is sounding.
+/// The master's level, asked for only while something sounds (playing, or a
+/// tail after a stop): a meter on every page must not poll the engine forever
+/// while nothing is sounding.
 let nbMeterTimer = null;
 const nbLevel = { l: -120, r: -120 };
 function nbMeterRun() {
-  if (nbMeterTimer || !engine.playing || noAudio()) return;
+  if (nbMeterTimer || !outSounding() || noAudio()) return;
   nbMeterTimer = setInterval(async () => {
-    if (!engine.playing) { clearInterval(nbMeterTimer); nbMeterTimer = null; nbPaintMeter(-120, -120); return; }
+    if (!outSounding()) { clearInterval(nbMeterTimer); nbMeterTimer = null; nbPaintMeter(-120, -120); return; }
     try {
       const d = await api('/api/engine/master?fft=512&bands=16');
       nbPaintMeter(d.left?.vuDb ?? -120, d.right?.vuDb ?? d.left?.vuDb ?? -120);

@@ -252,7 +252,7 @@ function gsNoteHead() {
 const gsPolyHeads = () => (GS.showing ? GS_PIC.heads : null) || [];
 const gsHeadLive = () => engine.playing || gsNoteHead() != null || gsPolyHeads().length > 0;
 /// Whether the meters are reading sound: the transport, or a note on its own.
-const gsMetersLive = () => !!engine.playing || gsPollWanted();
+const gsMetersLive = () => outSounding() || gsPollWanted();
 const gsKeyName = (n) => GS_NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
 
 function gsNoteName(f) {
