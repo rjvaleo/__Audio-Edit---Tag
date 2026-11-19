@@ -33,6 +33,8 @@ pub struct NeEngine {
     /// Reports gathered but not yet read by `ne_applied`.
     applied: VecDeque<(u64, u64)>,
     failures: VecDeque<u32>,
+    recording: VecDeque<engine_core::RecordingReport>,
+    recording_dropped: std::collections::BTreeMap<u32,engine_core::DroppedFrames>,
 }
 
 pub const NE_SINE: u32 = 1;
@@ -53,6 +55,8 @@ pub const NE_WAVE: u32 = 11;
 pub const NE_CEILING: u32 = 12;
 pub const NE_GRAIN: u32 = 13;
 pub const NE_MIX: u32 = 14;
+/// A host input pair (a: zero-based pair index).
+pub const NE_INPUT: u32 = 15;
 
 const NO_ENGINE: i32 = -11;
 
@@ -125,6 +129,8 @@ pub extern "C" fn ne_new(
             rate,
             applied: VecDeque::new(),
             failures: VecDeque::new(),
+            recording: VecDeque::new(),
+            recording_dropped: std::collections::BTreeMap::new(),
         }))
     })) {
         Ok(value) => value,
@@ -175,6 +181,39 @@ pub unsafe extern "C" fn ne_render(e: *mut NeEngine, l: *mut f32, r: *mut f32, n
         audio.render(l, r);
         audio.finish(l, r);
     })
+}
+
+/// Planar input adapter. Null individual channels are silence.
+struct CInputs { pointers: *const *const f32, channels: usize, frames: usize }
+// SAFETY: ne_render_io's host contract keeps all input storage immutable
+// through the callback and its synchronous worker join.
+unsafe impl Sync for CInputs {}
+impl engine_core::HostAudio for CInputs {
+    fn channel(&self, channel: usize) -> &[f32] {
+        if channel>=self.channels { return &[]; }
+        unsafe {
+            let samples=*self.pointers.add(channel);
+            if samples.is_null() { &[] } else { slice::from_raw_parts(samples,self.frames) }
+        }
+    }
+}
+
+/// Render borrowed planar inputs, with no engine-added input latency.
+/// # Safety
+/// Same output/engine contract as ne_render. If channels > 0, inputs points
+/// to that many pointers, each null (silence) or readable for n floats.
+/// Inputs must not alias writable outputs or be modified until this returns.
+#[no_mangle]
+pub unsafe extern "C" fn ne_render_io(e: *mut NeEngine, inputs: *const *const f32, channels: u32,
+    l: *mut f32, r: *mut f32, n: u32) -> i32 {
+    if l.is_null() || r.is_null() { return NO_ENGINE; }
+    let (l,r)=(slice::from_raw_parts_mut(l,n as usize),slice::from_raw_parts_mut(r,n as usize));
+    if e.is_null() || (channels>0 && inputs.is_null()) {
+        l.fill(0.0);r.fill(0.0);return NO_ENGINE;
+    }
+    let source=CInputs { pointers:inputs,channels:channels as usize,frames:n as usize };
+    let audio=&mut *ptr::addr_of_mut!((*e).audio);
+    render_caught(audio,l,r,|audio,l,r| { audio.render_host(&source,l,r);audio.finish(l,r); })
 }
 
 fn render_caught(
@@ -259,7 +298,7 @@ pub unsafe extern "C" fn ne_add(e: *mut NeEngine, id: u32, kind: u32, a: f32, b:
             let module = engine_mgl::demo::wave(ctl.rate());
             return ctl.add(id, Box::new(module)).map_or_else(code, |()| 0);
         }
-        if !(NE_SINE..=NE_MIX).contains(&kind) { return -10; }
+        if !(NE_SINE..=NE_INPUT).contains(&kind) { return -10; }
         let factory = Box::new(move |rate: f32, _max: usize| -> Box<dyn Module> { match kind {
             NE_SINE => Box::new(Sine::new(a, b)),
             NE_GAIN => Box::new(Gain::new(a)),
@@ -280,6 +319,7 @@ pub unsafe extern "C" fn ne_add(e: *mut NeEngine, id: u32, kind: u32, a: f32, b:
                 b as usize,
             )),
             NE_MIX => Box::new(Mix::new(a as usize)),
+            NE_INPUT => Box::new(engine_core::Input::new(&[a as usize])),
             _ => unreachable!(),
         } });
         ctl.add_with_factory(id, factory).map_or_else(code, |()| 0)
@@ -290,6 +330,74 @@ pub unsafe extern "C" fn ne_add(e: *mut NeEngine, id: u32, kind: u32, a: f32, b:
             -12
         }
     }
+}
+
+/// Sink called on a recorder helper, never on the audio thread.
+pub type NeRecordSink = unsafe extern "C" fn(*mut std::ffi::c_void, u64, f32, f32, f32);
+/// # Safety
+/// e came from ne_new. sink must not unwind, and user data must remain valid
+/// until ne_free returns.
+#[no_mangle]
+pub unsafe extern "C" fn ne_add_recorder(e: *mut NeEngine,id: u32,capacity: u32,
+    sink: Option<NeRecordSink>,user: *mut std::ffi::c_void) -> i32 {
+    match catch_unwind(AssertUnwindSafe(|| {
+        let Some(ctl)=ctl(e) else { return NO_ENGINE; };
+        let Some(sink)=sink else { return -10; };
+        let user=user as usize;
+        let recorder=engine_core::Recorder::new(capacity as usize,move |frame| {
+            sink(user as *mut std::ffi::c_void,frame.frame,frame.rate,frame.samples[0],frame.samples[1]);
+        });
+        ctl.add(id,Box::new(recorder)).map_or_else(code,|()|0)
+    })) { Ok(code)=>code,Err(payload)=> { std::mem::forget(payload);-12 } }
+}
+
+#[repr(C)]
+#[derive(Default, Clone, Copy)]
+pub struct NeRecordingReport {
+    pub module: u32,
+    /// 1: overflow (cumulative at read); 2: stopped for rate at frame.
+    pub kind: u32,
+    pub frame: u64,
+    pub old_rate: f32,
+    pub new_rate: f32,
+    pub dropped: u64,
+}
+/// Gather and read up to max recorder notices. Controller thread.
+/// # Safety
+/// e came from ne_new; reports has room for max entries (or max is zero).
+#[no_mangle]
+pub unsafe extern "C" fn ne_recording_reports(e: *mut NeEngine,reports: *mut NeRecordingReport,max:u32)->u32 {
+    if e.is_null() || (max>0 && reports.is_null()) { return 0; }
+    match catch_unwind(AssertUnwindSafe(|| {
+        gather(e);
+        let pending=&mut *ptr::addr_of_mut!((*e).recording);
+        let mut count=0;
+        while count<max {
+            let Some(report)=pending.pop_front() else {break;};
+            let mut out=NeRecordingReport {module:report.module,..NeRecordingReport::default()};
+            match report.report {
+                engine_core::RecorderReport::Overflow(counter)=> {out.kind=1;out.dropped=counter.frames();},
+                engine_core::RecorderReport::StoppedForRate {frame,old_rate,new_rate}=> {
+                    out.kind=2;out.frame=frame;out.old_rate=old_rate;out.new_rate=new_rate;
+                }
+            }
+            reports.add(count as usize).write(out);count+=1;
+        }
+        count
+    })) {Ok(count)=>count,Err(payload)=> {std::mem::forget(payload);0}}
+}
+
+/// Live cumulative frames for the last overflow-noticed instance of module,
+/// including after reading that notice. A rate rebuild creates a new instance.
+/// # Safety
+/// e came from ne_new; controller thread only.
+#[no_mangle]
+pub unsafe extern "C" fn ne_recording_dropped(e:*mut NeEngine,module:u32)->u64 {
+    if e.is_null() {return 0;}
+    match catch_unwind(AssertUnwindSafe(|| {
+        gather(e);
+        (&*ptr::addr_of!((*e).recording_dropped)).get(&module).map_or(0,|counter|counter.frames())
+    })) {Ok(count)=>count,Err(payload)=> {std::mem::forget(payload);0}}
 }
 
 /// Add one of prism-fx's effects by its catalogue id ("dattorro-plate").
@@ -583,6 +691,12 @@ unsafe fn gather(e: *mut NeEngine) -> u32 {
     let collected = ctl.collect();
     let applied = &mut *ptr::addr_of_mut!((*e).applied);
     applied.extend(ctl.take_applied());
+    for report in ctl.take_recording_reports() {
+        if let engine_core::RecorderReport::Overflow(counter)=&report.report {
+            (&mut *ptr::addr_of_mut!((*e).recording_dropped)).insert(report.module,counter.clone());
+        }
+        (&mut *ptr::addr_of_mut!((*e).recording)).push_back(report);
+    }
     (collected.plans + collected.sounds) as u32
 }
 
