@@ -13,7 +13,10 @@ unsafe fn render(e: *mut NeEngine, frames: usize, block: usize) -> (Vec<f32>, Ve
     let mut pos = 0;
     while pos < frames {
         let n = block.min(frames - pos);
-        ne_render(e, l[pos..].as_mut_ptr(), r[pos..].as_mut_ptr(), n as u32);
+        assert_eq!(
+            ne_render(e, l[pos..].as_mut_ptr(), r[pos..].as_mut_ptr(), n as u32),
+            0
+        );
         pos += n;
     }
     (l, r)
@@ -32,7 +35,13 @@ fn a_patch_built_through_c_plays_what_the_engine_plays() {
         assert_eq!(ne_frame(e), 1000);
         ne_free(e);
 
-        let (mut ctl, mut audio) = engine(RATE, Config { fade_frames: 0, ..Config::default() });
+        let (mut ctl, mut audio) = engine(
+            RATE,
+            Config {
+                fade_frames: 0,
+                ..Config::default()
+            },
+        );
         ctl.add(1, Box::new(Sine::new(220.0, 0.5))).unwrap();
         ctl.add(2, Box::new(Gain::new(0.8))).unwrap();
         ctl.connect(port(1, 0), port(2, 0)).unwrap();
@@ -58,7 +67,11 @@ fn mistakes_come_back_as_codes() {
         assert_eq!(ne_add(e, 3, NE_GAIN, 0.5, 0.0), 0);
         assert_eq!(ne_connect(e, 1, 0, 2, 9), -3, "no such socket");
         assert_eq!(ne_connect(e, 1, 0, 2, 0), -4, "notes into an audio socket");
-        assert_eq!(ne_connect_out(e, 1, 0), -5, "only audio goes to the sound card");
+        assert_eq!(
+            ne_connect_out(e, 1, 0),
+            -5,
+            "only audio goes to the sound card"
+        );
         assert_eq!(ne_connect(e, 2, 0, 3, 0), 0);
         assert_eq!(ne_connect(e, 3, 0, 2, 0), 0);
         assert_eq!(ne_commit(e, 0), -7, "a loop with no delay");
@@ -80,17 +93,32 @@ fn a_stamped_knob_lands_on_its_sample_and_says_so() {
         assert_eq!(ne_add(e, 1, NE_SINE, 220.0, 0.5), 0);
         assert_eq!(ne_connect_out(e, 1, 0), 0);
         assert_eq!(ne_commit(e, 0), 1);
-        assert_eq!(ne_param(e, 777, 1, 1, 0.0), 2, "level to nothing at frame 777");
+        assert_eq!(
+            ne_param(e, 777, 1, 1, 0.0),
+            2,
+            "level to nothing at frame 777"
+        );
         let (l, _) = render(e, 2000, 128);
         assert!(l[700..777].iter().any(|v| v.abs() > 0.1));
         assert!(l[777..].iter().all(|v| *v == 0.0));
         let mut seqs = [0u64; 8];
         let mut frames = [0u64; 8];
-        assert_eq!(ne_applied(e, seqs.as_mut_ptr(), frames.as_mut_ptr(), 1), 1, "one at a time works");
-        assert_eq!(ne_applied(e, seqs[1..].as_mut_ptr(), frames[1..].as_mut_ptr(), 7), 1);
+        assert_eq!(
+            ne_applied(e, seqs.as_mut_ptr(), frames.as_mut_ptr(), 1),
+            1,
+            "one at a time works"
+        );
+        assert_eq!(
+            ne_applied(e, seqs[1..].as_mut_ptr(), frames[1..].as_mut_ptr(), 7),
+            1
+        );
         assert_eq!((seqs[0], frames[0]), (1, 0));
         assert_eq!((seqs[1], frames[1]), (2, 777));
-        assert_eq!(ne_collect(e), 0, "the starting plan was already freed by the calls above");
+        assert_eq!(
+            ne_collect(e),
+            0,
+            "the starting plan was already freed by the calls above"
+        );
         ne_free(e);
     }
 }
@@ -106,13 +134,20 @@ fn a_sound_loaded_through_c_plays() {
         assert_eq!(ne_connect(e, 1, 0, 2, 0), 0);
         assert_eq!(ne_connect_out(e, 2, 0), 0);
         assert_eq!(ne_commit(e, 0), 1);
-        assert_eq!(ne_load_sound(e, 0, 1, l.as_ptr(), r.as_ptr(), 100, RATE), 1, "version 1");
+        assert_eq!(
+            ne_load_sound(e, 0, 1, l.as_ptr(), r.as_ptr(), 100, RATE),
+            1,
+            "version 1"
+        );
         assert_eq!(ne_point_sound(e, 0, 1, 0, 1, 1), 3);
         let (out_l, out_r) = render(e, 256, 64);
         assert_eq!(&out_l[..100], &l[..]);
         assert_eq!(&out_r[..100], &r[..]);
         assert_eq!(out_l[100], -1.0);
-        assert_eq!(ne_load_sound(e, 0, 0, l.as_ptr(), r.as_ptr(), 100, RATE), -8);
+        assert_eq!(
+            ne_load_sound(e, 0, 0, l.as_ptr(), r.as_ptr(), 100, RATE),
+            -8
+        );
         ne_free(e);
     }
 }
@@ -145,11 +180,18 @@ fn an_engine_made_with_a_fade_fades_its_patch_in() {
         assert_eq!(ne_connect(e, 1, 0, 2, 0), 0);
         assert_eq!(ne_connect_out(e, 2, 0), 0);
         assert_eq!(ne_commit(e, 0), 1);
-        assert_eq!(ne_load_sound(e, 0, 1, ones.as_ptr(), ones.as_ptr(), 4, RATE), 1);
+        assert_eq!(
+            ne_load_sound(e, 0, 1, ones.as_ptr(), ones.as_ptr(), 4, RATE),
+            1
+        );
         assert_eq!(ne_point_sound(e, 0, 1, 0, 1, 1), 3);
         let (l, _) = render(e, 256, 64);
         for k in 0..256 {
-            assert_eq!(l[k], if k < 128 { k as f32 / 128.0 } else { 1.0 }, "sample {k}");
+            assert_eq!(
+                l[k],
+                if k < 128 { k as f32 / 128.0 } else { 1.0 },
+                "sample {k}"
+            );
         }
         ne_free(e);
     }
@@ -167,7 +209,14 @@ unsafe fn real_patch(e: *mut NeEngine) {
     assert_eq!(ne_add_fx(e, 5, name("multi-delay").as_ptr()), 0);
     assert_eq!(ne_add(e, 6, NE_MIX, 2.0, 0.0), 0);
     assert_eq!(ne_add(e, 7, NE_CEILING, 0.0, 0.0), 0);
-    for (from, to, input) in [(1, 2, 0), (2, 3, 0), (4, 5, 0), (3, 6, 0), (5, 6, 1), (6, 7, 0)] {
+    for (from, to, input) in [
+        (1, 2, 0),
+        (2, 3, 0),
+        (4, 5, 0),
+        (3, 6, 0),
+        (5, 6, 1),
+        (6, 7, 0),
+    ] {
         assert_eq!(ne_connect(e, from, 0, to, input), 0);
     }
     assert_eq!(ne_connect_out(e, 7, 0), 0);
@@ -192,9 +241,15 @@ fn the_real_instruments_are_built_and_played_through_c() {
         };
         let (l, r) = play(128);
         let peak = l.iter().chain(&r).fold(0.0f32, |m, v| m.max(v.abs()));
-        assert!(peak > 0.02 && peak < 1.0, "heard, and under the ceiling: {peak}");
+        assert!(
+            peak > 0.02 && peak < 1.0,
+            "heard, and under the ceiling: {peak}"
+        );
         let (l2, r2) = play(512);
-        assert!(l.iter().zip(&l2).all(|(a, b)| a.to_bits() == b.to_bits()), "the same at another block size");
+        assert!(
+            l.iter().zip(&l2).all(|(a, b)| a.to_bits() == b.to_bits()),
+            "the same at another block size"
+        );
         assert!(r.iter().zip(&r2).all(|(a, b)| a.to_bits() == b.to_bits()));
 
         let e = ne_new(RATE, 1024, 0, 0);
@@ -220,7 +275,10 @@ fn only_the_sound_card_boundary_flushes_denormals() {
         assert_eq!(ne_connect(e, 2, 0, 3, 0), 0);
         assert_eq!(ne_connect_out(e, 3, 0), 0);
         assert!(ne_commit(e, 0) > 0);
-        assert_eq!(ne_load_sound(e, 0, 1, small.as_ptr(), small.as_ptr(), 4, RATE), 1);
+        assert_eq!(
+            ne_load_sound(e, 0, 1, small.as_ptr(), small.as_ptr(), 4, RATE),
+            1
+        );
         assert!(ne_point_sound(e, 0, 1, 0, 1, 1) > 0);
         let (l, r) = render(e, 4, 4);
         assert_eq!(l, vec![0.0; 4]);
@@ -229,8 +287,23 @@ fn only_the_sound_card_boundary_flushes_denormals() {
     }
     use engine_core::basics::{Player, SoundSource};
     use engine_core::{EventKind, SoundData};
-    let (mut ctl, mut audio) = engine(RATE, Config { fade_frames: 0, ..Config::default() });
-    let sound = ctl.load_sound(1, SoundData { rate: RATE, l: Box::new(small), r: Box::new(small) }).unwrap();
+    let (mut ctl, mut audio) = engine(
+        RATE,
+        Config {
+            fade_frames: 0,
+            ..Config::default()
+        },
+    );
+    let sound = ctl
+        .load_sound(
+            1,
+            SoundData {
+                rate: RATE,
+                l: Box::new(small),
+                r: Box::new(small),
+            },
+        )
+        .unwrap();
     ctl.add(1, Box::new(SoundSource::new())).unwrap();
     ctl.add(2, Box::new(Player::new(1.0))).unwrap();
     ctl.add(3, Box::new(Gain::new(0.5))).unwrap();

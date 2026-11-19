@@ -7,5 +7,5 @@ description = "The native app's engine core: the graph, cables, queues, clock an
 
 [features]
 # Marks the audio thread while it renders, so a test's allocator can catch an
-# allocation there. Off in the app.
+# allocation there. The production marker also selects the silent panic hook.
 rt-check = []

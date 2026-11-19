@@ -37,6 +37,7 @@ struct Live final : juce::AudioIODeviceCallback
     std::vector<float> keptL, keptR, workL, workR;
     std::atomic<size_t> kept { 0 };
     std::atomic<int> tooBig { 0 };
+    std::atomic<int> renderFailures { 0 };
     std::vector<double> starts, durations;
     std::atomic<int> count { 0 };
 
@@ -58,7 +59,8 @@ struct Live final : juce::AudioIODeviceCallback
 
         if (n <= workL.size())
         {
-            ne_render (engine, workL.data(), workR.data(), (uint32_t) n);
+            if (ne_render (engine, workL.data(), workR.data(), (uint32_t) n) != 0)
+                renderFailures.fetch_add (1, std::memory_order_relaxed);
             const size_t at = kept.load (std::memory_order_relaxed);
             const size_t take = std::min (n, keptL.size() - at);
             std::memcpy (keptL.data() + at, workL.data(), take * sizeof (float));
@@ -352,7 +354,7 @@ int main (int argc, char* argv[])
     for (size_t pos = 0; pos < frames;)
     {
         const size_t n = std::min<size_t> (97, frames - pos);
-        ne_render (offline, offL.data() + pos, offR.data() + pos, (uint32_t) n);
+        ok (ne_render (offline, offL.data() + pos, offR.data() + pos, (uint32_t) n));
         pos += n;
     }
 

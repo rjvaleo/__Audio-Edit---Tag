@@ -31,7 +31,12 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self { max_block: 1024, queue: 4096, log_applied: false, fade_frames: 480 }
+        Self {
+            max_block: 1024,
+            queue: 4096,
+            log_applied: false,
+            fade_frames: 480,
+        }
     }
 }
 
@@ -40,7 +45,10 @@ pub enum PatchError {
     DuplicateModule(ModuleId),
     BadModuleId(ModuleId),
     NoSuchPort(PortRef),
-    KindMismatch { from: PortRef, to: PortRef },
+    KindMismatch {
+        from: PortRef,
+        to: PortRef,
+    },
     /// Only audio goes to the sound card.
     NotAudio(PortRef),
     /// A clock or sound input takes one cable.
@@ -62,15 +70,29 @@ pub struct Collected {
 }
 
 enum Msg {
-    Event { module: ModuleId, kind: EventKind },
+    Event {
+        module: ModuleId,
+        kind: EventKind,
+    },
     /// A patch change. `after` is the plan that takes over once the change's
     /// fades are done, when it leaves anything fading out.
-    Plan { plan: Box<Plan>, after: Option<Box<Plan>> },
+    Plan {
+        plan: Box<Plan>,
+        after: Option<Box<Plan>>,
+    },
     /// That second plan, waiting for its frame on the audio thread.
     After(Box<Plan>),
-    Sound { id: u32, version: u32, data: Option<Arc<SoundData>> },
+    Sound {
+        id: u32,
+        version: u32,
+        data: Option<Arc<SoundData>>,
+    },
     /// Something built on the app's thread, for one module to take.
-    Thing { module: ModuleId, slot: u32, thing: Thing },
+    Thing {
+        module: ModuleId,
+        slot: u32,
+        thing: Thing,
+    },
 }
 
 /// A message, the frame it lands on (0: as soon as possible) and its number.
@@ -82,17 +104,27 @@ struct Stamped {
 
 /// What the audio thread sends back: things to free, and where messages landed.
 enum Back {
+    Failure {
+        report: Failure,
+        payload: Thing,
+    },
     Plan(Box<Plan>),
     Sound(Arc<SoundData>),
     Thing(Thing),
-    Applied { seq: u64, frame: u64 },
+    Applied {
+        seq: u64,
+        frame: u64,
+    },
     /// The fades of this patch change are over and its second plan is in place.
-    Settled { generation: u64 },
+    Settled {
+        generation: u64,
+    },
 }
 
 /// Make an engine: its controller for the app's thread and its audio half
 /// for the sound card's.
 pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
+    rt::install_panic_hook();
     let max_block = config.max_block.max(1);
     let queue = config.queue.max(16);
     let (tx, rx) = spsc::channel(queue);
@@ -113,6 +145,7 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
         seq: 0,
         last_plan_frame: 0,
         applied: Vec::new(),
+        failures: Vec::new(),
         versions: BTreeMap::new(),
     };
     let audio = AudioEngine {
@@ -130,12 +163,21 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
         sounds: Sounds::new(),
         log_applied: config.log_applied,
         lost: 0,
+        failed: false,
     };
     (controller, audio)
 }
 
 /// The app's side. Holds the patch and sends everything across.
+/// A caught panic. The controller receives each fault once, when it collects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Failure {
+    ModulePanicked { id: ModuleId },
+    BoundaryPanicked,
+}
+
 pub struct Controller {
+    failures: Vec<Failure>,
     /// See [`Controller::bad_blocks`].
     bad: Arc<AtomicU64>,
     rate: f32,
@@ -185,13 +227,16 @@ impl Controller {
             return false;
         }
         self.staged.remove(&id);
-        self.now.cables.retain(|cable| cable.from.module != id && cable.to.module != id);
+        self.now
+            .cables
+            .retain(|cable| cable.from.module != id && cable.to.module != id);
         self.now.outs.retain(|port| port.module != id);
         true
     }
 
     fn output_kind(&self, port: PortRef) -> Result<Kind, PatchError> {
-        self.now.infos
+        self.now
+            .infos
             .get(&port.module)
             .and_then(|info| info.outputs.get(port.port as usize))
             .copied()
@@ -199,7 +244,8 @@ impl Controller {
     }
 
     fn input_kind(&self, port: PortRef) -> Result<Kind, PatchError> {
-        self.now.infos
+        self.now
+            .infos
             .get(&port.module)
             .and_then(|info| info.inputs.get(port.port as usize))
             .copied()
@@ -264,7 +310,15 @@ impl Controller {
             .collect();
         let generation = self.generation + 1;
         let spec = |settled: bool| {
-            Spec::of(&self.now, &self.sent, &replaced, self.fade, generation, self.max_block, settled)
+            Spec::of(
+                &self.now,
+                &self.sent,
+                &replaced,
+                self.fade,
+                generation,
+                self.max_block,
+                settled,
+            )
         };
         // First choice: the new patch with what was taken away fading out
         // beside it, then the new patch alone once the fades are over.
@@ -275,7 +329,9 @@ impl Controller {
         let ghosts = fading.add_ghosts(&self.now, &self.sent, &self.lingering, &replaced);
         if ghosts.fading() {
             if let Ok(first) = Plan::compile(&fading, &mut self.staged) {
-                after = Plan::compile(&spec(true), &mut BTreeMap::new()).ok().map(Box::new);
+                after = Plan::compile(&spec(true), &mut BTreeMap::new())
+                    .ok()
+                    .map(Box::new);
                 plan = Some(first);
                 lingering = ghosts;
             }
@@ -287,7 +343,13 @@ impl Controller {
             None => Plan::compile(&spec(false), &mut self.staged)?,
         };
         let frame = frame.max(self.last_plan_frame);
-        let seq = self.push(frame, Msg::Plan { plan: Box::new(plan), after })?;
+        let seq = self.push(
+            frame,
+            Msg::Plan {
+                plan: Box::new(plan),
+                after,
+            },
+        )?;
         self.last_plan_frame = frame;
         self.generation = generation;
         self.sent = self.now.clone();
@@ -306,7 +368,12 @@ impl Controller {
     }
 
     /// Send a module a message to land on `frame`.
-    pub fn send_at(&mut self, frame: u64, module: ModuleId, kind: EventKind) -> Result<u64, PatchError> {
+    pub fn send_at(
+        &mut self,
+        frame: u64,
+        module: ModuleId,
+        kind: EventKind,
+    ) -> Result<u64, PatchError> {
         self.push(frame, Msg::Event { module, kind })
     }
 
@@ -319,12 +386,32 @@ impl Controller {
             drop(staged.take(slot, thing));
             return Ok(self.seq);
         }
-        self.push(0, Msg::Thing { module, slot, thing })
+        self.push(
+            0,
+            Msg::Thing {
+                module,
+                slot,
+                thing,
+            },
+        )
     }
 
     /// Hand a module something to take on `frame`.
-    pub fn give_at(&mut self, frame: u64, module: ModuleId, slot: u32, thing: Thing) -> Result<u64, PatchError> {
-        self.push(frame, Msg::Thing { module, slot, thing })
+    pub fn give_at(
+        &mut self,
+        frame: u64,
+        module: ModuleId,
+        slot: u32,
+        thing: Thing,
+    ) -> Result<u64, PatchError> {
+        self.push(
+            frame,
+            Msg::Thing {
+                module,
+                slot,
+                thing,
+            },
+        )
     }
 
     /// Put a sound in the bank under `id`, replacing any there. The version
@@ -333,12 +420,24 @@ impl Controller {
         self.load_sound_at(0, id, data)
     }
 
-    pub fn load_sound_at(&mut self, frame: u64, id: u32, data: SoundData) -> Result<SoundRef, PatchError> {
+    pub fn load_sound_at(
+        &mut self,
+        frame: u64,
+        id: u32,
+        data: SoundData,
+    ) -> Result<SoundRef, PatchError> {
         if id == 0 || id as usize >= MAX_SOUNDS {
             return Err(PatchError::BadSoundId(id));
         }
         let version = self.versions.get(&id).copied().unwrap_or(0) + 1;
-        self.push(frame, Msg::Sound { id, version, data: Some(Arc::new(data)) })?;
+        self.push(
+            frame,
+            Msg::Sound {
+                id,
+                version,
+                data: Some(Arc::new(data)),
+            },
+        )?;
         self.versions.insert(id, version);
         Ok(SoundRef { id, version })
     }
@@ -366,6 +465,10 @@ impl Controller {
         let mut collected = Collected::default();
         while let Some(back) = self.rx.pop() {
             match back {
+                Back::Failure { report, payload } => {
+                    self.failures.push(report);
+                    drop(payload);
+                }
                 Back::Plan(plan) => {
                     drop(plan);
                     collected.plans += 1;
@@ -401,6 +504,12 @@ impl Controller {
 
     /// Message number and the frame it landed on, for every message since the
     /// last call (when the engine was made with `log_applied`).
+    /// Faults received by collect. Replace the failed module and commit the
+    /// rebuilt patch to revive it; ordinary events never retry a dead node.
+    pub fn take_failures(&mut self) -> Vec<Failure> {
+        std::mem::take(&mut self.failures)
+    }
+
     pub fn take_applied(&mut self) -> Vec<(u64, u64)> {
         std::mem::take(&mut self.applied)
     }
@@ -408,6 +517,7 @@ impl Controller {
 
 /// The sound card's side. `render` is the audio callback.
 pub struct AudioEngine {
+    failed: bool,
     bad: Arc<AtomicU64>,
     rate: f32,
     max_block: usize,
@@ -440,6 +550,11 @@ impl AudioEngine {
     /// Make the next block. Any length; the two sides are filled alike.
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         let _guard = rt::enter();
+        if self.failed {
+            left.fill(0.0);
+            right.fill(0.0);
+            return;
+        }
         let total = left.len().min(right.len());
         self.flush_held();
         self.take_messages();
@@ -455,6 +570,7 @@ impl AudioEngine {
                 }
             }
             let frame = self.frame;
+            self.gather();
             self.plan.run(
                 n,
                 self.rate,
@@ -465,7 +581,7 @@ impl AudioEngine {
             );
             pos += n;
             self.frame += n as u64;
-            self.gather();
+            self.report_panics();
         }
         let tripped = self.plan.take_tripped();
         if tripped > 0 {
@@ -481,23 +597,48 @@ impl AudioEngine {
         }
     }
 
-    /// Ask the modules what they have finished with, and send it back to be
-    /// freed. Only while there is somewhere to put it: a module keeps what
-    /// it isn't asked for.
+    /// Last-resort C boundary containment. Never retry a partly unwound engine.
+    pub fn contain_panic(&mut self, payload: Thing) {
+        self.failed = true;
+        self.give_back(Back::Failure {
+            report: Failure::BoundaryPanicked,
+            payload,
+        });
+    }
+
+    pub fn failed(&self) -> bool {
+        self.failed
+    }
+
+    fn report_panics(&mut self) {
+        while let Some((id, payload)) = self.plan.take_panic() {
+            self.give_back(Back::Failure {
+                report: Failure::ModulePanicked { id },
+                payload,
+            });
+        }
+    }
+
+    /// Poll before the piece, so a finished() fault cannot publish that
+    /// module’s output to downstream consumers for the piece.
     fn gather(&mut self) {
+        self.report_panics();
         while self.held.len() < self.room {
             match self.plan.finished() {
                 Some(thing) => self.give_back(Back::Thing(thing)),
                 None => break,
             }
         }
+        self.report_panics();
     }
 
     /// Move what has arrived into the waiting list, in frame order and, on
     /// one frame, in the order sent.
     fn take_messages(&mut self) {
         while self.pending.len() < self.room {
-            let Some(mut message) = self.rx.pop() else { break };
+            let Some(mut message) = self.rx.pop() else {
+                break;
+            };
             if message.frame < self.frame {
                 message.frame = self.frame;
             }
@@ -533,13 +674,27 @@ impl AudioEngine {
                         self.give_back(Back::Sound(old));
                     }
                 }
-                Msg::Thing { module, slot, thing } => {
+                Msg::Thing {
+                    module,
+                    slot,
+                    thing,
+                } => {
                     if let Some(done) = self.plan.give(module, slot, thing) {
                         self.give_back(Back::Thing(done));
                     }
                 }
             }
-            if seq != 0 && self.log_applied && self.tx.push(Back::Applied { seq, frame: self.frame }).is_err() {
+            self.report_panics();
+            if seq != 0
+                && self.log_applied
+                && self
+                    .tx
+                    .push(Back::Applied {
+                        seq,
+                        frame: self.frame,
+                    })
+                    .is_err()
+            {
                 self.lost += 1;
             }
         }
@@ -548,6 +703,7 @@ impl AudioEngine {
     /// Put a plan in place, keeping the modules and cable levels it shares
     /// with the one before.
     fn land(&mut self, mut plan: Box<Plan>) {
+        self.report_panics();
         plan.adopt(&mut self.plan);
         let old = std::mem::replace(&mut self.plan, plan);
         self.give_back(Back::Plan(old));

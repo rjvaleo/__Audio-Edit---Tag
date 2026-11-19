@@ -30,5 +30,5 @@ opt-level = 3
 
 [profile.release]
 opt-level = 3
-# The app links the engine as a static library: a panic has nowhere to unwind to.
-panic = "abort"
+# Module failures are caught before they reach the host’s C boundary.
+panic = "unwind"

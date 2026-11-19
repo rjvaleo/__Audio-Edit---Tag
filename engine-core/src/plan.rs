@@ -18,6 +18,7 @@ use crate::module::{EventKind, Inputs, Io, Module, Outputs, Thing};
 use crate::sound::Sounds;
 use crate::types::{Buf, Cable, Kind, ModuleId, NoteEvent, PortRef};
 use std::collections::{BTreeMap, BTreeSet};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// Module numbers stop here, so the audio thread can find a module by its
 /// number in a table.
@@ -109,11 +110,20 @@ impl<'a> Spec<'a> {
         let mark = |known: bool, a: ModuleId, b: ModuleId| -> Mark {
             let swapped = replaced.contains(&a) || replaced.contains(&b);
             if settled || fade_frames == 0 {
-                Mark { fade: Fade::Steady, inherit: true }
+                Mark {
+                    fade: Fade::Steady,
+                    inherit: true,
+                }
             } else if known && !swapped {
-                Mark { fade: Fade::Steady, inherit: true }
+                Mark {
+                    fade: Fade::Steady,
+                    inherit: true,
+                }
             } else {
-                Mark { fade: Fade::In, inherit: !swapped }
+                Mark {
+                    fade: Fade::In,
+                    inherit: !swapped,
+                }
             }
         };
         Spec {
@@ -122,7 +132,12 @@ impl<'a> Spec<'a> {
             cables: now
                 .cables
                 .iter()
-                .map(|c| (*c, mark(sent.cables.contains(c), c.from.module, c.to.module)))
+                .map(|c| {
+                    (
+                        *c,
+                        mark(sent.cables.contains(c), c.from.module, c.to.module),
+                    )
+                })
                 .collect(),
             outs: now
                 .outs
@@ -149,8 +164,12 @@ impl<'a> Spec<'a> {
         if self.fade_frames == 0 {
             return added;
         }
-        let removed: BTreeSet<ModuleId> =
-            sent.infos.keys().filter(|id| !now.infos.contains_key(id)).copied().collect();
+        let removed: BTreeSet<ModuleId> = sent
+            .infos
+            .keys()
+            .filter(|id| !now.infos.contains_key(id))
+            .copied()
+            .collect();
         let kind_of = |cable: &Cable| {
             sent.infos
                 .get(&cable.from.module)
@@ -202,7 +221,10 @@ impl<'a> Spec<'a> {
             }
         }
 
-        const OUT: Mark = Mark { fade: Fade::Out, inherit: true };
+        const OUT: Mark = Mark {
+            fade: Fade::Out,
+            inherit: true,
+        };
         let here = |id: &ModuleId| now.infos.contains_key(id) || kept.contains(id);
         for cable in &gone {
             if !here(&cable.from.module) || !here(&cable.to.module) {
@@ -213,7 +235,13 @@ impl<'a> Spec<'a> {
             } else if kept.contains(&cable.to.module) {
                 // Notes, clock and sound do not fade: they keep feeding a
                 // removed module until it has faded.
-                added.cables.insert(*cable, Mark { fade: Fade::Steady, inherit: true });
+                added.cables.insert(
+                    *cable,
+                    Mark {
+                        fade: Fade::Steady,
+                        inherit: true,
+                    },
+                );
             }
         }
         for port in &gone_outs {
@@ -234,16 +262,23 @@ impl<'a> Spec<'a> {
                 added.infos.insert(*id, info.clone());
             }
         }
-        let swapped = |id: &ModuleId| replaced.contains(id) || (now.infos.contains_key(id) && lingering.infos.contains_key(id));
+        let swapped = |id: &ModuleId| {
+            replaced.contains(id)
+                || (now.infos.contains_key(id) && lingering.infos.contains_key(id))
+        };
         for (cable, mark) in &lingering.cables {
             let alive = now.cables.contains(cable) || added.cables.contains_key(cable);
-            let ends = self.infos.contains_key(&cable.from.module) && self.infos.contains_key(&cable.to.module);
+            let ends = self.infos.contains_key(&cable.from.module)
+                && self.infos.contains_key(&cable.to.module);
             if !alive && ends && !swapped(&cable.from.module) && !swapped(&cable.to.module) {
                 added.cables.insert(*cable, *mark);
             }
         }
         for port in &lingering.outs {
-            if !now.outs.contains(port) && self.infos.contains_key(&port.module) && !swapped(&port.module) {
+            if !now.outs.contains(port)
+                && self.infos.contains_key(&port.module)
+                && !swapped(&port.module)
+            {
                 added.outs.insert(*port);
             }
         }
@@ -289,7 +324,13 @@ impl Src {
             // is where anything still fading out must have been.
             Fade::Out => (0.0, 0.0),
         };
-        Src { place, from, gain, target, inherit: mark.inherit }
+        Src {
+            place,
+            from,
+            gain,
+            target,
+            inherit: mark.inherit,
+        }
     }
 
     fn silent(&self) -> bool {
@@ -316,6 +357,8 @@ struct Node {
     module: Option<Box<dyn Module>>,
     /// Removed from the patch; running only until the fades are over.
     ghost: bool,
+    dead: bool,
+    panic: Option<Thing>,
     /// Where each input reads from, as a place in the pool.
     inputs: Vec<usize>,
     mixes: Vec<Mix>,
@@ -368,7 +411,10 @@ impl Plan {
         Plan {
             nodes: Vec::new(),
             ops: Vec::new(),
-            pool: Kind::ALL.iter().map(|kind| Buf::new(*kind, max_block)).collect(),
+            pool: Kind::ALL
+                .iter()
+                .map(|kind| Buf::new(*kind, max_block))
+                .collect(),
             by_id: Vec::new(),
             out: Vec::new(),
             piece: usize::MAX,
@@ -389,8 +435,11 @@ impl Plan {
         let infos = &spec.infos;
         let max_block = spec.max_block;
         let ids: Vec<ModuleId> = infos.keys().copied().collect();
-        let node_of: BTreeMap<ModuleId, usize> =
-            ids.iter().enumerate().map(|(node, id)| (*id, node)).collect();
+        let node_of: BTreeMap<ModuleId, usize> = ids
+            .iter()
+            .enumerate()
+            .map(|(node, id)| (*id, node))
+            .collect();
         let count = ids.len();
 
         // Which module feeds which.
@@ -400,8 +449,9 @@ impl Plan {
         }
         // A module on a loop that declares a delay is run in two halves.
         let on_loop: Vec<bool> = (0..count).map(|node| reaches(&next, node, node)).collect();
-        let split: Vec<bool> =
-            (0..count).map(|node| on_loop[node] && infos[&ids[node]].feedback_delay > 0).collect();
+        let split: Vec<bool> = (0..count)
+            .map(|node| on_loop[node] && infos[&ids[node]].feedback_delay > 0)
+            .collect();
 
         // The order. A step is (module, half); a whole module is half 0.
         type Step = (usize, u8);
@@ -421,8 +471,11 @@ impl Plan {
         for (_, after) in &must_follow {
             *waiting.get_mut(after).expect("every step is listed") += 1;
         }
-        let mut ready: BTreeSet<Step> =
-            waiting.iter().filter(|(_, count)| **count == 0).map(|(step, _)| *step).collect();
+        let mut ready: BTreeSet<Step> = waiting
+            .iter()
+            .filter(|(_, count)| **count == 0)
+            .map(|(step, _)| *step)
+            .collect();
         let mut steps: Vec<Step> = Vec::with_capacity(waiting.len());
         while let Some(step) = ready.pop_first() {
             steps.push(step);
@@ -445,7 +498,10 @@ impl Plan {
         // The pool: the silent inputs, then for each module its mixing
         // buffers and its outputs side by side. An audio or control input
         // with any cable gets a mixing buffer, in case the cable must fade.
-        let mut pool: Vec<Buf> = Kind::ALL.iter().map(|kind| Buf::new(*kind, max_block)).collect();
+        let mut pool: Vec<Buf> = Kind::ALL
+            .iter()
+            .map(|kind| Buf::new(*kind, max_block))
+            .collect();
         let mut sources: Vec<Vec<Vec<(PortRef, Mark)>>> = Vec::with_capacity(count);
         let mut scratch: Vec<Vec<usize>> = Vec::with_capacity(count);
         let mut out_start = vec![0usize; count];
@@ -455,7 +511,10 @@ impl Plan {
             let mut node_sources = Vec::with_capacity(info.inputs.len());
             let mut node_scratch = Vec::with_capacity(info.inputs.len());
             for (input, kind) in info.inputs.iter().enumerate() {
-                let to = PortRef { module: id, port: input as u32 };
+                let to = PortRef {
+                    module: id,
+                    port: input as u32,
+                };
                 let from: Vec<(PortRef, Mark)> = spec
                     .cables
                     .iter()
@@ -504,7 +563,10 @@ impl Plan {
                         input,
                         scratch: buffer,
                         fades: matches!(kind, Kind::Audio | Kind::Control),
-                        sources: from.iter().map(|(port, mark)| Src::new(place(port), *port, *mark)).collect(),
+                        sources: from
+                            .iter()
+                            .map(|(port, mark)| Src::new(place(port), *port, *mark))
+                            .collect(),
                     });
                     buffer
                 });
@@ -513,6 +575,8 @@ impl Plan {
                 id,
                 module: None,
                 ghost: spec.ghosts.contains(&id),
+                dead: false,
+                panic: None,
                 inputs,
                 mixes,
                 out_start: out_start[node],
@@ -537,7 +601,11 @@ impl Plan {
             .map(|node| infos[&ids[node]].feedback_delay)
             .min()
             .unwrap_or(usize::MAX);
-        let out = spec.outs.iter().map(|(port, mark)| Src::new(place(port), *port, *mark)).collect();
+        let out = spec
+            .outs
+            .iter()
+            .map(|(port, mark)| Src::new(place(port), *port, *mark))
+            .collect();
 
         // Nothing can fail from here, so the new modules may move in.
         for node in &mut nodes {
@@ -550,7 +618,11 @@ impl Plan {
             by_id,
             out,
             piece,
-            step: if spec.fade_frames == 0 { 1.0 } else { 1.0 / spec.fade_frames as f32 },
+            step: if spec.fade_frames == 0 {
+                1.0
+            } else {
+                1.0 / spec.fade_frames as f32
+            },
             fade_left: spec.fade_frames + 2,
             generation: spec.generation,
             tripped: 0,
@@ -582,13 +654,20 @@ impl Plan {
     /// change hands, nothing is made or freed.
     pub(crate) fn adopt(&mut self, old: &mut Plan) {
         for node in &mut self.nodes {
-            let Some(from) = old.node_of(node.id) else { continue };
+            let Some(from) = old.node_of(node.id) else {
+                continue;
+            };
             if node.module.is_none() {
                 node.module = old.nodes[from].module.take();
+                node.dead = old.nodes[from].dead;
             }
             let before = &old.nodes[from];
             for mix in node.mixes.iter_mut().filter(|mix| mix.fades) {
-                let Some(old_mix) = before.mixes.iter().find(|m| m.fades && m.input == mix.input) else {
+                let Some(old_mix) = before
+                    .mixes
+                    .iter()
+                    .find(|m| m.fades && m.input == mix.input)
+                else {
                     continue;
                 };
                 for src in mix.sources.iter_mut().filter(|src| src.inherit) {
@@ -606,25 +685,66 @@ impl Plan {
     }
 
     pub(crate) fn handle(&mut self, id: ModuleId, event: &EventKind) {
-        if let Some(node) = self.node_of(id) {
-            if let Some(module) = self.nodes[node].module.as_mut() {
-                module.handle(event);
+        if let Some(index) = self.node_of(id) {
+            let node = &mut self.nodes[index];
+            if node.dead {
+                return;
+            }
+            if let Some(module) = node.module.as_mut() {
+                if let Err(payload) = catch_unwind(AssertUnwindSafe(|| module.handle(event))) {
+                    node.dead = true;
+                    node.panic = Some(payload);
+                }
             }
         }
     }
 
-    /// Hand a module something. What comes back must be freed elsewhere:
-    /// what the module returns, or the thing itself if no module took it.
+    /// Ownership of a returned value or panic payload always leaves the callback.
     pub(crate) fn give(&mut self, id: ModuleId, slot: u32, thing: Thing) -> Option<Thing> {
-        match self.node_of(id).and_then(|node| self.nodes[node].module.as_mut()) {
-            Some(module) => module.take(slot, thing),
-            None => Some(thing),
+        let Some(index) = self.node_of(id) else {
+            return Some(thing);
+        };
+        let node = &mut self.nodes[index];
+        if node.dead {
+            return Some(thing);
+        }
+        let Some(module) = node.module.as_mut() else {
+            return Some(thing);
+        };
+        match catch_unwind(AssertUnwindSafe(|| module.take(slot, thing))) {
+            Ok(done) => done,
+            Err(payload) => {
+                node.dead = true;
+                node.panic = Some(payload);
+                None
+            }
         }
     }
 
-    /// The next thing any module has finished with, if there is one.
     pub(crate) fn finished(&mut self) -> Option<Thing> {
-        self.nodes.iter_mut().filter_map(|node| node.module.as_mut()).find_map(|module| module.finished())
+        for node in &mut self.nodes {
+            if node.dead {
+                continue;
+            }
+            let Some(module) = node.module.as_mut() else {
+                continue;
+            };
+            match catch_unwind(AssertUnwindSafe(|| module.finished())) {
+                Ok(Some(done)) => return Some(done),
+                Ok(None) => {}
+                Err(payload) => {
+                    node.dead = true;
+                    node.panic = Some(payload);
+                }
+            }
+        }
+        None
+    }
+
+    pub(crate) fn take_panic(&mut self) -> Option<(ModuleId, Thing)> {
+        self.nodes
+            .iter_mut()
+            .find_map(|node| node.panic.take().map(|payload| (node.id, payload)))
     }
 
     /// Make `n` samples, and put what the sound card hears into the outputs.
@@ -637,7 +757,16 @@ impl Plan {
         left: &mut [f32],
         right: &mut [f32],
     ) {
-        let Plan { nodes, ops, pool, out, step, fade_left, tripped, .. } = self;
+        let Plan {
+            nodes,
+            ops,
+            pool,
+            out,
+            step,
+            fade_left,
+            tripped,
+            ..
+        } = self;
         let step = *step;
         for op in ops.iter() {
             let (index, takes_in, gives_out) = match *op {
@@ -649,7 +778,16 @@ impl Plan {
             if node.ghost && *fade_left == 0 {
                 continue;
             }
-            let Some(module) = node.module.as_mut() else { continue };
+            if node.dead {
+                silence(
+                    &mut pool[node.out_start..node.out_start + node.out_count],
+                    n,
+                );
+                continue;
+            }
+            let Some(module) = node.module.as_mut() else {
+                continue;
+            };
             if takes_in {
                 mix_inputs(pool, &mut node.mixes, &mut node.inputs, n, step);
             }
@@ -666,14 +804,30 @@ impl Plan {
                 n,
                 rate,
                 frame,
-                ins: Inputs { before, after, gap_start: node.out_start, gap_len: out_count, map, n },
+                ins: Inputs {
+                    before,
+                    after,
+                    gap_start: node.out_start,
+                    gap_len: out_count,
+                    map,
+                    n,
+                },
                 outs: Outputs { bufs: outs, n },
                 sounds,
             };
-            match *op {
+            let result = catch_unwind(AssertUnwindSafe(|| match *op {
                 Op::Process(_) => module.process(&mut io),
                 Op::Emit(_) => module.emit(&mut io),
                 Op::Absorb(_) => module.absorb(&mut io),
+            }));
+            if let Err(payload) = result {
+                node.dead = true;
+                node.panic = Some(payload);
+                silence(
+                    &mut pool[node.out_start..node.out_start + node.out_count],
+                    n,
+                );
+                continue;
             }
             // A sample that is not a number goes no further than the module
             // that made it: one in a reverb's tank is every sample after, in
@@ -695,14 +849,26 @@ impl Plan {
                 }
             }
             if bad {
-                module.recover();
+                if let Err(payload) = catch_unwind(AssertUnwindSafe(|| module.recover())) {
+                    node.dead = true;
+                    node.panic = Some(payload);
+                    silence(outs, n);
+                }
                 *tripped += 1;
             }
         }
         let mut any = false;
         for src in out.iter_mut() {
             if let Buf::Audio { l, r } = &pool[src.place] {
-                any |= add_stereo(&mut left[..n], &mut right[..n], &l[..n], &r[..n], src, step, !any);
+                any |= add_stereo(
+                    &mut left[..n],
+                    &mut right[..n],
+                    &l[..n],
+                    &r[..n],
+                    src,
+                    step,
+                    !any,
+                );
             }
         }
         if !any {
@@ -821,8 +987,22 @@ fn mix_inputs(pool: &mut [Buf], mixes: &mut [Mix], inputs: &mut [usize], n: usiz
         let mut any = false;
         for src in mix.sources.iter_mut() {
             match pair(pool, mix.scratch, src.place) {
-                (Buf::Audio { l, r }, Buf::Audio { l: from_l, r: from_r }) => {
-                    any |= add_stereo(&mut l[..n], &mut r[..n], &from_l[..n], &from_r[..n], src, step, !any);
+                (
+                    Buf::Audio { l, r },
+                    Buf::Audio {
+                        l: from_l,
+                        r: from_r,
+                    },
+                ) => {
+                    any |= add_stereo(
+                        &mut l[..n],
+                        &mut r[..n],
+                        &from_l[..n],
+                        &from_r[..n],
+                        src,
+                        step,
+                        !any,
+                    );
                 }
                 (Buf::Control(values), Buf::Control(from)) => {
                     any |= add_mono(&mut values[..n], &from[..n], src, step, !any);
@@ -855,6 +1035,22 @@ fn sort_by_offset(events: &mut [NoteEvent]) {
         while j > 0 && events[j - 1].offset > events[j].offset {
             events.swap(j - 1, j);
             j -= 1;
+        }
+    }
+}
+
+/// A failed producer supplies no audio, controls, events, clock or sound.
+fn silence(bufs: &mut [Buf], n: usize) {
+    for buf in bufs {
+        match buf {
+            Buf::Audio { l, r } => {
+                l[..n].fill(0.0);
+                r[..n].fill(0.0);
+            }
+            Buf::Control(values) => values[..n].fill(0.0),
+            Buf::Notes(notes) => notes.clear(),
+            Buf::Clock(clock) => *clock = crate::ClockState::STOPPED,
+            Buf::Sound(sound) => *sound = Default::default(),
         }
     }
 }

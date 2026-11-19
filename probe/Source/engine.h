@@ -15,7 +15,7 @@ enum { NE_SINE = 1, NE_GAIN, NE_DELAY, NE_LFO, NE_CLOCK, NE_PULSE, NE_VOICE, NE_
 
 NeEngine* ne_new (float rate, uint32_t max_block, uint32_t log_applied, uint32_t fade_frames);
 void ne_free (NeEngine*);
-void ne_render (NeEngine*, float* l, float* r, uint32_t n);
+int32_t ne_render (NeEngine*, float* l, float* r, uint32_t n);
 uint64_t ne_frame (NeEngine*);
 uint64_t ne_bad_blocks (NeEngine*);
 int32_t ne_add (NeEngine*, uint32_t id, uint32_t kind, float a, float b);
@@ -32,6 +32,9 @@ int64_t ne_load_sound (NeEngine*, uint64_t frame, uint32_t id, const float* l, c
 int64_t ne_point_sound (NeEngine*, uint64_t frame, uint32_t module, uint32_t slot, uint32_t id, uint32_t version);
 uint32_t ne_collect (NeEngine*);
 uint32_t ne_applied (NeEngine*, uint64_t* seqs, uint64_t* frames, uint32_t max);
+
+// Read module panic ids; UINT32_MAX means the engine must be recreated.
+uint32_t ne_panicked (NeEngine*, uint32_t* ids, uint32_t max);
 
 #ifdef __cplusplus
 }
