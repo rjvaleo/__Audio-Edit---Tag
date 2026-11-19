@@ -152,9 +152,9 @@ impl Core {
             return;
         }
         let sr = self.params.sample_rate.max(1) as f32;
-        // One pole, per block. The block is short next to the time constant, so
-        // treating the whole block as one step is inaudible and costs one
-        // multiply per control rather than one per sample.
+        // The same one-pole time constant at any piece size. Moving controls
+        // are written per sample so delay and modulation kernels never see
+        // a staircase introduced by the host's control chunks.
         let k = (1.0 - (-(frames as f32) / (SMOOTH_SECONDS * sr)).exp()).clamp(0.0, 1.0);
         let Some(rack) = self.rack.as_mut() else { return };
         for s in &mut self.smoothing {
@@ -1107,3 +1107,7 @@ impl Core {
     }
 
 }
+
+#[cfg(test)]
+#[path = "pad_sweep_tests.rs"]
+mod pad_sweep_tests;

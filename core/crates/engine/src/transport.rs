@@ -657,16 +657,10 @@ const MAX_SMOOTHED: usize = 96;
 
 /// Frames between control updates while something is moving.
 ///
-/// A block is a few hundred frames, and moving a control once per block still
-/// steps it by several dB — which is the click, just at a lower rate. So while
-/// anything is travelling the rack is run in short pieces with the controls
-/// nudged between them. About two thirds of a millisecond at 48 kHz, which is
-/// far below what an ear resolves as an edge.
-///
-/// The chunking only happens while something is actually moving. A rack whose
-/// controls are all where they were asked to be is processed in one go, exactly
-/// as before, so this costs nothing when nobody is touching anything.
-const CONTROL_CHUNK: usize = 8;
+/// Delay reads and modulation phases can expose even eight held samples as
+/// an edge. Move the input controls on every sample; kernels retain their
+/// original still-setting behavior. Settled racks still run in whole blocks.
+const CONTROL_CHUNK: usize = 1;
 
 /// How long a rack swap takes to cross over.
 ///
