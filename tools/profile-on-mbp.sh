@@ -20,6 +20,9 @@ R='~/idmlab-native'
 tar -C "$HERE" --exclude target --exclude build --exclude .git -cf - . | ssh mbp "cd $R/native && rm -rf engine-core engine-capi engine-idmlab engine-mgl && tar -x -f - -C ."
 git -C "$FX" archive --format=tar HEAD | ssh mbp "rm -rf $R/GitHub/prism-fx && mkdir -p $R/GitHub/prism-fx && tar -x -f - -C $R/GitHub/prism-fx"
 git -C "$MGL" archive --format=tar "$MGL_REV" core | ssh mbp "rm -rf $R/MultiGrainLive && mkdir -p $R/MultiGrainLive && tar -x -f - -C $R/MultiGrainLive"
+# git archive dates every file at its commit; a branch older than the last
+# build in the same build folder would then reuse that build. Touch it all.
+ssh mbp "find ~/idmlab-native/native ~/idmlab-native/GitHub ~/idmlab-native/MultiGrainLive ~/idmlab-native/pg-check ~/idmlab-native/wsola-trial -type f -not -path '*/target/*' -not -path '*/build/*' -exec touch {} + 2>/dev/null; true"
 until ssh mbp "mkdir ~/mgl-test/.lock 2>/dev/null"; do sleep 20; done
 trap 'ssh mbp "rm -rf ~/mgl-test/.lock"' EXIT
 ssh mbp "echo 'idmlab-native profile (coordinator)' > ~/mgl-test/.lock/who"

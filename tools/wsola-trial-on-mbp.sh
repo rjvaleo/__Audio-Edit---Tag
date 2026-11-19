@@ -33,6 +33,9 @@ git -C "$FX" archive --format=tar "$BEFORE" | ssh mbp "rm -rf $T/before && mkdir
 git -C "$FX" archive --format=tar HEAD | ssh mbp "rm -rf $T/after && mkdir -p $T/after && tar -x -f - -C $T/after"
 # The before build gets the trial's render test too; nothing else of the after one.
 ssh mbp "cp $T/after/crates/prism-grain/tests/wsola_trial.rs $T/before/crates/prism-grain/tests/"
+# git archive dates every file at its commit; a branch older than the last
+# build in the same build folder would then reuse that build. Touch it all.
+ssh mbp "find ~/idmlab-native/native ~/idmlab-native/GitHub ~/idmlab-native/MultiGrainLive ~/idmlab-native/pg-check ~/idmlab-native/wsola-trial -type f -not -path '*/target/*' -not -path '*/build/*' -exec touch {} + 2>/dev/null; true"
 until ssh mbp "mkdir ~/mgl-test/.lock 2>/dev/null"; do sleep 20; done
 trap 'ssh mbp "rm -rf ~/mgl-test/.lock"' EXIT
 ssh mbp "echo 'WSOLA trial renders (coordinator)' > ~/mgl-test/.lock/who"

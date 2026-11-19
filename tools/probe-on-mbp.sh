@@ -8,6 +8,9 @@ set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 ssh mbp "mkdir -p ~/idmlab-native/native"
 tar -C "$HERE" --exclude target --exclude build --exclude .git --exclude results -cf - . | ssh mbp "rm -rf ~/idmlab-native/native/engine-core ~/idmlab-native/native/engine-capi ~/idmlab-native/native/engine-idmlab ~/idmlab-native/native/engine-mgl ~/idmlab-native/native/probe/Source; tar -x -f - -C ~/idmlab-native/native"
+# git archive dates every file at its commit; a branch older than the last
+# build in the same build folder would then reuse that build. Touch it all.
+ssh mbp "find ~/idmlab-native/native ~/idmlab-native/GitHub ~/idmlab-native/MultiGrainLive ~/idmlab-native/pg-check ~/idmlab-native/wsola-trial -type f -not -path '*/target/*' -not -path '*/build/*' -exec touch {} + 2>/dev/null; true"
 until ssh mbp "mkdir ~/mgl-test/.lock 2>/dev/null"; do sleep 20; done
 trap 'ssh mbp "rm -rf ~/mgl-test/.lock"' EXIT
 ssh mbp "echo 'idmlab-native probe (coordinator)' > ~/mgl-test/.lock/who"
