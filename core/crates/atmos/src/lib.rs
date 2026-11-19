@@ -24,6 +24,9 @@ use models::{Osc, MODELS};
 
 pub const VOICES: usize = 16;
 const UNISON: usize = 3;
+// Bound the scratch at construction; larger render calls use 512-frame pieces,
+// keeping the caller's event times and modulation sample indices unchanged.
+const CHECK_BLOCK: usize = 512;
 
 /// Every control, by the name the page sends.
 #[derive(Clone)]
@@ -227,6 +230,9 @@ pub struct Synth {
     /// was, over a few milliseconds, under the new note's own fade in.
     carry: [f32; 2],
     carry_k: f32,
+    voice_output: Vec<[[f32; 2]; CHECK_BLOCK]>,
+    block_voices: u16,
+    block_carry: [[f32; 2]; CHECK_BLOCK],
     glide_math: Memo<2, f32>,
     ratio_math: [[Memo<1, f32>; UNISON]; 2],
     pan_math: [[Memo<1, [f32; 2]>; UNISON]; 2],
@@ -235,6 +241,9 @@ pub struct Synth {
 impl Synth {
     pub fn new(sr: f32) -> Self {
         Synth {
+            voice_output: vec![[[0.0; 2]; CHECK_BLOCK]; VOICES],
+            block_voices: 0,
+            block_carry: [[0.0; 2]; CHECK_BLOCK],
             glide_math: Memo::new(),
             ratio_math: [[Memo::new(); UNISON]; 2],
             pan_math: [[Memo::new(); UNISON]; 2],
@@ -376,6 +385,10 @@ impl Synth {
         let from = if p.glide > 0.0 && self.last_hz > 0.0 { self.last_hz } else { hz };
         self.last_hz = hz;
         self.last_voice = i;
+        if self.block_voices & (1 << i) == 0 {
+            self.voice_output[i].fill([0.0; 2]);
+            self.block_voices |= 1 << i;
+        }
         let scale = &self.scale;
         let v = &mut self.voices[i];
         let was_sounding = !v.amp.idle();
@@ -421,6 +434,17 @@ impl Synth {
         r[..n].iter_mut().for_each(|x| *x = 0.0);
         let sr = self.sr;
         for i in 0..n {
+            let local = i % CHECK_BLOCK;
+            if local == 0 {
+                self.block_voices = self.voices.iter().enumerate().fold(0, |mask, (v, voice)| {
+                    mask | if voice.amp.idle() { 0 } else { 1 << v }
+                });
+                for v in 0..VOICES {
+                    if self.block_voices & (1 << v) != 0 {
+                        self.voice_output[v][..(n - i).min(CHECK_BLOCK)].fill([0.0; 2]);
+                    }
+                }
+            }
             // Notes due now.
             let mut k = 0;
             while k < self.events.len() {
@@ -452,9 +476,10 @@ impl Synth {
                     _ => {}
                 }
             }
-            let (a, b) = self.voice_sum(&m, i);
-            l[i] = a;
-            r[i] = b;
+            self.voice_sum(&m, i);
+            if local + 1 == CHECK_BLOCK || i + 1 == n {
+                self.check_block(&mut l[i - local..=i], &mut r[i - local..=i]);
+            }
         }
         for e in &mut self.events {
             match e {
@@ -464,18 +489,56 @@ impl Synth {
         self.clock += n as u64;
     }
 
+    fn check_block(&mut self, l: &mut [f32], r: &mut [f32]) {
+        let mut bad = 0u16;
+        for (index, voice) in self.voices.iter_mut().enumerate() {
+            if self.block_voices & (1 << index) == 0 { continue; }
+            let mut sum = [0.0f32; 4];
+            for (i, frame) in self.voice_output[index][..l.len()].iter().enumerate() {
+                sum[(i & 1) * 2] += frame[0];
+                sum[(i & 1) * 2 + 1] += frame[1];
+            }
+            if !((sum[0] + sum[1]) + (sum[2] + sum[3])).is_finite()
+                || voice.osc.iter().flatten().any(Osc::failed)
+            {
+                bad |= 1 << index;
+                voice.clear_fault();
+                for osc in voice.osc.iter_mut().flatten() { osc.acknowledge_fault(); }
+            }
+        }
+        self.mix_block(bad, l, r);
+    }
+
+    fn mix_block(&self, bad: u16, l: &mut [f32], r: &mut [f32]) {
+        // Voice-major adds let the compiler work across contiguous samples.
+        // Each sample still adds voice 0, voice 1, ... then carry, as before.
+        let frames = l.len();
+        for voice in 0..VOICES {
+            if self.block_voices & !bad & (1 << voice) == 0 { continue; }
+            for ((left, right), frame) in l.iter_mut().zip(r.iter_mut())
+                .zip(&self.voice_output[voice][..frames])
+            {
+                *left += frame[0]; *right += frame[1];
+            }
+        }
+        for ((left, right), carry) in l.iter_mut().zip(r.iter_mut()).zip(&self.block_carry) {
+            if carry != &[0.0; 2] && carry.iter().all(|x| x.is_finite()) {
+                *left += carry[0]; *right += carry[1];
+            }
+        }
+    }
+
     #[inline]
-    fn voice_sum(&mut self, m: &Mods, i: usize) -> (f32, f32) {
+    fn voice_sum(&mut self, m: &Mods, i: usize) {
         let p = &self.params;
         let sr = self.sr;
-        let (mut sl, mut sr_) = (0.0, 0.0);
         let blend = (p.blend + m.blend).clamp(0.0, 1.0);
         let ga = (blend * std::f32::consts::FRAC_PI_2).cos();
         let gb = (blend * std::f32::consts::FRAC_PI_2).sin();
         let uni = p.unison.clamp(1, UNISON);
         let filter_on = p.flt_type != 0 || p.flt_cut < 19990.0 || p.flt_amt != 0.0 || m.cutoff != 0.0;
         let vowel_shift = m.vowel;
-        for v in self.voices.iter_mut() {
+        for (voice, v) in self.voices.iter_mut().enumerate() {
             if v.amp.idle() {
                 continue;
             }
@@ -518,7 +581,7 @@ impl Synth {
                     } else if i % 32 == 0 {
                         osc.set_params(p.p[o]);
                     }
-                    let y = osc.voice_sample() * MODEL_GAIN[osc.kind()] * g / (uni as f32).sqrt();
+                    let y = osc.tick() * MODEL_GAIN[osc.kind()] * g / (uni as f32).sqrt();
                     // A to the left of B, the copies spread across Width.
                     let pan = ((spread * 0.7 + if o == 0 { -0.3 } else { 0.3 }) * p.width + m.pan).clamp(-1.0, 1.0);
                     let a = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
@@ -561,20 +624,14 @@ impl Synth {
                 g *= 1.0 - v.steal as f32 / (0.004 * sr);
             }
             v.last = [vl * g, vr * g];
-            if !v.last[0].is_finite() || !v.last[1].is_finite() {
-                v.clear_fault();
-                continue;
-            }
-            sl += v.last[0];
-            sr_ += v.last[1];
+            self.voice_output[voice][i % CHECK_BLOCK] = v.last;
             if v.amp.idle() {
                 v.id = -1;
                 v.last = [0.0; 2];
             }
         }
+        self.block_carry[i % CHECK_BLOCK] = self.carry;
         if self.carry != [0.0; 2] {
-            sl += self.carry[0];
-            sr_ += self.carry[1];
             self.carry[0] *= self.carry_k;
             self.carry[1] *= self.carry_k;
             // Done when it is too small to hear, and at once if it is not a number.
@@ -583,7 +640,6 @@ impl Synth {
                 self.carry = [0.0; 2];
             }
         }
-        (sl, sr_)
     }
 }
 

@@ -50,6 +50,7 @@ const MODES: usize = 10;
 pub struct Osc {
     kind: usize,
     faulted: bool,
+    failed: bool,
     sr: f32,
     hz: f32,
     p: [f32; 4],
@@ -90,6 +91,7 @@ impl Osc {
         Osc {
             kind: 0,
             faulted: false,
+            failed: false,
             sr,
             hz: 220.0,
             p: [0.5; 4],
@@ -459,19 +461,6 @@ impl Osc {
     /// One sample.
     #[inline]
     pub fn tick(&mut self) -> f32 {
-        if self.faulted { return 0.0; }
-        self.tick_checked::<true>()
-    }
-
-    // The synth catches a failed sample before mixing this voice. Passing
-    // the failure through avoids scanning every oscillator's status each tick.
-    #[inline]
-    pub(crate) fn voice_sample(&mut self) -> f32 {
-        self.tick_checked::<false>()
-    }
-
-    #[inline(always)]
-    fn tick_checked<const SILENCE: bool>(&mut self) -> f32 {
         let y = match self.kind {
             0 => self.tick_pluck(),
             1 => self.tick_bow(),
@@ -489,20 +478,24 @@ impl Osc {
             y.clamp(-4.0, 4.0)
         } else {
             self.clear_fault();
-            if SILENCE { 0.0 } else { f32::NAN }
+            0.0
         }
     }
+
+    pub(crate) fn failed(&self) -> bool { self.failed }
+    pub(crate) fn acknowledge_fault(&mut self) { self.failed = false; }
 
     #[cfg(test)]
     pub(crate) fn faulted(&self) -> bool { self.faulted }
 
-    // Keep the allocated delay storage; a bad oscillator stays asleep until
-    // a new note starts it. No repeated clearing on subsequent samples.
+    // Keep the allocated delay storage. The synth quarantines this voice at
+    // the block boundary; repeated failures do not clear its state again.
     #[cold]
     #[inline(never)]
     pub(crate) fn clear_fault(&mut self) {
         if self.faulted { return; }
         self.faulted = true;
+        self.failed = true;
         self.d1.clear();
         self.d2.clear();
         self.lp.clear();
@@ -570,14 +563,14 @@ mod state_tests {
     }
 
     #[test]
-    fn a_bad_oscillator_clears_once_until_the_next_note() {
+    fn bad_oscillator_state_clears_once_and_restart_recovers() {
         let mut osc = Osc::new(48_000.0, 17);
         osc.start(9, 220.0, 0.8, MODELS[9].3, &[]);
         osc.phase = f32::NAN;
         assert_eq!(osc.tick(), 0.0);
         assert!(osc.faulted());
         osc.view[0] = 0.25;
-        for _ in 0..512 { assert_eq!(osc.tick(), 0.0); }
+        for _ in 0..512 { osc.clear_fault(); }
         assert_eq!(osc.view[0], 0.25);
         osc.start(9, 220.0, 0.8, MODELS[9].3, &[]);
         assert!(!osc.faulted());
