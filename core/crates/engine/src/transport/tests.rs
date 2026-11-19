@@ -994,6 +994,7 @@ fn play_after_a_pause_rises_from_silence_without_a_step() {
     core.fill(&mut buf, 1, &shared);
     reference.fill(&mut expected, 1, &straight);
     assert_eq!(buf, expected, "the first playing block has no extra fade");
+    assert_eq!(core.declick.len, 0, "first playback must not start a resume fade");
     shared.pause();
     for _ in 0..4 { core.fill(&mut buf, 1, &shared); }
     assert!(buf.iter().all(|x| *x == 0.0));
