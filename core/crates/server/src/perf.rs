@@ -163,6 +163,62 @@ pub fn sample_now(app: &Arc<App>) {
     write_row(app, act, &win, usage().1);
 }
 
+/// Tracks one deck's `bad_blocks` counter and emits a log message when it
+/// rises, at most once every ten seconds however fast it climbs.
+#[derive(Default)]
+struct BadDeckWatch {
+    seen: u64,
+    last_log: Option<Instant>,
+}
+
+impl BadDeckWatch {
+    const COOLDOWN: Duration = Duration::from_secs(10);
+
+    fn check(&mut self, now_count: u64, now: Instant, deck: &str) -> Option<String> {
+        if now_count < self.seen {
+            // Engine restarted with a fresh counter.
+            self.seen = now_count;
+            self.last_log = None;
+            return None;
+        }
+        if now_count == self.seen {
+            return None;
+        }
+        if self.last_log.is_some_and(|at| now.duration_since(at) < Self::COOLDOWN) {
+            return None;
+        }
+        let was = self.seen;
+        self.seen = now_count;
+        self.last_log = Some(now);
+        Some(format!("bad blocks: {now_count} (was {was}) on the {deck} deck"))
+    }
+}
+
+#[derive(Default)]
+struct BadBlocksWatch {
+    main: BadDeckWatch,
+    prism: BadDeckWatch,
+}
+
+impl BadBlocksWatch {
+    fn poll(&mut self, app: &Arc<App>, now: Instant) {
+        let Some((main_n, prism_n)) = crate::live::try_peek(app, |h| {
+            (
+                h.shared.bad_blocks.load(Ordering::Relaxed),
+                h.prism.bad_blocks.load(Ordering::Relaxed),
+            )
+        }) else {
+            return;
+        };
+        if let Some(msg) = self.main.check(main_n, now, "main") {
+            crate::log::line(&msg);
+        }
+        if let Some(msg) = self.prism.check(prism_n, now, "Prism") {
+            crate::log::line(&msg);
+        }
+    }
+}
+
 /// Five times a second it looks at the export flags — atomics only — so an
 /// export is timed to within a fifth of a second; once a second it reads the
 /// CPU; and on the schedule it writes a row.
@@ -173,6 +229,7 @@ fn run(app: Arc<App>) {
     let (mut cpu_prev, _) = usage();
     let mut wall_prev = Instant::now();
     let mut win = Window::default();
+    let mut bad_watch = BadBlocksWatch::default();
     let mut timing: Option<Timing> = None;
     let mut serial = app.export.serial.load(Ordering::Relaxed);
     let mut vserial = crate::video::job().serial.load(Ordering::Relaxed);
@@ -192,6 +249,7 @@ fn run(app: Arc<App>) {
             wall_prev = wall;
             LAST_PCT.store(pct.to_bits(), Ordering::Relaxed);
             win.add(pct);
+            bad_watch.poll(&app, wall);
         }
         let (act, video, export) = activity(&app);
 

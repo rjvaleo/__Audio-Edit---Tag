@@ -162,6 +162,7 @@ use rack_presets::*;
 mod edits_markers;
 mod automation_recording;
 mod live_prism;
+mod bad_blocks;
 mod invariants_export_map;
 mod browse_types;
 use invariants_export_map::*;

@@ -102,6 +102,18 @@ pub(super) fn api_engine_state(app: &Arc<App>) -> Response {
                     .overflows
                     .load(std::sync::atomic::Ordering::Acquire) as f64,
             )
+            .set(
+                "badBlocks",
+                h.shared
+                    .bad_blocks
+                    .load(std::sync::atomic::Ordering::Relaxed) as f64,
+            )
+            .set(
+                "prismBadBlocks",
+                h.prism
+                    .bad_blocks
+                    .load(std::sync::atomic::Ordering::Relaxed) as f64,
+            )
             // What a block costs against the time it takes to play. One is the
             // line: past it the engine cannot keep up and the device runs dry.
             // Measured in the callback rather than predicted from the controls,
@@ -157,6 +169,8 @@ pub(super) fn api_engine_state(app: &Arc<App>) -> Response {
                 .set("stream", Value::Null)
                 .set("channels", 0.0)
                 .set("overflows", 0.0)
+                .set("badBlocks", 0.0)
+                .set("prismBadBlocks", 0.0)
                 .set("load", Value::Null)
                 // So the interface can say "no audio device" rather than show a
                 // transport that silently never moves.
