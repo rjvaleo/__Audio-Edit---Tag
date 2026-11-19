@@ -130,13 +130,20 @@ test('play lands the sequencer on the engine\'s position, and a seek moves it', 
   // mod eight is one.
   // The clock message the transport loop sends; the engine itself is not
   // playing in a test with no sound card, so it is posted as the loop would.
+  // The prediction carries the engine's time forward on the wall clock, so it is
+  // checked against the time that really passed, on the frame's own clock: a
+  // fixed 10.2 assumed the 200 ms wait took 200 ms, and on GitHub's runner it
+  // took 800 (CI, 19 Nov, 39cdbd7: 10.8).
+  const sent = await frame.evaluate(() => performance.now());
   await page.evaluate(() => seqPost({ type: 'seq:clock', playing: true, at: 10.0 }));
   await page.waitForTimeout(200);
-  const after = await frame.evaluate(() => ({ last: seqBridge.last, predicted: +seqBridge.predicted().toFixed(1) }));
+  const after = await frame.evaluate(() => ({ last: seqBridge.last, predicted: seqBridge.predicted(), now: performance.now() }));
   expect(after.last.at).toBe(10.0);
   expect(after.last.step).toBe(1);
   expect(after.last.wait).toBeCloseTo(0.25, 5);
-  expect(after.predicted).toBeCloseTo(10.2, 0);
+  // At least the wait on from 10.0, and no more than all the time since the clock was sent.
+  expect(after.predicted).toBeGreaterThanOrEqual(10.15);
+  expect(after.predicted).toBeLessThanOrEqual(10.0 + (after.now - sent) / 1000 + 0.001);
   // A clock that is only a few milliseconds off is left alone.
   // Ten milliseconds from where the sequencer says it is, taken in the same
   // instant: a fixed 10.21 assumed the wait above took exactly 200 ms, and on a
