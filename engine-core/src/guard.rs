@@ -1,6 +1,5 @@
-//! What every render is wrapped in: numbers too small to hear are treated as
-//! zero while it runs, and nothing that is not a number gets from one module
-//! to the next, or out.
+//! Guards for the host audio callback and non-finite module output.
+//! Offline engine renders keep the caller's floating-point mode.
 #![allow(unsafe_code)]
 
 /// While this lives, the processor rounds denormal results to zero and reads
@@ -13,8 +12,8 @@
 /// cost more than a loud one and the callback ran late. Nothing above that size
 /// is changed.
 ///
-/// [`crate::AudioEngine::render`] holds one for every render, live or offline,
-/// so the two stay the same to the last bit.
+/// The host callback holds one through `ne_render`, including the probe's
+/// replay. Direct engine renders preserve the recorded effect outputs.
 pub struct NoDenormals {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     was: u64,

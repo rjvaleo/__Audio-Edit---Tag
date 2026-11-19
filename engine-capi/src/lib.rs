@@ -129,6 +129,7 @@ pub unsafe extern "C" fn ne_render(e: *mut NeEngine, l: *mut f32, r: *mut f32, n
     }
     let audio = &mut *ptr::addr_of_mut!((*e).audio);
     let (l, r) = (slice::from_raw_parts_mut(l, n as usize), slice::from_raw_parts_mut(r, n as usize));
+    let _no_denormals = engine_core::guard::NoDenormals::new();
     audio.render(l, r);
     // This is the sound card's side: nothing that is not a number, and
     // nothing past full scale, leaves here.

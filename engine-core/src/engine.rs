@@ -440,7 +440,6 @@ impl AudioEngine {
     /// Make the next block. Any length; the two sides are filled alike.
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
         let _guard = rt::enter();
-        let _no_denormals = crate::guard::NoDenormals::new();
         let total = left.len().min(right.len());
         self.flush_held();
         self.take_messages();

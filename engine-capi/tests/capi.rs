@@ -204,3 +204,43 @@ fn the_real_instruments_are_built_and_played_through_c() {
         ne_free(e);
     }
 }
+
+#[test]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn only_the_sound_card_boundary_flushes_denormals() {
+    // The C interface can play a normal sound through Gain, so no extra
+    // module API is needed to make a denormal during rendering.
+    let small = [f32::MIN_POSITIVE; 4];
+    unsafe {
+        let e = ne_new(RATE, 64, 0, 0);
+        assert_eq!(ne_add(e, 1, NE_SOUND_SOURCE, 0.0, 0.0), 0);
+        assert_eq!(ne_add(e, 2, NE_PLAYER, 1.0, 0.0), 0);
+        assert_eq!(ne_add(e, 3, NE_GAIN, 0.5, 0.0), 0);
+        assert_eq!(ne_connect(e, 1, 0, 2, 0), 0);
+        assert_eq!(ne_connect(e, 2, 0, 3, 0), 0);
+        assert_eq!(ne_connect_out(e, 3, 0), 0);
+        assert!(ne_commit(e, 0) > 0);
+        assert_eq!(ne_load_sound(e, 0, 1, small.as_ptr(), small.as_ptr(), 4, RATE), 1);
+        assert!(ne_point_sound(e, 0, 1, 0, 1, 1) > 0);
+        let (l, r) = render(e, 4, 4);
+        assert_eq!(l, vec![0.0; 4]);
+        assert_eq!(r, vec![0.0; 4]);
+        ne_free(e);
+    }
+    use engine_core::basics::{Player, SoundSource};
+    use engine_core::{EventKind, SoundData};
+    let (mut ctl, mut audio) = engine(RATE, Config { fade_frames: 0, ..Config::default() });
+    let sound = ctl.load_sound(1, SoundData { rate: RATE, l: Box::new(small), r: Box::new(small) }).unwrap();
+    ctl.add(1, Box::new(SoundSource::new())).unwrap();
+    ctl.add(2, Box::new(Player::new(1.0))).unwrap();
+    ctl.add(3, Box::new(Gain::new(0.5))).unwrap();
+    ctl.connect(port(1, 0), port(2, 0)).unwrap();
+    ctl.connect(port(2, 0), port(3, 0)).unwrap();
+    ctl.connect_out(port(3, 0)).unwrap();
+    ctl.commit().unwrap();
+    ctl.send(1, EventKind::Sound { slot: 0, sound }).unwrap();
+    let (mut l, mut r) = ([0.0; 4], [0.0; 4]);
+    audio.render(&mut l, &mut r);
+    assert_eq!(l.map(f32::to_bits), [0x0040_0000; 4]);
+    assert_eq!(r.map(f32::to_bits), [0x0040_0000; 4]);
+}
