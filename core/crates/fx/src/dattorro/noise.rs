@@ -87,4 +87,20 @@ impl Params for PnNoise {
             false
         }
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < PN_SPECS.len()).then_some(index).map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < PN_SPECS.len()).then_some(index) {
+            self.p[i] = PN_SPECS[i].clamp(v);
+            if i == 3 {
+                self.reg = (self.p[3] as u32).max(1) & 0xffffff;
+            }
+            true
+        } else {
+            false
+        }
+    }
 }

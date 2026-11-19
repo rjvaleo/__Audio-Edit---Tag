@@ -72,6 +72,21 @@ impl Params for AllpassDiffuser {
             false
         }
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < DIFFUSER_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < DIFFUSER_SPECS.len()).then_some(index) {
+            self.p[i] = DIFFUSER_SPECS[i].clamp(v);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 pub(crate) const DAMPING_SPECS: &[ParamSpec] = &[
@@ -124,6 +139,21 @@ impl Params for DampingFilter {
     }
     fn set(&mut self, k: &str, v: f32) -> bool {
         if let Some(i) = DAMPING_SPECS.iter().position(|s| s.key == k) {
+            self.p[i] = DAMPING_SPECS[i].clamp(v);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < DAMPING_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < DAMPING_SPECS.len()).then_some(index) {
             self.p[i] = DAMPING_SPECS[i].clamp(v);
             true
         } else {
@@ -229,6 +259,21 @@ impl Params for DattorroFilterBank {
     }
     fn set(&mut self, k: &str, v: f32) -> bool {
         if let Some(i) = FILTER_BANK_SPECS.iter().position(|s| s.key == k) {
+            self.p[i] = FILTER_BANK_SPECS[i].clamp(v);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < FILTER_BANK_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < FILTER_BANK_SPECS.len()).then_some(index) {
             self.p[i] = FILTER_BANK_SPECS[i].clamp(v);
             true
         } else {
@@ -347,6 +392,21 @@ impl Params for Echo {
             false
         }
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < ECHO_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < ECHO_SPECS.len()).then_some(index) {
+            self.p[i] = ECHO_SPECS[i].clamp(v);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 pub(crate) const LESLIE_SPECS: &[ParamSpec] = &[
@@ -425,6 +485,21 @@ impl Params for Leslie {
             false
         }
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < LESLIE_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < LESLIE_SPECS.len()).then_some(index) {
+            self.p[i] = LESLIE_SPECS[i].clamp(v);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 pub(crate) const SINGLE_PN_SPECS: &[ParamSpec] = &[
@@ -495,6 +570,24 @@ impl Params for SingleBitPn {
     }
     fn set(&mut self, k: &str, v: f32) -> bool {
         if let Some(i) = SINGLE_PN_SPECS.iter().position(|s| s.key == k) {
+            self.p[i] = SINGLE_PN_SPECS[i].clamp(v);
+            if i == 3 {
+                self.reg = (self.p[3] as u32).max(1) & 0xffffff
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < SINGLE_PN_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < SINGLE_PN_SPECS.len()).then_some(index) {
             self.p[i] = SINGLE_PN_SPECS[i].clamp(v);
             if i == 3 {
                 self.reg = (self.p[3] as u32).max(1) & 0xffffff

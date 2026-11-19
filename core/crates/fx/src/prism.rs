@@ -243,6 +243,29 @@ impl Effect for PrismEffect {
         }
     }
 
+    fn process_planar(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        _sample_rate: u32,
+        _scratch: &mut [f32],
+    ) {
+        if right.is_empty() && self.kernel.has_mono() {
+            for sample in left {
+                self.kernel.tick_mono(sample);
+            }
+        } else if right.is_empty() {
+            for piece in left.chunks_mut(PIECE) {
+                self.right[..piece.len()].copy_from_slice(piece);
+                self.kernel.process(piece, &mut self.right[..piece.len()]);
+            }
+        } else {
+            for (l, r) in left.chunks_mut(PIECE).zip(right.chunks_mut(PIECE)) {
+                self.kernel.process(l, r);
+            }
+        }
+    }
+
     fn reset(&mut self) {
         self.kernel.reset();
     }
@@ -259,12 +282,36 @@ impl Effect for PrismEffect {
         self.get(key)
     }
 
+    fn parameter_keys(&self) -> Vec<String> {
+        self.kernel
+            .descriptor()
+            .params
+            .iter()
+            .map(|p| p.key.to_string())
+            .collect()
+    }
+    fn get_param_index(&self, index: usize) -> Option<f32> {
+        (index < self.kernel.descriptor().params.len()).then(|| self.kernel.param(index))
+    }
+    fn set_param_index(&mut self, index: usize, value: f32) -> bool {
+        if index >= self.kernel.descriptor().params.len() {
+            return false;
+        }
+        self.kernel.set_param(index, value);
+        true
+    }
     fn telemetry(&self) -> f32 {
         self.kernel.telemetry()
     }
 }
 
 impl Params for PrismEffect {
+    fn get_index(&self, index: usize) -> Option<f32> {
+        Effect::get_param_index(self, index)
+    }
+    fn set_index(&mut self, index: usize, value: f32) -> bool {
+        Effect::set_param_index(self, index, value)
+    }
     fn specs(&self) -> &'static [ParamSpec] {
         self.specs
     }

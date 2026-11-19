@@ -114,6 +114,21 @@ impl Params for PitchShifter {
             false
         }
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < PITCH_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < PITCH_SPECS.len()).then_some(index) {
+            self.p[i] = PITCH_SPECS[i].clamp(v);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 pub(crate) const DETUNE_SPECS: &[ParamSpec] = &[
@@ -190,6 +205,21 @@ impl Params for Detune {
     }
     fn set(&mut self, k: &str, v: f32) -> bool {
         if let Some(i) = DETUNE_SPECS.iter().position(|s| s.key == k) {
+            self.p[i] = DETUNE_SPECS[i].clamp(v);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < DETUNE_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < DETUNE_SPECS.len()).then_some(index) {
             self.p[i] = DETUNE_SPECS[i].clamp(v);
             true
         } else {
@@ -275,6 +305,21 @@ impl Params for Doubler {
             false
         }
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < DOUBLER_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < DOUBLER_SPECS.len()).then_some(index) {
+            self.p[i] = DOUBLER_SPECS[i].clamp(v);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 pub(crate) const DOPPLER_SPECS: &[ParamSpec] = &[
@@ -353,6 +398,24 @@ impl Params for Doppler {
     }
     fn set(&mut self, key: &str, value: f32) -> bool {
         if let Some(i) = DOPPLER_SPECS.iter().position(|s| s.key == key) {
+            self.p[i] = DOPPLER_SPECS[i].clamp(value);
+            if i == 0 {
+                self.current_samples = self.p[0] * self.sr as f32 / 1000.0;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < DOPPLER_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, value: f32) -> bool {
+        if let Some(i) = (index < DOPPLER_SPECS.len()).then_some(index) {
             self.p[i] = DOPPLER_SPECS[i].clamp(value);
             if i == 0 {
                 self.current_samples = self.p[0] * self.sr as f32 / 1000.0;

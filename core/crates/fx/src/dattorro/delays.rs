@@ -179,4 +179,19 @@ impl Params for ModDelay {
             false
         }
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < self.specs().len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < self.specs().len()).then_some(index) {
+            self.p[i] = self.specs()[i].clamp(v);
+            true
+        } else {
+            false
+        }
+    }
 }

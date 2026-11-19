@@ -133,6 +133,27 @@ impl Params for MusicalFilter {
         };
         true
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        match index {
+            3 => Some(self.mix),
+            0 => Some(self.frequency),
+            1 => Some(self.bandwidth),
+            2 => Some(self.gain_db),
+            _ => None,
+        }
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        match index {
+            0 => self.frequency = FILTER_SPECS[0].clamp(v),
+            1 => self.bandwidth = FILTER_SPECS[1].clamp(v),
+            2 => self.gain_db = FILTER_SPECS[2].clamp(v),
+            3 => self.mix = FILTER_SPECS[3].clamp(v),
+            _ => return false,
+        };
+        true
+    }
 }
 
 pub(crate) const CHAMBERLIN_SPECS: &[ParamSpec] = &[
@@ -237,6 +258,21 @@ impl Params for Chamberlin {
     }
     fn set(&mut self, k: &str, v: f32) -> bool {
         if let Some(i) = CHAMBERLIN_SPECS.iter().position(|s| s.key == k) {
+            self.p[i] = CHAMBERLIN_SPECS[i].clamp(v);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < CHAMBERLIN_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < CHAMBERLIN_SPECS.len()).then_some(index) {
             self.p[i] = CHAMBERLIN_SPECS[i].clamp(v);
             true
         } else {

@@ -213,4 +213,19 @@ impl Params for Plate {
             false
         }
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < PLATE_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        if let Some(i) = (index < PLATE_SPECS.len()).then_some(index) {
+            self.p[i] = PLATE_SPECS[i].clamp(v);
+            true
+        } else {
+            false
+        }
+    }
 }

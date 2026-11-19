@@ -315,6 +315,10 @@ pub struct Shared {
     /// baked into it, and replaying them would be writing yesterday's numbers
     /// over today's.
     manual: Mutex<Vec<(usize, String, f32)>>,
+    // Resolved on the control thread; these are the callback's only views.
+    control_maps: Mutex<Vec<fx::ControlMap>>,
+    manual_indices: Mutex<Vec<(usize, fx::ParamIndex, f32)>>,
+    automation_indices: Mutex<Vec<(usize, fx::ParamIndex, f32)>>,
 
     /// Magnitudes of the most recent output block, 0..255 per bin.
     ///
@@ -629,28 +633,17 @@ fn last_frame(out: &[f32], channels: usize) -> [f32; 2] {
 /// on a slider or from an automation lane therefore lands here first and is
 /// walked toward its target over a few milliseconds instead.
 ///
-/// The control's name is held inline rather than as a `String`, because the
-/// audio thread may not allocate and the effect needs the name back to write it.
-/// Thirty-two bytes covers every key in this codebase; a longer one is not
-/// smoothed rather than truncated into some other control's name.
+/// Names are resolved by Shared on the control thread. The callback retains
+/// only a numeric handle, so neither finding nor writing a smoother compares
+/// strings or owns heap storage.
 #[derive(Clone, Copy)]
 struct Smoothed {
     slot: usize,
-    key: [u8; 32],
-    key_len: usize,
+    index: fx::ParamIndex,
     current: f32,
     target: f32,
 }
 
-impl Smoothed {
-    fn name(&self) -> &str {
-        // Written from a `&str`, so it is still valid UTF-8.
-        std::str::from_utf8(&self.key[..self.key_len]).unwrap_or("")
-    }
-    fn is(&self, slot: usize, key: &str) -> bool {
-        self.slot == slot && self.name() == key
-    }
-}
 
 /// How long a control takes to reach a new value, in seconds.
 ///
@@ -690,6 +683,7 @@ const RACK_FADE_FRAMES: usize = 960;
 /// Toggles are deliberately absent: a switch read as `>= 0.5` simply flips
 /// halfway through the ramp, which is a switch happening 7 ms late and not a
 /// wrong value.
+#[cfg(test)]
 fn is_stepped(key: &str) -> bool {
     matches!(key, "mode" | "notches" | "layers" | "fftSize" | "interpolation")
 }

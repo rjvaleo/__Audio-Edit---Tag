@@ -30,6 +30,14 @@ impl Params for Invert {
     fn set(&mut self, _key: &str, _value: f32) -> bool {
         false
     }
+
+    fn get_index(&self, _index: usize) -> Option<f32> {
+        None
+    }
+
+    fn set_index(&mut self, _index: usize, _value: f32) -> bool {
+        false
+    }
 }
 
 /// Left becomes right. A mono signal notices nothing.
@@ -59,6 +67,14 @@ impl Params for SwapChannels {
         None
     }
     fn set(&mut self, _key: &str, _value: f32) -> bool {
+        false
+    }
+
+    fn get_index(&self, _index: usize) -> Option<f32> {
+        None
+    }
+
+    fn set_index(&mut self, _index: usize, _value: f32) -> bool {
         false
     }
 }
@@ -110,6 +126,18 @@ impl Params for Width {
     }
     fn set(&mut self, key: &str, value: f32) -> bool {
         if key == "width" {
+            self.width = WIDTH_SPECS[0].clamp(value);
+            return true;
+        }
+        false
+    }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index == 0).then_some(self.width)
+    }
+
+    fn set_index(&mut self, index: usize, value: f32) -> bool {
+        if index == 0 {
             self.width = WIDTH_SPECS[0].clamp(value);
             return true;
         }
@@ -170,6 +198,18 @@ impl Params for DcOffset {
     }
     fn set(&mut self, key: &str, value: f32) -> bool {
         if key == "hz" {
+            self.hz = DC_SPECS[0].clamp(value);
+            return true;
+        }
+        false
+    }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index == 0).then_some(self.hz)
+    }
+
+    fn set_index(&mut self, index: usize, value: f32) -> bool {
+        if index == 0 {
             self.hz = DC_SPECS[0].clamp(value);
             return true;
         }
@@ -309,6 +349,25 @@ impl Params for RingMod {
             "hz" => self.hz = RING_SPECS[0].clamp(value),
             "mix" => self.mix = RING_SPECS[1].clamp(value),
             "sweep" => self.sweep = RING_SPECS[2].clamp(value),
+            _ => return false,
+        }
+        true
+    }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        match index {
+            0 => Some(self.hz),
+            1 => Some(self.mix),
+            2 => Some(self.sweep),
+            _ => None,
+        }
+    }
+
+    fn set_index(&mut self, index: usize, value: f32) -> bool {
+        match index {
+            0 => self.hz = RING_SPECS[0].clamp(value),
+            1 => self.mix = RING_SPECS[1].clamp(value),
+            2 => self.sweep = RING_SPECS[2].clamp(value),
             _ => return false,
         }
         true

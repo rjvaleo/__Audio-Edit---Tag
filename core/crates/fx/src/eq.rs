@@ -310,6 +310,84 @@ impl Effect for Eq {
         }
         true
     }
+    fn parameter_keys(&self) -> Vec<String> {
+        (0..8)
+            .flat_map(|i| {
+                ["freq", "q", "gainDb", "enabled", "mode"]
+                    .map(move |field| format!("band.{i}.{field}"))
+            })
+            .collect()
+    }
+    fn get_param_index(&self, index: usize) -> Option<f32> {
+        if index >= 40 {
+            return None;
+        }
+        let (i, field) = (index / 5, index % 5);
+        let b = self.settings.bands()[i];
+        Some(match field {
+            0 => b.freq,
+            1 => b.q,
+            2 => b.gain_db,
+            3 => self.settings.enabled[i] as u8 as f32,
+            _ => return None,
+        })
+    }
+    fn set_param_index(&mut self, index: usize, value: f32) -> bool {
+        if index >= 40 {
+            return false;
+        }
+        let (i, field) = (index / 5, index % 5);
+        if field == 3 {
+            self.settings.enabled[i] = value >= 0.5;
+            return true;
+        }
+        if field == 4 {
+            self.settings.modes[i] = match value.round() as i32 {
+                0 => EqMode::HighPass,
+                1 => EqMode::LowShelf,
+                2 => EqMode::Bell,
+                3 => EqMode::Notch,
+                4 => EqMode::HighShelf,
+                5 => EqMode::LowPass,
+                _ => return false,
+            };
+            return true;
+        }
+        let mut bands = [
+            Band {
+                freq: self.settings.high_pass_hz,
+                q: 0.707,
+                gain_db: 0.0,
+            },
+            self.settings.low,
+            self.settings.mid,
+            self.settings.extra[0],
+            self.settings.extra[1],
+            self.settings.extra[2],
+            self.settings.high,
+            Band {
+                freq: self.settings.low_pass_hz,
+                q: 0.707,
+                gain_db: 0.0,
+            },
+        ];
+        match field {
+            0 => bands[i].freq = value.clamp(EQ_FREQ_MIN, EQ_FREQ_MAX),
+            1 => bands[i].q = value.clamp(EQ_Q_MIN, EQ_Q_MAX),
+            2 => bands[i].gain_db = value.clamp(EQ_GAIN_MIN, EQ_GAIN_MAX),
+            _ => return false,
+        }
+        match i {
+            0 => self.settings.high_pass_hz = bands[i].freq,
+            1 => self.settings.low = bands[i],
+            2 => self.settings.mid = bands[i],
+            3..=5 => self.settings.extra[i - 3] = bands[i],
+            6 => self.settings.high = bands[i],
+            7 => self.settings.low_pass_hz = bands[i].freq,
+            _ => {}
+        }
+        true
+    }
 }
 
 #[cfg(test)]

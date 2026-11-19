@@ -109,6 +109,23 @@ impl Params for Utility {
             false
         }
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        if index < 5 {
+            Some(self.values[index])
+        } else {
+            self.fit.get_index(index - 5)
+        }
+    }
+
+    fn set_index(&mut self, index: usize, value: f32) -> bool {
+        if index < 5 {
+            self.values[index] = UTILITY_SPECS[index].clamp(value);
+            true
+        } else {
+            self.fit.set_index(index - 5, value)
+        }
+    }
 }
 
 /// Which shaper. One name, used by the rack, the JSON and the interface, so

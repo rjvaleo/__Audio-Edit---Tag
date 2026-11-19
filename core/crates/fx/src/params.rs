@@ -119,6 +119,14 @@ pub trait Params {
     /// derived at use, not here.
     fn set(&mut self, key: &str, value: f32) -> bool;
 
+    /// Numeric forms use the order in specs(); resolved by the control thread.
+    fn get_index(&self, _index: usize) -> Option<f32> {
+        None
+    }
+    fn set_index(&mut self, _index: usize, _value: f32) -> bool {
+        false
+    }
+
     /// The spec for a key, for whatever needs the range rather than the value.
     fn spec(&self, key: &str) -> Option<&'static ParamSpec> {
         self.specs().iter().find(|s| s.key == key)

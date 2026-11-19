@@ -84,6 +84,9 @@ impl Shared {
             rack_meters: Arc::new(fx::RackMeters::new()),
             automation: Mutex::new(Vec::new()),
             manual: Mutex::new(Vec::new()),
+            control_maps: Mutex::new(Vec::new()),
+            manual_indices: Mutex::new(Vec::new()),
+            automation_indices: Mutex::new(Vec::new()),
             // Their full size from the start: the audio thread fills them and
             // must never grow them.
             spectrum: Mutex::new(Vec::with_capacity(FFT_SIZE / 2 + 1)),
@@ -470,6 +473,11 @@ impl Shared {
         if let Ok(mut g) = self.manual.lock() {
             g.clear();
         }
+        if let Ok(mut g) = self.manual_indices.lock() {g.clear();}
+        if let Ok(mut maps) = self.control_maps.lock() {
+            *maps = rack.as_ref().map(|r| r.control_maps()).unwrap_or_default();
+            self.resolve_automation(&maps);
+        }
         let mut rack = rack;
         if let Some(r) = rack.as_mut() {
             r.set_meters(Arc::clone(&self.rack_meters));
@@ -483,6 +491,12 @@ impl Shared {
     /// built by the caller, off the audio thread. Controls held for the slot
     /// by hand belong to the mode it is leaving, so they are let go.
     pub fn swap_slot(&self, slot: usize, effect: Box<dyn fx::Effect>) {
+        let effect = fx::prepare_effect(effect);
+        if let Ok(mut maps) = self.control_maps.lock() {
+            if let Some(map) = maps.get_mut(slot) { *map = map.switching_to(effect.as_ref()); }
+            self.resolve_automation(&maps);
+        }
+        if let Ok(mut g) = self.manual_indices.lock() {g.retain(|(s, _, _)| *s != slot);}
         if let Ok(mut g) = self.manual.lock() {
             g.retain(|(s, _, _)| *s != slot);
         }
@@ -644,6 +658,18 @@ impl Shared {
     /// chain — which is audible as a click at best and as the tail vanishing at
     /// worst, and is why moving a control never felt connected to the sound.
     pub fn set_manual_param(&self, slot: usize, key: &str, value: f32) {
+        let index = self.resolve_param(slot, key);
+        if let Ok(mut g) = self.manual_indices.lock() {
+            if let Some(index) = index {
+                match g
+                    .iter_mut()
+                    .find(|(s, i, _)| *s == slot && i.same_control(index))
+                {
+                    Some(entry) => entry.2 = value,
+                    None => g.push((slot, index, value)),
+                }
+            }
+        }
         if let Ok(mut g) = self.manual.lock() {
             match g.iter_mut().find(|(s, k, _)| *s == slot && k == key) {
                 Some(entry) => entry.2 = value,
@@ -676,8 +702,40 @@ impl Shared {
     /// and its strings are built here and dropped here; see
     /// [`Shared::automation`] for why that matters.
     pub fn set_automation(&self, values: Vec<(usize, String, f32)>) {
-        if let Ok(mut g) = self.automation.lock() {
-            *g = values;
+        if let Ok(maps) = self.control_maps.lock() {
+            if let Ok(mut g) = self.automation_indices.lock() {
+                *g = values
+                    .iter()
+                    .filter_map(|(slot, key, value)| {
+                        maps.get(*slot)?
+                            .resolve(key)
+                            .map(|index| (*slot, index, *value))
+                    })
+                    .collect();
+            }
+            if let Ok(mut g) = self.automation.lock() {
+                *g = values;
+            }
+        }
+    }
+
+    /// Control-thread name resolution; unknown names never reach the callback.
+    pub fn resolve_param(&self, slot: usize, key: &str) -> Option<fx::ParamIndex> {
+        self.control_maps.lock().ok()?.get(slot)?.resolve(key)
+    }
+
+    fn resolve_automation(&self, maps: &[fx::ControlMap]) {
+        if let Ok(values) = self.automation.lock() {
+            if let Ok(mut g) = self.automation_indices.lock() {
+                *g = values
+                    .iter()
+                    .filter_map(|(slot, key, value)| {
+                        maps.get(*slot)?
+                            .resolve(key)
+                            .map(|index| (*slot, index, *value))
+                    })
+                    .collect();
+            }
         }
     }
 
@@ -686,6 +744,7 @@ impl Shared {
     /// Without this the final values would stay written into the rack after
     /// playback ended, and the next thing to play would start under them.
     pub fn clear_automation(&self) {
+        if let Ok(mut g) = self.automation_indices.lock() {g.clear();}
         if let Ok(mut g) = self.automation.lock() {
             g.clear();
         }

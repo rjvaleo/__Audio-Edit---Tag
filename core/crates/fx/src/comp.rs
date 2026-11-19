@@ -170,6 +170,41 @@ impl Effect for Compressor {
         }
         true
     }
+    fn parameter_keys(&self) -> Vec<String> {
+        vec![
+            "thresholdDb".to_string(),
+            "ratio".to_string(),
+            "attackMs".to_string(),
+            "releaseMs".to_string(),
+            "kneeDb".to_string(),
+            "makeupDb".to_string(),
+        ]
+    }
+    fn get_param_index(&self, index: usize) -> Option<f32> {
+        Some(match index {
+            0 => self.settings.threshold_db,
+            1 => self.settings.ratio,
+            2 => self.settings.attack_ms,
+            3 => self.settings.release_ms,
+            4 => self.settings.knee_db,
+            5 => self.settings.makeup_db,
+            _ => return None,
+        })
+    }
+
+    /// The same ranges the interface offers — see [`crate::eq::EQ_FREQ_MIN`].
+    fn set_param_index(&mut self, index: usize, value: f32) -> bool {
+        match index {
+            0 => self.settings.threshold_db = value.clamp(COMP_THRESHOLD_MIN, 0.0),
+            1 => self.settings.ratio = value.clamp(COMP_RATIO_MIN, COMP_RATIO_MAX),
+            2 => self.settings.attack_ms = value.clamp(COMP_ATTACK_MIN, COMP_ATTACK_MAX),
+            3 => self.settings.release_ms = value.clamp(COMP_RELEASE_MIN, COMP_RELEASE_MAX),
+            4 => self.settings.knee_db = value.clamp(0.0, COMP_KNEE_MAX),
+            5 => self.settings.makeup_db = value.clamp(COMP_MAKEUP_MIN, COMP_MAKEUP_MAX),
+            _ => return false,
+        }
+        true
+    }
 }
 
 pub const COMP_THRESHOLD_MIN: f32 = -60.0;

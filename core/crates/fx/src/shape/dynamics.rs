@@ -116,6 +116,25 @@ impl Params for Rappify {
         }
         true
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        match index {
+            0 => Some(self.amount),
+            1 => Some(self.hz),
+            2 => Some(self.speed),
+            _ => None,
+        }
+    }
+
+    fn set_index(&mut self, index: usize, value: f32) -> bool {
+        match index {
+            0 => self.amount = RAP_SPECS[0].clamp(value),
+            1 => self.hz = RAP_SPECS[1].clamp(value),
+            2 => self.speed = RAP_SPECS[2].clamp(value),
+            _ => return false,
+        }
+        true
+    }
 }
 
 // -------------------------------------------------------- reverse boomerang
@@ -245,6 +264,23 @@ impl Params for ReverseMix {
         }
         true
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        match index {
+            0 => Some(self.throw_ms),
+            1 => Some(self.mix),
+            _ => None,
+        }
+    }
+
+    fn set_index(&mut self, index: usize, value: f32) -> bool {
+        match index {
+            0 => self.throw_ms = REV_SPECS[0].clamp(value),
+            1 => self.mix = REV_SPECS[1].clamp(value),
+            _ => return false,
+        }
+        true
+    }
 }
 
 // ---------------------------------------------------------- amplitude fit
@@ -363,6 +399,25 @@ impl Params for AmplitudeFit {
         }
         true
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        match index {
+            0 => Some(self.grain_ms),
+            1 => Some(self.amount),
+            2 => Some(self.floor_db),
+            _ => None,
+        }
+    }
+
+    fn set_index(&mut self, index: usize, value: f32) -> bool {
+        match index {
+            0 => self.grain_ms = FIT_SPECS[0].clamp(value),
+            1 => self.amount = FIT_SPECS[1].clamp(value),
+            2 => self.floor_db = FIT_SPECS[2].clamp(value),
+            _ => return false,
+        }
+        true
+    }
 }
 
 // ----------------------------------------------------------------- the gate
@@ -469,6 +524,27 @@ impl Params for Gate {
             "attackMs" => self.attack_ms = GATE_SPECS[1].clamp(value),
             "releaseMs" => self.release_ms = GATE_SPECS[2].clamp(value),
             "depth" => self.depth = GATE_SPECS[3].clamp(value),
+            _ => return false,
+        }
+        true
+    }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        match index {
+            0 => Some(self.threshold_db),
+            1 => Some(self.attack_ms),
+            2 => Some(self.release_ms),
+            3 => Some(self.depth),
+            _ => None,
+        }
+    }
+
+    fn set_index(&mut self, index: usize, value: f32) -> bool {
+        match index {
+            0 => self.threshold_db = GATE_SPECS[0].clamp(value),
+            1 => self.attack_ms = GATE_SPECS[1].clamp(value),
+            2 => self.release_ms = GATE_SPECS[2].clamp(value),
+            3 => self.depth = GATE_SPECS[3].clamp(value),
             _ => return false,
         }
         true

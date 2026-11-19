@@ -8,38 +8,46 @@ impl Core {
     /// A control asked for something it is already at costs nothing; a new one
     /// starts from where it was asked to go rather than from zero, so the first
     /// write of a session lands immediately instead of sweeping up from silence.
-    fn aim(&mut self, slot: usize, key: &str, value: f32) {
-        if let Some(s) = self.smoothing.iter_mut().find(|s| s.is(slot, key)) {
+    fn aim(&mut self, slot: usize, index: fx::ParamIndex, value: f32) {
+        if let Some(s) = self
+            .smoothing
+            .iter_mut()
+            .find(|s| s.slot == slot && s.index.same_control(index))
+        {
+            s.index = index;
             s.target = value;
-            // A control that cannot meaningfully be halfway between two
-            // settings jumps: see `is_stepped`.
-            if is_stepped(key) {
+            if index.is_stepped() {
                 s.current = value;
             }
             return;
         }
-        // First sight of this control. Start it from wherever the effect
-        // actually is and ramp from there — writing it straight through was the
-        // click, because the first move of any control is the one that matters.
-        // An effect that cannot say where it is gets the value directly, which
-        // is the old behaviour and the best that can be done for it.
-        let from = self.rack.as_ref().and_then(|r| r.get_param(slot, key));
+        let from = self
+            .rack
+            .as_ref()
+            .and_then(|r| r.get_param_index(slot, index));
         if from.is_none() {
             if let Some(rack) = self.rack.as_mut() {
-                rack.set_param(slot, key, value);
+                rack.set_param_index(slot, index, value);
             }
         }
-        let bytes = key.as_bytes();
-        if self.smoothing.len() < MAX_SMOOTHED && bytes.len() <= 32 {
-            let mut buf = [0u8; 32];
-            buf[..bytes.len()].copy_from_slice(bytes);
+        if self.smoothing.len() < MAX_SMOOTHED {
             self.smoothing.push(Smoothed {
                 slot,
-                key: buf,
-                key_len: bytes.len(),
-                current: if is_stepped(key) { value } else { from.unwrap_or(value) },
+                index,
+                current: if index.is_stepped() {
+                    value
+                } else {
+                    from.unwrap_or(value)
+                },
                 target: value,
             });
+        }
+    }
+
+    #[cfg(test)]
+    fn aim_key(&mut self, slot: usize, key: &str, value: f32) {
+        if let Some(index) = self.rack.as_ref().and_then(|r| r.param_index(slot, key)) {
+            self.aim(slot, index, value);
         }
     }
 
@@ -167,7 +175,7 @@ impl Core {
             if (s.current - s.target).abs() < 1e-6 {
                 s.current = s.target;
             }
-            rack.set_param(s.slot, s.name(), s.current);
+            rack.set_param_index(s.slot, s.index, s.current);
         }
     }
 
@@ -479,14 +487,14 @@ impl Core {
         // Aim the smoothers at whatever has been asked for. Manual first, then
         // automation, so a lane wins over a hand on the same control.
         if self.rack.is_some() {
-            if let Some(g) = crate::transport::try_lock(&shared.manual) {
-                for (slot, key, value) in g.iter() {
-                    self.aim(*slot, key, *value);
+            if let Some(g) = crate::transport::try_lock(&shared.manual_indices) {
+                for (slot, index, value) in g.iter() {
+                    self.aim(*slot, *index, *value);
                 }
             }
-            if let Some(g) = crate::transport::try_lock(&shared.automation) {
-                for (slot, key, value) in g.iter() {
-                    self.aim(*slot, key, *value);
+            if let Some(g) = crate::transport::try_lock(&shared.automation_indices) {
+                for (slot, index, value) in g.iter() {
+                    self.aim(*slot, *index, *value);
                 }
             }
         }

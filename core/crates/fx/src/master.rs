@@ -355,4 +355,31 @@ impl Params for Maximizer {
         self.settings.on = true;
         true
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        Some(match index {
+            0 => self.settings.amount,
+            1 => self.settings.ceiling_db,
+            2 => f32::from(u8::from(self.settings.auto_level)),
+            3 => f32::from(u8::from(self.settings.auto_comp)),
+            _ => return None,
+        })
+    }
+
+    fn set_index(&mut self, index: usize, value: f32) -> bool {
+        match index {
+            0 => self.settings.amount = value.clamp(0.0, 1.0),
+            1 => self.settings.ceiling_db = value.clamp(-24.0, 0.0),
+            // Half, not zero, so a control swept through the middle lands the
+            // same way whichever direction it came from.
+            2 => self.settings.auto_level = value >= 0.5,
+            3 => self.settings.auto_comp = value >= 0.5,
+            _ => return false,
+        }
+        // `on` is not a parameter. A module in the rack is on by definition and
+        // is switched off by bypassing it, like every other module — carrying a
+        // second idea of "off" inside it would give two switches that disagree.
+        self.settings.on = true;
+        true
+    }
 }

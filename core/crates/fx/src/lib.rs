@@ -20,6 +20,9 @@ pub mod dattorro;
 pub mod eq;
 pub mod master;
 pub mod params;
+mod planar;
+mod controls;
+pub use controls::{prepare_effect, ControlMap, ParamIndex};
 pub mod phaser;
 pub mod prism;
 pub mod reverb;
@@ -70,8 +73,8 @@ impl RackMeters {
             l = l.max(frame[0].abs());
             r = r.max(frame.get(1).copied().unwrap_or(frame[0]).abs());
         }
-        self.left[stage].store(l.to_bits(), Ordering::Release);
-        self.right[stage].store(r.to_bits(), Ordering::Release);
+        self.left[stage].fetch_max(l.to_bits(), Ordering::Release);
+        self.right[stage].fetch_max(r.to_bits(), Ordering::Release);
     }
 
     fn write_telemetry(&self, stage: usize, value: f32) {
@@ -84,8 +87,8 @@ impl RackMeters {
         (0..MAX_RACK_STAGES)
             .map(|i| {
                 (
-                    f32::from_bits(self.left[i].load(Ordering::Acquire)),
-                    f32::from_bits(self.right[i].load(Ordering::Acquire)),
+                    f32::from_bits(self.left[i].swap(0, Ordering::AcqRel)),
+                    f32::from_bits(self.right[i].swap(0, Ordering::AcqRel)),
                 )
             })
             .collect()
@@ -132,6 +135,32 @@ pub trait Effect: Send {
     /// Process `buf`, interleaved, `channels` wide.
     fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32);
 
+    /// Planar audio; an empty right side means mono. The rack supplies fixed
+    /// interleaved scratch for effects whose own processing is interleaved.
+    fn process_planar(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        sample_rate: u32,
+        scratch: &mut [f32],
+    ) {
+        let channels = if right.is_empty() { 1 } else { 2 };
+        let buf = &mut scratch[..left.len() * channels];
+        for (i, frame) in buf.chunks_exact_mut(channels).enumerate() {
+            frame[0] = left[i];
+            if channels == 2 {
+                frame[1] = right[i];
+            }
+        }
+        self.process(buf, channels, sample_rate);
+        for (i, frame) in buf.chunks_exact(channels).enumerate() {
+            left[i] = frame[0];
+            if channels == 2 {
+                right[i] = frame[1];
+            }
+        }
+    }
+
     /// Clear any internal memory. Called before a render that does not start
     /// where the last one left off.
     fn reset(&mut self);
@@ -159,6 +188,23 @@ pub trait Effect: Send {
         None
     }
 
+    /// Control-thread enumeration; indices are local to this effect's specs.
+    fn parameter_keys(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn controls_prepared(&self) -> bool {
+        false
+    }
+    fn control_index(&self, _id: usize) -> Option<usize> {
+        None
+    }
+    fn get_param_index(&self, _index: usize) -> Option<f32> {
+        None
+    }
+    fn set_param_index(&mut self, _index: usize, _value: f32) -> bool {
+        false
+    }
+
     /// One scalar the interface can show for this effect, or zero.
     ///
     /// A compressor reports its current gain reduction as positive dB, which is
@@ -182,6 +228,15 @@ impl<T: Effect + params::Params> Effect for Driven<T> {
     fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32) {
         self.0.process(buf, channels, sample_rate)
     }
+    fn process_planar(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        sample_rate: u32,
+        scratch: &mut [f32],
+    ) {
+        self.0.process_planar(left, right, sample_rate, scratch);
+    }
     fn reset(&mut self) {
         self.0.reset()
     }
@@ -193,6 +248,15 @@ impl<T: Effect + params::Params> Effect for Driven<T> {
     }
     fn get_param(&self, key: &str) -> Option<f32> {
         self.0.get(key)
+    }
+    fn parameter_keys(&self) -> Vec<String> {
+        self.0.specs().iter().map(|p| p.key.to_string()).collect()
+    }
+    fn get_param_index(&self, index: usize) -> Option<f32> {
+        self.0.get_index(index)
+    }
+    fn set_param_index(&mut self, index: usize, value: f32) -> bool {
+        self.0.set_index(index, value)
     }
     fn telemetry(&self) -> f32 {
         self.0.telemetry()
@@ -218,6 +282,19 @@ impl Effect for Gain {
     fn reset(&mut self) {}
     fn name(&self) -> &'static str {
         "Gain"
+    }
+    fn parameter_keys(&self) -> Vec<String> {
+        vec!["db".to_string()]
+    }
+    fn get_param_index(&self, index: usize) -> Option<f32> {
+        (index == 0).then_some(self.db)
+    }
+    fn set_param_index(&mut self, index: usize, value: f32) -> bool {
+        if index != 0 {
+            return false;
+        }
+        self.db = value.clamp(GAIN_DB_MIN, GAIN_DB_MAX);
+        true
     }
     fn set_param(&mut self, key: &str, value: f32) -> bool {
         if key == "db" {
@@ -396,6 +473,7 @@ pub struct Slot {
 
 impl Slot {
     fn new(effect: Box<dyn Effect>, bypassed: bool) -> Slot {
+        let effect = prepare_effect(effect);
         Slot {
             effect,
             bypassed,
@@ -517,6 +595,9 @@ pub struct Rack {
     /// Place works on the two sides apart.
     place_l: Vec<f32>,
     place_r: Vec<f32>,
+    planar_l: Vec<f32>,
+    planar_r: Vec<f32>,
+    adapter: Vec<f32>,
     /// How many times a block that was not all numbers was caught and
     /// silenced. See [`Rack::process`].
     tripped: u32,
@@ -524,7 +605,7 @@ pub struct Rack {
 
 impl Rack {
     pub fn new() -> Self {
-        Rack { slots: Vec::new(), meters: None, dry: Vec::new(), xfade: Vec::new(), place_l: Vec::new(), place_r: Vec::new(), tripped: 0 }
+        Rack { slots: Vec::new(), meters: None, dry: Vec::new(), xfade: Vec::new(), place_l: Vec::new(), place_r: Vec::new(), planar_l: Vec::new(), planar_r: Vec::new(), adapter: Vec::new(), tripped: 0 }
     }
 
     /// Build a rack with scratch for `max_samples` interleaved samples.
@@ -588,6 +669,15 @@ impl Rack {
     /// Room for a block of this many samples, so that a footer moved while
     /// the audio thread is running the rack does not have to allocate there.
     pub fn reserve_mix(&mut self, samples: usize) {
+        if self.planar_l.len() < samples {
+            self.planar_l.resize(samples, 0.0);
+            self.planar_r.resize(samples, 0.0);
+            self.adapter.resize(samples, 0.0);
+        }
+        self.reserve_stages(samples);
+    }
+
+    fn reserve_stages(&mut self, samples: usize) {
         if self.dry.len() < samples {
             self.dry.resize(samples, 0.0);
         }
@@ -650,7 +740,7 @@ impl Rack {
     /// good and every block after it is NaN too. So what comes in is checked,
     /// and what each effect gives: a bad block is silenced and that effect's
     /// memory cleared, and the ones before and after it carry on.
-    pub fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32) {
+    fn process_interleaved(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32) {
         if !all_finite(buf) {
             buf.fill(0.0);
             self.tripped = self.tripped.wrapping_add(1);

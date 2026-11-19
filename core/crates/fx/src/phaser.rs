@@ -212,6 +212,22 @@ impl Params for Phaser {
             None => false,
         }
     }
+
+    fn get_index(&self, index: usize) -> Option<f32> {
+        (index < PHASER_SPECS.len())
+            .then_some(index)
+            .map(|i| self.p[i])
+    }
+
+    fn set_index(&mut self, index: usize, v: f32) -> bool {
+        match (index < PHASER_SPECS.len()).then_some(index) {
+            Some(i) => {
+                self.p[i] = PHASER_SPECS[i].clamp(v);
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 #[cfg(test)]
