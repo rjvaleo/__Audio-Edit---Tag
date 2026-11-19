@@ -8,6 +8,25 @@
 // costs next to nothing; and no request goes anywhere but this machine.
 
 import { test, expect } from './test.mjs';
+import { rmSync } from 'node:fs';
+
+const exportedFiles = new Set();
+test.afterAll(async ({ request }) => {
+  if (!exportedFiles.size) return;
+  // The next spec may scan this same library. Only remove our own exports,
+  // after their writer has finished, including when a later assertion fails.
+  await expect.poll(async () => (await (await request.get('/api/export')).json()).running,
+    { timeout: 30_000 }).toBe(false);
+  for (const file of exportedFiles) rmSync(file, { force: true });
+});
+
+async function timedExport(page) {
+  const started = await page.evaluate(() => postJSON('/api/export', { p: 'kit/tone.wav', bits: 16 }));
+  if (started.path) exportedFiles.add(started.path);
+  await page.evaluate(async () => {
+    for (let i = 0; i < 100 && (await api('/api/export')).running; i++) await new Promise((r) => setTimeout(r, 50));
+  });
+}
 
 async function ready(page) {
   await page.goto('/');
@@ -298,10 +317,7 @@ test('the sampler writes rows of CPU and memory, and times an export', async ({ 
   expect(typeof row.cpu).toBe('number');
   expect(row.rss).toBeGreaterThan(1);
   // An export, however short, is one timed row.
-  await page.evaluate(async () => {
-    await postJSON('/api/export', { p: 'kit/tone.wav', bits: 16 });
-    for (let i = 0; i < 100 && (await api('/api/export')).running; i++) await new Promise((r) => setTimeout(r, 50));
-  });
+  await timedExport(page);
   await expect.poll(async () => (await (await request.get('/api/analytics/perf')).json()).exports.length, { timeout: 5000 }).toBe(1);
   perf = await (await request.get('/api/analytics/perf')).json();
   const x = perf.exports[0];
@@ -365,10 +381,7 @@ test('retention: settings stick, a purge rolls old days into summaries, and the 
 test('the Performance page draws the sampler rows, the exports and the frames', async ({ page, request }) => {
   await ready(page);
   await request.post('/api/analytics/perf/sample');
-  await page.evaluate(async () => {
-    await postJSON('/api/export', { p: 'kit/tone.wav', bits: 16 });
-    for (let i = 0; i < 100 && (await api('/api/export')).running; i++) await new Promise((r) => setTimeout(r, 50));
-  });
+  await timedExport(page);
   await expect.poll(async () => (await (await request.get('/api/analytics/perf')).json()).exports.length, { timeout: 5000 }).toBeGreaterThan(0);
   await page.evaluate(() => openAnalytics());
   const view = page.locator('#analyticsView');
