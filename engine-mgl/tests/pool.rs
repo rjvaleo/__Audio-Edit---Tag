@@ -106,6 +106,9 @@ fn same(a: &[f32], b: &[f32], name: &str) {
 }
 #[test]
 fn real_parallel_waves_and_every_catalogue_effect_match_and_allocate_nothing() {
+    let reference = control_burst(false, 8);
+    assert_eq!(reference, control_burst(false, 512));
+    assert_eq!(reference, control_burst(true, 512));
     for host in [false, true] {
         for block in [64, 128, 512] {
             let (serial, _) = run(false, None, block, host);
@@ -125,4 +128,30 @@ fn real_parallel_waves_and_every_catalogue_effect_match_and_allocate_nothing() {
             assert_eq!(jobs, 0, "cheap kernel {name} stayed serial");
         }
     }
+}
+
+fn control_burst(parallel:bool,block:usize)->Vec<u32>{
+    use engine_core::basics::Gain;
+    let(mut ctl,mut audio)=engine(48000.0,Config{parallel,max_block:512,fade_frames:0,..Config::default()});
+    for id in 10..18 {
+        ctl.add(id,Box::new(engine_mgl::demo::wave(48000.0))).unwrap();
+        ctl.add(id+100,Box::new(Gain::new(0.5))).unwrap();
+        ctl.connect(port(id,0),port(id+100,0)).unwrap();ctl.connect_out(port(id+100,0)).unwrap();
+    }
+    ctl.commit().unwrap();
+    for id in 10..18 {for note in 0..16 {ctl.send(id,EventKind::Note(NoteEvent::on(36+note*3,0.5))).unwrap();}}
+    for event in 0..256 {
+        ctl.send_at(event*8,110+(event%8)as u32,EventKind::Param{index:0,value:if (event/8)%2==0{0.5}else{0.25}}).unwrap();
+    }
+    let(mut l,mut r)=(vec![0.0;block],vec![0.0;block]);let mut bits=Vec::with_capacity(4096);
+    for _ in 0..2048/block {
+        let heap=HEAP.load(Ordering::Relaxed);audio.render(&mut l,&mut r);
+        assert_eq!(HEAP.load(Ordering::Relaxed),heap);
+        bits.extend(l.iter().chain(&r).map(|v|v.to_bits()));
+    }
+    // Normalize the output interleave for comparisons between block sizes.
+    let mut planar=Vec::with_capacity(bits.len());
+    for side in 0..2 {for chunk in bits.chunks(block*2){planar.extend_from_slice(&chunk[side*block..(side+1)*block]);}}
+    if parallel {assert!(audio.worker_jobs()>0);}
+    planar
 }

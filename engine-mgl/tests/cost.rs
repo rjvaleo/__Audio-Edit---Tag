@@ -508,19 +508,22 @@ fn stamped_control_burst() {
             let frame = audio.frame();
             for event in 0..64 {
                 ctl.send_at(frame + event * 8, 110 + (event % 8) as u32,
-                    EventKind::Param { index: 0, value: if event % 2 == 0 { 0.5 } else { 0.25 } }).unwrap();
+                    EventKind::Param { index: 0, value: if (event / 8) % 2 == 0 { 0.5 } else { 0.25 } }).unwrap();
             }
+            let pieces = audio.pieces();
             let start_cpu = cpu_seconds();
             let start = Instant::now();
             audio.render(&mut l, &mut r);
             let elapsed = start.elapsed().as_secs_f64() * 1000.0;
             let used = (cpu_seconds() - start_cpu) * 1000.0;
             if block >= 100 { wall.push(elapsed); cpu.push(used); }
+            assert_eq!(audio.pieces() - pieces, 1);
             ctl.collect();
         }
+        if parallel { assert!(audio.worker_jobs() > 0); } else { assert_eq!(audio.worker_jobs(), 0); }
         wall.sort_by(f64::total_cmp);
         cpu.sort_by(f64::total_cmp);
-        println!("BURST_ROW parallel={parallel} wall_median={:.6} wall_p99={:.6} wall_worst={:.6} cpu_median={:.6} cpu_p99={:.6} cpu_worst={:.6} worker_jobs={}",
+        println!("BURST_ROW pieces_per_block=1 parallel={parallel} wall_median={:.6} wall_p99={:.6} wall_worst={:.6} cpu_median={:.6} cpu_p99={:.6} cpu_worst={:.6} worker_jobs={}",
             at(&wall, 0.5), at(&wall, 0.99), wall[999],
             at(&cpu, 0.5), at(&cpu, 0.99), cpu[999], audio.worker_jobs());
     }
