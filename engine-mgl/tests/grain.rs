@@ -1014,3 +1014,31 @@ fn the_app_can_draw_the_decks_scope() {
     let levels = handle.rack_levels();
     assert!(levels[0].0 > 0.0, "a level going into the rack's first slot: {:?}", levels[0]);
 }
+
+/// How long the deck takes to answer, for each engine: from a key going down
+/// (Mono, and Poly with eight voices) or Play being pressed, to the first
+/// sample above -60 dB. Measured in MGL's rig (blocks of 512, so up to one
+/// block of it is the rig's), to compare two versions of MGL with each other,
+/// not as the delay heard live. Run by hand: `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn how_long_the_deck_takes_to_answer() {
+    let onset = |out: &[f32], from: u64| {
+        let start = from as usize * 2;
+        out[start..].iter().position(|s| s.abs() > 1e-3).map(|i| i / 2)
+    };
+    let ms = |f: Option<usize>| f.map_or("silent".to_string(), |f| format!("{:6.1} ms", f as f64 * 1000.0 / SR as f64));
+    for alg in ENGINES {
+        let setup = |run, played| Setup { alg, layers: 1, cloud: false, run, played, grid: BLOCK };
+        let mono = alone(setup(false, false), &played_notes(KeyMode::Mono));
+        let poly = alone_in_poly(setup(false, false), Poly { voices: 8, octaves: false }, &played_notes(KeyMode::Poly));
+        let play = alone(setup(false, true), &no_notes());
+        println!(
+            "{:<9} key, Mono {}   key, Poly {}   Play {}",
+            format!("{alg:?}"),
+            ms(onset(&mono, 4 * B)),
+            ms(onset(&poly, 4 * B)),
+            ms(onset(&play, 4 * B))
+        );
+    }
+}
