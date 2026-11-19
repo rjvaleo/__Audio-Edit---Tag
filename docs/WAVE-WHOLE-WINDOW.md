@@ -109,6 +109,29 @@ pattern. What each face controls, and how, is unchanged.
 - **C: a bigger fixed page sized for the iMac.** Rejected: any other screen
   gets empty space or a lot of scrolling.
 
+## Settled after the builder's read (the coordinator's calls, RJ to check)
+
+- **A6 is the one to build** (A5 with the effects row under the synth kept).
+- **The dock on Create and Matrix** shows the chain of effects, as on Play.
+  Only FX's dock differs: there it shows the effect picked on the board.
+- **The FX tab keeps its Master Bus bar** (the board's presets) **and the MOD
+  FROM strip** along the top of the middle, above the board. The list of
+  effects stays gone (RJ, 17 Nov: "I want that space back. Have a right click
+  to add").
+- **The SoundHack faces are restyled where they are shared**
+  (`fxSoundHackFace` in `076-fx-suites.js`, `app-css/080-fx-faces-visual.css`),
+  so they change on every page that shows them (Prism's FX tab, Grain, Wave).
+  RJ: "redo all of the sound hack plugins … they should now look like the rest
+  of the app".
+- **One scale for all of Wave's tabs** below the breakpoint, set by the
+  largest tab, so the dock is drawn the same width on every tab. The rail and
+  the transport belong to the whole app and keep their size. Only Wave's frame
+  (the middle, the dock and the keys) scales.
+- **Fit the iMac at 1:1.** The breakpoint is measured against the page's real
+  area in RJ's browser (about 2080 × 1100 by his screenshot; the builder
+  measures it). If Play doesn't fit at 1:1 there, its panels are packed
+  tighter. The iMac is not scaled.
+
 ## Left to the builder
 
 - The breakpoint's exact size: the frame's smallest size on each tab, worked
