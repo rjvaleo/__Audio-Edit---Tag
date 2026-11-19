@@ -478,3 +478,50 @@ fn parallel_effect_gate_probe() {
         }
     }
 }
+
+/// Identical before/after fixture. CPU excludes worker-thread consumption.
+#[test]
+#[ignore = "a measurement: run it alone, in a release build"]
+fn stamped_control_burst() {
+    use engine_core::basics::Gain;
+    for parallel in [false, true] {
+        let (mut ctl, mut audio) = engine(RATE, Config {
+            parallel, max_block: 512, fade_frames: 0, queue: 4096,
+            ..Config::default()
+        });
+        for id in 10..18 {
+            ctl.add(id, Box::new(synth())).unwrap();
+            ctl.add(id + 100, Box::new(Gain::new(0.5))).unwrap();
+            ctl.connect(port(id, 0), port(id + 100, 0)).unwrap();
+            ctl.connect_out(port(id + 100, 0)).unwrap();
+        }
+        ctl.commit().unwrap();
+        for id in 10..18 {
+            for note in 0..16 {
+                ctl.send(id, EventKind::Note(NoteEvent::on(36 + note * 3, 0.5))).unwrap();
+            }
+        }
+        let (mut l, mut r) = ([0.0; 512], [0.0; 512]);
+        let mut wall = Vec::with_capacity(1000);
+        let mut cpu = Vec::with_capacity(1000);
+        for block in 0..1100 {
+            let frame = audio.frame();
+            for event in 0..64 {
+                ctl.send_at(frame + event * 8, 110 + (event % 8) as u32,
+                    EventKind::Param { index: 0, value: if event % 2 == 0 { 0.5 } else { 0.25 } }).unwrap();
+            }
+            let start_cpu = cpu_seconds();
+            let start = Instant::now();
+            audio.render(&mut l, &mut r);
+            let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+            let used = (cpu_seconds() - start_cpu) * 1000.0;
+            if block >= 100 { wall.push(elapsed); cpu.push(used); }
+            ctl.collect();
+        }
+        wall.sort_by(f64::total_cmp);
+        cpu.sort_by(f64::total_cmp);
+        println!("BURST_ROW parallel={parallel} wall_median={:.6} wall_p99={:.6} wall_worst={:.6} cpu_median={:.6} cpu_p99={:.6} cpu_worst={:.6} worker_jobs={}",
+            at(&wall, 0.5), at(&wall, 0.99), wall[999],
+            at(&cpu, 0.5), at(&cpu, 0.99), cpu[999], audio.worker_jobs());
+    }
+}
