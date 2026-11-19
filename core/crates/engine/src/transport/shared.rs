@@ -65,6 +65,7 @@ impl Shared {
             late_total: AtomicU64::new(0),
             late_blocks: AtomicU64::new(0),
             bad_blocks: AtomicU64::new(0),
+            sounding: AtomicBool::new(false),
             layer_cap: AtomicU32::new(crate::render::MAX_LAYERS as u32),
             shed_layers: AtomicBool::new(false),
             hot: AtomicU32::new(0),
@@ -181,6 +182,13 @@ impl Shared {
 
     pub fn pause(&self) {
         self.playing.store(false, Ordering::Release);
+    }
+
+    /// Playing, or a tail still ringing after a stop: see `sounding` on
+    /// [`Shared`]. False once a stopped chain has been quiet for its tail's
+    /// budget.
+    pub fn sounding(&self) -> bool {
+        self.sounding.load(Ordering::Acquire)
     }
 
     pub fn is_playing(&self) -> bool {

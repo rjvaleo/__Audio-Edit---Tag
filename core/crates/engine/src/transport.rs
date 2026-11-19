@@ -187,6 +187,11 @@ pub struct Shared {
     /// engine's own (before the rack) and the last stage's (`guard::finish`).
     /// It should stay at zero; anything else is a fault to find.
     pub bad_blocks: AtomicU64,
+    /// Whether anything is leaving the bus: playing, or a tail still ringing
+    /// after a stop. The interface keeps its meters and pictures moving while
+    /// it is (RJ, 18 Nov 2026: a reverb heard on after a stop, every display
+    /// frozen).
+    sounding: AtomicBool,
     /// The worst block since the analytics sampler last looked. Kept apart
     /// from `load_worst`, which the interface resets by hand, so neither
     /// reader disturbs the other. See `take_load_window`.

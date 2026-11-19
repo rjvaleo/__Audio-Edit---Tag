@@ -537,6 +537,7 @@ impl Core {
                 // on silence for as long as the app is open.
                 shared.rack_meters.clear();
             }
+            shared.sounding.store(self.tail_left > 0, Ordering::Release);
             // The stopped path returns here, so without this the master bus
             // would freeze on the last block that was heard and the meters
             // would hang at whatever they happened to be showing.
@@ -592,6 +593,7 @@ impl Core {
         // Playing again: whatever is in the chain is live material, so the tail
         // budget is whole again the moment it is needed.
         self.tail_left = tail_budget(self.params.sample_rate);
+        shared.sounding.store(true, Ordering::Release);
 
         let frames = out.len() / channels;
         let end = self.params.plan().out_frames as u64;
