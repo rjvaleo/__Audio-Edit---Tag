@@ -235,6 +235,8 @@ fn prism_pad_pitch_time_changer_matches_a_per_sample_ramp() {
         let mut previous = now;
         let mut max_jump = [0.0_f32; 2];
         let mut error = 0.0_f64;
+        let mut chunk_error = 0.0_f64;
+        let mut max_chunk_rms = 0.0_f64;
         let mut sampled = false;
         for frame in (0..96_000).step_by(BLOCK) {
             if frame % 2880 == 0 {
@@ -305,13 +307,20 @@ fn prism_pad_pitch_time_changer_matches_a_per_sample_ramp() {
                 dense.fill(&mut sample, channels, &dense_shared);
                 for (&a, b) in value.iter().zip(sample) {
                     assert!(a.is_finite() && b.is_finite());
-                    error += ((a - b) as f64).powi(2);
+                    let difference = ((a - b) as f64).powi(2);
+                    error += difference;
+                    chunk_error += difference;
+                }
+                if (frame + f + 1) % 8 == 0 {
+                    max_chunk_rms = max_chunk_rms.max((chunk_error / (8 * channels) as f64).sqrt());
+                    chunk_error = 0.0;
                 }
             }
         }
         let rms = (error / (96_000 * channels) as f64).sqrt();
-        println!("PAD_PTC_AFTER channels={channels} speed_jump_per_8={:.9} pitch_jump_per_8={:.9} rms_vs_per_sample={rms:.9}", max_jump[0], max_jump[1]);
+        println!("PAD_PTC_AFTER channels={channels} speed_jump_per_8={:.9} pitch_jump_per_8={:.9} rms_vs_per_sample={rms:.9} max_8_frame_rms={max_chunk_rms:.9}", max_jump[0], max_jump[1]);
         assert!(max_jump.into_iter().all(|jump| jump <= 0.00012));
+        assert!(max_chunk_rms <= 0.000001);
         assert!(
             rms <= 0.000001,
             "PTC differs from per-sample reference: {rms}"
