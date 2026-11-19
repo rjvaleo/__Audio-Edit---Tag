@@ -302,7 +302,7 @@ fn profile_pvsola_poly_8() {
 fn stamped_message_bursts() {
     let config = Config { max_block: BLOCK, queue: 4096, fade_frames: 0, ..Config::default() };
     let (mut ctl, mut audio) = engine(RATE, config);
-    ctl.add(1, Box::new(engine_core::basics::Dc(1.0))).unwrap();
+    ctl.add(1, Box::new(engine_core::basics::Sine::new(997.0, 0.25))).unwrap();
     ctl.add(2, Box::new(engine_core::basics::Gain::new(1.0))).unwrap();
     ctl.connect(port(1, 0), port(2, 0)).unwrap();
     ctl.connect_out(port(2, 0)).unwrap();
