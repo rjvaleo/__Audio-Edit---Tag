@@ -25,6 +25,7 @@
 //! at the end. A maximiser that can still clip is not one.
 
 use crate::Effect;
+use prism_fx::Memo;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MasterSettings {
@@ -110,6 +111,12 @@ pub struct Maximizer {
     /// Deepest reduction since the last reset, for the meter.
     max_reduction_db: f32,
     started: bool,
+    ratio_memo: Memo<f32, f32>,
+    atk_memo: Memo<(f32, u32), f32>,
+    rel_memo: Memo<(f32, u32), f32>,
+    slow_memo: Memo<u32, f32>,
+    walk_memo: Memo<u32, f32>,
+    ceiling_memo: Memo<f32, f32>,
 }
 
 impl Maximizer {
@@ -121,6 +128,12 @@ impl Maximizer {
             makeup_db: 0.0,
             max_reduction_db: 0.0,
             started: false,
+            ratio_memo: Memo::new(),
+            atk_memo: Memo::new(),
+            rel_memo: Memo::new(),
+            slow_memo: Memo::new(),
+            walk_memo: Memo::new(),
+            ceiling_memo: Memo::new(),
         }
     }
 
@@ -135,9 +148,8 @@ impl Maximizer {
     }
 
     /// The static curve: level in, level out, both dB.
-    fn curve(&self, level_db: f32, threshold_db: f32) -> f32 {
-        let ratio = self.settings.ratio().max(1.0);
-        let knee = self.settings.knee_db().max(0.0);
+    #[inline]
+    fn curve(level_db: f32, threshold_db: f32, ratio: f32, knee: f32) -> f32 {
         let over = level_db - threshold_db;
 
         if knee > 0.0 && over > -knee / 2.0 && over < knee / 2.0 {
@@ -173,17 +185,19 @@ impl Effect for Maximizer {
         }
         let channels = channels.max(1);
         let s = self.settings;
-        let atk = coeff(s.attack_ms(), sample_rate);
-        let rel = coeff(s.release_ms(), sample_rate);
+        let ratio = self.ratio_memo.get(s.amount, |_| s.ratio().max(1.0));
+        let knee = s.knee_db().max(0.0);
+        let atk = self.atk_memo.get((s.attack_ms(), sample_rate), |(ms, sr)| coeff(ms, sr));
+        let rel = self.rel_memo.get((s.release_ms(), sample_rate), |(ms, sr)| coeff(ms, sr));
         // The level estimate is deliberately slow — it is meant to describe the
         // passage, not the note, or the threshold would chase every transient
         // and there would be nothing left to compress against.
-        let slow = coeff(250.0, sample_rate);
+        let slow = self.slow_memo.get(sample_rate, |sr| coeff(250.0, sr));
         // The makeup walks even more slowly, because an AGC that can move as
         // fast as the compressor is just a second compressor.
-        let walk = coeff(900.0, sample_rate);
+        let walk = self.walk_memo.get(sample_rate, |sr| coeff(900.0, sr));
         let ceiling = s.ceiling_db;
-        let ceiling_lin = 10f32.powf(ceiling / 20.0);
+        let ceiling_lin = self.ceiling_memo.get(ceiling, |c| 10f32.powf(c / 20.0));
 
         let frames = buf.len() / channels;
         for f in 0..frames {
@@ -220,7 +234,7 @@ impl Effect for Maximizer {
                 s.fixed_db()
             };
 
-            let target_db = (self.curve(level_db, threshold_db) - level_db).min(0.0);
+            let target_db = (Self::curve(level_db, threshold_db, ratio, knee) - level_db).min(0.0);
             let c = if target_db < self.envelope_db { atk } else { rel };
             self.envelope_db = target_db + c * (self.envelope_db - target_db);
             if !self.envelope_db.is_finite() {
@@ -236,7 +250,7 @@ impl Effect for Maximizer {
             let want_db = if s.auto_level {
                 (ceiling - (self.level_db + self.envelope_db)).clamp(0.0, 30.0)
             } else {
-                (-self.curve(0.0, threshold_db)).clamp(0.0, 30.0)
+                (-Self::curve(0.0, threshold_db, ratio, knee)).clamp(0.0, 30.0)
             };
             self.makeup_db = want_db + walk * (self.makeup_db - want_db);
             if !self.makeup_db.is_finite() {

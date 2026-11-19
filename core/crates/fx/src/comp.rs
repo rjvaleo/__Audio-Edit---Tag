@@ -5,6 +5,7 @@
 //! detection would pull the stereo image toward whichever side is quieter.
 
 use crate::Effect;
+use prism_fx::Memo;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CompSettings {
@@ -37,11 +38,21 @@ pub struct Compressor {
     envelope_db: f32,
     /// Largest reduction applied since the last reset, for the UI meter.
     max_reduction_db: f32,
+    atk_memo: Memo<(f32, u32), f32>,
+    rel_memo: Memo<(f32, u32), f32>,
+    makeup_memo: Memo<f32, f32>,
 }
 
 impl Compressor {
     pub fn new(settings: CompSettings) -> Self {
-        Compressor { settings, envelope_db: 0.0, max_reduction_db: 0.0 }
+        Compressor {
+            settings,
+            envelope_db: 0.0,
+            max_reduction_db: 0.0,
+            atk_memo: Memo::new(),
+            rel_memo: Memo::new(),
+            makeup_memo: Memo::new(),
+        }
     }
 
     /// Peak gain reduction seen so far, as a positive number of dB.
@@ -81,9 +92,9 @@ const MIN_DB: f32 = -120.0;
 impl Effect for Compressor {
     fn process(&mut self, buf: &mut [f32], channels: usize, sample_rate: u32) {
         let channels = channels.max(1);
-        let atk = coeff(self.settings.attack_ms, sample_rate);
-        let rel = coeff(self.settings.release_ms, sample_rate);
-        let makeup = 10f32.powf(self.settings.makeup_db / 20.0);
+        let atk = self.atk_memo.get((self.settings.attack_ms, sample_rate), |(ms, sr)| coeff(ms, sr));
+        let rel = self.rel_memo.get((self.settings.release_ms, sample_rate), |(ms, sr)| coeff(ms, sr));
+        let makeup = self.makeup_memo.get(self.settings.makeup_db, |db| 10f32.powf(db / 20.0));
 
         let frames = buf.len() / channels;
         for f in 0..frames {
