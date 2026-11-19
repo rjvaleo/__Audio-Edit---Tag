@@ -473,7 +473,9 @@ impl Shared {
         if let Ok(mut g) = self.manual.lock() {
             g.clear();
         }
-        if let Ok(mut g) = self.manual_indices.lock() {g.clear();}
+        if let Ok(mut g) = self.manual_indices.lock() {
+            g.clear();
+        }
         if let Ok(mut maps) = self.control_maps.lock() {
             *maps = rack.as_ref().map(|r| r.control_maps()).unwrap_or_default();
             self.resolve_automation(&maps);
@@ -493,10 +495,14 @@ impl Shared {
     pub fn swap_slot(&self, slot: usize, effect: Box<dyn fx::Effect>) {
         let effect = fx::prepare_effect(effect);
         if let Ok(mut maps) = self.control_maps.lock() {
-            if let Some(map) = maps.get_mut(slot) { *map = map.switching_to(effect.as_ref()); }
+            if let Some(map) = maps.get_mut(slot) {
+                *map = map.switching_to(effect.as_ref());
+            }
             self.resolve_automation(&maps);
         }
-        if let Ok(mut g) = self.manual_indices.lock() {g.retain(|(s, _, _)| *s != slot);}
+        if let Ok(mut g) = self.manual_indices.lock() {
+            g.retain(|(s, _, _)| *s != slot);
+        }
         if let Ok(mut g) = self.manual.lock() {
             g.retain(|(s, _, _)| *s != slot);
         }
@@ -744,7 +750,9 @@ impl Shared {
     /// Without this the final values would stay written into the rack after
     /// playback ended, and the next thing to play would start under them.
     pub fn clear_automation(&self) {
-        if let Ok(mut g) = self.automation_indices.lock() {g.clear();}
+        if let Ok(mut g) = self.automation_indices.lock() {
+            g.clear();
+        }
         if let Ok(mut g) = self.automation.lock() {
             g.clear();
         }

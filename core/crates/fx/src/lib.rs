@@ -605,7 +605,18 @@ pub struct Rack {
 
 impl Rack {
     pub fn new() -> Self {
-        Rack { slots: Vec::new(), meters: None, dry: Vec::new(), xfade: Vec::new(), place_l: Vec::new(), place_r: Vec::new(), planar_l: Vec::new(), planar_r: Vec::new(), adapter: Vec::new(), tripped: 0 }
+        Rack {
+            slots: Vec::new(),
+            meters: None,
+            dry: Vec::new(),
+            xfade: Vec::new(),
+            place_l: Vec::new(),
+            place_r: Vec::new(),
+            planar_l: Vec::new(),
+            planar_r: Vec::new(),
+            adapter: Vec::new(),
+            tripped: 0,
+        }
     }
 
     /// Build a rack with scratch for `max_samples` interleaved samples.

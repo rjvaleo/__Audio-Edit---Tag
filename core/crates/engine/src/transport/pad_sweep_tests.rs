@@ -566,7 +566,11 @@ fn rack_four_control_cost() {
                 rate: 48_000.0,
             };
             let mut controls = Vec::new();
-            for (slot, id) in ids.into_iter().chain(convolution.then_some("convolution")).enumerate() {
+            for (slot, id) in ids
+                .into_iter()
+                .chain(convolution.then_some("convolution"))
+                .enumerate()
+            {
                 let entry = fx::prism::catalogue()
                     .iter()
                     .find(|e| e.descriptor.id == id)
@@ -623,30 +627,55 @@ fn rack_four_control_cost() {
 #[ignore = "Prism pad callback CPU measurement"]
 fn prism_pad_callback_cost() {
     fn cpu_ns() -> u64 {
-        let mut t=libc::timespec {tv_sec:0,tv_nsec:0};
-        assert_eq!(unsafe {libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID,&mut t)},0);
-        t.tv_sec as u64*1_000_000_000+t.tv_nsec as u64
+        let mut t = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        assert_eq!(
+            unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut t) },
+            0
+        );
+        t.tv_sec as u64 * 1_000_000_000 + t.tv_nsec as u64
     }
     for entry in fx::prism::catalogue() {
-        let d=entry.descriptor;
-        let Some(pad)=d.panel.pad else {continue;};
-        let axes=[(pad.x,pad.x_range),(pad.y,pad.y_range)];
-        if axes.iter().any(|(key,_)|is_stepped(key)) {continue;}
-        let initial=axes.map(|(key,(a,b))|(key,a+(b-a)*0.1));
-        for block in [64usize,128] {
-            let mut core=core_with_effect(d.id,&initial);
-            core.rack.as_mut().unwrap().reserve_mix(block*2);
-            let mut out=vec![0.0;block*2];let mut costs=Vec::new();let mut hash=0xcbf29ce484222325u64;
+        let d = entry.descriptor;
+        let Some(pad) = d.panel.pad else {
+            continue;
+        };
+        let axes = [(pad.x, pad.x_range), (pad.y, pad.y_range)];
+        if axes.iter().any(|(key, _)| is_stepped(key)) {
+            continue;
+        }
+        let initial = axes.map(|(key, (a, b))| (key, a + (b - a) * 0.1));
+        for block in [64usize, 128] {
+            let mut core = core_with_effect(d.id, &initial);
+            core.rack.as_mut().unwrap().reserve_mix(block * 2);
+            let mut out = vec![0.0; block * 2];
+            let mut costs = Vec::new();
+            let mut hash = 0xcbf29ce484222325u64;
             for turn in 0..1100 {
-                let frame=turn*block;
-                if frame%768<block {
-                    let u=0.1+0.8*((frame/768*768)%96000) as f32/96000.0;
-                    for (key,(a,b)) in axes {core.aim_key(0,key,a+(b-a)*u);}
+                let frame = turn * block;
+                if frame % 768 < block {
+                    let u = 0.1 + 0.8 * ((frame / 768 * 768) % 96000) as f32 / 96000.0;
+                    for (key, (a, b)) in axes {
+                        core.aim_key(0, key, a + (b - a) * u);
+                    }
                 }
-                for (i,f) in out.chunks_exact_mut(2).enumerate() {f.fill(0.125*(std::f32::consts::TAU*997.0*(frame+i) as f32/48000.0).sin());}
-                let start=cpu_ns();core.process_current(&mut out,2,48000);let elapsed=cpu_ns()-start;
-                if turn>=100 {costs.push(elapsed);}
-                for &sample in &out {hash=(hash^sample.to_bits() as u64).wrapping_mul(1099511628211);}
+                for (i, f) in out.chunks_exact_mut(2).enumerate() {
+                    f.fill(
+                        0.125
+                            * (std::f32::consts::TAU * 997.0 * (frame + i) as f32 / 48000.0).sin(),
+                    );
+                }
+                let start = cpu_ns();
+                core.process_current(&mut out, 2, 48000);
+                let elapsed = cpu_ns() - start;
+                if turn >= 100 {
+                    costs.push(elapsed);
+                }
+                for &sample in &out {
+                    hash = (hash ^ sample.to_bits() as u64).wrapping_mul(1099511628211);
+                }
             }
             costs.sort_unstable();
             println!("PAD_CALLBACK_COST id={} block={} median_ns={} p99_ns={} worst_ns={} hash={hash:016x}",d.id,block,costs[costs.len()/2],costs[(costs.len()-1)*99/100],costs[costs.len()-1]);
