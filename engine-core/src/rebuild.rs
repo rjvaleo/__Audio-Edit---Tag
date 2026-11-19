@@ -82,6 +82,8 @@ impl Module for Remember {
             self.inner.transfer(previous.inner.as_ref(), rate);
         }
     }
+    fn rate_change(&mut self, rate: f32, frame: u64) { self.inner.rate_change(rate, frame); }
+    fn recording_report(&mut self) -> Option<crate::RecorderReport> { self.inner.recording_report() }
     fn inputs(&self) -> Vec<Kind> {
         self.inner.inputs()
     }

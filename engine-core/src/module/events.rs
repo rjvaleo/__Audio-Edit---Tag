@@ -117,6 +117,7 @@ pub(super) fn split_events<M: Module + ?Sized>(module: &mut M, io: &mut Io) {
             }
         }
         let mut piece = Io {
+            host: io.host,
             events: &[],
             n: end - at,
             rate: io.rate,

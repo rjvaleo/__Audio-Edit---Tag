@@ -19,12 +19,16 @@
 pub mod basics;
 mod engine;
 pub mod guard;
+mod host;
+pub use host::{HostAudio, HostInputs, Input};
 mod module;
 mod plan;
 mod pool;
 mod rebuild;
 pub use rebuild::ModuleFactory;
 pub mod rt;
+mod recording;
+pub use recording::{Recorder, RecordedFrame, RecorderReport, RecordingReport, DroppedFrames};
 mod sound;
 pub mod spsc;
 mod types;

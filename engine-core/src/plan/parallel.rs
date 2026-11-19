@@ -4,6 +4,7 @@ use super::*;
 use std::slice;
 
 pub(super) struct Job {
+    host: crate::HostInputs<'static>,
     node: *mut Node,
     events: *const (u32, EventKind),
     event_len: usize,
@@ -30,9 +31,13 @@ impl Job {
         sounds: &Sounds,
         fade_left: usize,
         events: &[(u32, EventKind)],
+        host: crate::HostInputs,
     ) -> Self {
         assert!(node.out_start + node.out_count <= pool.len());
         Self {
+            // SAFETY: like sounds and read buffers, this borrow cannot
+            // outlive the synchronous dispatch/join of this callback.
+            host: unsafe { std::mem::transmute::<crate::HostInputs<'_>, crate::HostInputs<'static>>(host) },
             outs: unsafe { pool.as_mut_ptr().add(node.out_start) },
             events: events.as_ptr(), event_len: events.len(),
             count: node.out_count,
@@ -104,6 +109,7 @@ unsafe fn run(job: &mut Job) {
         }
     }
     let mut io = Io {
+        host: job.host,
         events: slice::from_raw_parts(job.events, job.event_len),
         scratch: &mut node.scratch,
         n,

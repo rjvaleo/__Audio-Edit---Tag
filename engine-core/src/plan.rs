@@ -778,6 +778,31 @@ impl Plan {
         }
     }
 
+    /// Notify streaming state before the old-rate plan becomes an outgoing fade.
+    pub(crate) fn rate_change(&mut self, rate: f32, frame: u64) {
+        for node in &mut self.nodes {
+            if node.dead { continue; }
+            if let Some(module)=node.module.as_mut() {
+                if let Err(payload)=catch_unwind(AssertUnwindSafe(|| module.rate_change(rate,frame))) {
+                    node.dead=true; node.panic=Some(payload);
+                }
+            }
+        }
+    }
+    pub(crate) fn recording_report(&mut self) -> Option<crate::RecordingReport> {
+        for node in &mut self.nodes {
+            if node.dead { continue; }
+            if let Some(module)=node.module.as_mut() {
+                match catch_unwind(AssertUnwindSafe(|| module.recording_report())) {
+                    Ok(Some(report))=>return Some(crate::RecordingReport { module:node.id,report }),
+                    Ok(None)=>{},
+                    Err(payload)=> { node.dead=true; node.panic=Some(payload); }
+                }
+            }
+        }
+        None
+    }
+
     /// Take over, from the plan before, every module this plan also has, and
     /// the level of every cable both have. Audio thread: boxes and numbers
     /// change hands, nothing is made or freed.
@@ -939,6 +964,7 @@ impl Plan {
         right: &mut [f32],
         workers: Option<&mut crate::pool::Pool>,
         incoming: &[(ModuleId, u32, EventKind)],
+        host: crate::HostInputs,
     ) {
         self.route_events(incoming);
         let Plan {
@@ -959,7 +985,7 @@ impl Plan {
         let mut workers = workers;
         for level in levels.iter() {
             for &index in &level.components {
-                *tripped += components[index].run(nodes, pool, events, local_events, n, rate, frame, sounds, step, *fade_left);
+                *tripped += components[index].run(nodes, pool, events, local_events, n, rate, frame, sounds, step, *fade_left, host);
             }
                 let active = level.parallel.iter().filter_map(|op| {
                     let Op::Process(index) = *op else { return None; };
@@ -968,7 +994,7 @@ impl Plan {
                 });
                 let (heavy, weight) = active.fold((0usize, 0usize), |(count, sum), weight| (count+1, sum+weight));
                 if heavy >= 2 && weight.saturating_mul(n) >= 8192 && workers.is_some() {
-                    *tripped += run_ops(nodes, pool, &level.serial, n, rate, frame, sounds, step, *fade_left, events);
+                    *tripped += run_ops(nodes, pool, &level.serial, n, rate, frame, sounds, step, *fade_left, events, host);
                     jobs.clear();
                     for op in &level.parallel {
                         let Op::Process(index) = *op else { unreachable!() };
@@ -978,12 +1004,12 @@ impl Plan {
                         }
                         for (read, input) in node.reads.iter_mut().zip(&node.inputs) { read.set(&pool[*input]); }
                         let event_range = node.event_start..node.event_start+node.event_len;
-                        jobs.push(parallel::Job::new(node, pool, n, rate, frame, sounds, *fade_left, &events[event_range]));
+                        jobs.push(parallel::Job::new(node, pool, n, rate, frame, sounds, *fade_left, &events[event_range], host));
                     }
                     parallel::dispatch(workers.as_deref_mut().unwrap(), jobs);
                     *tripped += jobs.iter().map(|job| job.tripped).sum::<u64>();
                 } else {
-                    *tripped += run_ops(nodes, pool, &level.ops, n, rate, frame, sounds, step, *fade_left, events);
+                    *tripped += run_ops(nodes, pool, &level.ops, n, rate, frame, sounds, step, *fade_left, events, host);
                 }
         }
         let mut any = false;
@@ -1210,7 +1236,7 @@ fn silence(bufs: &mut [Buf], n: usize) {
 }
 
 fn run_ops(nodes: &mut [Node], pool: &mut [Buf], ops: &[Op], n: usize, rate: f32,
-    frame: u64, sounds: &Sounds, step: f32, fade_left: usize, events: &[(u32, EventKind)]) -> u64 {
+    frame: u64, sounds: &Sounds, step: f32, fade_left: usize, events: &[(u32, EventKind)], host: crate::HostInputs) -> u64 {
     let mut tripped = 0;
         for op in ops.iter() {
             let (index, takes_in, gives_out) = match *op {
@@ -1272,6 +1298,7 @@ fn run_ops(nodes: &mut [Node], pool: &mut [Buf], ops: &[Op], n: usize, rate: f32
             }
             let map: &[usize] = if takes_in { &node.inputs } else { &[] };
             let mut io = Io {
+                host,
                 events: &events[node.event_start..node.event_start+node.event_len],
                 scratch: &mut node.scratch,
                 n,

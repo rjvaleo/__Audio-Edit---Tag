@@ -150,6 +150,8 @@ impl Outputs<'_> {
 
 /// Everything a module may touch while it makes one piece of audio.
 pub struct Io<'a> {
+    /// This callback's borrowed device input, addressed in engine frames.
+    pub host: crate::HostInputs<'a>,
     /// Ordered messages addressed to this module, relative to this piece.
     pub events: &'a [(u32, EventKind)],
     pub(crate) scratch: &'a mut EventScratch,
@@ -186,6 +188,11 @@ pub trait Module: Send + Any {
     /// Restore native state into a replacement already prepared off audio.
     /// Must not allocate, free, lock, or wait. Instrument attacks may restart.
     fn rehome(&mut self, _state: [f64; 8], _rate: f32) {}
+    /// Stop or mark external streaming state before the old-rate plan fades.
+    fn rate_change(&mut self, _rate: f32, _frame: u64) {}
+    /// Fixed-size recorder notices. Any shared counter was allocated off audio.
+    fn recording_report(&mut self) -> Option<crate::RecorderReport> { None }
+
     /// Current controls and held notes. The factory wrapper supplies these.
     fn visit_events(&self, _visit: &mut dyn FnMut(EventKind)) {}
 

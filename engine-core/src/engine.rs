@@ -125,6 +125,7 @@ struct Stamped {
 
 /// What the audio thread sends back: things to free, and where messages landed.
 enum Back {
+    Recording(crate::RecordingReport),
     Failure {
         report: Failure,
         payload: Thing,
@@ -172,6 +173,7 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
         last_plan_frame: 0,
         applied: Vec::new(),
         failures: Vec::new(),
+        recording: Vec::new(),
         versions: BTreeMap::new(),
     };
     let audio = AudioEngine {
@@ -213,6 +215,7 @@ pub struct Controller {
     factories: BTreeMap<ModuleId, ModuleFactory>,
     opaque_state: BTreeSet<ModuleId>,
     failures: Vec<Failure>,
+    recording: Vec<crate::RecordingReport>,
     /// See [`Controller::bad_blocks`].
     bad: Arc<AtomicU64>,
     rate: f32,
@@ -566,6 +569,7 @@ impl Controller {
         let mut collected = Collected::default();
         while let Some(back) = self.rx.pop() {
             match back {
+                Back::Recording(report) => self.recording.push(report),
                 Back::Failure { report, payload } => {
                     self.failures.push(report);
                     drop(payload);
@@ -607,6 +611,9 @@ impl Controller {
     /// last call (when the engine was made with `log_applied`).
     /// Faults received by collect. Replace the failed module and commit the
     /// rebuilt patch to revive it; ordinary events never retry a dead node.
+    /// Recorder notices gathered by collect; overflow counters remain live.
+    pub fn take_recording_reports(&mut self) -> Vec<crate::RecordingReport> { std::mem::take(&mut self.recording) }
+
     pub fn take_failures(&mut self) -> Vec<Failure> {
         std::mem::take(&mut self.failures)
     }
@@ -660,6 +667,18 @@ impl AudioEngine {
 
     /// Make the next block. Any length; the two sides are filled alike.
     pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.render_io(&[], left, right);
+    }
+
+    /// Planar input channels, borrowed for this callback. Missing channels
+    /// or trailing input frames are zero; no additional input latency.
+    pub fn render_io(&mut self, inputs: &[&[f32]], left: &mut [f32], right: &mut [f32]) {
+        self.render_host(&inputs, left, right);
+    }
+
+    /// A host adapter can supply channels without allocating a slice table.
+    pub fn render_host(&mut self, inputs: &dyn crate::HostAudio, left: &mut [f32], right: &mut [f32]) {
+        let host = crate::HostInputs::new(inputs, self.frame);
         let _guard = rt::enter();
         if self.failed {
             left.fill(0.0);
@@ -702,10 +721,11 @@ impl AudioEngine {
                 &mut right[pos..pos + n],
                 self.workers.as_mut(),
                 &self.events,
+                host,
             );
             if let Some(change) = self.transition.as_mut() {
                 change.old.as_mut().unwrap().run(n, change.old_rate, frame, &self.sounds,
-                    &mut change.left[..n], &mut change.right[..n], self.workers.as_mut(), &self.events);
+                    &mut change.left[..n], &mut change.right[..n], self.workers.as_mut(), &self.events, host);
                 let tripped = change.old.as_mut().unwrap().take_tripped();
                 if tripped > 0 { self.bad.fetch_add(tripped, Ordering::Relaxed); }
                 for i in 0..n {
@@ -758,7 +778,20 @@ impl AudioEngine {
         self.failed
     }
 
+    fn recording_reports(&mut self) {
+        for _ in 0..self.room {
+            let Some(report)=self.plan.recording_report() else { break; };
+            self.give_back(Back::Recording(report));
+        }
+        for _ in 0..self.room {
+            let report=self.transition.as_mut().and_then(|change| change.old.as_mut()).and_then(|plan| plan.recording_report());
+            let Some(report)=report else { break; };
+            self.give_back(Back::Recording(report));
+        }
+    }
+
     fn report_panics(&mut self) {
+        self.recording_reports();
         while let Some((id, payload)) = self.plan.take_panic() {
             self.give_back(Back::Failure { report: Failure::ModulePanicked { id }, payload });
         }
@@ -809,6 +842,8 @@ impl AudioEngine {
                     }
                 },
                 Msg::Rate { mut plan, mut change } => {
+                    self.plan.rate_change(change.rate,self.frame);
+                    self.recording_reports();
                     plan.rehome(&self.plan, change.rate);
                     change.old = Some(std::mem::replace(&mut self.plan, plan));
                     self.rate = change.rate;

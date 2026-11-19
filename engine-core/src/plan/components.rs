@@ -210,6 +210,7 @@ impl Component {
         sounds: &Sounds,
         step: f32,
         fade_left: usize,
+        host: crate::HostInputs,
     ) -> u64 {
         // When the callback already fits this loop, no offset views or
         // accumulation are needed. Keep 031's direct-buffer path for it.
@@ -221,7 +222,7 @@ impl Component {
         });
         if n <= self.delay && !has_interior_event {
             return run_ops(
-                nodes, pool, &self.ops, n, rate, frame, sounds, step, fade_left, events,
+                nodes, pool, &self.ops, n, rate, frame, sounds, step, fade_left, events, host,
             );
         }
         for &output in &self.outputs {
@@ -273,6 +274,7 @@ impl Component {
                 step,
                 fade_left.saturating_sub(at),
                 local_events,
+                host,
             );
             for &output in &self.outputs {
                 copy(
