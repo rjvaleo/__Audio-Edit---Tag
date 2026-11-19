@@ -125,8 +125,9 @@ impl Module for Fx {
         }
     }
     fn can_sleep(&self) -> bool {
-        // Audited memoryless kernels: no time, smoothing or signed-zero inversion.
-        self.place.is_none() && matches!(self.kernel.descriptor().id, "gain" | "swap")
+        // Audited algebra only: no signal history, clock or parameter glide.
+        // These mappings preserve positive-zero silence at every setting.
+        self.place.is_none() && matches!(self.kernel.descriptor().id, "gain" | "swap" | "width" | "hp-ms-matrix")
     }
     /// Going into the patch: the knobs set so far are where the effect
     /// starts, with no glide up to them.

@@ -528,3 +528,50 @@ fn stamped_control_burst() {
             at(&cpu, 0.5), at(&cpu, 0.99), cpu[999], audio.worker_jobs());
     }
 }
+
+/// Same wrapper on both sides; the before flag reproduces 035's allowlist.
+struct IdleFx { fx: Fx, before: bool }
+impl Module for IdleFx {
+    fn inputs(&self) -> Vec<Kind> { self.fx.inputs() }
+    fn outputs(&self) -> Vec<Kind> { self.fx.outputs() }
+    fn prepare(&mut self, rate: f32, block: usize) { self.fx.prepare(rate, block); }
+    fn tail(&self) -> usize { self.fx.tail() }
+    fn can_sleep(&self) -> bool {
+        if self.before { matches!(self.fx.descriptor().id, "gain" | "swap") }
+        else { self.fx.can_sleep() }
+    }
+    fn process(&mut self, io: &mut Io) { self.fx.process(io); }
+}
+
+#[test]
+#[ignore = "standalone calling-thread CPU measurement"]
+fn eight_effect_idle_sleep_cost() {
+    for entry in CATALOG {
+        let fx=Fx::new(entry.descriptor.id,RATE).unwrap();
+        println!("AUDIT_ROW id={} tail_frames={} sleep={}",entry.descriptor.id,fx.tail(),fx.can_sleep());
+    }
+    // Deliberately retain common stateful effects: their cost cannot safely
+    // disappear merely because their current output is inaudible.
+    let names = ["gain", "width", "hp-ms-matrix", "eq", "freeverb", "echo", "dc", "compressor"];
+    for round in 0..3 {
+        for before in if round % 2 == 0 { [true,false] } else { [false,true] } {
+            let (mut ctl, mut audio) = engine(RATE, Config { max_block: BLOCK, parallel: false, ..exact() });
+            for (i, id) in names.iter().enumerate() {
+                let node = i as u32 + 1;
+                ctl.add(node, Box::new(IdleFx { fx: Fx::new(id,RATE).unwrap(), before })).unwrap();
+                if node > 1 { ctl.connect(port(node-1,0),port(node,0)).unwrap(); }
+            }
+            ctl.connect_out(port(8,0)).unwrap(); ctl.commit().unwrap();
+            let (mut l, mut r) = ([0.0;BLOCK],[0.0;BLOCK]);
+            for _ in 0..2000 { audio.render(&mut l,&mut r); }
+            let mut times = Vec::with_capacity(10000);
+            for _ in 0..10000 {
+                let start=cpu_seconds(); audio.render(&mut l,&mut r);
+                times.push((cpu_seconds()-start)*1000.0);
+                assert!(l.iter().chain(&r).all(|v| v.to_bits()==0));
+            }
+            times.sort_by(f64::total_cmp);
+            println!("IDLE_ROW round={round} before={before} block={BLOCK} cpu_median={:.9} cpu_p99={:.9} cpu_worst={:.9}",at(&times,0.5),at(&times,0.99),times[times.len()-1]);
+        }
+    }
+}
