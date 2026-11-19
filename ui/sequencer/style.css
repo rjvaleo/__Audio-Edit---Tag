@@ -1134,3 +1134,41 @@ body.only-atmos .at-filt-body .well.pic { width: 100%; height: 110px; }
 body.only-atmos #atAmpCanvas, body.only-atmos #atFltCanvas { height: 110px; width: 100%; }
 .at-lfo-tabs button { height: 20px; min-width: 22px; padding: 0 6px; font-size: 11px; }
 body:not(.only-atmos) .at-lfo-tabs { display: none; }
+
+/* ─── THE BAND: MIDI FILE PLAYER (midifile.js, after band-midi.html) ────────── */
+.band.mf-on { overflow-x: auto; }
+.mf-dim { opacity: 0.45; pointer-events: none; }
+.mf-src button { height: 24px; font-size: 11px; }
+.mf-panel { width: 1496px; flex: none; font-size: 13px; }
+.mf-body { display: grid; grid-template-columns: 420px 752px 308px; gap: 8px; width: 1496px; height: 520px; }
+.mf-col { display: flex; flex-direction: column; gap: 8px; overflow: hidden; border-radius: 8px; padding: 8px 10px 10px; box-shadow: none; }
+.mf-h { margin: 0; font: 600 11px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--look-text); display: flex; gap: 10px; align-items: baseline; }
+.mf-sub { font-weight: 400; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--look-text-3); }
+.mf-lab { font: 600 9px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--look-text-3); }
+.mf-row { display: flex; gap: 8px; align-items: center; }
+.mf-grow { flex: 1; min-width: 0; }
+.mf-btn { height: 24px; padding: 0 10px; font: 500 11px var(--ui); color: var(--look-text-2); background: var(--look-panel-hi); border: 1px solid var(--look-line); border-radius: 6px; white-space: nowrap; flex: none; }
+.mf-btn:hover { color: var(--look-text); }
+.mf-btn.on { background: var(--on); color: var(--look-well); border-color: var(--on); font-weight: 600; }
+.mf-btn:disabled { opacity: 0.4; cursor: default; }
+.mf-btn.mf-big { height: 28px; padding: 0 14px; }
+.mf-ctl { height: 24px; padding: 0 24px 0 8px; font: 500 11px var(--ui); color: var(--look-text); background-color: var(--look-well); border: 1px solid var(--look-line); border-radius: 6px; }
+.mf-seg { display: inline-flex; flex: none; }
+.mf-seg button { height: 24px; padding: 0 10px; font: 500 11px var(--ui); color: var(--look-text-2); background: var(--look-panel-hi); border: 1px solid var(--look-line); border-radius: 0; margin-left: -1px; white-space: nowrap; }
+.mf-seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.mf-seg button:last-child { border-radius: 0 6px 6px 0; }
+.mf-seg button.on { background: var(--on); color: var(--look-well); border-color: var(--on); font-weight: 600; position: relative; z-index: 1; }
+.mf-status { font: 500 10px var(--mono); color: var(--look-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mf-status.err { color: var(--rec); }
+.mf-tracks { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; min-height: 0; flex: 1; }
+.mf-empty { font: 400 11px var(--ui); color: var(--look-text-3); padding: 8px 0; }
+.mf-trk { display: grid; grid-template-columns: 18px 10px 1fr 110px; gap: 8px; align-items: center; height: 46px; flex: none; padding: 0 8px; border-radius: 6px; background: var(--look-well); }
+.mf-trk.off { opacity: 0.45; }
+.mf-trk input { margin: 0; accent-color: var(--on); }
+.mf-trk i { width: 10px; height: 10px; background: var(--c); display: block; }
+.mf-trk .nm { font: 500 13px var(--ui); letter-spacing: 0; color: var(--look-text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mf-trk .nm small { display: block; font: 400 10px var(--mono); color: var(--look-text-3); }
+.mf-trk select { width: 110px; }
+.mf-hint { font: 400 10px/1.5 var(--ui); color: var(--look-text-3); margin: 0; }
+#mfRoll { width: 730px; height: 430px; display: block; flex: none; border-radius: 6px; background: var(--look-well); cursor: pointer; }
+.mf-pos { font: 600 16px var(--mono); color: var(--look-text); letter-spacing: 0.06em; }

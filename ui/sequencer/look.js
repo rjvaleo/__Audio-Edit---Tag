@@ -54,7 +54,7 @@ function lookFromHost() {
     }
   }
   // Redraw what is drawn once.
-  for (const f of ["drawADSRCanvas", "drawFilterADSRCanvas", "atmosDrawAmp", "journeyDraw", "accompanyDraw", "drumsPaint"]) if (typeof window[f] === "function") window[f]();
+  for (const f of ["drawADSRCanvas", "drawFilterADSRCanvas", "atmosDrawAmp", "journeyDraw", "accompanyDraw", "drumsPaint", "mfDrawRoll"]) if (typeof window[f] === "function") window[f]();
 }
 
 function lookWatchHost() {

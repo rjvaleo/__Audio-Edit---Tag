@@ -128,6 +128,8 @@ pub const SEQ_DRUMS_JS: &str = include_str!("../../../../../ui/sequencer/drums.j
 pub const SEQ_BAND_JS: &str = include_str!("../../../../../ui/sequencer/band.js");
 /// Ours: Draw, the drawing sequencer — a canvas whose marks play (14 Nov 2026).
 pub const SEQ_DRAW_JS: &str = include_str!("../../../../../ui/sequencer/draw.js");
+/// Ours: the Band's MIDI file player — plays a .mid note for note through the Band (18 Nov 2026).
+pub const SEQ_MIDIFILE_JS: &str = include_str!("../../../../../ui/sequencer/midifile.js");
 /// Ours: Clone a song, the host's Clone page, which writes the Band (14 Nov 2026).
 pub const SEQ_CLONE_JS: &str = include_str!("../../../../../ui/sequencer/clone.js");
 /// Atmosphere's own effects: the page's side, the audio thread's, and the effect

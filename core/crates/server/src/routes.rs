@@ -243,6 +243,10 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
             Response::ok("text/javascript; charset=utf-8", SEQ_DRAW_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
         }
+        ("GET" | "HEAD", "/sequencer/midifile.js") => {
+            Response::ok("text/javascript; charset=utf-8", SEQ_MIDIFILE_JS.as_bytes().to_vec())
+                .with("Cache-Control", "no-store, must-revalidate")
+        }
         ("GET" | "HEAD", "/sequencer/scopes.js") => {
             Response::ok("text/javascript; charset=utf-8", SEQ_SCOPES_JS.as_bytes().to_vec())
                 .with("Cache-Control", "no-store, must-revalidate")
@@ -409,6 +413,8 @@ pub fn route(app: &Arc<App>, req: &Request) -> Response {
         ("POST", "/api/stems/learn") => api_stems_learn(app, req),
         ("POST", "/api/stems/midi") => api_stems_midi(app, req),
         ("GET", "/api/stems/midi") => api_stems_midi_get(app, req),
+        ("GET", "/api/seq/midi") => api_seq_midi_get(app, req),
+        ("POST", "/api/seq/midi") => api_seq_midi_post(req),
         ("POST", "/api/stems/notes") => api_stems_notes(app, req),
         ("GET", "/api/stems/notes") => api_stems_notes_get(app, req),
         ("POST", "/api/stems/midi/show") => api_stems_midi_show(app, req),

@@ -900,7 +900,9 @@ async function flush() {
         if (time >= 0 && typeof accompanyAt === 'function') accompanyAt(k, time);
         // The Draw page's canvas, as the scheduler plays it (draw.js).
         if (time >= 0 && typeof drawAt === 'function') drawAt(k, time);
-        const stepsOut = (typeof drawStepsMuted === 'function' && drawStepsMuted()) || (typeof bandMelodyOn === 'function' && !bandMelodyOn(k));
+        // The Band's MIDI file player, as the scheduler plays it (midifile.js).
+        if (time >= 0 && typeof mfAt === 'function') mfAt(k, time);
+        const stepsOut = (typeof drawStepsMuted === 'function' && drawStepsMuted()) || (typeof mfStepsMuted === 'function' && mfStepsMuted()) || (typeof bandMelodyOn === 'function' && !bandMelodyOn(k));
         if (step && !step.rest && time >= 0 && !stepsOut) seqPlayAt(step, time, d);
         k++;
       }

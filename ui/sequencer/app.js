@@ -1091,9 +1091,12 @@ function scheduler() {
     // The Draw page's canvas, at every boundary too (draw.js); its switch can
     // leave the steps out.
     if (typeof drawAt === "function") drawAt(seqStepCount, nextNoteTime);
+    // The Band's MIDI file player, at every boundary too (midifile.js); when on,
+    // the Band's patterns and the melody steps rest.
+    if (typeof mfAt === "function") mfAt(seqStepCount, nextNoteTime);
     // The Clone page's section plan can leave the melody out of a section (band.js).
     const melodyOff = typeof bandMelodyOn === "function" && !bandMelodyOn(seqStepCount);
-    if (!played.rest && !melodyOff && !(typeof drawStepsMuted === "function" && drawStepsMuted())) {
+    if (!played.rest && !melodyOff && !(typeof drawStepsMuted === "function" && drawStepsMuted()) && !(typeof mfStepsMuted === "function" && mfStepsMuted())) {
       const freq = seqPlayAt(played, nextNoteTime, stepDur);
       // Update UI
       const si = currentStep;
@@ -1169,6 +1172,7 @@ function togglePlay() {
     if (typeof perfRec !== "undefined" && perfRec && typeof perfRecStop === "function") perfRecStop();
     if (typeof accompanyStop === "function") accompanyStop();
     if (typeof drawStop === "function") drawStop();
+    if (typeof mfStop === "function") mfStop();
   } else {
     isPlaying = true;
     currentStep = 0;
@@ -1177,6 +1181,7 @@ function togglePlay() {
     scheduler();
     document.getElementById("playBtn").textContent = "⏸ PAUSE";
     document.getElementById("playBtn").classList.add("active");
+    if (typeof mfPaintTransport === "function") mfPaintTransport();
     // Play starts an armed take.
     if (typeof perfArmedBegin === "function") perfArmedBegin();
   }
@@ -1187,6 +1192,7 @@ function stopSeq() {
   clearTimeout(schedulerTimer);
   if (typeof accompanyStop === "function") accompanyStop();
   if (typeof drawStop === "function") drawStop();
+  if (typeof mfStop === "function") mfStop();
   if (typeof perfRec !== "undefined" && perfRec && typeof perfRecStop === "function") perfRecStop();
   currentStep = 0;
   document.getElementById("playBtn").textContent = "▶ PLAY";
@@ -2438,6 +2444,8 @@ function getPresetState() {
   state.steps = steps.map((s) => ({ degree: s.degree, rest: s.rest }));
   // The Draw page's drawing, kept as the steps are: as data (draw.js).
   if (typeof drawGetState === "function") state.draw = drawGetState();
+  // The Band's MIDI file player (midifile.js).
+  if (typeof mfGetState === "function") state.midifile = mfGetState();
   return state;
 }
 
@@ -2474,6 +2482,8 @@ function applyPresetState(state) {
   }
   // The drawing; a preset from before Draw leaves it as it is.
   if (state.draw && typeof drawSetState === "function") drawSetState(state.draw);
+  // The Band's MIDI file; a preset from before it leaves it as it is.
+  if (state.midifile && typeof mfSetState === "function") mfSetState(state.midifile);
   // Redraw canvases
   drawADSRCanvas();
   drawFilterADSRCanvas();
@@ -2742,6 +2752,7 @@ function morphToPreset(id) {
     selectScale(preset.state.scaleIdx);
   // The drawing changes at once, as the steps do.
   if (preset.state.draw && typeof drawSetState === "function") drawSetState(preset.state.draw);
+  if (preset.state.midifile && typeof mfSetState === "function") mfSetState(preset.state.midifile);
 
   const display = document.getElementById("presetNameDisplay");
   if (display) display.textContent = "◌ " + preset.name;

@@ -243,7 +243,8 @@ pub(super) fn api_stems_list(app: &Arc<App>) -> Response {
                     .set("meta", read("stems.json"))
                     .set("card", read("card.json"))
                     .set("analysed", d.join("songprint.json").is_file())
-                    .set("learnt", learn_dir(app).join(format!("{name}.json")).is_file()),
+                    .set("learnt", learn_dir(app).join(format!("{name}.json")).is_file())
+                    .set("midi", d.join(format!("{name}.mid")).is_file()),
             );
         }
     }
@@ -576,6 +577,63 @@ pub(super) fn api_stems_midi_get(app: &Arc<App>, req: &Request) -> Response {
         Ok(bytes) => Response::ok("audio/midi", bytes).with("Content-Disposition", &format!("attachment; filename=\"{}\"", name.replace(['"', '\\'], "_"))),
         Err(e) => Response::error(500, &e.to_string()),
     }
+}
+
+/// Maximum upload size for a Standard MIDI File posted to `/api/seq/midi`.
+const MAX_SEQ_MIDI_BYTES: usize = 2 * 1024 * 1024;
+
+/// Parse raw Standard MIDI File bytes into the sequencer's JSON shape.
+fn seq_midi_response(bytes: &[u8]) -> Response {
+    let read = match songprint::midi::read(bytes) {
+        Ok(r) => r,
+        Err(e) => return Response::error(400, &e),
+    };
+    let markers = Value::Arr(
+        read.markers
+            .into_iter()
+            .map(|(bar, label)| Value::Arr(vec![(bar as f64).into(), label.into()]))
+            .collect(),
+    );
+    let parts = Value::Arr(
+        read.parts
+            .into_iter()
+            .map(|p| {
+                Value::obj()
+                    .set("name", p.name)
+                    .set("channel", p.channel as f64)
+                    .set("notes", notes_value(&p.notes))
+            })
+            .collect(),
+    );
+    Response::json(
+        Value::obj()
+            .set("title", read.title)
+            .set("bpm", read.bpm as f64)
+            .set("bars", read.bars as f64)
+            .set("markers", markers)
+            .set("parts", parts)
+            .to_string(),
+    )
+}
+
+/// GET ?p=Stems/<song>: read the split song's `.mid` into notes for the Band.
+pub(super) fn api_seq_midi_get(app: &Arc<App>, req: &Request) -> Response {
+    let (file, _) = match midi_file(app, req.param("p").unwrap_or("")) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    match std::fs::read(&file) {
+        Ok(bytes) => seq_midi_response(&bytes),
+        Err(e) => Response::error(500, &e.to_string()),
+    }
+}
+
+/// POST raw `.mid` bytes: read any Standard MIDI File into notes for the Band.
+pub(super) fn api_seq_midi_post(req: &Request) -> Response {
+    if req.body.len() > MAX_SEQ_MIDI_BYTES {
+        return Response::error(413, "MIDI file is over 2 MB");
+    }
+    seq_midi_response(&req.body)
 }
 
 /// POST {p}: show the song's MIDI file in the Finder (macOS; elsewhere it says
@@ -1475,5 +1533,63 @@ mod midi_tests {
         assert_eq!(midi_song(&analysis(), "song", &[], false, false, false, &|_| None).err().unwrap(), "no parts chosen");
         assert_eq!(midi_song(&analysis(), "song", &["flute".to_string()], false, false, false, &|_| None).err().unwrap(), "no such part: flute");
         assert!(midi_song(&Value::obj(), "song", &all(), false, false, false, &|_| None).is_err());
+    }
+
+    fn post_req(body: Vec<u8>) -> Request {
+        Request {
+            method: "POST".into(),
+            path: "/api/seq/midi".into(),
+            query: std::collections::HashMap::new(),
+            headers: std::collections::HashMap::new(),
+            body,
+        }
+    }
+
+    #[test]
+    fn seq_midi_round_trips_notes_bpm_bars_and_markers() {
+        let num = |x: Option<&Value>| match x { Some(Value::Num(n)) => Some(*n), _ => None };
+        let song = midi_song(&analysis(), "song", &all(), false, false, false, &|_| None).unwrap();
+        let bytes = songprint::midi::write(&song);
+        let resp = api_seq_midi_post(&post_req(bytes));
+        assert_eq!(resp.status, 200);
+        let v = json::parse(std::str::from_utf8(&resp.body).unwrap()).unwrap();
+        assert_eq!(v.get("title").and_then(|x| x.as_str()), Some("song"));
+        assert!((num(v.get("bpm")).unwrap() - 120.0).abs() < 0.01);
+        assert_eq!(num(v.get("bars")), Some(3.0));
+        let markers = v.get("markers").and_then(|x| x.arr()).unwrap();
+        assert_eq!(markers.len(), 2);
+        assert_eq!(num(markers[0].arr().unwrap().first()), Some(0.0));
+        assert_eq!(markers[0].arr().unwrap()[1].as_str(), Some("A"));
+        assert_eq!(num(markers[1].arr().unwrap().first()), Some(2.0));
+        assert_eq!(markers[1].arr().unwrap()[1].as_str(), Some("B"));
+        let parts = v.get("parts").and_then(|x| x.arr()).unwrap();
+        assert_eq!(parts.len(), 3);
+        let got: Vec<_> = parts
+            .iter()
+            .map(|p| {
+                (
+                    p.get("name").and_then(|x| x.as_str()).unwrap(),
+                    num(p.get("channel")).unwrap() as u8,
+                    p.get("notes").and_then(|x| x.arr()).unwrap().len(),
+                )
+            })
+            .collect();
+        assert_eq!(got, [("Drums", 10, 4), ("Bass", 5, 2), ("Chords", 6, 7)]);
+        // Check first bass note matches (bar 0, step 0, steps 2, note 30).
+        let bn = parts[1].get("notes").and_then(|x| x.arr()).unwrap()[0].arr().unwrap();
+        assert_eq!(num(bn.first()), Some(0.0));
+        assert_eq!(num(bn.get(1)), Some(0.0));
+        assert_eq!(num(bn.get(2)), Some(2.0));
+        assert_eq!(num(bn.get(3)), Some(30.0));
+    }
+
+    #[test]
+    fn seq_midi_refuses_rubbish_empty_and_oversized_bodies() {
+        let bad = api_seq_midi_post(&post_req(b"not a midi file at all".to_vec()));
+        assert_eq!(bad.status, 400);
+        let empty = api_seq_midi_post(&post_req(Vec::new()));
+        assert_eq!(empty.status, 400);
+        let huge = api_seq_midi_post(&post_req(vec![0u8; MAX_SEQ_MIDI_BYTES + 1]));
+        assert_eq!(huge.status, 413);
     }
 }

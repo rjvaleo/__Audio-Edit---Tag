@@ -358,6 +358,7 @@ function acPlan(k, jump = false) {
 
 /// Everything the Band plays in boundary `k`'s step, the drums included.
 function bandPlan(k, jump = false) {
+  if (typeof MF !== "undefined" && MF.on) return [];
   const out = acPlan(k, jump);
   if (typeof drumPlan === "function") for (const h of drumPlan(k)) if (typeof bandArranged !== "function" || bandArranged(h.slot, k)) out.push({ part: "drum", slot: h.slot, at: h.at, vel: h.vel });
   return out;
