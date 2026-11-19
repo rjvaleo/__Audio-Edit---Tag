@@ -172,6 +172,11 @@ pub struct Io<'a> {
 /// run of samples must not depend on how that run is cut into pieces, which a
 /// module gets for free by carrying its state from sample to sample.
 pub trait Module: Send + Any {
+    /// Exact typed parameter state this wrapper accepts in PRESET.
+    fn preset_type(&self) -> Option<std::any::TypeId> { None }
+    /// Inspect a typed preset before ownership moves, so rate rebuilds retain
+    /// its controls in the same canonical state as individual messages.
+    fn visit_preset(&self, _thing: &Thing, _visit: &mut dyn FnMut(EventKind)) {}
     /// Relative work per frame, and an explicit promise that this module
     /// has no hidden dependency on other modules. Zero keeps it serial.
     fn parallel_weight(&self) -> usize { 0 }

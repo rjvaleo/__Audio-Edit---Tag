@@ -75,6 +75,8 @@ impl Remember {
     }
 }
 impl Module for Remember {
+    fn preset_type(&self) -> Option<std::any::TypeId> { self.inner.preset_type() }
+    fn visit_preset(&self,thing:&Thing,visit:&mut dyn FnMut(EventKind)) {self.inner.visit_preset(thing,visit);}
     fn parallel_weight(&self) -> usize { self.inner.parallel_weight() }
     fn parallel_active(&self) -> bool { self.inner.parallel_active() }
     fn transfer(&mut self, from: &dyn Module, rate: f32) {
@@ -141,6 +143,14 @@ impl Module for Remember {
         self.inner.process_events(io);
     }
     fn take(&mut self, slot: u32, thing: Thing) -> Option<Thing> {
+        if slot==crate::PRESET {
+            let events=&mut self.events;
+            self.inner.visit_preset(&thing,&mut |event| {
+                let EventKind::Param {index,..}=event else {return;};
+                if let Some(old)=events.iter_mut().find(|old|matches!(old,EventKind::Param {index:i,..} if *i==index)) {*old=event;}
+                else {assert!(events.len()<events.capacity(),"preset exceeds remembered controls");events.push(event);}
+            });
+        }
         self.inner.take(slot, thing)
     }
     fn finished(&mut self) -> Option<Thing> {

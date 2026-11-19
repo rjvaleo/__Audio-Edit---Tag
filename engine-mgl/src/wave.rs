@@ -32,7 +32,10 @@ pub enum WaveThing {
 /// samples apart, and a note or a knob takes effect on the first line at or
 /// after its sample: at most 31 samples late, and the same however the sound
 /// card's blocks fall.
+pub type WaveState = engine_core::Preset<Wave>;
+
 pub struct Wave {
+    preset: Box<WaveState>,
     seed: Option<u32>,
     synth: Synth,
     /// The block last made, and how much of it has gone out.
@@ -67,6 +70,7 @@ impl Wave {
     /// A synth for `rate` (the engine's), with the default patch and no tables.
     pub fn new(rate: f32) -> Wave {
         Wave {
+            preset: Box::new(WaveState::new(&[])),
             seed: None,
             synth: Synth::new(rate, Self::GRID),
             l: [0.0; Self::GRID],
@@ -105,6 +109,9 @@ impl Wave {
 }
 
 impl Module for Wave {
+    fn preset_type(&self)->Option<std::any::TypeId> {Some(std::any::TypeId::of::<WaveState>())}
+    fn visit_preset(&self,thing:&engine_core::Thing,visit:&mut dyn FnMut(EventKind)) {WaveState::visit(thing,visit);}
+
     fn parallel_weight(&self) -> usize { 16 }
     fn parallel_active(&self) -> bool { self.synth.active_voices() > 0 }
     fn factory(&self) -> Option<engine_core::ModuleFactory> {
@@ -126,6 +133,7 @@ impl Module for Wave {
     }
     fn transfer(&mut self, from: &dyn Module, _rate: f32) {
         if let Some(from) = (from as &dyn std::any::Any).downcast_ref::<Wave>() {
+            self.preset.inherit(&from.preset);
             self.synth.adopt(from.synth.state());
         }
     }
@@ -139,6 +147,7 @@ impl Module for Wave {
     /// made its block up to the next line, so what is set here is first heard
     /// from that line.
     fn handle(&mut self, event: &EventKind) {
+        if let EventKind::Param {index,value}=*event {self.preset.update(index,value);}
         match *event {
             EventKind::Param { index: Self::BEND, value } => self.synth.bend(value),
             EventKind::Param { index: Self::MOD_WHEEL, value } => self.synth.mod_wheel(value),
@@ -160,7 +169,15 @@ impl Module for Wave {
     /// The synth has already made its block up to the next line, so what is
     /// handed over here is first heard from that line, as a knob is. What
     /// it replaces goes back in the box, to be freed by the app.
-    fn take(&mut self, _slot: u32, thing: Thing) -> Option<Thing> {
+    fn take(&mut self, slot: u32, thing: Thing) -> Option<Thing> {
+        if slot==engine_core::PRESET {
+            let incoming=match thing.downcast::<WaveState>() {Ok(state)=>state,Err(other)=>return Some(other)};
+            let (old,controls)=WaveState::exchange(&mut self.preset,incoming);
+            for &(index,value) in &controls {self.handle(&EventKind::Param {index,value});}
+            self.preset.restore(controls);
+            return Some(old as engine_core::Thing);
+        }
+
         let mut boxed = match thing.downcast::<WaveThing>() {
             Ok(boxed) => boxed,
             Err(other) => return Some(other),

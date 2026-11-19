@@ -157,6 +157,7 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
         room: queue,
         changing: Arc::clone(&changing),
         factories: BTreeMap::new(),
+        preset_types: BTreeMap::new(),
         opaque_state: BTreeSet::new(),
         bad: Arc::clone(&bad),
         rate,
@@ -213,6 +214,7 @@ pub struct Controller {
     room: usize,
     changing: Arc<AtomicBool>,
     factories: BTreeMap<ModuleId, ModuleFactory>,
+    preset_types: BTreeMap<ModuleId, std::any::TypeId>,
     opaque_state: BTreeSet<ModuleId>,
     failures: Vec<Failure>,
     recording: Vec<crate::RecordingReport>,
@@ -302,6 +304,7 @@ impl Controller {
         if self.now.infos.contains_key(&id) {
             return Err(PatchError::DuplicateModule(id));
         }
+        if let Some(kind)=module.preset_type() {self.preset_types.insert(id,kind);}
         if let Some(factory) = module.factory() {
             self.factories.insert(id, factory);
             module = Box::new(Remember::new(module));
@@ -330,6 +333,7 @@ impl Controller {
         }
         self.staged.remove(&id);
         self.factories.remove(&id);
+        self.preset_types.remove(&id);
         self.opaque_state.remove(&id);
         self.now
             .cables
@@ -493,15 +497,16 @@ impl Controller {
     /// module is not there, comes back to be freed by `collect`. A module
     /// not yet committed takes it at once.
     pub fn give(&mut self, module: ModuleId, slot: u32, thing: Thing) -> Result<u64, PatchError> {
+        let preset=slot==crate::PRESET && self.preset_types.get(&module)==Some(&thing.as_ref().type_id());
         // An arbitrary Thing cannot be cloned or reconstructed generically.
         // Refuse a later rebuild rather than silently discard that state.
         if let Some(staged) = self.staged.get_mut(&module) {
             drop(staged.take(slot, thing));
-            self.opaque_state.insert(module);
+            if !preset {self.opaque_state.insert(module);}
             return Ok(self.seq);
         }
         let result = self.push(0, Msg::Thing { module, slot, thing });
-        if result.is_ok() { self.opaque_state.insert(module); }
+        if result.is_ok() && !preset { self.opaque_state.insert(module); }
         result
     }
 
@@ -513,8 +518,9 @@ impl Controller {
         slot: u32,
         thing: Thing,
     ) -> Result<u64, PatchError> {
+        let preset=slot==crate::PRESET && self.preset_types.get(&module)==Some(&thing.as_ref().type_id());
         let result = self.push(frame, Msg::Thing { module, slot, thing });
-        if result.is_ok() { self.opaque_state.insert(module); }
+        if result.is_ok() && !preset { self.opaque_state.insert(module); }
         result
     }
 

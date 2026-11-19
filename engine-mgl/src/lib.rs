@@ -11,8 +11,8 @@ mod suite;
 mod wave;
 
 pub use crate::ceiling::Ceiling;
-pub use crate::fx::Fx;
-pub use crate::grain::{Grain, GrainThing, Handle};
+pub use crate::fx::{Fx,FxState};
+pub use crate::grain::{Grain, GrainThing, GrainState, Handle};
 pub use crate::sound::Document;
-pub use crate::suite::{Suite, SuiteThing};
-pub use crate::wave::{Wave, WaveThing};
+pub use crate::suite::{Suite, SuiteThing, SuiteState};
+pub use crate::wave::{Wave, WaveThing, WaveState};

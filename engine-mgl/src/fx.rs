@@ -9,7 +9,10 @@ use prism_fx::{Descriptor, DynKernel};
 ///
 /// The effect allocates everything when it is made and when it is handed a
 /// sound, both before the module goes into the patch.
+pub type FxState = engine_core::Preset<Fx>;
+
 pub struct Fx {
+    preset: Box<FxState>,
     kernel: Box<dyn DynKernel>,
     rate: f32,
     sound_recipe: Option<(std::sync::Arc<[f32]>, usize, f32)>,
@@ -34,6 +37,7 @@ impl Fx {
     /// (the engine's). None when the catalogue has no such effect.
     pub fn new(id: &str, rate: f32) -> Option<Fx> {
         prism_fx::make(id, rate).map(|kernel| Fx {
+            preset: Box::new(FxState::new(&[])),
             kernel,
             rate,
             sound_recipe: None,
@@ -77,6 +81,9 @@ impl Fx {
 }
 
 impl Module for Fx {
+    fn preset_type(&self)->Option<std::any::TypeId> {Some(std::any::TypeId::of::<FxState>())}
+    fn visit_preset(&self,thing:&engine_core::Thing,visit:&mut dyn FnMut(EventKind)) {FxState::visit(thing,visit);}
+
     fn parallel_weight(&self) -> usize {
         // Measured eight-branch break-even on the native bench. Eight units
         // admit 128-frame levels; two defer until 512. Cheap reverbs stay
@@ -91,6 +98,9 @@ impl Module for Fx {
             "sm-sagittarius" | "sm-triangulum" => 2,
             _ => 0,
         }
+    }
+    fn transfer(&mut self,from:&dyn Module,_rate:f32) {
+        if let Some(from)=(from as &dyn std::any::Any).downcast_ref::<Self>() {self.preset.inherit(&from.preset);}
     }
     fn factory(&self) -> Option<engine_core::ModuleFactory> {
         let id = self.kernel.descriptor().id;
@@ -138,6 +148,7 @@ impl Module for Fx {
         }
     }
     fn handle(&mut self, event: &EventKind) {
+        if let EventKind::Param {index,value}=*event {self.preset.update(index,value);}
         let EventKind::Param { index, value } = *event else {
             return;
         };
@@ -163,6 +174,16 @@ impl Module for Fx {
     }
     fn recover(&mut self) {
         self.kernel.reset();
+    }
+    fn take(&mut self,slot:u32,thing:engine_core::Thing)->Option<engine_core::Thing> {
+        if slot==engine_core::PRESET {
+            let incoming=match thing.downcast::<FxState>() {Ok(state)=>state,Err(other)=>return Some(other)};
+            let (old,controls)=FxState::exchange(&mut self.preset,incoming);
+            for &(index,value) in &controls {self.handle(&EventKind::Param {index,value});}
+            self.preset.restore(controls);
+            return Some(old as engine_core::Thing);
+        }
+        Some(thing)
     }
     fn process(&mut self, io: &mut Io) {
         let (in_l, in_r) = io.ins.audio(0);

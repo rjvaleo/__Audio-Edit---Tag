@@ -32,7 +32,10 @@ impl SuiteThing {
 
 /// A suite. Input 0 and output 0 are audio; knob numbers are those of the
 /// mode that is running (the one coming in, during a switch).
+pub type SuiteState = engine_core::Preset<Suite>;
+
 pub struct Suite {
+    preset: Box<SuiteState>,
     module: ModuleKernel,
     rate: f32,
     /// A switch that could not start yet (the one before it is still
@@ -51,6 +54,7 @@ impl Suite {
     pub fn new(suite: &str, mode: &str, rate: f32) -> Option<Suite> {
         let module = ModuleKernel::new(find_mode(suite, mode)?, rate)?;
         Some(Suite {
+            preset: Box::new(SuiteState::new(&[])),
             module,
             rate,
             waiting: None,
@@ -93,13 +97,19 @@ impl Suite {
 }
 
 impl Module for Suite {
+    fn preset_type(&self)->Option<std::any::TypeId> {Some(std::any::TypeId::of::<SuiteState>())}
+    fn visit_preset(&self,thing:&engine_core::Thing,visit:&mut dyn FnMut(EventKind)) {SuiteState::visit(thing,visit);}
+
+    fn transfer(&mut self,from:&dyn Module,_rate:f32) {
+        if let Some(from)=(from as &dyn std::any::Any).downcast_ref::<Self>() {self.preset.inherit(&from.preset);}
+    }
     fn factory(&self) -> Option<engine_core::ModuleFactory> {
         let mode = self.module.mode();
         let params: Vec<_> = (0..self.module.descriptor().params.len()).map(|i| self.module.param(i)).collect();
         Some(Box::new(move |rate, _| {
             let mut module = ModuleKernel::new(mode, rate).unwrap();
             for (i, value) in params.iter().enumerate() { module.set_param(i, *value); }
-            Box::new(Suite { module, rate, waiting: None, carrier: None, done: None })
+            Box::new(Suite { preset: Box::new(SuiteState::new(&[])), module, rate, waiting: None, carrier: None, done: None })
         }))
     }
     fn inputs(&self) -> Vec<Kind> {
@@ -125,6 +135,7 @@ impl Module for Suite {
         self.module.reset();
     }
     fn handle(&mut self, event: &EventKind) {
+        if let EventKind::Param {index,value}=*event {self.preset.update(index,value);}
         if let EventKind::Param { index, value } = *event {
             self.module.set_param(index as usize, value);
         }
@@ -150,7 +161,15 @@ impl Module for Suite {
             }
         }
     }
-    fn take(&mut self, _slot: u32, thing: Thing) -> Option<Thing> {
+    fn take(&mut self, slot: u32, thing: Thing) -> Option<Thing> {
+        if slot==engine_core::PRESET {
+            let incoming=match thing.downcast::<SuiteState>() {Ok(state)=>state,Err(other)=>return Some(other)};
+            let (old,controls)=SuiteState::exchange(&mut self.preset,incoming);
+            for &(index,value) in &controls {self.handle(&EventKind::Param {index,value});}
+            self.preset.restore(controls);
+            return Some(old as engine_core::Thing);
+        }
+
         match thing.downcast::<SuiteThing>() {
             Ok(boxed) => self.begin(boxed).map(|boxed| boxed as Thing),
             Err(other) => Some(other),

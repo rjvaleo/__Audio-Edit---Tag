@@ -24,6 +24,8 @@ pub use host::{HostAudio, HostInputs, Input};
 mod module;
 mod plan;
 mod pool;
+mod preset;
+pub use preset::{Preset,PRESET,MAX_PRESET_CONTROLS};
 mod rebuild;
 pub use rebuild::ModuleFactory;
 pub mod rt;

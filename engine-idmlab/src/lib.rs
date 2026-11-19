@@ -100,7 +100,10 @@ struct Route {
 /// Its inputs, in order: each stereo audio input; a note input if it is
 /// played by notes; then one control input for each [`Wrapped::route`].
 /// Its outputs: each stereo audio output, then each modulation output.
+pub type WrappedState = engine_core::Preset<Wrapped>;
+
 pub struct Wrapped {
+    preset: Box<WrappedState>,
     kind: ModuleKind,
     variant: u32,
     module: Box<dyn LabModule>,
@@ -138,6 +141,7 @@ impl Wrapped {
             }
         }
         Ok(Wrapped {
+            preset: Box::new(WrappedState::new(&[])),
             kind, variant,
             module,
             layout,
@@ -182,6 +186,12 @@ impl Wrapped {
 }
 
 impl Module for Wrapped {
+    fn preset_type(&self)->Option<std::any::TypeId> {Some(std::any::TypeId::of::<WrappedState>())}
+    fn visit_preset(&self,thing:&engine_core::Thing,visit:&mut dyn FnMut(EventKind)) {WrappedState::visit(thing,visit);}
+
+    fn transfer(&mut self,from:&dyn Module,_rate:f32) {
+        if let Some(from)=(from as &dyn std::any::Any).downcast_ref::<Self>() {self.preset.inherit(&from.preset);}
+    }
     fn factory(&self) -> Option<engine_core::ModuleFactory> {
         let (kind, variant) = (self.kind, self.variant);
         let params = self.params.clone(); let routes = self.routes.clone();
@@ -214,6 +224,7 @@ impl Module for Wrapped {
     }
 
     fn handle(&mut self, event: &EventKind) {
+        if let EventKind::Param {index,value}=*event {self.preset.update(index,value);}
         match *event {
             EventKind::Param { index, value } => {
                 if let Some(slot) = self.params.get_mut(index as usize) {
@@ -225,6 +236,16 @@ impl Module for Wrapped {
         }
     }
 
+    fn take(&mut self,slot:u32,thing:engine_core::Thing)->Option<engine_core::Thing> {
+        if slot==engine_core::PRESET {
+            let incoming=match thing.downcast::<WrappedState>() {Ok(state)=>state,Err(other)=>return Some(other)};
+            let (old,controls)=WrappedState::exchange(&mut self.preset,incoming);
+            for &(index,value) in &controls {self.handle(&EventKind::Param {index,value});}
+            self.preset.restore(controls);
+            return Some(old as engine_core::Thing);
+        }
+        Some(thing)
+    }
     fn process(&mut self, io: &mut Io) {
         let audio_ins = self.layout.ins.len();
         let mut sound = [(NO_SOUND, NO_SOUND); MAX_PORTS];

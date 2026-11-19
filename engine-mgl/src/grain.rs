@@ -174,7 +174,10 @@ impl Handle {
 /// note, a knob or a new sound takes effect on the first line at or after
 /// its sample. What it plays is then the same however the sound card's
 /// blocks fall.
+pub type GrainState = engine_core::Preset<Grain>;
+
 pub struct Grain {
+    preset: Box<GrainState>,
     rebuildable: bool,
     core: Core,
     shared: Arc<Shared>,
@@ -217,6 +220,7 @@ impl Grain {
         // twice. They are limited by a number (`VOICES`, or `poly`).
         shared.voices.set_offline(true);
         Grain {
+            preset: Box::new(GrainState::new(&[])),
             rebuildable: true,
             core: Core::new(grid, 2, params, Arc::clone(&source)).with_keys(Arc::clone(&keys)),
             shared,
@@ -465,6 +469,12 @@ impl Grain {
 }
 
 impl Module for Grain {
+    fn preset_type(&self)->Option<std::any::TypeId> {Some(std::any::TypeId::of::<GrainState>())}
+    fn visit_preset(&self,thing:&engine_core::Thing,visit:&mut dyn FnMut(EventKind)) {GrainState::visit(thing,visit);}
+
+    fn transfer(&mut self,from:&dyn Module,_rate:f32) {
+        if let Some(from)=(from as &dyn std::any::Any).downcast_ref::<Self>() {self.preset.inherit(&from.preset);}
+    }
     fn factory(&self) -> Option<engine_core::ModuleFactory> {
         if !self.rebuildable { return None; }
         let shared = Arc::clone(&self.shared); let grid = self.grid;
@@ -483,6 +493,7 @@ impl Module for Grain {
     /// A message lands between two pieces of audio. The deck has already
     /// made its block up to the next line, so this is first heard from there.
     fn handle(&mut self, event: &EventKind) {
+        if let EventKind::Param {index,value}=*event {self.preset.update(index,value);}
         match *event {
             EventKind::Param { index, value } => self.knob(index, value),
             EventKind::Note(note) => self.play(&note),
@@ -522,7 +533,15 @@ impl Module for Grain {
             next += 1;
         }
     }
-    fn take(&mut self, _slot: u32, thing: Thing) -> Option<Thing> {
+    fn take(&mut self, slot: u32, thing: Thing) -> Option<Thing> {
+        if slot==engine_core::PRESET {
+            let incoming=match thing.downcast::<GrainState>() {Ok(state)=>state,Err(other)=>return Some(other)};
+            let (old,controls)=GrainState::exchange(&mut self.preset,incoming);
+            for &(index,value) in &controls {self.handle(&EventKind::Param {index,value});}
+            self.preset.restore(controls);
+            return Some(old as engine_core::Thing);
+        }
+
         match thing.downcast::<GrainThing>() {
             Ok(boxed) => self.hand(boxed).map(|boxed| boxed as Thing),
             Err(other) => Some(other),
