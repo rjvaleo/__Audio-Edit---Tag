@@ -575,3 +575,54 @@ fn eight_effect_idle_sleep_cost() {
         }
     }
 }
+
+#[test]
+#[ignore = "standalone Grain grid calling-thread CPU measurement"]
+fn grain_grid_callback_cost() {
+    use mgl_engine::Source;
+    use mgl_fx::grain::{Grain as Settings,StreamParams};
+    use mgl_fx::stretch::Algorithm;
+    let frames=192000;
+    let mut seed=7u32;
+    let samples:Vec<f32>=(0..frames).flat_map(|i| {
+        seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        let s=(i as f32*0.02).sin()*0.4+((seed>>16) as f32/32768.0-1.0)*0.05;
+        [s,s*0.8]
+    }).collect();
+    let source=Arc::new(Source {samples,channels:2});
+    let params=|algorithm|StreamParams {in_frames:frames,sample_rate:48000,ratio:2.0,semitones:0.0,
+        window_ms:40.0,grain:Settings::default(),algorithm,wsola:Default::default(),vocoder:Default::default(),
+        pvsola:Default::default(),hybrid:Default::default(),soundhack:Default::default(),cloud:false,cloud_mix:0.5};
+    let hybrid=Arc::new(mgl_fx::hstream::Parts::separate(&source.samples,2,params(Algorithm::Hybrid).hybrid));
+    for algorithm in [Algorithm::Granular,Algorithm::Wsola,Algorithm::Vocoder,Algorithm::Pvsola,Algorithm::Hybrid] {
+        for voices in [0usize,8] {for block in [32usize,64,128] {for parallel in [false,true] {
+            let mut deck=Grain::new(48000,128,params(algorithm),source.clone());
+            if algorithm==Algorithm::Hybrid {deck=deck.parts(hybrid.clone());}
+            if voices>0 {deck=deck.poly(voices);}
+            let handle=deck.handle();
+            let (mut ctl,mut audio)=engine(RATE,Config {max_block:128,parallel,..exact()});
+            ctl.add(1,Box::new(deck)).unwrap();ctl.connect_out(port(1,0)).unwrap();ctl.commit().unwrap();
+            if voices==0 {
+                ctl.send(1,EventKind::Param {index:grain::RUN,value:1.0}).unwrap();
+                ctl.send(1,EventKind::Param {index:grain::PLAY,value:1.0}).unwrap();
+            } else {
+                ctl.send(1,EventKind::Param {index:grain::RUN,value:0.0}).unwrap();
+                ctl.send(1,EventKind::Param {index:grain::KEY_MODE,value:2.0}).unwrap();
+                for i in 0..voices {ctl.send(1,EventKind::Note(NoteEvent::on(48+i as u8*3,0.8))).unwrap();}
+            }
+            let (mut l,mut r)=([0.0;128],[0.0;128]);
+            for _ in 0..100 {audio.render(&mut l[..block],&mut r[..block]);}
+            let mut times=Vec::with_capacity(1000);let mut loud=0.0f32;
+            for _ in 0..1000 {
+                let start=cpu_seconds();audio.render(&mut l[..block],&mut r[..block]);
+                times.push((cpu_seconds()-start)*1000.0);
+                loud=l[..block].iter().fold(loud,|a,b|a.max(b.abs()));
+            }
+            assert!(loud>0.001,"{algorithm:?} voices={voices} must be playing");
+            times.sort_by(f64::total_cmp);
+            let slot=block as f64/48.0;let worst=times[times.len()-1];
+            println!("GRID_ROW algorithm={algorithm:?} voices={voices} callback={block} grid=128 parallel={parallel} cpu_median={:.9} cpu_p99={:.9} cpu_worst={worst:.9} slot_ms={slot:.9} worst_slot_pct={:.3} worker_jobs={}",at(&times,0.5),at(&times,0.99),worst/slot*100.0,audio.worker_jobs());
+            handle.collect();
+        }}}
+    }
+}
