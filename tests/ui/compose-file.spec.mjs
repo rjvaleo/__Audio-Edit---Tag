@@ -13,6 +13,21 @@
 //     named for the composition.
 
 import { test, expect } from './test.mjs';
+import { existsSync, readdirSync, rmSync, rmdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+// A later spec rescans this shared library. Keep the export test's files out
+// of that scan, including when an assertion or the film export fails.
+const exportFolders = new Map();
+test.afterAll(() => {
+  for (const [folder, before] of exportFolders) {
+    if (!existsSync(folder)) continue;
+    for (const name of readdirSync(folder)) {
+      if (!before.has(name)) rmSync(join(folder, name), { recursive: true, force: true });
+    }
+    if (!readdirSync(folder).length) rmdirSync(folder);
+  }
+});
 
 async function openCompose(page) {
   await page.goto('/');
@@ -154,8 +169,15 @@ test('compositions are listed by the names they were saved under, and a name can
   for (const n of ['A piece', 'b piece', '../../escape']) expect(got.after).not.toContain(n);
 });
 
-test('one export puts the sound and the film beside each other, in a folder named for the composition', async ({ page }) => {
+test('one export puts the sound and the film beside each other, in a folder named for the composition', async ({ page, request }) => {
   await openCompose(page);
+  const library = (await (await request.get('/api/state')).json()).library;
+  const target = await page.evaluate(async () => {
+    await compositionPaint('');
+    return { source: state.selectedFile.path, folder: compositionFolder() };
+  });
+  const folder = join(library, dirname(target.source), target.folder);
+  exportFolders.set(folder, new Set(existsSync(folder) ? readdirSync(folder) : []));
   const got = await page.evaluate(async () => {
     const realExport = videoExport, realSupport = videoExportSupport;
     // The film is made in the page and needs a codec the test browser may not
