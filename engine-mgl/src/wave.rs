@@ -105,6 +105,8 @@ impl Wave {
 }
 
 impl Module for Wave {
+    fn parallel_weight(&self) -> usize { 16 }
+    fn parallel_active(&self) -> bool { self.synth.active_voices() > 0 }
     fn factory(&self) -> Option<engine_core::ModuleFactory> {
         let state = self.synth.state();
         let seed = self.seed;

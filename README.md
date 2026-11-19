@@ -41,3 +41,34 @@ that module rather than lose its state. Grain decks with opaque rack/parts/bank
 or octave builders likewise need a caller-supplied reconstruction factory.
 Existing Grain handles refer to their original instance; applications retaining
 handles must arrange handles for replacements in their factory.
+
+### Parallel rendering
+
+Set `Config::parallel = true` to create up to four workers (available cores minus
+one). It is off by default. `worker_init: Option<fn(usize)>` runs once on each
+worker before any render, for the host's future audio-workgroup integration.
+Apple workers request interactive QoS; Windows workers request above-normal
+priority. The host owns realtime scheduling policy.
+
+The compiler keeps the original serial order and also emits DAG levels. Input
+mixing completes before a level starts; workers borrow only their node, its
+outputs and the completed input sources. Output sums retain their original
+order. Feedback plans use the original serial path. The audio thread helps with
+jobs, spins briefly, then joins through an OS semaphore. All jobs and scratch
+are sized off audio. Workers copy the caller's floating-point controls so offline
+renders and the host's denormal guard each retain their original results.
+
+Only explicitly weighted modules may run on workers. A level needs at least two
+active weighted branches and 8192 frame-weight units. Wave uses 16 units and
+checks for active voices. The measured effect list uses 8 units for the more
+expensive reverbs, 2 for effects that only pay at larger levels, and 0 for cheap
+or unmeasured kernels. Thus eight Waves qualify at 64 frames, while eight
+2-unit effects wait until 512. These conservative hints were measured on the M1
+Pro; they are not a hard scheduling guarantee for every machine or parameter.
+
+`engine-core/pool-tests` is a validation-only feature that changes Config's
+default to run the existing fixtures with the pool enabled. Production callers
+should select Config explicitly, not enable this feature. The ignored cost tests
+measure serial/pool wall and calling-thread CPU time, wake/join overhead, a work
+size sweep and the individual effect scheduling gate. Thread CPU excludes worker
+CPU and must not be read as total engine CPU consumption.

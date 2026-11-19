@@ -23,6 +23,7 @@ pub enum EventKind {
 /// A module's inputs for one piece of audio. Several cables into one input
 /// have already been summed.
 pub struct Inputs<'a> {
+    pub(crate) reads: Option<&'a [crate::pool::ReadBuf]>,
     pub(crate) before: &'a [Buf],
     pub(crate) after: &'a [Buf],
     pub(crate) gap_start: usize,
@@ -33,6 +34,7 @@ pub struct Inputs<'a> {
 
 impl<'a> Inputs<'a> {
     fn buf(&self, input: usize) -> &'a Buf {
+        if let Some(reads) = self.reads { return reads[input].get(); }
         let index = self.map[input];
         if index < self.gap_start {
             &self.before[index]
@@ -42,7 +44,7 @@ impl<'a> Inputs<'a> {
     }
 
     pub fn count(&self) -> usize {
-        self.map.len()
+        self.reads.map_or(self.map.len(), |reads| reads.len())
     }
 
     pub fn audio(&self, input: usize) -> (&'a [f32], &'a [f32]) {
@@ -146,6 +148,12 @@ pub struct Io<'a> {
 /// run of samples must not depend on how that run is cut into pieces, which a
 /// module gets for free by carrying its state from sample to sample.
 pub trait Module: Send + Any {
+    /// Relative work per frame, and an explicit promise that this module
+    /// has no hidden dependency on other modules. Zero keeps it serial.
+    fn parallel_weight(&self) -> usize { 0 }
+    /// Cheap, allocation-free eligibility check on audio before dispatch.
+    fn parallel_active(&self) -> bool { true }
+
     /// Capture construction data before this module leaves the controller.
     fn factory(&self) -> Option<crate::ModuleFactory> { None }
     /// Optional typed state hand-over; both objects remain owned by plans.

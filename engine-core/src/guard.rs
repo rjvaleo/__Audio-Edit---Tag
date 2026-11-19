@@ -161,3 +161,27 @@ mod tests {
         assert!(half_the_smallest() > 0.0);
     }
 }
+
+/// A worker uses the caller's exact floating-point controls, including the
+/// difference between offline renders and the host's denormal guard.
+#[derive(Clone, Copy)]
+pub(crate) struct FloatMode(u64);
+impl FloatMode {
+    pub(crate) fn capture() -> Self {
+        #[cfg(target_arch="aarch64")]
+        unsafe { let value:u64; core::arch::asm!("mrs {}, fpcr",out(reg)value,options(nomem,nostack,preserves_flags)); Self(value) }
+        #[cfg(target_arch="x86_64")]
+        unsafe { let mut value=0u32;core::arch::asm!("stmxcsr [{}]",in(reg)&mut value,options(nostack,preserves_flags));Self(value as u64) }
+        #[cfg(not(any(target_arch="aarch64",target_arch="x86_64")))]
+        {Self(0)}
+    }
+    fn set(self) {
+        #[cfg(target_arch="aarch64")]
+        unsafe{core::arch::asm!("msr fpcr, {}",in(reg)self.0,options(nomem,nostack,preserves_flags));}
+        #[cfg(target_arch="x86_64")]
+        unsafe{let value=self.0 as u32;core::arch::asm!("ldmxcsr [{}]",in(reg)&value,options(nostack,preserves_flags,readonly));}
+    }
+    pub(crate) fn enter(self)->RestoreMode {let previous=Self::capture();self.set();RestoreMode(previous)}
+}
+pub(crate) struct RestoreMode(FloatMode);
+impl Drop for RestoreMode {fn drop(&mut self){self.0.set();}}

@@ -18,6 +18,10 @@ use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
+    /// Opt in to the fixed render pool. Disabled in production defaults.
+    pub parallel: bool,
+    /// Called once on each worker, before it renders (host workgroup hook).
+    pub worker_init: Option<fn(usize)>,
     /// The longest piece of audio made in one go. A bigger block from the
     /// sound card is made in several.
     pub max_block: usize,
@@ -33,6 +37,8 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            parallel: cfg!(feature = "pool-tests"),
+            worker_init: None,
             max_block: 1024,
             queue: 4096,
             log_applied: false,
@@ -168,6 +174,7 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
         versions: BTreeMap::new(),
     };
     let audio = AudioEngine {
+        workers: if config.parallel { crate::pool::Pool::new(config.worker_init) } else { None },
         changing,
         transition: None,
         bad,
@@ -253,7 +260,7 @@ impl Controller {
             if let Some(old) = self.staged.get(&id) {
                 old.visit_events(&mut |event| module.handle(&event));
             }
-            patch.infos.insert(id, Info { inputs: module.inputs(), outputs: module.outputs(),
+            patch.infos.insert(id, Info { parallel: module.parallel_weight(), inputs: module.inputs(), outputs: module.outputs(),
                 feedback_delay: module.feedback_delay(), latency: module.latency(),
                 tail: module.tail(), can_sleep: module.can_sleep() });
             staged.insert(id, module);
@@ -295,6 +302,7 @@ impl Controller {
         self.now.infos.insert(
             id,
             Info {
+                parallel: module.parallel_weight(),
                 inputs: module.inputs(),
                 outputs: module.outputs(),
                 feedback_delay: module.feedback_delay(),
@@ -603,6 +611,7 @@ impl Controller {
 
 /// The sound card's side. `render` is the audio callback.
 pub struct AudioEngine {
+    workers: Option<crate::pool::Pool>,
     changing: Arc<AtomicBool>,
     transition: Option<Box<RateChange>>,
     failed: bool,
@@ -631,6 +640,8 @@ impl AudioEngine {
     }
 
     /// Reports dropped, or things leaked, because the app stopped collecting.
+    pub fn worker_jobs(&self) -> usize { self.workers.as_ref().map_or(0, |pool| pool.worker_jobs()) }
+
     pub fn lost(&self) -> u64 {
         self.lost
     }
@@ -669,10 +680,11 @@ impl AudioEngine {
                 &self.sounds,
                 &mut left[pos..pos + n],
                 &mut right[pos..pos + n],
+                self.workers.as_mut(),
             );
             if let Some(change) = self.transition.as_mut() {
                 change.old.as_mut().unwrap().run(n, change.old_rate, frame, &self.sounds,
-                    &mut change.left[..n], &mut change.right[..n]);
+                    &mut change.left[..n], &mut change.right[..n], self.workers.as_mut());
                 let tripped = change.old.as_mut().unwrap().take_tripped();
                 if tripped > 0 { self.bad.fetch_add(tripped, Ordering::Relaxed); }
                 for i in 0..n {

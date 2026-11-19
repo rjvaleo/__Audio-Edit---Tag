@@ -89,7 +89,7 @@ fn a_plug_into_the_wrong_kind_of_socket_is_refused() {
 // reference, including clamping stamps that arrived after their frame.
 #[test]
 fn scrambled_bursts_match_the_old_waiting_list_message_for_message() {
-    let config = Config { max_block: 128, queue: 4096, fade_frames: 0, log_applied: true };
+    let config = Config { max_block: 128, queue: 4096, fade_frames: 0, log_applied: true, ..Config::default() };
     let (mut ctl, mut audio) = engine(RATE, config);
     ctl.add(1, Box::new(Dc(1.0))).unwrap();
     ctl.add(2, Box::new(Gain::new(1.0))).unwrap();

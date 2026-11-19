@@ -77,6 +77,21 @@ impl Fx {
 }
 
 impl Module for Fx {
+    fn parallel_weight(&self) -> usize {
+        // Measured eight-branch break-even on the native bench. Eight units
+        // admit 128-frame levels; two defer until 512. Cheap reverbs stay
+        // serial, as do unaudited kernels. These are scheduling hints only.
+        match self.kernel.descriptor().id {
+            "dattorro-plate" | "lxp-chamber" | "lxp-hall" | "lxp-plate" |
+            "lxp-room" | "sm-cirrus-major" | "sm-lmc" => 8,
+            "spectral-dynamics" | "convolution" | "ambient-fdn" | "freeverb" |
+            "hp-hall" | "hp-medium-room" | "moorer-reverb" | "sm-andromeda" |
+            "sm-capricorn" | "sm-centaurus" | "sm-cirrus-minor" | "sm-gemini" |
+            "sm-great-annihilator" | "sm-hydra" | "sm-lyra" |
+            "sm-sagittarius" | "sm-triangulum" => 2,
+            _ => 0,
+        }
+    }
     fn factory(&self) -> Option<engine_core::ModuleFactory> {
         let id = self.kernel.descriptor().id;
         let params: Vec<_> = (0..self.kernel.descriptor().params.len()).map(|i| self.kernel.param(i)).collect();

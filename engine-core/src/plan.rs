@@ -12,6 +12,7 @@
 //! New cables fade in. When the fades are over the second plan, the new patch
 //! alone, takes its place.
 
+mod parallel;
 use crate::engine::PatchError;
 use crate::guard::all_finite;
 use crate::module::{EventKind, Inputs, Io, Module, Outputs, Thing};
@@ -28,6 +29,7 @@ pub(crate) const MAX_MODULE_ID: ModuleId = 1 << 16;
 /// gone to the audio thread.
 #[derive(Clone)]
 pub(crate) struct Info {
+    pub parallel: usize,
     pub inputs: Vec<Kind>,
     pub outputs: Vec<Kind>,
     pub feedback_delay: usize,
@@ -397,6 +399,8 @@ struct Mix {
 }
 
 struct Node {
+    reads: Vec<crate::pool::ReadBuf>,
+    weight: usize,
     id: ModuleId,
     /// `None` until the audio thread hands the module over from the plan before.
     module: Option<Box<dyn Module>>,
@@ -415,7 +419,10 @@ struct Node {
     out_count: usize,
 }
 
+struct Level { ops: Vec<Op>, serial: Vec<Op>, parallel: Vec<Op>, weight: usize, heavy: usize }
 pub(crate) struct Plan {
+    levels: Vec<Level>,
+    jobs: Vec<parallel::Job>,
     nodes: Vec<Node>,
     ops: Vec<Op>,
     /// Every buffer. The first five are the silent input of each kind.
@@ -458,6 +465,8 @@ impl Plan {
     /// The plan of an empty patch: silence.
     pub(crate) fn empty(max_block: usize) -> Plan {
         Plan {
+            levels: Vec::new(),
+            jobs: Vec::new(),
             nodes: Vec::new(),
             ops: Vec::new(),
             pool: Kind::ALL
@@ -651,6 +660,8 @@ impl Plan {
                 });
             }
             nodes.push(Node {
+                reads: vec![crate::pool::ReadBuf::empty(); info.inputs.len()],
+                weight: info.parallel,
                 id,
                 module: None,
                 ghost: spec.ghosts.contains(&id),
@@ -674,7 +685,7 @@ impl Plan {
         for (node, id) in ids.iter().enumerate() {
             by_id[*id as usize] = node as u32;
         }
-        let ops = steps
+        let ops: Vec<Op> = steps
             .iter()
             .map(|&(node, half)| match (split[node], half) {
                 (false, _) => Op::Process(node),
@@ -682,6 +693,24 @@ impl Plan {
                 (true, _) => Op::Absorb(node),
             })
             .collect();
+        // Feedback's emit/absorb ordering remains on the original serial path.
+        // For a DAG every predecessor is in an earlier level, so no job reads
+        // another job's outputs while that level is in flight.
+        let mut levels: Vec<Level> = Vec::new();
+        if !split.iter().any(|split| *split) {
+            let mut depth = vec![0usize; count];
+            for &(node, _) in &steps {
+                let level = depth[node];
+                while levels.len() <= level { levels.push(Level { ops: Vec::new(), serial: Vec::new(), parallel: Vec::new(), weight: 0, heavy: 0 }); }
+                levels[level].ops.push(Op::Process(node));
+                let weight = infos[&ids[node]].parallel;
+                if weight == 0 { levels[level].serial.push(Op::Process(node)); }
+                else { levels[level].parallel.push(Op::Process(node)); }
+                levels[level].weight += weight;
+                levels[level].heavy += usize::from(weight > 0);
+                for &to in &next[node] { depth[to] = depth[to].max(level + 1); }
+            }
+        }
         let piece = (0..count)
             .filter(|node| split[*node])
             .map(|node| infos[&ids[node]].feedback_delay)
@@ -711,6 +740,8 @@ impl Plan {
             node.module = staged.remove(&node.id);
         }
         Ok(Plan {
+            levels,
+            jobs: Vec::with_capacity(count),
             nodes,
             ops,
             pool,
@@ -877,10 +908,13 @@ impl Plan {
         sounds: &Sounds,
         left: &mut [f32],
         right: &mut [f32],
+        workers: Option<&mut crate::pool::Pool>,
     ) {
         let Plan {
             nodes,
             ops,
+            levels,
+            jobs,
             pool,
             out,
             step,
@@ -889,124 +923,34 @@ impl Plan {
             ..
         } = self;
         let step = *step;
-        for op in ops.iter() {
-            let (index, takes_in, gives_out) = match *op {
-                Op::Process(index) => (index, true, true),
-                Op::Emit(index) => (index, false, true),
-                Op::Absorb(index) => (index, true, false),
-            };
-            let node = &mut nodes[index];
-            if node.ghost && *fade_left == 0 {
-                continue;
-            }
-            if node.dead {
-                silence(
-                    &mut pool[node.out_start..node.out_start + node.out_count],
-                    n,
-                );
-                continue;
-            }
-            let Some(module) = node.module.as_mut() else {
-                continue;
-            };
-            if takes_in {
-                mix_inputs(pool, &mut node.mixes, &mut node.inputs, n, step);
-            }
-            if node.can_sleep && matches!(op, Op::Process(_)) {
-                let quiet = node.inputs.iter().all(|input| pool[*input].is_silent());
-                let settled = pool[node.out_start..node.out_start + node.out_count]
-                    .iter()
-                    .all(Buf::is_silent);
-                if quiet && node.tail_left == 0 && settled {
-                    if !node.asleep {
-                        // Clear the full capacity once: the next piece can
-                        // be longer than the piece that first became silent.
-                        for buf in &mut pool[node.out_start..node.out_start + node.out_count] {
-                            if let Buf::Audio { l, r, silent } = buf {
-                                l.fill(0.0);
-                                r.fill(0.0);
-                                *silent = true;
-                            }
+        if let Some(workers) = workers.filter(|_| levels.iter().any(|level| level.heavy >= 2)) {
+            for level in levels.iter() {
+                let active = level.parallel.iter().filter_map(|op| {
+                    let Op::Process(index) = *op else { return None; };
+                    let node = &nodes[index];
+                    (!node.dead && !node.asleep && !(node.ghost && *fade_left == 0) && node.module.as_ref().is_some_and(|module| module.parallel_active())).then_some(node.weight)
+                });
+                let (heavy, weight) = active.fold((0usize, 0usize), |(count, sum), weight| (count+1, sum+weight));
+                if heavy >= 2 && weight.saturating_mul(n) >= 8192 {
+                    *tripped += run_ops(nodes, pool, &level.serial, n, rate, frame, sounds, step, *fade_left);
+                    jobs.clear();
+                    for op in &level.parallel {
+                        let Op::Process(index) = *op else { unreachable!() };
+                        let node = &mut nodes[index];
+                        if !node.dead && !(node.ghost && *fade_left == 0) && node.module.is_some() {
+                            mix_inputs(pool, &mut node.mixes, &mut node.inputs, n, step);
                         }
-                        node.asleep = true;
+                        for (read, input) in node.reads.iter_mut().zip(&node.inputs) { read.set(&pool[*input]); }
+                        jobs.push(parallel::Job::new(node, pool, n, rate, frame, sounds, *fade_left));
                     }
-                    continue;
-                }
-                node.asleep = false;
-                if quiet {
-                    node.tail_left = node.tail_left.saturating_sub(n);
+                    parallel::dispatch(workers, jobs);
+                    *tripped += jobs.iter().map(|job| job.tripped).sum::<u64>();
                 } else {
-                    node.tail_left = node.tail;
+                    *tripped += run_ops(nodes, pool, &level.ops, n, rate, frame, sounds, step, *fade_left);
                 }
             }
-            let out_count = if gives_out { node.out_count } else { 0 };
-            let (before, rest) = pool.split_at_mut(node.out_start);
-            let (outs, after) = rest.split_at_mut(out_count);
-            for buf in outs.iter_mut() {
-                if let Buf::Notes(notes) = buf {
-                    notes.clear();
-                }
-            }
-            let map: &[usize] = if takes_in { &node.inputs } else { &[] };
-            let mut io = Io {
-                n,
-                rate,
-                frame,
-                ins: Inputs {
-                    before,
-                    after,
-                    gap_start: node.out_start,
-                    gap_len: out_count,
-                    map,
-                    n,
-                },
-                outs: Outputs { bufs: outs, n },
-                sounds,
-            };
-            let result = catch_unwind(AssertUnwindSafe(|| match *op {
-                Op::Process(_) => module.process(&mut io),
-                Op::Emit(_) => module.emit(&mut io),
-                Op::Absorb(_) => module.absorb(&mut io),
-            }));
-            if let Err(payload) = result {
-                node.dead = true;
-                node.panic = Some(payload);
-                silence(
-                    &mut pool[node.out_start..node.out_start + node.out_count],
-                    n,
-                );
-                continue;
-            }
-            // A sample that is not a number goes no further than the module
-            // that made it: one in a reverb's tank is every sample after, in
-            // everything downstream. Its output is silenced for this piece and
-            // the module told to clear its memory.
-            let mut bad = false;
-            for buf in outs.iter_mut() {
-                match buf {
-                    Buf::Audio { l, r, .. } if !(all_finite(&l[..n]) && all_finite(&r[..n])) => {
-                        l[..n].fill(0.0);
-                        r[..n].fill(0.0);
-                        bad = true;
-                    }
-                    Buf::Control(values) if !all_finite(&values[..n]) => {
-                        values[..n].fill(0.0);
-                        bad = true;
-                    }
-                    _ => {}
-                }
-            }
-            if bad {
-                if let Err(payload) = catch_unwind(AssertUnwindSafe(|| module.recover())) {
-                    node.dead = true;
-                    node.panic = Some(payload);
-                    silence(outs, n);
-                }
-                *tripped += 1;
-            }
-            for buf in outs.iter_mut() {
-                buf.mark_silence(n);
-            }
+        } else {
+            *tripped += run_ops(nodes, pool, ops, n, rate, frame, sounds, step, *fade_left);
         }
         let mut any = false;
         for src in out.iter_mut() {
@@ -1227,4 +1171,130 @@ fn silence(bufs: &mut [Buf], n: usize) {
             Buf::Sound(sound) => *sound = Default::default(),
         }
     }
+}
+
+fn run_ops(nodes: &mut [Node], pool: &mut [Buf], ops: &[Op], n: usize, rate: f32,
+    frame: u64, sounds: &Sounds, step: f32, fade_left: usize) -> u64 {
+    let mut tripped = 0;
+        for op in ops.iter() {
+            let (index, takes_in, gives_out) = match *op {
+                Op::Process(index) => (index, true, true),
+                Op::Emit(index) => (index, false, true),
+                Op::Absorb(index) => (index, true, false),
+            };
+            let node = &mut nodes[index];
+            if node.ghost && fade_left == 0 {
+                continue;
+            }
+            if node.dead {
+                silence(
+                    &mut pool[node.out_start..node.out_start + node.out_count],
+                    n,
+                );
+                continue;
+            }
+            let Some(module) = node.module.as_mut() else {
+                continue;
+            };
+            if takes_in {
+                mix_inputs(pool, &mut node.mixes, &mut node.inputs, n, step);
+            }
+            if node.can_sleep && matches!(op, Op::Process(_)) {
+                let quiet = node.inputs.iter().all(|input| pool[*input].is_silent());
+                let settled = pool[node.out_start..node.out_start + node.out_count]
+                    .iter()
+                    .all(Buf::is_silent);
+                if quiet && node.tail_left == 0 && settled {
+                    if !node.asleep {
+                        // Clear the full capacity once: the next piece can
+                        // be longer than the piece that first became silent.
+                        for buf in &mut pool[node.out_start..node.out_start + node.out_count] {
+                            if let Buf::Audio { l, r, silent } = buf {
+                                l.fill(0.0);
+                                r.fill(0.0);
+                                *silent = true;
+                            }
+                        }
+                        node.asleep = true;
+                    }
+                    continue;
+                }
+                node.asleep = false;
+                if quiet {
+                    node.tail_left = node.tail_left.saturating_sub(n);
+                } else {
+                    node.tail_left = node.tail;
+                }
+            }
+            let out_count = if gives_out { node.out_count } else { 0 };
+            let (before, rest) = pool.split_at_mut(node.out_start);
+            let (outs, after) = rest.split_at_mut(out_count);
+            for buf in outs.iter_mut() {
+                if let Buf::Notes(notes) = buf {
+                    notes.clear();
+                }
+            }
+            let map: &[usize] = if takes_in { &node.inputs } else { &[] };
+            let mut io = Io {
+                n,
+                rate,
+                frame,
+                ins: Inputs {
+                    reads: None,
+                    before,
+                    after,
+                    gap_start: node.out_start,
+                    gap_len: out_count,
+                    map,
+                    n,
+                },
+                outs: Outputs { bufs: outs, n },
+                sounds,
+            };
+            let result = catch_unwind(AssertUnwindSafe(|| match *op {
+                Op::Process(_) => module.process(&mut io),
+                Op::Emit(_) => module.emit(&mut io),
+                Op::Absorb(_) => module.absorb(&mut io),
+            }));
+            if let Err(payload) = result {
+                node.dead = true;
+                node.panic = Some(payload);
+                silence(
+                    &mut pool[node.out_start..node.out_start + node.out_count],
+                    n,
+                );
+                continue;
+            }
+            // A sample that is not a number goes no further than the module
+            // that made it: one in a reverb's tank is every sample after, in
+            // everything downstream. Its output is silenced for this piece and
+            // the module told to clear its memory.
+            let mut bad = false;
+            for buf in outs.iter_mut() {
+                match buf {
+                    Buf::Audio { l, r, .. } if !(all_finite(&l[..n]) && all_finite(&r[..n])) => {
+                        l[..n].fill(0.0);
+                        r[..n].fill(0.0);
+                        bad = true;
+                    }
+                    Buf::Control(values) if !all_finite(&values[..n]) => {
+                        values[..n].fill(0.0);
+                        bad = true;
+                    }
+                    _ => {}
+                }
+            }
+            if bad {
+                if let Err(payload) = catch_unwind(AssertUnwindSafe(|| module.recover())) {
+                    node.dead = true;
+                    node.panic = Some(payload);
+                    silence(outs, n);
+                }
+                tripped += 1;
+            }
+            for buf in outs.iter_mut() {
+                buf.mark_silence(n);
+            }
+        }
+    tripped
 }

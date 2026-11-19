@@ -73,6 +73,8 @@ impl Remember {
     }
 }
 impl Module for Remember {
+    fn parallel_weight(&self) -> usize { self.inner.parallel_weight() }
+    fn parallel_active(&self) -> bool { self.inner.parallel_active() }
     fn transfer(&mut self, from: &dyn Module, rate: f32) {
         if let Some(previous) = (from as &dyn std::any::Any).downcast_ref::<Remember>() {
             self.inner.transfer(previous.inner.as_ref(), rate);
