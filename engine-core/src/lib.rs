@@ -8,8 +8,9 @@
 //! A caught panic may allocate inside Rust’s unwinder; its payload also goes
 //! back to the controller, and the failed module stays silent until replaced.
 //!
-//! Every message carries the frame it lands on, and the engine cuts each block
-//! at those frames. So the sound is a function of the patch and the stamped
+//! Every message carries the frame it lands on. Each recipient applies its
+//! own events; graph and sound-bank changes cut the enclosing piece.
+//! So the sound is a function of the patch and the stamped
 //! messages alone: the block size, and which thread sent what when, do not
 //! come into it.
 

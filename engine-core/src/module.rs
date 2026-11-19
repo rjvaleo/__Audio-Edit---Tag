@@ -1,5 +1,9 @@
 //! What a module is, and what it is handed to work with.
 
+mod events;
+pub(crate) use events::EventScratch;
+use events::split_events;
+
 use crate::sound::Sounds;
 use crate::types::{Buf, ClockState, Kind, NoteBuf, NoteEvent, SoundRef};
 use std::any::Any;
@@ -23,6 +27,8 @@ pub enum EventKind {
 /// A module's inputs for one piece of audio. Several cables into one input
 /// have already been summed.
 pub struct Inputs<'a> {
+    pub(crate) offset: usize,
+    pub(crate) notes: Option<&'a [NoteBuf]>,
     pub(crate) reads: Option<&'a [crate::pool::ReadBuf]>,
     pub(crate) before: &'a [Buf],
     pub(crate) after: &'a [Buf],
@@ -49,19 +55,20 @@ impl<'a> Inputs<'a> {
 
     pub fn audio(&self, input: usize) -> (&'a [f32], &'a [f32]) {
         match self.buf(input) {
-            Buf::Audio { l, r, .. } => (&l[..self.n], &r[..self.n]),
+            Buf::Audio { l, r, .. } => (&l[self.offset..self.offset+self.n], &r[self.offset..self.offset+self.n]),
             _ => panic!("input {input} is not audio"),
         }
     }
 
     pub fn control(&self, input: usize) -> &'a [f32] {
         match self.buf(input) {
-            Buf::Control(values) => &values[..self.n],
+            Buf::Control(values) => &values[self.offset..self.offset+self.n],
             _ => panic!("input {input} is not control"),
         }
     }
 
     pub fn notes(&self, input: usize) -> &'a [NoteEvent] {
+        if let Some(notes) = self.notes { return notes[input].as_slice(); }
         match self.buf(input) {
             Buf::Notes(notes) => notes.as_slice(),
             _ => panic!("input {input} is not notes"),
@@ -71,6 +78,7 @@ impl<'a> Inputs<'a> {
     pub fn clock(&self, input: usize) -> ClockState {
         match self.buf(input) {
             Buf::Clock(clock) => *clock,
+            Buf::ClockFrames(clocks) => clocks[self.offset],
             _ => panic!("input {input} is not a clock"),
         }
     }
@@ -78,6 +86,7 @@ impl<'a> Inputs<'a> {
     pub fn sound(&self, input: usize) -> SoundRef {
         match self.buf(input) {
             Buf::Sound(sound) => *sound,
+            Buf::SoundFrames(sounds) => sounds[self.offset],
             _ => panic!("input {input} is not a sound"),
         }
     }
@@ -87,6 +96,7 @@ impl<'a> Inputs<'a> {
 /// of every audio and control output; note outputs arrive empty.
 pub struct Outputs<'a> {
     pub bufs: &'a mut [Buf],
+    pub(crate) rate: f32,
     pub(crate) n: usize,
 }
 
@@ -117,6 +127,14 @@ impl Outputs<'_> {
     pub fn set_clock(&mut self, output: usize, clock: ClockState) {
         match &mut self.bufs[output] {
             Buf::Clock(slot) => *slot = clock,
+            Buf::ClockFrames(frames) => {
+                let mut clock = clock;
+                let step = clock.step(self.rate);
+                for slot in &mut frames[..self.n] {
+                    *slot = clock;
+                    if clock.playing { clock.beat += step; }
+                }
+            },
             _ => panic!("output {output} is not a clock"),
         }
     }
@@ -124,6 +142,7 @@ impl Outputs<'_> {
     pub fn set_sound(&mut self, output: usize, sound: SoundRef) {
         match &mut self.bufs[output] {
             Buf::Sound(slot) => *slot = sound,
+            Buf::SoundFrames(frames) => frames[..self.n].fill(sound),
             _ => panic!("output {output} is not a sound"),
         }
     }
@@ -131,6 +150,9 @@ impl Outputs<'_> {
 
 /// Everything a module may touch while it makes one piece of audio.
 pub struct Io<'a> {
+    /// Ordered messages addressed to this module, relative to this piece.
+    pub events: &'a [(u32, EventKind)],
+    pub(crate) scratch: &'a mut EventScratch,
     /// Samples to make. Any length from 1 up to the engine's largest block.
     pub n: usize,
     pub rate: f32,
@@ -190,10 +212,15 @@ pub trait Module: Send + Any {
     /// thread, before the module is first heard.
     fn prepare(&mut self, _rate: f32, _max_block: usize) {}
 
-    /// A message landed. Audio thread, between two pieces of audio.
+    /// A message landed. Audio/worker thread, between this module's local pieces.
     fn handle(&mut self, _event: &EventKind) {}
 
     fn process(&mut self, io: &mut Io);
+
+    /// Override to consume the event slice on a module's own control grid.
+    /// The default retains sample-accurate handle/process behavior locally.
+    fn process_events(&mut self, io: &mut Io) { split_events(self, io); }
+
 
     /// Take something handed over ([`crate::Controller::give`]), on the sample
     /// it was sent for. Whatever is returned goes back to the app's thread to

@@ -153,6 +153,7 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
     let bad = Arc::new(AtomicU64::new(0));
     let changing = Arc::new(AtomicBool::new(false));
     let controller = Controller {
+        room: queue,
         changing: Arc::clone(&changing),
         factories: BTreeMap::new(),
         opaque_state: BTreeSet::new(),
@@ -174,6 +175,8 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
         versions: BTreeMap::new(),
     };
     let audio = AudioEngine {
+        events: Vec::with_capacity(queue),
+        pieces: 0,
         workers: if config.parallel { crate::pool::Pool::new(config.worker_init) } else { None },
         changing,
         transition: None,
@@ -205,6 +208,7 @@ pub enum Failure {
 }
 
 pub struct Controller {
+    room: usize,
     changing: Arc<AtomicBool>,
     factories: BTreeMap<ModuleId, ModuleFactory>,
     opaque_state: BTreeSet<ModuleId>,
@@ -268,7 +272,8 @@ impl Controller {
         let generation = self.generation + 1;
         let replaced = BTreeSet::new();
         let spec = Spec::of(&patch, &patch, &replaced, 0, generation, self.max_block, true);
-        let plan = Box::new(Plan::compile(&spec, &mut staged)?);
+        let mut plan = Box::new(Plan::compile(&spec, &mut staged)?);
+        plan.reserve_events(self.room);
         let change = Box::new(RateChange { old: None, rate, old_rate: self.rate,
             left: vec![0.0; self.max_block], right: vec![0.0; self.max_block],
             at: 0, length: self.fade });
@@ -434,10 +439,12 @@ impl Controller {
         }
         // Nothing to fade out, or the old cables and the new would make a
         // loop together: the new patch alone, its new cables fading in.
-        let plan = match plan {
+        let mut plan = match plan {
             Some(plan) => plan,
             None => Plan::compile(&spec(false), &mut self.staged)?,
         };
+        plan.reserve_events(self.room);
+        if let Some(after) = after.as_mut() { after.reserve_events(self.room); }
         let frame = frame.max(self.last_plan_frame);
         let seq = self.push(
             frame,
@@ -611,6 +618,8 @@ impl Controller {
 
 /// The sound card's side. `render` is the audio callback.
 pub struct AudioEngine {
+    events: Vec<(ModuleId, u32, EventKind)>,
+    pieces: u64,
     workers: Option<crate::pool::Pool>,
     changing: Arc<AtomicBool>,
     transition: Option<Box<RateChange>>,
@@ -642,6 +651,9 @@ impl AudioEngine {
     /// Reports dropped, or things leaked, because the app stopped collecting.
     pub fn worker_jobs(&self) -> usize { self.workers.as_ref().map_or(0, |pool| pool.worker_jobs()) }
 
+    /// Enclosing plan pieces rendered, excluding the outgoing rate plan.
+    pub fn pieces(&self) -> u64 { self.pieces }
+
     pub fn lost(&self) -> u64 {
         self.lost
     }
@@ -664,15 +676,23 @@ impl AudioEngine {
             if let Some(change) = &self.transition {
                 n = n.min(change.old.as_ref().unwrap().piece());
             }
-            if let Some(next) = self.pending.first() {
-                // Cut the piece where the next message lands.
-                let until = next.frame - self.frame;
+            if let Some(boundary) = self.pending.boundary() {
+                // Only ownership/graph/sound-bank changes cut the graph.
+                let until = boundary - self.frame;
                 if until < n as u64 {
                     n = until as usize;
                 }
             }
             let frame = self.frame;
+            self.events.clear();
+            while self.pending.first().is_some_and(|message| message.frame < frame+n as u64) {
+                let Stamped { frame: stamp, seq, msg } = self.pending.pop().unwrap();
+                let Msg::Event { module, kind } = msg else { unreachable!("structural boundary cuts the piece"); };
+                self.events.push((module, (stamp-frame) as u32, kind));
+                self.applied(seq, stamp);
+            }
             self.gather();
+            self.pieces += 1;
             self.plan.run(
                 n,
                 self.rate,
@@ -681,10 +701,11 @@ impl AudioEngine {
                 &mut left[pos..pos + n],
                 &mut right[pos..pos + n],
                 self.workers.as_mut(),
+                &self.events,
             );
             if let Some(change) = self.transition.as_mut() {
                 change.old.as_mut().unwrap().run(n, change.old_rate, frame, &self.sounds,
-                    &mut change.left[..n], &mut change.right[..n], self.workers.as_mut());
+                    &mut change.left[..n], &mut change.right[..n], self.workers.as_mut(), &self.events);
                 let tripped = change.old.as_mut().unwrap().take_tripped();
                 if tripped > 0 { self.bad.fetch_add(tripped, Ordering::Relaxed); }
                 for i in 0..n {
@@ -697,15 +718,17 @@ impl AudioEngine {
                     }
                 }
                 change.at += n;
-                if change.at >= change.length {
-                    self.report_panics();
-                    let done = self.transition.take().unwrap();
-                    self.give_back(Back::Thing(done));
-                    self.changing.store(false, Ordering::Release);
-                }
+            }
+            if self.transition.as_ref().is_some_and(|change| change.at >= change.length) {
+                self.gather();
+                self.report_panics();
+                let done = self.transition.take().unwrap();
+                self.give_back(Back::Thing(done));
+                self.changing.store(false, Ordering::Release);
             }
             pos += n;
             self.frame += n as u64;
+            self.gather();
             self.report_panics();
         }
         let tripped = self.plan.take_tripped();
@@ -751,7 +774,9 @@ impl AudioEngine {
     fn gather(&mut self) {
         self.report_panics();
         while self.held.len() < self.room {
-            match self.plan.finished() {
+            let finished = self.plan.finished().or_else(|| self.transition.as_mut()
+                .and_then(|change| change.old.as_mut()).and_then(|plan| plan.finished()));
+            match finished {
                 Some(thing) => self.give_back(Back::Thing(thing)),
                 None => break,
             }
@@ -774,7 +799,7 @@ impl AudioEngine {
     }
 
     fn apply_due(&mut self) {
-        while self.pending.first().is_some_and(|message| message.frame <= self.frame) {
+        while self.pending.boundary().is_some_and(|frame| frame <= self.frame) {
             let Stamped { seq, msg, .. } = self.pending.pop().unwrap();
             match msg {
                 Msg::Event { module, kind } => {
@@ -823,18 +848,13 @@ impl AudioEngine {
                 }
             }
             self.report_panics();
-            if seq != 0
-                && self.log_applied
-                && self
-                    .tx
-                    .push(Back::Applied {
-                        seq,
-                        frame: self.frame,
-                    })
-                    .is_err()
-            {
-                self.lost += 1;
-            }
+            self.applied(seq, self.frame);
+        }
+    }
+
+    fn applied(&mut self, seq: u64, frame: u64) {
+        if seq != 0 && self.log_applied && self.tx.push(Back::Applied { seq, frame }).is_err() {
+            self.lost += 1;
         }
     }
 

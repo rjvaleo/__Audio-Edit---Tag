@@ -6,6 +6,7 @@ pub type ModuleFactory = Box<dyn Fn(f32, usize) -> Box<dyn Module> + Send>;
 pub(crate) struct Remember {
     inner: Box<dyn Module>,
     kinds: Vec<Kind>,
+    note_positions: Vec<usize>,
     events: Vec<EventKind>,
     notes: Vec<NoteEvent>,
     replay_notes: bool,
@@ -14,6 +15,7 @@ impl Remember {
     pub(crate) fn new(inner: Box<dyn Module>) -> Self {
         let replay_notes = !inner.outputs().contains(&Kind::Notes);
         Self {
+            note_positions: vec![0; inner.inputs().len()],
             kinds: inner.inputs(),
             inner,
             events: Vec::with_capacity(4096),
@@ -114,6 +116,27 @@ impl Module for Remember {
             }
         }
         self.inner.process(io);
+    }
+    fn process_events(&mut self, io: &mut Io) {
+        // The inner module owns its dispatch policy. Remember the requested
+        // state in the same frame/cable order without intercepting that policy.
+        self.note_positions.fill(0);
+        let mut event = 0;
+        loop {
+            let next_note = (0..self.kinds.len()).filter(|port| self.kinds[*port] == Kind::Notes)
+                .filter_map(|port| io.ins.notes(port).get(self.note_positions[port]).map(|note| (note.offset, port)))
+                .min();
+            if let Some(&(offset, kind)) = io.events.get(event) {
+                if next_note.is_none_or(|(note, _)| offset <= note) {
+                    self.remember(&kind); event += 1; continue;
+                }
+            }
+            if let Some((_, port)) = next_note {
+                let note = io.ins.notes(port)[self.note_positions[port]];
+                self.note(note); self.note_positions[port] += 1;
+            } else { break; }
+        }
+        self.inner.process_events(io);
     }
     fn take(&mut self, slot: u32, thing: Thing) -> Option<Thing> {
         self.inner.take(slot, thing)

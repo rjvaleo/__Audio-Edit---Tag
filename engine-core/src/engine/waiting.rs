@@ -30,6 +30,7 @@ pub(super) struct Pending {
     heap: BinaryHeap<Waiting>,
     next: u64,
     room: usize,
+    boundary: Option<u64>,
 }
 impl Pending {
     pub(super) fn new(room: usize) -> Self {
@@ -37,16 +38,24 @@ impl Pending {
             heap: BinaryHeap::with_capacity(room),
             next: 0,
             room,
+            boundary: None,
         }
     }
     pub(super) fn len(&self) -> usize {
         self.heap.len()
     }
+    pub(super) fn boundary(&self) -> Option<u64> { self.boundary }
     pub(super) fn first(&self) -> Option<&Stamped> {
         self.heap.peek().map(|w| &w.message)
     }
     pub(super) fn pop(&mut self) -> Option<Stamped> {
-        self.heap.pop().map(|w| w.message)
+        self.heap.pop().map(|w| {
+            if !matches!(w.message.msg, super::Msg::Event { .. }) {
+                self.boundary = self.heap.iter().filter(|w| !matches!(w.message.msg, super::Msg::Event { .. }))
+                    .map(|w| w.message.frame).min();
+            }
+            w.message
+        })
     }
     pub(super) fn push(&mut self, message: Stamped) {
         assert!(
@@ -63,6 +72,9 @@ impl Pending {
             }
             self.next = entries.len() as u64;
             self.heap = BinaryHeap::from(entries);
+        }
+        if !matches!(message.msg, super::Msg::Event { .. }) {
+            self.boundary = Some(self.boundary.map_or(message.frame, |old| old.min(message.frame)));
         }
         let order = self.next;
         self.next += 1;

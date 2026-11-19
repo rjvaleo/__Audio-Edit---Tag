@@ -18,7 +18,7 @@
 use dsp_core::engine::{Frame, Module as LabModule, Ports, ProcessContext};
 use dsp_core::modules::ModuleKind;
 use dsp_core::samples::SampleBank;
-use engine_core::{Buf, EventKind, Io, Kind, Module, NoteEvent, NoteKind};
+use engine_core::{EventKind, Io, Kind, Module, NoteEvent, NoteKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WrapError {
@@ -277,16 +277,13 @@ impl Module for Wrapped {
             self.module.process(&ctx, &mut Ports { inputs: &self.ins, outputs: &mut self.outs, params });
 
             for (k, &(l, r)) in self.layout.outs.iter().enumerate() {
-                if let Buf::Audio { l: left, r: right, .. } = &mut io.outs.bufs[k] {
-                    left[i] = self.outs[l].sum();
-                    right[i] = self.outs[r].sum();
-                }
+                let (left, right) = io.outs.audio(k);
+                left[i] = self.outs[l].sum();
+                right[i] = self.outs[r].sum();
             }
             let first_control = self.layout.outs.len();
             for (k, &port) in self.layout.control_outs.iter().enumerate() {
-                if let Buf::Control(values) = &mut io.outs.bufs[first_control + k] {
-                    values[i] = self.outs[port].sum();
-                }
+                io.outs.control(first_control + k)[i] = self.outs[port].sum();
             }
         }
     }

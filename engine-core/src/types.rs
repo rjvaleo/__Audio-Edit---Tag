@@ -127,25 +127,29 @@ pub struct SoundRef {
     pub version: u32,
 }
 
-/// The most notes one cable carries in one piece of audio.
+/// The most notes a legacy callback emits in one local piece. Enclosing
+/// buffers reserve this many per frame so local pieces can be accumulated.
 pub const NOTE_CAP: usize = 256;
 
 /// The notes on one cable for one piece of audio. Its room is set when it is
 /// made; a note past that is refused, not grown into.
 pub struct NoteBuf {
     events: Vec<NoteEvent>,
+    limit: usize,
 }
 
 impl NoteBuf {
-    pub(crate) fn new() -> Self {
-        Self {
-            events: Vec::with_capacity(NOTE_CAP),
-        }
+    pub(crate) fn with_frames(frames: usize) -> Self {
+        let capacity = NOTE_CAP.saturating_mul(frames);
+        Self { events: Vec::with_capacity(capacity), limit: capacity }
     }
+    pub(crate) fn before(&mut self, offset: u32) { self.events.retain(|note| note.offset < offset); }
+    pub(crate) fn legacy(&mut self) { self.limit = NOTE_CAP.min(self.events.capacity()); }
+    pub(crate) fn end(&mut self) { self.limit = self.events.capacity(); }
 
     /// False when the cable is full and the note was left out.
     pub fn push(&mut self, event: NoteEvent) -> bool {
-        if self.events.len() < NOTE_CAP {
+        if self.events.len() < self.limit {
             self.events.push(event);
             true
         } else {
@@ -176,7 +180,11 @@ pub enum Buf {
     Control(Box<[f32]>),
     Notes(NoteBuf),
     Clock(ClockState),
+    /// Prepared per-sample clock history for module-local pieces.
+    ClockFrames(Box<[ClockState]>),
     Sound(SoundRef),
+    /// Prepared sound selection history for module-local pieces.
+    SoundFrames(Box<[SoundRef]>),
 }
 
 impl Buf {
@@ -199,9 +207,9 @@ impl Buf {
                 r: vec![0.0; len].into_boxed_slice(),
             },
             Kind::Control => Buf::Control(vec![0.0; len].into_boxed_slice()),
-            Kind::Notes => Buf::Notes(NoteBuf::new()),
-            Kind::Clock => Buf::Clock(ClockState::STOPPED),
-            Kind::Sound => Buf::Sound(SoundRef::default()),
+            Kind::Notes => Buf::Notes(NoteBuf::with_frames(len)),
+            Kind::Clock => Buf::ClockFrames(vec![ClockState::STOPPED; len].into_boxed_slice()),
+            Kind::Sound => Buf::SoundFrames(vec![SoundRef::default(); len].into_boxed_slice()),
         }
     }
 }

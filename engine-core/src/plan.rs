@@ -399,6 +399,10 @@ struct Mix {
 }
 
 struct Node {
+    event_start: usize,
+    event_len: usize,
+    event_written: usize,
+    scratch: crate::module::EventScratch,
     reads: Vec<crate::pool::ReadBuf>,
     weight: usize,
     id: ModuleId,
@@ -421,6 +425,7 @@ struct Node {
 
 struct Level { ops: Vec<Op>, serial: Vec<Op>, parallel: Vec<Op>, weight: usize, heavy: usize }
 pub(crate) struct Plan {
+    events: Vec<(u32, EventKind)>,
     levels: Vec<Level>,
     jobs: Vec<parallel::Job>,
     nodes: Vec<Node>,
@@ -465,6 +470,7 @@ impl Plan {
     /// The plan of an empty patch: silence.
     pub(crate) fn empty(max_block: usize) -> Plan {
         Plan {
+            events: Vec::new(),
             levels: Vec::new(),
             jobs: Vec::new(),
             nodes: Vec::new(),
@@ -660,6 +666,8 @@ impl Plan {
                 });
             }
             nodes.push(Node {
+                event_start: 0, event_len: 0, event_written: 0,
+                scratch: crate::module::EventScratch::new(&info.inputs, &info.outputs, max_block),
                 reads: vec![crate::pool::ReadBuf::empty(); info.inputs.len()],
                 weight: info.parallel,
                 id,
@@ -711,9 +719,12 @@ impl Plan {
                 for &to in &next[node] { depth[to] = depth[to].max(level + 1); }
             }
         }
+        // Feedback halves share module state. A fixed sample tick keeps
+        // controls before both emit and absorb without event-driven graph cuts.
+        // Feed-forward plans retain their full block and worker levels.
         let piece = (0..count)
             .filter(|node| split[*node])
-            .map(|node| infos[&ids[node]].feedback_delay)
+            .map(|_| 1)
             .min()
             .unwrap_or(usize::MAX);
         let output_latency = spec
@@ -740,6 +751,7 @@ impl Plan {
             node.module = staged.remove(&node.id);
         }
         Ok(Plan {
+            events: Vec::new(),
             levels,
             jobs: Vec::with_capacity(count),
             nodes,
@@ -835,6 +847,33 @@ impl Plan {
         }
     }
 
+    /// Reserve one queue's worth, shared across every recipient in this plan.
+    pub(crate) fn reserve_events(&mut self, room: usize) {
+        self.events.resize(room, (0, EventKind::Param { index: 0, value: 0.0 }));
+        for node in &mut self.nodes {
+            let capacity = node.scratch.retired.capacity();
+            if capacity < room { node.scratch.retired.reserve(room - node.scratch.retired.len()); }
+        }
+    }
+    fn route_events(&mut self, events: &[(ModuleId, u32, EventKind)]) {
+        for node in &mut self.nodes { node.event_len = 0; node.event_written = 0; }
+        for &(id, _, _) in events {
+            if let Some(index) = self.node_of(id) { self.nodes[index].event_len += 1; }
+        }
+        let mut start = 0;
+        for node in &mut self.nodes { node.event_start = start; start += node.event_len; }
+        assert!(start <= self.events.len());
+        for &(id, offset, kind) in events {
+            if let Some(index) = self.node_of(id) {
+                let node = &mut self.nodes[index];
+                self.events[node.event_start + node.event_written] = (offset, kind);
+                node.event_written += 1;
+                node.tail_left = node.tail;
+                node.asleep = false;
+            }
+        }
+    }
+
     pub(crate) fn handle(&mut self, id: ModuleId, event: &EventKind) {
         if let Some(index) = self.node_of(id) {
             let node = &mut self.nodes[index];
@@ -875,6 +914,7 @@ impl Plan {
 
     pub(crate) fn finished(&mut self) -> Option<Thing> {
         for node in &mut self.nodes {
+            if let Some(thing) = node.scratch.retired.pop_front() { return Some(thing); }
             if node.dead {
                 continue;
             }
@@ -909,8 +949,11 @@ impl Plan {
         left: &mut [f32],
         right: &mut [f32],
         workers: Option<&mut crate::pool::Pool>,
+        incoming: &[(ModuleId, u32, EventKind)],
     ) {
+        self.route_events(incoming);
         let Plan {
+            events,
             nodes,
             ops,
             levels,
@@ -932,7 +975,7 @@ impl Plan {
                 });
                 let (heavy, weight) = active.fold((0usize, 0usize), |(count, sum), weight| (count+1, sum+weight));
                 if heavy >= 2 && weight.saturating_mul(n) >= 8192 {
-                    *tripped += run_ops(nodes, pool, &level.serial, n, rate, frame, sounds, step, *fade_left);
+                    *tripped += run_ops(nodes, pool, &level.serial, n, rate, frame, sounds, step, *fade_left, events);
                     jobs.clear();
                     for op in &level.parallel {
                         let Op::Process(index) = *op else { unreachable!() };
@@ -941,16 +984,17 @@ impl Plan {
                             mix_inputs(pool, &mut node.mixes, &mut node.inputs, n, step);
                         }
                         for (read, input) in node.reads.iter_mut().zip(&node.inputs) { read.set(&pool[*input]); }
-                        jobs.push(parallel::Job::new(node, pool, n, rate, frame, sounds, *fade_left));
+                        let event_range = node.event_start..node.event_start+node.event_len;
+                        jobs.push(parallel::Job::new(node, pool, n, rate, frame, sounds, *fade_left, &events[event_range]));
                     }
                     parallel::dispatch(workers, jobs);
                     *tripped += jobs.iter().map(|job| job.tripped).sum::<u64>();
                 } else {
-                    *tripped += run_ops(nodes, pool, &level.ops, n, rate, frame, sounds, step, *fade_left);
+                    *tripped += run_ops(nodes, pool, &level.ops, n, rate, frame, sounds, step, *fade_left, events);
                 }
             }
         } else {
-            *tripped += run_ops(nodes, pool, ops, n, rate, frame, sounds, step, *fade_left);
+            *tripped += run_ops(nodes, pool, ops, n, rate, frame, sounds, step, *fade_left, events);
         }
         let mut any = false;
         for src in out.iter_mut() {
@@ -1168,13 +1212,15 @@ fn silence(bufs: &mut [Buf], n: usize) {
             Buf::Control(values) => values[..n].fill(0.0),
             Buf::Notes(notes) => notes.clear(),
             Buf::Clock(clock) => *clock = crate::ClockState::STOPPED,
+            Buf::ClockFrames(clocks) => clocks[..n].fill(crate::ClockState::STOPPED),
             Buf::Sound(sound) => *sound = Default::default(),
+            Buf::SoundFrames(sounds) => sounds[..n].fill(Default::default()),
         }
     }
 }
 
 fn run_ops(nodes: &mut [Node], pool: &mut [Buf], ops: &[Op], n: usize, rate: f32,
-    frame: u64, sounds: &Sounds, step: f32, fade_left: usize) -> u64 {
+    frame: u64, sounds: &Sounds, step: f32, fade_left: usize, events: &[(u32, EventKind)]) -> u64 {
     let mut tripped = 0;
         for op in ops.iter() {
             let (index, takes_in, gives_out) = match *op {
@@ -1204,7 +1250,7 @@ fn run_ops(nodes: &mut [Node], pool: &mut [Buf], ops: &[Op], n: usize, rate: f32
                 let settled = pool[node.out_start..node.out_start + node.out_count]
                     .iter()
                     .all(Buf::is_silent);
-                if quiet && node.tail_left == 0 && settled {
+                if node.event_len == 0 && quiet && node.tail_left == 0 && settled {
                     if !node.asleep {
                         // Clear the full capacity once: the next piece can
                         // be longer than the piece that first became silent.
@@ -1236,10 +1282,13 @@ fn run_ops(nodes: &mut [Node], pool: &mut [Buf], ops: &[Op], n: usize, rate: f32
             }
             let map: &[usize] = if takes_in { &node.inputs } else { &[] };
             let mut io = Io {
+                events: &events[node.event_start..node.event_start+node.event_len],
+                scratch: &mut node.scratch,
                 n,
                 rate,
                 frame,
                 ins: Inputs {
+                    offset: 0, notes: None,
                     reads: None,
                     before,
                     after,
@@ -1248,14 +1297,18 @@ fn run_ops(nodes: &mut [Node], pool: &mut [Buf], ops: &[Op], n: usize, rate: f32
                     map,
                     n,
                 },
-                outs: Outputs { bufs: outs, n },
+                outs: Outputs { bufs: outs, n, rate },
                 sounds,
             };
             let result = catch_unwind(AssertUnwindSafe(|| match *op {
-                Op::Process(_) => module.process(&mut io),
-                Op::Emit(_) => module.emit(&mut io),
+                Op::Process(_) => module.process_events(&mut io),
+                Op::Emit(_) => {
+                    for (_, event) in io.events { module.handle(event); }
+                    module.emit(&mut io);
+                },
                 Op::Absorb(_) => module.absorb(&mut io),
             }));
+            for out in outs.iter_mut() { if let Buf::Notes(notes) = out { notes.end(); } }
             if let Err(payload) = result {
                 node.dead = true;
                 node.panic = Some(payload);
@@ -1265,6 +1318,8 @@ fn run_ops(nodes: &mut [Node], pool: &mut [Buf], ops: &[Op], n: usize, rate: f32
                 );
                 continue;
             }
+            tripped += std::mem::take(&mut node.scratch.tripped);
+            if let Some(payload) = node.scratch.panic.take() { node.dead = true; node.panic = Some(payload); }
             // A sample that is not a number goes no further than the module
             // that made it: one in a reverb's tank is every sample after, in
             // everything downstream. Its output is silenced for this piece and

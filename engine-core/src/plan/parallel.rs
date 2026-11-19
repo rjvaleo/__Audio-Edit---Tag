@@ -5,6 +5,8 @@ use std::slice;
 
 pub(super) struct Job {
     node: *mut Node,
+    events: *const (u32, EventKind),
+    event_len: usize,
     outs: *mut Buf,
     count: usize,
     n: usize,
@@ -27,10 +29,12 @@ impl Job {
         frame: u64,
         sounds: &Sounds,
         fade_left: usize,
+        events: &[(u32, EventKind)],
     ) -> Self {
         assert!(node.out_start + node.out_count <= pool.len());
         Self {
             outs: unsafe { pool.as_mut_ptr().add(node.out_start) },
+            events: events.as_ptr(), event_len: events.len(),
             count: node.out_count,
             node,
             n,
@@ -51,7 +55,9 @@ pub(super) fn execute(job: &mut Job) {
             let node = &mut *job.node;
             node.dead = true;
             node.panic = Some(payload);
-            silence(slice::from_raw_parts_mut(job.outs, job.count), job.n);
+            let outs = slice::from_raw_parts_mut(job.outs, job.count);
+            for out in outs.iter_mut() { if let Buf::Notes(notes) = out { notes.end(); } }
+            silence(outs, job.n);
         }
     }
 }
@@ -72,7 +78,7 @@ unsafe fn run(job: &mut Job) {
     if node.can_sleep {
         let quiet = node.reads.iter().all(|read| read.get().is_silent());
         let settled = outs.iter().all(Buf::is_silent);
-        if quiet && node.tail_left == 0 && settled {
+        if node.event_len == 0 && quiet && node.tail_left == 0 && settled {
             if !node.asleep {
                 for buf in outs.iter_mut() {
                     if let Buf::Audio { l, r, silent } = buf {
@@ -98,10 +104,13 @@ unsafe fn run(job: &mut Job) {
         }
     }
     let mut io = Io {
+        events: slice::from_raw_parts(job.events, job.event_len),
+        scratch: &mut node.scratch,
         n,
         rate: job.rate,
         frame: job.frame,
         ins: Inputs {
+            offset: 0, notes: None,
             reads: Some(&node.reads),
             before: &[],
             after: &[],
@@ -110,15 +119,18 @@ unsafe fn run(job: &mut Job) {
             map: &[],
             n,
         },
-        outs: Outputs { bufs: outs, n },
+        outs: Outputs { bufs: outs, n, rate: job.rate },
         sounds: &*job.sounds,
     };
-    if let Err(payload) = catch_unwind(AssertUnwindSafe(|| module.process(&mut io))) {
+    if let Err(payload) = catch_unwind(AssertUnwindSafe(|| module.process_events(&mut io))) {
         node.dead = true;
         node.panic = Some(payload);
+        for out in outs.iter_mut() { if let Buf::Notes(notes) = out { notes.end(); } }
         silence(outs, n);
         return;
     }
+    job.tripped += std::mem::take(&mut node.scratch.tripped);
+    if let Some(payload) = node.scratch.panic.take() { node.dead = true; node.panic = Some(payload); }
     let mut bad = false;
     for buf in outs.iter_mut() {
         match buf {
