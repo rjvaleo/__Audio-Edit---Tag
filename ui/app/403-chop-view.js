@@ -110,14 +110,32 @@ function chopReadLook() {
 let chopPxPer = 1;
 const chopGlow = (a) => `rgba(${chopTok.bloom},${(a * Math.min(1, chopTok.glow)).toFixed(2)})`;
 
+/// The loudest sample of the sound, which the waveform is scaled to: the
+/// detail is drawn as the overview is (`poDraw`, 416), its loudest moment at
+/// full height, so a quiet song fills it rather than running along the middle
+/// (RJ, 18 Nov 2026: "the overview isn't getting drawn for the source the same
+/// way it is up top"). Read once per sound.
+function chopPeakOf() {
+  if (chop.peakFor !== chop.mono) {
+    let pk = 0;
+    const m = chop.mono;
+    for (let i = 0; i < m.length; i++) { const v = m[i] < 0 ? -m[i] : m[i]; if (v > pk) pk = v; }
+    chop.peak = Math.max(0.001, pk);
+    chop.peakFor = chop.mono;
+  }
+  return chop.peak;
+}
+
+/// Each column's loudest, scaled to the sound's: `mx` up, `mn` the same down,
+/// so the wave sits even about its line as the overview's does.
 function chopPeaks(w, a0, b0) {
   const per = (b0 - a0) / w, st = Math.max(1, Math.floor(per / 40));
-  const mx = new Float32Array(w), mn = new Float32Array(w), m = chop.mono;
+  const mx = new Float32Array(w), mn = new Float32Array(w), m = chop.mono, k = 1 / chopPeakOf();
   for (let x = 0; x < w; x++) {
-    let hi = 0, lo = 0;
+    let hi = 0;
     const s = Math.floor(a0 + x * per), e = Math.max(s + 1, Math.floor(a0 + (x + 1) * per));
-    for (let j = s; j < e; j += st) { const v = m[j] || 0; if (v > hi) hi = v; if (v < lo) lo = v; }
-    mx[x] = hi; mn[x] = lo;
+    for (let j = s; j < e; j += st) { const v = m[j] || 0, a = v < 0 ? -v : v; if (a > hi) hi = a; }
+    mx[x] = Math.min(1, hi * k); mn[x] = -mx[x];
   }
   return { mx, mn };
 }
@@ -283,7 +301,8 @@ function chopPaintLane() {
 
   // The threshold, where Silence mode makes its cut.
   if (cp.mode === 'silence') {
-    const amp = (Math.max(...chop.rms) || 0) * Math.pow(10, -cp.topDb / 20);
+    // On the waveform's scale, which is the sound's loudest (`chopPeakOf`).
+    const amp = Math.min(1, (Math.max(...chop.rms) || 0) * Math.pow(10, -cp.topDb / 20) / chopPeakOf());
     for (const y of [50 - amp * 47, 50 + amp * 47]) parts.push(`<div class="chop-thr" style="top:${y.toFixed(2)}%"></div>`);
   }
 

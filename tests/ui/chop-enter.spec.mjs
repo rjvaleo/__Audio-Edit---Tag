@@ -82,3 +82,40 @@ test('Chop\'s detail draws the sound under its cuts, reached by the rail', async
   await page.waitForFunction(() => document.body.classList.contains('choppage'));
   expect(await lit(page), JSON.stringify(await why(page))).toBeGreaterThan(0.5);
 });
+
+/// How far up and down the detail's lit pixels reach, as shares of the room
+/// the wave has: 0 at the centre line, 1 at the edge of its room.
+const reach = (page) => page.evaluate(() => {
+  const cv = document.getElementById('chopWave'), r = cv.width / +cv.dataset.w;
+  const g = cv.getContext('2d'), w = cv.width, h = cv.height;
+  const ruler = 18 * r, mid = ruler + (h - ruler) / 2, A = (h - ruler) * 0.47;
+  const d = g.getImageData(0, 0, w, h).data;
+  let top = h, bot = 0;
+  for (let y = Math.ceil(ruler) + 1; y < h; y++) for (let x = 0; x < w; x += 2) {
+    const i = (y * w + x) * 4;
+    if (d[i + 3] > 40 && d[i] + d[i + 1] + d[i + 2] > 120) { if (y < top) top = y; if (y > bot) bot = y; }
+  }
+  return { up: (mid - top) / A, down: (bot - mid) / A };
+});
+
+// RJ, 18 Nov 2026, of a quiet song in the detail: "the overview isn't getting
+// drawn for the source the same way it is up top". The detail is drawn as the
+// overview is: scaled to the sound's own loudest, the same above and below.
+test('a quiet sound fills the detail, the same above and below, as the overview draws it', async ({ page }) => {
+  await partThenChop(page);
+  await page.evaluate(() => {
+    // Lopsided and quiet: up to 0.2 above the line, half that below.
+    const rate = 44100, n = rate * 4, m = new Float32Array(n);
+    for (let k = 0; k < 16; k++) {
+      const s = Math.round(k * rate / 4);
+      for (let i = 0; i < 6000; i++) { const v = Math.exp(-i / 1500) * Math.sin(i * 2 * Math.PI * 120 / rate); m[s + i] = v > 0 ? 0.2 * v : 0.1 * v; }
+    }
+    window.Chop.loadSamples([m], rate, 'quiet');
+    window.Chop.repaint();
+  });
+  await page.evaluate(() => window.Chop.analysed());
+  const { up, down } = await reach(page);
+  expect(up).toBeGreaterThan(0.9);
+  expect(down).toBeGreaterThan(0.9);
+  expect(Math.abs(up - down)).toBeLessThan(0.05);
+});
