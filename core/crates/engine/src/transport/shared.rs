@@ -780,7 +780,7 @@ impl Shared {
     /// `try_lock`: the audio thread skips a block rather than wait, which costs
     /// one block of meter data and never a deadline.
     pub fn push_scope(&self, out: &[f32], channels: usize, rate: u32) {
-        if let Ok(mut g) = self.scope.try_lock() {
+        if let Some(mut g) = crate::transport::try_lock(&self.scope) {
             g.write(out, channels, rate);
         }
     }
@@ -809,7 +809,7 @@ impl Shared {
         let frames = (out.len() / channels.max(1)) as u32;
         // A compare, not a store: an ask landing here keeps its whole allowance.
         let _ = self.pre_rack_left.compare_exchange(left, left.saturating_sub(frames), Ordering::Relaxed, Ordering::Relaxed);
-        if let Ok(mut g) = self.pre_rack.try_lock() {
+        if let Some(mut g) = crate::transport::try_lock(&self.pre_rack) {
             g.write(out, channels, rate);
         }
     }

@@ -291,7 +291,7 @@ impl Core {
 
         // Pick up changes if they are free to take, otherwise carry on with
         // what we have. Never block the audio thread.
-        if let Ok(g) = shared.params.try_lock() {
+        if let Some(g) = crate::transport::try_lock(&shared.params) {
             self.target = *g;
         }
         // Stretch and Pitch move towards what was asked by Hyperprism's
@@ -373,7 +373,7 @@ impl Core {
         // The old sound is a whole file. This thread holds the last hold on
         // it, so it goes back to be freed elsewhere.
         let mut old_source = None;
-        if let Ok(g) = shared.source.try_lock() {
+        if let Some(g) = crate::transport::try_lock(&shared.source) {
             if !Arc::ptr_eq(&self.source, &g) {
                 old_source = Some(std::mem::replace(&mut self.source, Arc::clone(&g)));
             }
@@ -383,7 +383,7 @@ impl Core {
         }
 
         let mut cut_short = None;
-        if let Ok(mut g) = shared.pending_rack.try_lock() {
+        if let Some(mut g) = crate::transport::try_lock(&shared.pending_rack) {
             if let Some(next) = g.take() {
                 // Keep the old chain alive for the crossfade. It shares the
                 // meter block with the new one, so it is silenced first —
@@ -404,7 +404,7 @@ impl Core {
         // the chain untouched. A slot still fading keeps its turn for a later
         // block. What fades out goes back across for the control thread to drop.
         if let Some(rack) = self.rack.as_mut() {
-            if let Ok(mut g) = shared.pending_swaps.try_lock() {
+            if let Some(mut g) = crate::transport::try_lock(&shared.pending_swaps) {
                 let mut i = 0;
                 while i < g.len() {
                     let slot = g[i].0;
@@ -419,7 +419,7 @@ impl Core {
                     }
                 }
             }
-            if let Ok(mut r) = shared.retired_effects.try_lock() {
+            if let Some(mut r) = crate::transport::try_lock(&shared.retired_effects) {
                 while r.len() < r.capacity() {
                     match rack.take_retired() {
                         Some(e) => r.push(e),
@@ -429,12 +429,12 @@ impl Core {
             }
         }
         let mut old_map = None;
-        if let Ok(mut g) = shared.pending_map.try_lock() {
+        if let Some(mut g) = crate::transport::try_lock(&shared.pending_map) {
             if let Some(next) = g.take() {
                 old_map = self.renderer.replace_map(next);
             }
         }
-        if let Ok(mut g) = shared.pending_parts.try_lock() {
+        if let Some(mut g) = crate::transport::try_lock(&shared.pending_parts) {
             if let Some(next) = g.take() {
                 self.renderer.set_parts(next);
             }
@@ -445,7 +445,7 @@ impl Core {
             drop(self.renderer.set_octaves(next));
         }
         let mut old_bank = None;
-        if let Ok(mut g) = shared.pending_bank.try_lock() {
+        if let Some(mut g) = crate::transport::try_lock(&shared.pending_bank) {
             if let Some(next) = g.take() {
                 old_bank = self.renderer.replace_bank(next);
             }
@@ -466,12 +466,12 @@ impl Core {
         // Aim the smoothers at whatever has been asked for. Manual first, then
         // automation, so a lane wins over a hand on the same control.
         if self.rack.is_some() {
-            if let Ok(g) = shared.manual.try_lock() {
+            if let Some(g) = crate::transport::try_lock(&shared.manual) {
                 for (slot, key, value) in g.iter() {
                     self.aim(*slot, key, *value);
                 }
             }
-            if let Ok(g) = shared.automation.try_lock() {
+            if let Some(g) = crate::transport::try_lock(&shared.automation) {
                 for (slot, key, value) in g.iter() {
                     self.aim(*slot, key, *value);
                 }
@@ -544,6 +544,7 @@ impl Core {
             // ring so the meters fall the way a meter should. It is a four
             // kilobyte copy per block — the "burning a core" this branch avoids
             // was a rack full of reverbs, not a memcpy.
+            self.apply_levels(out, channels, shared);
             // The sequencer fades out from where the transport stopped, over a
             // few milliseconds of what it had already sent, rather than stopping
             // dead mid-note.
@@ -689,9 +690,9 @@ impl Core {
             // nothing held over, that is exactly the block the engine renders.
             // The Pitch Time Changer sets the read rate itself, as the original's
             // shifter set its file reader's.
-            let pt = match shared.pitch_time.try_lock() {
-                Ok(g) => *g,
-                Err(_) => self.ptc_now,
+            let pt = match crate::transport::try_lock(&shared.pitch_time) {
+                Some(g) => *g,
+                None => self.ptc_now,
             };
             // Speed and Pitch glide separately, as the original's did: the
             // reader takes the smoothed Speed, and the shifter corrects by the
@@ -870,64 +871,7 @@ impl Core {
         self.process_rack(out, channels, shared);
 
 
-        let gain = if shared.mute.load(Ordering::Acquire) {
-            0.0
-        } else {
-            f32::from_bits(shared.gain.load(Ordering::Acquire))
-        };
-        // A new level is reached over a short ramp. The first block takes the
-        // level it finds whole, so a deck built muted or turned down starts
-        // there; and a level that is not moving is applied as it always was.
-        if self.gain_to.is_nan() {
-            self.gain_to = gain;
-            self.gain_now = gain;
-        } else if gain != self.gain_to {
-            self.gain_from = self.gain_now;
-            self.gain_to = gain;
-            self.gain_step = 0;
-        }
-        if self.gain_step < GAIN_RAMP {
-            for frame in out.chunks_mut(channels) {
-                if self.gain_step < GAIN_RAMP {
-                    self.gain_step += 1;
-                    let t = self.gain_step as f32 / GAIN_RAMP as f32;
-                    self.gain_now = self.gain_from + (self.gain_to - self.gain_from) * t;
-                }
-                for s in frame.iter_mut() {
-                    *s *= self.gain_now;
-                }
-            }
-        } else if (gain - 1.0).abs() > 1e-6 {
-            for s in out.iter_mut() {
-                *s *= gain;
-            }
-        }
-        // Hyperprism's L and R faders, on the two sides of a stereo bus. A mono
-        // bus takes the left one.
-        // A new setting starts a straight ramp from where the fader is, over
-        // Hyperprism's 1024 frames.
-        let (gl, gr) = shared.side_gains();
-        if [gl, gr] != self.fader_to {
-            self.fader_from = self.fader_now;
-            self.fader_to = [gl, gr];
-            self.fader_step = 0;
-        }
-        let still = self.fader_step >= FADER_RAMP;
-        if !(still && (self.fader_now[0] - 1.0).abs() < 1e-7 && (self.fader_now[1] - 1.0).abs() < 1e-7) {
-            for frame in out.chunks_mut(channels) {
-                if self.fader_step < FADER_RAMP {
-                    self.fader_step += 1;
-                    let t = self.fader_step as f32 / FADER_RAMP as f32;
-                    for side in 0..2 {
-                        self.fader_now[side] = self.fader_from[side] + (self.fader_to[side] - self.fader_from[side]) * t;
-                    }
-                }
-                frame[0] *= self.fader_now[0];
-                if let Some(r) = frame.get_mut(1) {
-                    *r *= self.fader_now[1];
-                }
-            }
-        }
+        self.apply_levels(out, channels, shared);
 
         // The sequencer, on the frames the grain was just rendered at. After the
         // grain's own gain, so GRAIN off silences the grain and not it, and
@@ -1068,7 +1012,7 @@ impl Core {
                 let v = ((db + 90.0) / 90.0 * 255.0).clamp(0.0, 255.0);
                 self.fft_bins[i] = v as u8;
             }
-            if let Ok(mut g) = shared.spectrum.try_lock() {
+            if let Some(mut g) = crate::transport::try_lock(&shared.spectrum) {
                 g.clear();
                 g.extend_from_slice(&self.fft_bins);
             }
@@ -1076,7 +1020,7 @@ impl Core {
             // an average: a compressor is reacting to the peaks, so an average
             // would draw a signal that never reaches the threshold the display
             // is drawing across it.
-            if let Ok(mut g) = shared.waveform.try_lock() {
+            if let Some(mut g) = crate::transport::try_lock(&shared.waveform) {
                 g.clear();
                 let step = FFT_SIZE / WAVE_POINTS;
                 for i in 0..WAVE_POINTS {
@@ -1091,4 +1035,67 @@ impl Core {
             }
         }
     }
+    /// The deck controls apply to new sound and to its ringing tail alike.
+    fn apply_levels(&mut self, out: &mut [f32], channels: usize, shared: &Shared) {
+        let gain = if shared.mute.load(Ordering::Acquire) {
+            0.0
+        } else {
+            f32::from_bits(shared.gain.load(Ordering::Acquire))
+        };
+        // A new level is reached over a short ramp. The first block takes the
+        // level it finds whole, so a deck built muted or turned down starts
+        // there; and a level that is not moving is applied as it always was.
+        if self.gain_to.is_nan() {
+            self.gain_to = gain;
+            self.gain_now = gain;
+        } else if gain != self.gain_to {
+            self.gain_from = self.gain_now;
+            self.gain_to = gain;
+            self.gain_step = 0;
+        }
+        if self.gain_step < GAIN_RAMP {
+            for frame in out.chunks_mut(channels) {
+                if self.gain_step < GAIN_RAMP {
+                    self.gain_step += 1;
+                    let t = self.gain_step as f32 / GAIN_RAMP as f32;
+                    self.gain_now = self.gain_from + (self.gain_to - self.gain_from) * t;
+                }
+                for s in frame.iter_mut() {
+                    *s *= self.gain_now;
+                }
+            }
+        } else if (gain - 1.0).abs() > 1e-6 {
+            for s in out.iter_mut() {
+                *s *= gain;
+            }
+        }
+        // Hyperprism's L and R faders, on the two sides of a stereo bus. A mono
+        // bus takes the left one.
+        // A new setting starts a straight ramp from where the fader is, over
+        // Hyperprism's 1024 frames.
+        let (gl, gr) = shared.side_gains();
+        if [gl, gr] != self.fader_to {
+            self.fader_from = self.fader_now;
+            self.fader_to = [gl, gr];
+            self.fader_step = 0;
+        }
+        let still = self.fader_step >= FADER_RAMP;
+        if !(still && (self.fader_now[0] - 1.0).abs() < 1e-7 && (self.fader_now[1] - 1.0).abs() < 1e-7) {
+            for frame in out.chunks_mut(channels) {
+                if self.fader_step < FADER_RAMP {
+                    self.fader_step += 1;
+                    let t = self.fader_step as f32 / FADER_RAMP as f32;
+                    for side in 0..2 {
+                        self.fader_now[side] = self.fader_from[side] + (self.fader_to[side] - self.fader_from[side]) * t;
+                    }
+                }
+                frame[0] *= self.fader_now[0];
+                if let Some(r) = frame.get_mut(1) {
+                    *r *= self.fader_now[1];
+                }
+            }
+        }
+
+    }
+
 }

@@ -548,30 +548,30 @@ impl SynthDeck {
     /// the new patch. No allocation, no waiting.
     fn take_changes(&mut self) {
         let sh = &*self.shared;
-        if let Ok(mut g) = sh.pending_patch.try_lock() {
+        if let Some(mut g) = crate::transport::try_lock(&sh.pending_patch) {
             if let Some(state) = g.take() {
                 self.synth.adopt(state);
             }
         }
         for osc in 0..3 {
-            let Ok(mut back) = sh.returned[osc].try_lock() else { continue };
+            let Some(mut back) = crate::transport::try_lock(&sh.returned[osc]) else { continue };
             if back.is_some() {
                 // The last one has not been collected yet. Swapping now would
                 // leave two to hold and nowhere to put the second.
                 continue;
             }
-            if let Ok(mut g) = sh.pending_tables[osc].try_lock() {
+            if let Some(mut g) = crate::transport::try_lock(&sh.pending_tables[osc]) {
                 if let Some(t) = g.take() {
                     *back = self.synth.set_table(osc, t);
                 }
             }
         }
         for i in 0..5 {
-            let Ok(mut back) = sh.returned_bank[i].try_lock() else { continue };
+            let Some(mut back) = crate::transport::try_lock(&sh.returned_bank[i]) else { continue };
             if back.is_some() {
                 continue;
             }
-            if let Ok(mut g) = sh.pending_bank[i].try_lock() {
+            if let Some(mut g) = crate::transport::try_lock(&sh.pending_bank[i]) {
                 if let Some(t) = g.take() {
                     *back = self.synth.set_bank_table(i, t);
                 }
@@ -579,12 +579,12 @@ impl SynthDeck {
         }
         // A board: only while the return slot is free, so what it replaces
         // has somewhere to go.
-        if let Ok(mut back) = sh.returned_board.try_lock() {
+        if let Some(mut back) = crate::transport::try_lock(&sh.returned_board) {
             if back.is_none() {
                 *back = self.synth.take_retired();
             }
             if back.is_none() {
-                if let Ok(mut g) = sh.pending_board.try_lock() {
+                if let Some(mut g) = crate::transport::try_lock(&sh.pending_board) {
                     if let Some(plan) = g.take() {
                         *back = self.synth.set_board(plan);
                     }
@@ -635,7 +635,7 @@ impl SynthDeck {
         let (l, r) = (&mut self.left[..frames], &mut self.right[..frames]);
         self.synth.render(l, r);
         // A board that has finished fading out goes back at once if it can.
-        if let Ok(mut back) = self.shared.returned_board.try_lock() {
+        if let Some(mut back) = crate::transport::try_lock(&self.shared.returned_board) {
             if back.is_none() {
                 *back = self.synth.take_retired();
             }
@@ -659,7 +659,7 @@ impl SynthDeck {
             self.recent[WAVE_POINTS - fresh + i] = 0.5 * (self.left[f] + self.right[f]);
         }
         self.synth.telemetry(&mut self.tele);
-        if let Ok(mut g) = self.shared.telemetry.try_lock() {
+        if let Some(mut g) = crate::transport::try_lock(&self.shared.telemetry) {
             *g = (self.tele, self.recent);
         }
         self.shared.blocks.fetch_add(1, Ordering::Relaxed);

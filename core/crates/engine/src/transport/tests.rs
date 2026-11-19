@@ -916,3 +916,62 @@ fn a_slot_swap_fades_one_slot_and_leaves_the_rack_in_place() {
     assert_eq!(rack.get_param(1, "db"), Some(-6.0));
     assert_eq!(shared.retired_effects.lock().unwrap().len(), 1, "the old gain came back across");
 }
+
+#[test]
+fn a_paused_tail_obeys_mute_gain_and_side_faders() {
+    fn tail() -> (Core, Shared) {
+        let (mut core, shared) = playing_core(2);
+        let mut rack = fx::Rack::new();
+        rack.push(Box::new(fx::reverb::Moorer::new(48_000, 2)));
+        rack.reserve_mix(1024);
+        shared.set_rack(Some(rack));
+        let mut buf = [0.0; 1024];
+        for _ in 0..24 { core.fill(&mut buf, 2, &shared); }
+        shared.pause();
+        core.fill(&mut buf, 2, &shared);
+        (core, shared)
+    }
+    for control in 0..3 {
+        let (mut core, shared) = tail();
+        let (mut reference, straight) = tail();
+        match control {
+            0 => shared.set_mute(true),
+            1 => shared.set_gain(0.0),
+            _ => shared.set_side_gains(0.0, 0.0),
+        }
+        let mut buf = [0.0; 1024];
+        let mut expected = [0.0; 1024];
+        core.fill(&mut buf, 2, &shared);
+        reference.fill(&mut expected, 2, &straight);
+        assert!(expected.iter().any(|x| x.abs() > 1e-5), "unmuted tail must still ring");
+        if control < 2 {
+            assert!(buf[480 * 2..].iter().all(|x| *x == 0.0), "mute and gain arrive within 10 ms");
+        } else {
+            core.fill(&mut buf, 2, &shared);
+            core.fill(&mut buf, 2, &shared);
+            assert!(buf.iter().all(|x| *x == 0.0), "side faders arrive after their 1024-frame ramp");
+        }
+    }
+}
+
+#[test]
+fn a_poisoned_settings_lock_still_reaches_the_deck() {
+    let (mut core, shared) = playing_core(1);
+    let shared = Arc::new(shared);
+    let other = Arc::clone(&shared);
+    assert!(std::thread::spawn(move || {
+        let mut settings = other.params.lock().unwrap();
+        settings.ratio = 1.5;
+        panic!("poison the settings after writing them");
+    }).join().is_err());
+    let mut buf = [0.0; 512];
+    core.fill(&mut buf, 1, &shared);
+    assert_eq!(core.params.ratio, 1.5);
+    {
+        let mut settings = try_lock(&shared.params).expect("poisoned does not mean busy");
+        settings.ratio = 0.75;
+        assert!(try_lock(&shared.params).is_none(), "a held lock must never wait");
+    }
+    core.fill(&mut buf, 1, &shared);
+    assert_eq!(core.params.ratio, 0.75);
+}

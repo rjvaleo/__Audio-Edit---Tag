@@ -24,6 +24,15 @@ const LOOP_FADE_FRAMES: usize = 512; // ~11 ms at 48 kHz
 /// too and the two must not drift — see `fx::TAIL_SILENCE`.
 use fx::{tail_budget, TAIL_SILENCE};
 
+/// A poisoned lock still holds usable state; a busy one must never delay audio.
+pub(crate) fn try_lock<T>(mutex: &Mutex<T>) -> Option<std::sync::MutexGuard<'_, T>> {
+    match mutex.try_lock() {
+        Ok(guard) => Some(guard),
+        Err(std::sync::TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
+        Err(std::sync::TryLockError::WouldBlock) => None,
+    }
+}
+
 mod shared;
 mod pitch_time;
 pub use pitch_time::*;
@@ -689,7 +698,7 @@ fn add_block(out: &mut [f32], extra: &[f32]) {
 /// what came out of the speakers rather than some earlier stage of it.
 fn capture_block(out: &[f32], shared: &Shared) {
     if shared.capturing.load(Ordering::Acquire) {
-        if let Ok(mut g) = shared.capture.try_lock() {
+        if let Some(mut g) = crate::transport::try_lock(&shared.capture) {
             if let Some(c) = g.as_mut() {
                 let room = c.samples.capacity() - c.samples.len();
                 let n = room.min(out.len());
@@ -723,7 +732,7 @@ pub(crate) fn report(shared: &Shared, events: &[GrainEvent]) {
     if events.is_empty() {
         return;
     }
-    if let Ok(mut g) = shared.events.try_lock() {
+    if let Some(mut g) = crate::transport::try_lock(&shared.events) {
         // Bounded: if the UI stops draining, drop the oldest rather than grow.
         if g.len() > 4096 {
             g.clear();
