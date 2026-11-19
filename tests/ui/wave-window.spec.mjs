@@ -17,7 +17,7 @@ async function geometry(page) {
     const host = document.getElementById('waveView');
     return {
       scale: WV.scale, host: rect('#waveView'), app: rect('#waveView .wv-app'),
-      mid: rect('#wvMid'), dock: rect('#wvRdock'), keys: rect('#wvKeys'),
+      mid: rect('#wvMid'), dock: rect('#wvRdock'), keys: rect('#wvKeys'), keyboard: rect('#waveView .wv-dock'),
       scroll: [host.scrollWidth - host.clientWidth, host.scrollHeight - host.clientHeight],
     };
   });
@@ -35,6 +35,7 @@ test('at the iMac’s size the frame fills the window at one size', async ({ pag
     dockLeft ??= g.dock.x;
     expect(g.dock.x, view).toBeCloseTo(dockLeft, 1);
     expect([g.keys.width, g.keys.height], view).toEqual([812, 100]);
+    expect(Math.abs(g.keyboard.bottom - g.app.bottom), view).toBeLessThanOrEqual(2);
     expect(g.scroll[0], view).toBeLessThanOrEqual(0);
     expect(g.scroll[1], view).toBeLessThanOrEqual(0);
     expect(Math.abs(g.app.right - g.host.right), view).toBeLessThanOrEqual(2);
@@ -64,6 +65,7 @@ test('at the laptop’s size the whole frame scales once for every tab', async (
     const g = await geometry(page);
     expect(g.scale, view).toBeCloseTo(scale, 6);
     expect(g.dock.width, view).toBeCloseTo(440 * scale, 1);
+    expect(Math.abs(g.keyboard.bottom - g.app.bottom), view).toBeLessThanOrEqual(2);
     expect(g.scroll[0], view).toBeLessThanOrEqual(0);
     expect(g.scroll[1], view).toBeLessThanOrEqual(0);
   }

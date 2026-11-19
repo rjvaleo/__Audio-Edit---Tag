@@ -245,7 +245,7 @@
 .param.sh-choice { display: grid; grid-template-columns: none; align-content: center; gap: 4px; padding: 0 2px; }
 .sh-choice .k { order: 2; font: 600 var(--fs-xs) var(--mono); color: var(--look-text-2); text-align: center; }
 .sh-choice .seg { display: flex; width: 100%; border: 1px solid var(--look-line, #343b43); border-radius: 4px; overflow: hidden; background: var(--look-panel, #171b20); padding: 0; }
-.fx-module-controls .sh-choice .seg-btn { flex: 1 1 0; width: auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; background: transparent; border: 0; border-left: 1px solid var(--look-line, #343b43); border-radius: 0; color: var(--look-text); font: 600 var(--fs-xs) var(--mono); padding: 6px 2px; margin: 0; }
+.fx-module-controls .sh-choice .seg-btn { height: auto; min-height: 42px; flex: 1 1 0; width: auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; background: transparent; border: 0; border-left: 1px solid var(--look-line, #343b43); border-radius: 0; color: var(--look-text); font: 600 var(--fs-xs) var(--mono); padding: 6px 2px; margin: 0; }
 .fx-module-controls .sh-choice .seg-btn:first-child { border-left: 0; }
 .fx-module-controls .sh-choice .seg-btn.active { background: var(--look-well, #11151a); color: var(--hue); }
 .sh-choice .seg-btn svg.pic { display: block; width: 28px; height: 20px; max-width: 100%; margin: 0 auto 3px; }

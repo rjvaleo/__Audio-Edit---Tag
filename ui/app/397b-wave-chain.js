@@ -211,7 +211,7 @@ function wvRenderFxRow() {
     const n = wvNode(id), params = wvFxRowParams(n);
     return `<div class="wv-panel wv-mod wv-fxcard" data-fxcard="${wvEsc(id)}" style="--cc:${wvNodeCol(n)}">
       <div class="wv-mh"><span class="wv-pw wv-btn ${n.on !== false ? 'on' : ''}" data-row-power="${wvEsc(id)}" title="Power: off passes the sound through untouched">${WV_PWR}</span><span class="wv-fxcard-name">${wvEsc(wvNodeName(n))}</span></div>
-      <div class="wv-fxrow-controls">${params.map((p) => `<div class="ui-knob wv-fxrow-control"><div class="ui-kr">${uiPic('', '0 0 64 48', 'side')}${wvBoardKnob(n, p)}</div><span class="ui-lab"><span class="ui-kname">${wvEsc(p.label)}</span><b class="ui-kval"></b></span></div>`).join('') || '<span class="wv-hint">No settings</span>'}</div></div>`;
+      <div class="wv-fxrow-controls">${params.map((p) => `<div class="ui-knob under s26 wv-fxrow-control"><div class="ui-kr">${uiPic('', '0 0 64 48', 'side')}${wvBoardKnob(n, p)}</div><span class="ui-lab"><span class="ui-kname">${wvEsc(p.label)}</span><b class="ui-kval"></b></span></div>`).join('') || '<span class="wv-hint">No settings</span>'}</div></div>`;
   }).join('');
   WV_FXROW.controls = [];
   host.querySelectorAll('canvas[data-fxk]').forEach((el) => {

@@ -593,8 +593,8 @@ body.synthpage #overview { display: none; }
 #waveView .wv-rackface { flex: none; background: none; border: 0; box-shadow: none; padding: 0; }
 #waveView .wv-rackface .fx-module-controls { width: 100%; }
 
-/* The keys stay on screen while the page, one size, scrolls. */
-#waveView .wv-dock { position: sticky; bottom: 0; z-index: 6; background: var(--wv-chassis); }
+/* The keyboard occupies the final grid row, also when the frame scales. */
+#waveView .wv-dock { position: relative; z-index: 6; background: var(--wv-chassis); }
 
 /* The board uses the middle to its edges; the inspector has its own dock. */
 #waveView #wvViewFx { padding: 4px 10px 4px; min-width: 0; }

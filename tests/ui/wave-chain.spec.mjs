@@ -152,6 +152,11 @@ test('Play effects row has every effect in order and up to four real controls wi
     await expect(card.locator('canvas[data-fxk]')).toHaveCount(count);
     await expect(card.locator('.ui-pic path, .ui-pic line, .ui-pic polyline, .ui-pic circle').first()).toBeAttached();
   }
+  const layout = await row.evaluateAll((es) => es.flatMap((e) => [...e.querySelectorAll('.wv-fxrow-control')].map((c) => {
+    const ring = c.querySelector('.ui-kr').getBoundingClientRect(), label = c.querySelector('.ui-lab').getBoundingClientRect();
+    return { below: label.top >= ring.bottom, width: label.width };
+  })));
+  expect(layout.every((c) => c.below && c.width > 40), 'labels beneath pictured knobs').toBe(true);
   const size = await row.evaluateAll((es) => es.map((e) => e.offsetWidth));
   expect(new Set(size).size).toBe(1);
   expect(await page.locator('#wvFxRow').evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true);
