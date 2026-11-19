@@ -76,15 +76,28 @@ pub fn pitch_time_offline(
     };
     let mut now: Option<PitchTime> = None;
     let mut glide = crate::glide::Glide::<2>::default();
+    let mut ramp = PtcRamp::default();
+    let mut curve = vec![[100.0; 2]; block];
+    let mut positions = vec![0.0; block + 1];
+    let mut sampled = false;
     let mut pos = 0.0f64;
     let mut buf = vec![0.0f32; block * ch];
     'blocks: loop {
         let pt = at((out.len() / ch) as u64);
         let (g_speed, g_pitch) = ptc_glided(&mut glide, &pt, now.is_some(), block, sample_rate);
+        ramp.aim([g_speed, g_pitch], now.is_some());
+        let moving = ramp.moving();
         let speed = g_speed as f64 / 100.0;
+        if moving {
+            positions[0] = pos;
+            for i in 0..block {
+                curve[i] = ramp.next();
+                positions[i + 1] = positions[i] + curve[i][0] as f64 / 100.0;
+            }
+        }
         let mut n = 0;
         while n < block {
-            let x = pos + n as f64 * speed;
+            let x = if moving { positions[n] } else { pos + n as f64 * speed };
             let i = x.floor() as usize;
             let t = (x - x.floor()) as f32;
             if i >= frames || (t > 0.0 && i + 1 >= frames) {
@@ -100,20 +113,68 @@ pub fn pitch_time_offline(
             break 'blocks;
         }
         ptc_set_ratio(shifter.as_mut(), ptc_ratio(g_speed, g_pitch));
-        if now != Some(pt) {
-            shifter.set_param("mix", 100.0);
-            shifter.set_param("feedback", pt.feedback);
-            shifter.set_param("grain", pt.grain);
-            shifter.set_param("xfade", pt.xfade);
-            shifter.set_param("smoothing", 0.0);
-            now = Some(pt);
+        if now.is_none() { shifter.set_param("mix", 100.0); }
+        if now.is_none_or(|old| old.feedback != pt.feedback) { shifter.set_param("feedback", pt.feedback); }
+        if now.is_none_or(|old| old.grain != pt.grain) { shifter.set_param("grain", pt.grain); }
+        if now.is_none_or(|old| old.xfade != pt.xfade) { shifter.set_param("xfade", pt.xfade); }
+        if now != Some(pt) { shifter.set_param("smoothing", 0.0); }
+        now = Some(pt);
+        if sampled != moving {
+            shifter.set_param("smoothingStep", if moving { 1.0 } else { 513.0 });
+            sampled = moving;
         }
-        shifter.process(&mut buf[..n * ch], ch, sample_rate);
+        if moving {
+            for (i, sample) in buf[..n * ch].chunks_exact_mut(ch).enumerate() {
+                ptc_set_ratio(shifter.as_mut(), ptc_ratio(curve[i][0], curve[i][1]));
+                shifter.process(sample, ch, sample_rate);
+            }
+        } else {
+            shifter.process(&mut buf[..n * ch], ch, sample_rate);
+        }
         out.extend_from_slice(&buf[..n * ch]);
-        pos += n as f64 * speed;
+        pos = if moving { positions[n] } else { pos + n as f64 * speed };
         if n < block {
             break;
         }
     }
     out
+}
+
+/// The host's dezipper after Hyperprism's stepped glide. Keep that glide's
+/// targets, but never hand its edges straight to the reader or shifter.
+#[derive(Clone, Copy)]
+pub(super) struct PtcRamp {
+    now: [f32; 2],
+    from: [f32; 2],
+    target: [f32; 2],
+    at: usize,
+}
+impl Default for PtcRamp {
+    fn default() -> Self {
+        Self { now: [100.0; 2], from: [100.0; 2], target: [100.0; 2], at: super::FADER_RAMP }
+    }
+}
+impl PtcRamp {
+    pub(super) fn aim(&mut self, target: [f32; 2], running: bool) {
+        if !running {
+            self.now = target;
+            self.from = target;
+            self.target = target;
+            self.at = super::FADER_RAMP;
+        } else if target != self.target {
+            self.from = self.now;
+            self.target = target;
+            self.at = 0;
+        }
+    }
+    pub(super) fn moving(&self) -> bool { self.at < super::FADER_RAMP }
+    pub(super) fn next(&mut self) -> [f32; 2] {
+        if self.moving() {
+            self.at += 1;
+            let t = self.at as f32 / super::FADER_RAMP as f32;
+            self.now = std::array::from_fn(|i| self.from[i] + (self.target[i] - self.from[i]) * t);
+            if !self.moving() { self.now = self.target; }
+        }
+        self.now
+    }
 }

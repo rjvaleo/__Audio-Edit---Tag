@@ -61,3 +61,50 @@ fn every_declared_prism_pad_ramps_without_allocating_or_waiting() {
         rt::clean(entry.descriptor.id, total);
     }
 }
+
+#[test]
+fn pitch_time_changer_pad_ramps_without_allocating_or_waiting() {
+    use engine::transport::PitchTime;
+    rt::verify();
+    audio_core::fft::prime();
+    prism_grain::fft::prime();
+    let source = Arc::new(Source {
+        samples: (0..192_000)
+            .map(|i| 0.125 * (i as f32 * 0.02).sin())
+            .collect(),
+        channels: 1,
+    });
+    let params = StreamParams::new(source.samples.len(), 48_000);
+    let shared = Shared::new(params, source.clone());
+    let mut core = Core::new(480, 1, params, source);
+    let mut pt = PitchTime {
+        on: true,
+        speed: 20.9,
+        pitch: 180.0,
+        ..PitchTime::default()
+    };
+    shared.set_pitch_time(pt);
+    shared.play();
+    let mut audio = [0.0; 480];
+    for _ in 0..32 {
+        core.fill(&mut audio, 1, &shared);
+    }
+    let mut total = rt::Counts::default();
+    for block in 0..200 {
+        if block % 6 == 0 {
+            let u = 0.1 + 0.8 * block as f32 / 200.0;
+            pt.speed = 1.0 + 199.0 * u;
+            pt.pitch = 200.0 * (1.0 - u);
+            shared.set_pitch_time(pt);
+        }
+        rt::start();
+        core.fill(&mut audio, 1, &shared);
+        let counts = rt::stop();
+        total.alloc += counts.alloc;
+        total.free += counts.free;
+        total.realloc += counts.realloc;
+        total.blocking += counts.blocking;
+        assert!(audio.iter().all(|v| v.is_finite()));
+    }
+    rt::clean("Pitch Time Changer pad", total);
+}

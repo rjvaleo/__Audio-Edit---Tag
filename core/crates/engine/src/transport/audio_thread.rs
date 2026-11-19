@@ -185,8 +185,12 @@ impl Core {
         params: StreamParams,
         source: Arc<Source>,
     ) -> Self {
+        let mut renderer = Stretcher::new(max_block, channels.max(1), params.sample_rate);
+        // The reader can request more input than the output block. Reserve
+        // just the growable normalisation buffer; engine geometry stays put.
+        renderer.reserve_grain_block(max_block.max(1) * MAX_SPEED as usize + 4);
         Core {
-            renderer: Stretcher::new(max_block, channels.max(1), params.sample_rate),
+            renderer,
             kept: Vec::with_capacity(RETIRED_THINGS),
             rack: None,
             leaving: None,
@@ -224,6 +228,13 @@ impl Core {
             ptc: fx::prism::make("hp-pitch-shifter", params.sample_rate, channels.max(1), &[]),
             ptc_now: PitchTime::default(),
             ptc_glide: crate::glide::Glide::default(),
+            ptc_ramp: pitch_time::PtcRamp::default(),
+            ptc_curve: vec![[100.0; 2]; max_block.max(1)],
+            ptc_positions: vec![0.0; max_block.max(1) + 1],
+            ptc_moving: false,
+            ptc_sampled: false,
+            seq_starts: Vec::with_capacity(max_block.max(1) + 1),
+            seq_curved: false,
             target: params,
             glide: crate::glide::Glide::default(),
             post_left: None,
@@ -289,6 +300,7 @@ impl Core {
 
     fn fill_inner(&mut self, out: &mut [f32], channels: usize, shared: &Shared, extra: Option<&[f32]>) {
         let channels = channels.max(1);
+        self.ptc_moving = false;
 
         // Pick up changes if they are free to take, otherwise carry on with
         // what we have. Never block the audio thread.
@@ -684,6 +696,7 @@ impl Core {
         if (post || gated) && !poly {
             out.fill(0.0);
             self.seq_runs.clear();
+            self.seq_curved = false;
             self.seq_step = 1.0;
         } else {
             // Hyperprism's Playback Speed: the engine's output is read at `speed`
@@ -702,14 +715,26 @@ impl Core {
             // reader takes the smoothed Speed, and the shifter corrects by the
             // smoothed Pitch over it, so the two never come apart.
             let (ptc_speed, ptc_pitch) = ptc_glided(&mut self.ptc_glide, &pt, self.ptc_now.on, frames, self.params.sample_rate);
-            let speed = if pt.on { ptc_speed as f64 / 100.0 } else { 1.0 } * shared.speed() as f64;
+            self.ptc_ramp.aim([ptc_speed, ptc_pitch], pt.on && self.ptc_now.on);
+            self.ptc_moving = pt.on && self.ptc_ramp.moving() && frames <= self.ptc_curve.len();
+            let playback_speed = shared.speed() as f64;
+            let speed = if pt.on { ptc_speed as f64 / 100.0 } else { 1.0 } * playback_speed;
+            if self.ptc_moving {
+                self.ptc_positions[0] = self.vs_frac;
+                for f in 0..frames {
+                    let values = self.ptc_ramp.next();
+                    self.ptc_curve[f] = values;
+                    self.ptc_positions[f + 1] = self.ptc_positions[f] + values[0] as f64 / 100.0 * playback_speed;
+                }
+            }
+            let after = if self.ptc_moving { self.ptc_positions[frames] } else { self.vs_frac + frames as f64 * speed };
             let ch = channels;
-            let reach = self.vs_frac + (frames.saturating_sub(1)) as f64 * speed;
+            let reach = if self.ptc_moving { self.ptc_positions[frames.saturating_sub(1)] } else { self.vs_frac + (frames.saturating_sub(1)) as f64 * speed };
             let mut need = reach.floor() as usize + 1;
             if reach.fract() > 0.0 {
                 need += 1;
             }
-            let consumed = (self.vs_frac + frames as f64 * speed).floor() as usize;
+            let consumed = after.floor() as usize;
             let need = need.max(consumed).min(self.vs.len() / ch);
             let fresh = need.saturating_sub(self.vs_frames);
             let base = self.vs_frames;
@@ -719,6 +744,9 @@ impl Core {
             // Where in this block fresh post-wrap material begins, if it does.
             let mut wrapped_at: Option<usize> = None;
             self.seq_runs.clear();
+            self.seq_curved = false;
+            self.seq_starts.clear();
+            self.seq_curved = self.ptc_moving;
             while filled < fresh {
                 let want = fresh - filled;
                 // Never render past the loop end in one go: the wrap has to land on
@@ -736,6 +764,7 @@ impl Core {
                     // than 1 its runs land where the read reaches them.
                     let at = (((base + filled) as f64 - self.vs_frac) / speed.max(1e-9)).max(0.0) as usize;
                     self.seq_runs.push((at.min(frames), self.renderer.position(), chunk));
+                    self.seq_starts.push(base + filled);
                 }
                 let slice = &mut self.vs[(base + filled) * ch..(base + filled + chunk) * ch];
                 let n = if poly {
@@ -784,7 +813,7 @@ impl Core {
             // Read the block out of what was rendered.
             let last = self.vs_frames.saturating_sub(1);
             for f in 0..frames {
-                let x = self.vs_frac + f as f64 * speed;
+                let x = if self.ptc_moving { self.ptc_positions[f] } else { self.vs_frac + f as f64 * speed };
                 let i = (x.floor() as usize).min(last);
                 let t = (x - x.floor()) as f32;
                 let j = (i + 1).min(last);
@@ -803,20 +832,45 @@ impl Core {
                     // The smoothing is done here, on Speed and Pitch; the
                     // shifter takes the ratio between them as it stands.
                     ptc_set_ratio(shifter.as_mut(), ptc_ratio(ptc_speed, ptc_pitch));
-                    if pt != self.ptc_now || !self.ptc_now.on {
+                    if !self.ptc_now.on {
                         shifter.set_param("mix", 100.0);
+                    }
+                    if pt.feedback != self.ptc_now.feedback || !self.ptc_now.on {
                         shifter.set_param("feedback", pt.feedback);
+                    }
+                    // These setters schedule grain changes even when handed
+                    // the same value. A speed/pitch gesture must not retrigger
+                    // an unchanged grain or crossfade at every UI packet.
+                    if pt.grain != self.ptc_now.grain || !self.ptc_now.on {
                         shifter.set_param("grain", pt.grain);
+                    }
+                    if pt.xfade != self.ptc_now.xfade || !self.ptc_now.on {
                         shifter.set_param("xfade", pt.xfade);
+                    }
+                    if pt != self.ptc_now || !self.ptc_now.on {
                         shifter.set_param("smoothing", 0.0);
                     }
-                    shifter.process(out, ch, self.params.sample_rate);
+                    if self.ptc_sampled != self.ptc_moving {
+                        // The original exposes this control. Sample the host's
+                        // ramp on every frame while it moves; leave the original
+                        // 512-sample setting alone for a fixed pad.
+                        shifter.set_param("smoothingStep", if self.ptc_moving { 1.0 } else { 513.0 });
+                        self.ptc_sampled = self.ptc_moving;
+                    }
+                    if self.ptc_moving {
+                        for (f, sample) in out.chunks_exact_mut(ch).enumerate() {
+                            let [speed, pitch] = self.ptc_curve[f];
+                            ptc_set_ratio(shifter.as_mut(), ptc_ratio(speed, pitch));
+                            shifter.process(sample, ch, self.params.sample_rate);
+                        }
+                    } else {
+                        shifter.process(out, ch, self.params.sample_rate);
+                    }
                 }
             }
             self.ptc_now = pt;
 
             // Drop what the read has passed; keep the rest for the next block.
-            let after = self.vs_frac + frames as f64 * speed;
             let drop = (after.floor() as usize).min(self.vs_frames);
             self.vs.copy_within(drop * ch..self.vs_frames * ch, 0);
             self.vs_frames -= drop;
@@ -844,6 +898,7 @@ impl Core {
         if clocked {
             // The sequencer plays on the transport, not on a note's head.
             self.seq_runs.clear();
+            self.seq_curved = false;
             self.seq_step = 1.0;
             if shared.is_playing() {
                 let at = self.keys.clock();
@@ -956,7 +1011,7 @@ impl Core {
         let block = out.len() / ch;
         let step = self.seq_step;
         let (mut found, mut lost) = (0u64, 0u64);
-        for &(offset, at, frames) in self.seq_runs.iter() {
+        for (run, &(offset, at, frames)) in self.seq_runs.iter().enumerate() {
             for i in 0..frames {
                 // A run is counted in rendered frames, and Playback Speed reads
                 // `step` of those for each frame out. So frame `i` of the run
@@ -964,7 +1019,15 @@ impl Core {
                 // one at speed 1, none or one above it, one or more below.
                 // Counted as frames of the block it overran the block at any
                 // speed above 1 and the engine stopped (18 Nov 2026).
-                let (from, to) = if step == 1.0 {
+                let (from, to) = if self.seq_curved {
+                    // Invert the integrated read, rather than approximating a
+                    // ramp by one block-wide rate. The stamped bus stays exact.
+                    let start = self.seq_starts[run] + i;
+                    let locate = |input: usize| self.ptc_positions[..=block]
+                        .partition_point(|&position| position <= input as f64)
+                        .saturating_sub(1);
+                    (locate(start), locate(start + 1))
+                } else if step == 1.0 {
                     (offset + i, offset + i + 1)
                 } else {
                     (offset.saturating_add((i as f64 / step) as usize), offset.saturating_add(((i + 1) as f64 / step) as usize))

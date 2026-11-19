@@ -527,6 +527,15 @@ pub struct Core {
     ptc_now: PitchTime,
     /// Speed and Pitch as Hyperprism's smoothing has them now. See `ptc_glided`.
     ptc_glide: crate::glide::Glide<2>,
+    ptc_ramp: pitch_time::PtcRamp,
+    /// Moving PTC control values and integrated reader positions, sized once.
+    ptc_curve: Vec<[f32; 2]>,
+    ptc_positions: Vec<f64>,
+    ptc_moving: bool,
+    ptc_sampled: bool,
+    /// The input-buffer start of each sequencer run under a variable read rate.
+    seq_starts: Vec<usize>,
+    seq_curved: bool,
     /// What the document asks for, before the glide: `params` is what plays.
     target: StreamParams,
     /// Stretch and Pitch, glided. See `glide.rs`.
