@@ -127,6 +127,8 @@ fn no_notes(r: &mut Rig, h: &mut u64) {
 /// those two scripts end on a stop, and a stop now leaves from the sound's last
 /// frame over five milliseconds where it used to cut. The note scripts never
 /// stop the transport and are as they were.
+/// The transport rows were checked again on 18 Nov for the five millisecond
+/// rise after idle. Four change; the note rows and OFFLINE remain identical.
 const BASELINE: &[(&str, u64)] = &[
     ("Granular/1/false/mono", 0x40f921163e915bbf),
     ("Granular/1/false/legato", 0x5344b15655be9c02),
@@ -150,7 +152,7 @@ const BASELINE: &[(&str, u64)] = &[
     ("Wsola/3/false/play-no-run", 0x3973ebaaa808192d),
     ("Wsola/1/true/mono", 0x6a333dc38ac25df5),
     ("Wsola/1/true/legato", 0x4192ebd5b2b9b9c7),
-    ("Wsola/1/true/run-idle", 0xcbf255a6bb4f2143),
+    ("Wsola/1/true/run-idle", 0x9842af62f16197d9),
     ("Wsola/1/true/play-no-run", 0x52d35823995da265),
     ("Vocoder/1/false/mono", 0xbf7bad675e862ebd),
     ("Vocoder/1/false/legato", 0xbf9253fe9b470775),
@@ -162,7 +164,7 @@ const BASELINE: &[(&str, u64)] = &[
     ("Vocoder/3/false/play-no-run", 0x9a28699e2713729d),
     ("Vocoder/1/true/mono", 0x60dd97bab86235a4),
     ("Vocoder/1/true/legato", 0xcbf9ea55af98b9b2),
-    ("Vocoder/1/true/run-idle", 0x87ef129c60838f4a),
+    ("Vocoder/1/true/run-idle", 0x2b56d2d829189c88),
     ("Vocoder/1/true/play-no-run", 0xc9be38a180663d1f),
     ("Pvsola/1/false/mono", 0x01e6670d6c9bc2f6),
     ("Pvsola/1/false/legato", 0x19e57e142c7d5841),
@@ -174,7 +176,7 @@ const BASELINE: &[(&str, u64)] = &[
     ("Pvsola/3/false/play-no-run", 0x2db332159e16178a),
     ("Pvsola/1/true/mono", 0x0b4f50d14363a863),
     ("Pvsola/1/true/legato", 0x1b3ac2917d25fda9),
-    ("Pvsola/1/true/run-idle", 0x6bbd169ef14a1234),
+    ("Pvsola/1/true/run-idle", 0x18e594b2ff5ce122),
     ("Pvsola/1/true/play-no-run", 0xe87a6a7f1bbe7f6d),
     ("Hybrid/1/false/mono", 0x3a6883c50d3fc5f3),
     ("Hybrid/1/false/legato", 0x53010c23262bf244),
@@ -186,7 +188,7 @@ const BASELINE: &[(&str, u64)] = &[
     ("Hybrid/3/false/play-no-run", 0x06b43487e9801e1a),
     ("Hybrid/1/true/mono", 0x24c5c33b49f32e57),
     ("Hybrid/1/true/legato", 0x7424016d9476a030),
-    ("Hybrid/1/true/run-idle", 0x8677e909705f230c),
+    ("Hybrid/1/true/run-idle", 0x1db105132abbf2e8),
     ("Hybrid/1/true/play-no-run", 0xc2f57919b16528a2),
 ];
 

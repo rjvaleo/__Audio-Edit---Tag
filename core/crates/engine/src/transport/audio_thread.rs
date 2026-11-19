@@ -207,6 +207,7 @@ impl Core {
             seq_step: 1.0,
             last_dry: [0.0; 2],
             was_sounding: false,
+            was_stopped: false,
             seek_landed: false,
             declick: Declick::default(),
             gain_from: 1.0,
@@ -511,6 +512,7 @@ impl Core {
             // every listener notices, so the rack keeps running on silence and
             // its tails ring out.
             out.fill(0.0);
+            self.was_stopped = true;
             // Stopped this block: the sound leaves from its last frame, not
             // from a cut.
             if self.was_sounding {
@@ -858,9 +860,13 @@ impl Core {
 
         // Moved while it was playing: the new place arrives from the old one's
         // last frame, not across a jump.
-        if self.seek_landed && self.was_sounding {
+        if self.was_stopped && shared.is_playing() && !self.keys.head_running() && !poly {
+            // Transport resumes from silence. A key's own attack is left alone.
+            self.declick.start([0.0; 2], out, channels, self.params.sample_rate);
+        } else if self.seek_landed && self.was_sounding {
             self.declick.start(self.last_dry, out, channels, self.params.sample_rate);
         }
+        self.was_stopped = false;
         self.seek_landed = false;
         self.declick.run(out, channels);
         self.last_dry = last_frame(out, channels);

@@ -975,3 +975,35 @@ fn a_poisoned_settings_lock_still_reaches_the_deck() {
     core.fill(&mut buf, 1, &shared);
     assert_eq!(core.params.ratio, 0.75);
 }
+
+#[test]
+fn play_after_a_pause_rises_from_silence_without_a_step() {
+    let src = Arc::new(Source {
+        samples: (0..96_000).map(|i| (i as f32 * 30.0 * std::f32::consts::TAU / 48_000.0).sin() * 0.5).collect(),
+        channels: 1,
+    });
+    let sp = StreamParams::new(96_000, 48_000);
+    let shared = Shared::new(sp, Arc::clone(&src));
+    let straight = Shared::new(sp, Arc::clone(&src));
+    let mut core = Core::new(512, 1, sp, Arc::clone(&src));
+    let mut reference = Core::new(512, 1, sp, Arc::clone(&src));
+    let mut buf = [0.0; 512];
+    let mut expected = [0.0; 512];
+    shared.play();
+    straight.play();
+    core.fill(&mut buf, 1, &shared);
+    reference.fill(&mut expected, 1, &straight);
+    assert_eq!(buf, expected, "the first playing block has no extra fade");
+    shared.pause();
+    for _ in 0..4 { core.fill(&mut buf, 1, &shared); }
+    assert!(buf.iter().all(|x| *x == 0.0));
+    shared.play();
+    core.fill(&mut buf, 1, &shared);
+    reference.fill(&mut expected, 1, &straight);
+    assert!(expected[0].abs() > 0.1, "the unfaded resume would have a step");
+    assert!(buf[0].abs() <= 0.5 * 0.02);
+    let own_step = src.samples.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
+    let step = buf.windows(2).map(|w| (w[1] - w[0]).abs()).fold(buf[0].abs(), f32::max);
+    assert!(step <= own_step + 0.5 * 0.02, "resume step {step}, sine step {own_step}");
+    assert_eq!(&buf[240..], &expected[240..], "the fade is gone after five milliseconds");
+}

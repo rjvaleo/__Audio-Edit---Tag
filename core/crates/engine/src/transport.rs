@@ -496,6 +496,8 @@ pub struct Core {
     /// [`Declick`].
     last_dry: [f32; 2],
     was_sounding: bool,
+    /// A stopped block has been heard; the first block after construction is not a resume.
+    was_stopped: bool,
     seek_landed: bool,
     declick: Declick,
     /// The deck's level as it is now, on its way to where it was set. Gain and
