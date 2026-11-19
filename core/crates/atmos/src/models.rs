@@ -49,6 +49,7 @@ const MODES: usize = 10;
 /// One running oscillator.
 pub struct Osc {
     kind: usize,
+    faulted: bool,
     sr: f32,
     hz: f32,
     p: [f32; 4],
@@ -88,6 +89,7 @@ impl Osc {
     pub fn new(sr: f32, seed: u32) -> Self {
         Osc {
             kind: 0,
+            faulted: false,
             sr,
             hz: 220.0,
             p: [0.5; 4],
@@ -122,6 +124,7 @@ impl Osc {
 
     /// A new note: the body still, then the exciter set going.
     pub fn start(&mut self, kind: usize, hz: f32, vel: f32, p: [f32; 4], scale: &[f32]) {
+        self.faulted = false;
         self.kind = kind.min(MODELS.len() - 1);
         self.p = p;
         self.held = true;
@@ -129,8 +132,12 @@ impl Osc {
         self.rel_t = 0.0;
         self.view_bell = 0.0;
         self.phase = 0.0;
-        self.d1.clear();
-        self.d2.clear();
+        // Only waveguide models read delay memory. A later waveguide start
+        // clears it before use, including after a run of modal notes.
+        if matches!(self.kind, 0 | 1 | 6 | 7) {
+            self.d1.clear();
+            self.d2.clear();
+        }
         self.lp.clear();
         self.dc = DcBlock::default();
         self.ap = AllPass1::default();
@@ -139,9 +146,9 @@ impl Osc {
         }
         self.formants = Default::default();
         self.set_hz(hz);
-        match MODELS[self.kind].0 {
-            "pluck" => self.pluck(vel),
-            "bar" | "bell" | "glass" | "membrane" => self.modal_setup(vel, scale),
+        match self.kind {
+            0 => self.pluck(vel),
+            2 | 3 | 4 | 5 => self.modal_setup(vel, scale),
             _ => {}
         }
         // A string's body: three wooden resonances under the string.
@@ -235,9 +242,9 @@ impl Osc {
     // ─── The modal models: bar, bell, glass, membrane ───────────────────────
     fn modal_setup(&mut self, vel: f32, scale: &[f32]) {
         let p = self.p;
-        let (ratios, count, t60, decay_slope, hard, strike): ([f32; 10], usize, f32, f32, f32, f32) = match MODELS[self.kind].0 {
+        let (ratios, count, t60, decay_slope, hard, strike): ([f32; 10], usize, f32, f32, f32, f32) = match self.kind {
             // Wood (tuned like a marimba's bar, 1 : 4 : 10) to metal (a free bar's own).
-            "bar" => {
+            2 => {
                 let wood = [1.0, 3.99, 9.9, 17.6, 27.0, 37.9];
                 let metal = [1.0, 2.756, 5.404, 8.933, 13.34, 18.64];
                 let m = p[0];
@@ -246,9 +253,9 @@ impl Osc {
                     ratios }, 6, 0.4 + p[3] * 4.0 * (0.4 + m), 1.6 - m * 1.2, p[1], p[2])
             }
             // Hum, prime, tierce (minor to major), quint, nominal, and above.
-            "bell" => ([0.5, 1.0, 1.183 + p[1] * 0.077, 1.506, 2.0, 2.514, 2.662, 3.011, 4.166, 5.433], 10, 1.5 + p[3] * 9.0 * (0.5 + p[0]), 0.35, 0.7, p[2]),
+            3 => ([0.5, 1.0, 1.183 + p[1] * 0.077, 1.506, 2.0, 2.514, 2.662, 3.011, 4.166, 5.433], 10, 1.5 + p[3] * 9.0 * (0.5 + p[0]), 0.35, 0.7, p[2]),
             // A wine glass; Fill pulls the upper modes in, as water does.
-            "glass" => {
+            4 => {
                 let f = 1.0 - p[1] * 0.12;
                 ([1.0, 2.32 * f, 4.25 * f, 6.63 * f, 9.38 * f, 0.0, 0.0, 0.0, 0.0, 0.0], 5, 1.0 + p[2] * 9.0, 0.5, 0.3 + p[3] * 0.6, 0.3)
             }
@@ -279,8 +286,8 @@ impl Osc {
             }
             self.ratios[k] = q;
             // Where it is struck: a node of a mode does not move it.
-            let shape = match MODELS[self.kind].0 {
-                "membrane" if strike < 0.08 && !matches!(k, 0 | 3 | 8) => 0.05,
+            let shape = match self.kind {
+                5 if strike < 0.08 && !matches!(k, 0 | 3 | 8) => 0.05,
                 _ => ((k as f32 + 1.0) * PI * (0.1 + strike * 0.4)).sin().abs() * 0.8 + 0.2,
             };
             // A hard mallet reaches the high modes; a soft one does not.
@@ -315,14 +322,14 @@ impl Osc {
             x = (1.0 - (2.0 * PI * u).cos()) * 0.5 / self.pulse_len as f32 * 6.0;
             self.pulse -= 1;
         }
-        let glass = MODELS[self.kind].0 == "glass";
+        let glass = self.kind == 4;
         if glass && self.held && self.p[0] < 0.5 {
             // Bowed glass: a finger's friction keeps feeding it while held.
             let amt = (0.5 - self.p[0]) * 2.0;
             let rise = (self.t as f32 / (0.4 * self.sr)).min(1.0);
             x += self.noise.next() * 0.0015 * amt * rise;
         }
-        if MODELS[self.kind].0 == "membrane" && self.t % 64 == 0 {
+        if self.kind == 5 && self.t % 64 == 0 {
             // Tension: the head goes slack as the stroke dies, and the pitch drops a little.
             let drop = 1.0 - (self.p[0] * 0.03) * (1.0 - (-(self.t as f32) / (0.15 * self.sr)).exp());
             let hz = self.hz;
@@ -452,13 +459,26 @@ impl Osc {
     /// One sample.
     #[inline]
     pub fn tick(&mut self) -> f32 {
-        let y = match MODELS[self.kind].0 {
-            "pluck" => self.tick_pluck(),
-            "bow" => self.tick_bow(),
-            "bar" | "bell" | "glass" | "membrane" => self.tick_modal(),
-            "pipe" => self.tick_pipe(),
-            "reed" => self.tick_reed(),
-            "voice" => self.tick_voice(),
+        if self.faulted { return 0.0; }
+        self.tick_checked::<true>()
+    }
+
+    // The synth catches a failed sample before mixing this voice. Passing
+    // the failure through avoids scanning every oscillator's status each tick.
+    #[inline]
+    pub(crate) fn voice_sample(&mut self) -> f32 {
+        self.tick_checked::<false>()
+    }
+
+    #[inline(always)]
+    fn tick_checked<const SILENCE: bool>(&mut self) -> f32 {
+        let y = match self.kind {
+            0 => self.tick_pluck(),
+            1 => self.tick_bow(),
+            2 | 3 | 4 | 5 => self.tick_modal(),
+            6 => self.tick_pipe(),
+            7 => self.tick_reed(),
+            8 => self.tick_voice(),
             _ => self.tick_classic(),
         };
         self.t = self.t.wrapping_add(1);
@@ -468,26 +488,48 @@ impl Osc {
         if y.is_finite() {
             y.clamp(-4.0, 4.0)
         } else {
-            self.d1.clear();
-            self.d2.clear();
-            0.0
+            self.clear_fault();
+            if SILENCE { 0.0 } else { f32::NAN }
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn faulted(&self) -> bool { self.faulted }
+
+    // Keep the allocated delay storage; a bad oscillator stays asleep until
+    // a new note starts it. No repeated clearing on subsequent samples.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn clear_fault(&mut self) {
+        if self.faulted { return; }
+        self.faulted = true;
+        self.d1.clear();
+        self.d2.clear();
+        self.lp.clear();
+        self.ap = AllPass1::default();
+        self.dc = DcBlock::default();
+        self.body = Default::default();
+        self.modes = Default::default();
+        self.formants = Default::default();
+        self.phase = 0.0;
+        self.view = [0.0; 32];
+        self.held = false;
     }
 
     /// What the page draws: the string's shape along it, each mode's level,
     /// the air in the bore, or the wave.
     fn fill_view(&mut self) {
-        match MODELS[self.kind].0 {
-            "pluck" | "bow" | "pipe" | "reed" => {
-                let len = match MODELS[self.kind].0 {
-                    "reed" => self.period() * 0.5,
+        match self.kind {
+            0 | 1 | 6 | 7 => {
+                let len = match self.kind {
+                    7 => self.period() * 0.5,
                     _ => self.period(),
                 };
                 for i in 0..32 {
                     self.view[i] = self.d1.read(1.0 + len * i as f32 / 32.0);
                 }
             }
-            "bar" | "bell" | "glass" | "membrane" => {
+            2 | 3 | 4 | 5 => {
                 for i in 0..32 {
                     self.view[i] = if i < self.n_modes { self.modes[i].level() } else if i >= 16 && i - 16 < self.n_modes { self.ratios[i - 16] } else { 0.0 };
                 }
@@ -499,5 +541,46 @@ impl Osc {
                 self.view[0] = self.phase;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod state_tests {
+    use super::*;
+
+    #[test]
+    fn model_switches_match_clearing_both_delay_lines() {
+        let mut selected = Osc::new(48_000.0, 17);
+        let mut both = Osc::new(48_000.0, 17);
+        for previous in 0..MODELS.len() {
+            for next in 0..MODELS.len() {
+                for kind in [previous, next] {
+                    both.d1.clear();
+                    both.d2.clear();
+                    for osc in [&mut selected, &mut both] {
+                        osc.start(kind, 220.0, 0.8, MODELS[kind].3, &[0.0, 300.0, 700.0]);
+                    }
+                    for sample in 0..512 {
+                        assert_eq!(selected.tick().to_bits(), both.tick().to_bits(), "{previous}->{next}, {kind}, {sample}");
+                    }
+                    assert_eq!(selected.view.map(f32::to_bits), both.view.map(f32::to_bits));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_bad_oscillator_clears_once_until_the_next_note() {
+        let mut osc = Osc::new(48_000.0, 17);
+        osc.start(9, 220.0, 0.8, MODELS[9].3, &[]);
+        osc.phase = f32::NAN;
+        assert_eq!(osc.tick(), 0.0);
+        assert!(osc.faulted());
+        osc.view[0] = 0.25;
+        for _ in 0..512 { assert_eq!(osc.tick(), 0.0); }
+        assert_eq!(osc.view[0], 0.25);
+        osc.start(9, 220.0, 0.8, MODELS[9].3, &[]);
+        assert!(!osc.faulted());
+        assert!(osc.tick().is_finite());
     }
 }

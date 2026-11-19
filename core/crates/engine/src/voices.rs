@@ -968,20 +968,27 @@ fn render_voice(
         }
         let spliced = v.shape.algorithm != Algorithm::Granular;
         if let (true, Some((_, end))) = (spliced, b.bounds) {
-            // The two sides of a seam, in frames of the voice's own read, so
-            // the ramp is the same wherever a block boundary falls.
-            for f in 0..chunk {
-                let left = end.saturating_sub(pos + f as u64 + 1) as u32;
-                let mut g = 1.0;
-                if left < b.seam {
-                    g = left as f32 / b.seam.max(1) as f32;
-                }
-                if v.seam_in > 0 {
-                    g *= 1.0 - v.seam_in as f32 / v.seam_len.max(1) as f32;
-                    v.seam_in -= 1;
-                }
-                for s in &mut out[f * ch..(f + 1) * ch] {
-                    *s *= g;
+            // Away from either edge every gain is one. Keep the old loop for
+            // distances outside u32, where its narrowing cast can wrap.
+            let distance = end.saturating_sub(pos);
+            let near_seam = v.seam_in > 0 || distance > u32::MAX as u64
+                || distance.saturating_sub(chunk as u64) < b.seam as u64;
+            if near_seam {
+                // The two sides of a seam, in frames of the voice's own read, so
+                // the ramp is the same wherever a block boundary falls.
+                for f in 0..chunk {
+                    let left = end.saturating_sub(pos + f as u64 + 1) as u32;
+                    let mut g = 1.0;
+                    if left < b.seam {
+                        g = left as f32 / b.seam.max(1) as f32;
+                    }
+                    if v.seam_in > 0 {
+                        g *= 1.0 - v.seam_in as f32 / v.seam_len.max(1) as f32;
+                        v.seam_in -= 1;
+                    }
+                    for s in &mut out[f * ch..(f + 1) * ch] {
+                        *s *= g;
+                    }
                 }
             }
         }

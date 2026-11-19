@@ -185,6 +185,23 @@ impl Voice {
             last: [0.0; 2],
         }
     }
+    #[cold]
+    #[inline(never)]
+    fn clear_fault(&mut self) {
+        // Quarantine this voice before adding it to the others. It
+        // clears once and a later note can reuse its existing storage.
+        for osc in self.osc.iter_mut().flatten() { osc.clear_fault(); }
+        self.id = -1;
+        self.amp = Adsr::default();
+        self.fenv = Adsr::default();
+        self.svf = Default::default();
+        self.air_hp = 0.0;
+        self.sub_phase = 0.0;
+        self.drift = 0.0;
+        self.drift_v = 0.0;
+        self.last = [0.0; 2];
+    }
+
     fn free(&self) -> bool {
         self.id < 0 && self.amp.idle()
     }
@@ -242,6 +259,7 @@ impl Synth {
 
     /// One control, by name. Unknown names are ignored (false).
     pub fn set(&mut self, key: &str, v: f32) -> bool {
+        if !v.is_finite() { return false; }
         let p = &mut self.params;
         let ab = key.strip_prefix("a.").map(|r| (0usize, r)).or_else(|| key.strip_prefix("b.").map(|r| (1usize, r)));
         if let Some((o, rest)) = ab {
@@ -422,15 +440,15 @@ impl Synth {
             let mut m = Mods::default();
             for lf in self.params.lfo.iter_mut() {
                 let x = lf.tick(sr);
-                match LFO_TARGETS.get(lf.target as usize).copied().unwrap_or("") {
-                    "cutoff" => m.cutoff += x * 2400.0,
-                    "detune" => m.detune += x * 50.0,
-                    "volume" => m.volume += x * 0.5,
-                    "pan" => m.pan += x,
-                    "blend" => m.blend += x * 0.5,
-                    "air" => m.air += x * 0.5,
-                    "vowel" => m.vowel += x * 0.5,
-                    "fit" => m.fit += x * 0.5,
+                match lf.target {
+                    1 => m.cutoff += x * 2400.0,
+                    2 => m.detune += x * 50.0,
+                    3 => m.volume += x * 0.5,
+                    4 => m.pan += x,
+                    5 => m.blend += x * 0.5,
+                    6 => m.air += x * 0.5,
+                    7 => m.vowel += x * 0.5,
+                    8 => m.fit += x * 0.5,
                     _ => {}
                 }
             }
@@ -500,7 +518,7 @@ impl Synth {
                     } else if i % 32 == 0 {
                         osc.set_params(p.p[o]);
                     }
-                    let y = osc.tick() * MODEL_GAIN[osc.kind()] * g / (uni as f32).sqrt();
+                    let y = osc.voice_sample() * MODEL_GAIN[osc.kind()] * g / (uni as f32).sqrt();
                     // A to the left of B, the copies spread across Width.
                     let pan = ((spread * 0.7 + if o == 0 { -0.3 } else { 0.3 }) * p.width + m.pan).clamp(-1.0, 1.0);
                     let a = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
@@ -543,6 +561,10 @@ impl Synth {
                 g *= 1.0 - v.steal as f32 / (0.004 * sr);
             }
             v.last = [vl * g, vr * g];
+            if !v.last[0].is_finite() || !v.last[1].is_finite() {
+                v.clear_fault();
+                continue;
+            }
             sl += v.last[0];
             sr_ += v.last[1];
             if v.amp.idle() {
@@ -611,8 +633,8 @@ mod web {
     #[no_mangle]
     pub extern "C" fn at_set(len: usize, v: f32) -> u32 {
         let s = g();
-        let k = std::str::from_utf8(&s.text[..len.min(64)]).unwrap_or("").to_string();
-        s.synth.set(&k, v) as u32
+        let k = std::str::from_utf8(&s.text[..len.min(64)]).unwrap_or("");
+        s.synth.set(k, v) as u32
     }
     #[no_mangle]
     pub extern "C" fn at_note_on(id: i32, hz: f32, vel: f32, delay: u32) {
@@ -674,3 +696,6 @@ mod web {
         }
     }
 }
+
+#[cfg(test)]
+mod safety_tests;
