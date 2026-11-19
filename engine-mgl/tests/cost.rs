@@ -296,3 +296,40 @@ fn profile_pvsola() {
 fn profile_pvsola_poly_8() {
     profile_deck(3, 8);
 }
+
+#[test]
+#[ignore = "a measurement: run it alone, in a release build"]
+fn stamped_message_bursts() {
+    let config = Config { max_block: BLOCK, queue: 4096, fade_frames: 0, ..Config::default() };
+    let (mut ctl, mut audio) = engine(RATE, config);
+    ctl.add(1, Box::new(engine_core::basics::Dc(1.0))).unwrap();
+    ctl.add(2, Box::new(engine_core::basics::Gain::new(1.0))).unwrap();
+    ctl.connect(port(1, 0), port(2, 0)).unwrap();
+    ctl.connect_out(port(2, 0)).unwrap();
+    ctl.commit().unwrap();
+    let (mut l, mut r) = ([0.0; BLOCK], [0.0; BLOCK]);
+    for _ in 0..100 { audio.render(&mut l, &mut r); }
+    ctl.collect();
+    let (mut first, mut second) = (Vec::with_capacity(64), Vec::with_capacity(64));
+    for _ in 0..64 {
+        for times in [&mut first, &mut second] {
+            let base = audio.frame();
+            // Scrambled stamps, with 32 messages on each of the 128 frames.
+            // Enqueuing is the control thread's work, outside the timed block.
+            for n in 0..4096 {
+                ctl.send_at(base + ((n * 73) % BLOCK) as u64, 2,
+                    EventKind::Param { index: 0, value: if n % 2 == 0 { 0.25 } else { 0.75 } }).unwrap();
+            }
+            let start = Instant::now();
+            audio.render(&mut l, &mut r);
+            times.push(start.elapsed().as_secs_f64() * 1000.0);
+            assert!(l.iter().chain(&r).all(|v| v.is_finite()));
+            ctl.collect();
+        }
+    }
+    first.sort_by(f64::total_cmp);
+    second.sort_by(f64::total_cmp);
+    println!("{}", line("4096 stamps: first block", &first));
+    println!("{}", line("4096 stamps: next block", &second));
+    println!("BURST_WORST_MS {:.6}", first[63].max(second[63]));
+}
