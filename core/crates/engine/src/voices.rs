@@ -144,11 +144,13 @@ struct Voice {
     scan: f32,
     /// Semitones it is playing at, for the read-back.
     semis: f32,
+    /// Deterministic FFT-frame stagger phase (`0..8`) assigned from its active slot.
+    stagger: usize,
 }
 
 impl Voice {
-    fn build(shape: Shape, max_block: usize, channels: usize, sp: &StreamParams) -> Box<Voice> {
-        let mut engine = Stretcher::voice(shape.algorithm, shape.layers, max_block, channels, sp.sample_rate);
+    fn build(shape: Shape, max_block: usize, channels: usize, sp: &StreamParams, slot: usize) -> Box<Voice> {
+        let mut engine = Stretcher::voice_staggered(shape.algorithm, shape.layers, max_block, channels, sp.sample_rate, slot);
         // The first seek touches every page it will use, here rather than on the
         // first note.
         engine.seek(0, sp);
@@ -171,6 +173,7 @@ impl Voice {
             seam_len: 0,
             scan: 1.0,
             semis: 0.0,
+            stagger: slot & 7,
         })
     }
 
@@ -349,7 +352,7 @@ pub fn feed(shared: &Shared, max_block: usize, channels: usize) -> bool {
     if f.stock_of() >= target || total >= POOL_SLOTS {
         return dropped || !stale.is_empty();
     }
-    let v = Voice::build(shape, max_block, channels, &sp);
+    let v = Voice::build(shape, max_block, channels, &sp, total);
     if let Ok(mut g) = f.ready.lock() {
         if g.len() < g.capacity() {
             g.push(v);
@@ -364,7 +367,8 @@ pub fn stock(shared: &Shared, n: usize, max_block: usize, channels: usize) {
     let Some(sp) = shared.params() else { return };
     let shape = Shape::of(&sp);
     while f.stock_of() < n {
-        let v = Voice::build(shape, max_block, channels, &sp);
+        let slot = f.stock_of();
+        let v = Voice::build(shape, max_block, channels, &sp, slot);
         if let Ok(mut g) = f.ready.lock() {
             g.push(v);
         }
@@ -655,11 +659,11 @@ impl Poly {
         if let Some(i) = self.active.iter().position(|v| v.shape != shape && !v.released() && !v.stealing()) {
             if let Some(mut n) = self.take_free(shape) {
                 let at = self.active[i].engine.position();
-                let (key, id, vel, level, stage) = {
+                let (key, id, vel, level, stage, slot) = {
                     let o = &self.active[i];
-                    (o.key, o.id, o.vel, o.level, o.stage)
+                    (o.key, o.id, o.vel, o.level, o.stage, o.stagger)
                 };
-                self.begin_voice(&mut n, key, id, vel, keys, doc, at);
+                self.begin_voice(&mut n, slot, key, id, vel, keys, doc, at);
                 n.level = level;
                 n.stage = stage;
                 n.fade_left = steal_frames.max(1);
@@ -704,7 +708,8 @@ impl Poly {
                 Some((a, b)) if start < a || start >= b => a,
                 _ => start,
             };
-            self.begin_voice(&mut n, p.key, p.id, p.vel, keys, doc, at);
+            let slot = self.next_stagger_slot();
+            self.begin_voice(&mut n, slot, p.key, p.id, p.vel, keys, doc, at);
             if p.off {
                 n.release(keys.amp().3);
             }
@@ -714,12 +719,27 @@ impl Poly {
         }
     }
 
+    /// Lowest stagger phase (`0..8`) not held by any currently active voice.
+    /// Depends only on `self.active`, so the same chord always assigns the
+    /// same stagger slots regardless of prior voices or sessions.
+    fn next_stagger_slot(&self) -> usize {
+        let mut used = 0u8;
+        for v in &self.active {
+            used |= 1u8 << (v.stagger & 7);
+        }
+        (0..8)
+            .find(|&s| used & (1u8 << s) == 0)
+            .unwrap_or(self.active.len() & 7)
+    }
+
     #[allow(clippy::too_many_arguments)]
-    fn begin_voice(&self, v: &mut Voice, key: u8, id: u32, vel: f32, keys: &KeyPlayer, doc: &StreamParams, at: u64) {
+    fn begin_voice(&self, v: &mut Voice, slot: usize, key: u8, id: u32, vel: f32, keys: &KeyPlayer, doc: &StreamParams, at: u64) {
         let sr = doc.sample_rate.max(1) as f32;
         v.key = key;
         v.id = id;
         v.vel = vel;
+        v.stagger = slot & 7;
+        v.engine.set_stagger(v.stagger);
         v.level = 0.0;
         let attack = keys.amp().0 + 0.004;
         v.attack_step = 1.0 / (attack * sr).max(1.0);
