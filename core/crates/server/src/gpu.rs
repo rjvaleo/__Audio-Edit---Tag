@@ -264,7 +264,7 @@ pub struct Made {
 /// request loads the model.
 pub fn words(gpu: &Gpu, id: &str, req: Value) -> Result<Vec<Made>, String> {
     let name = req.get("model").and_then(|m| m.as_str()).unwrap_or("sao").to_string();
-    let (model, _, _) = maker(&name).ok_or_else(|| format!("no sound maker called {name}"))?;
+    let (model, folder, _) = maker(&name).ok_or_else(|| format!("no sound maker called {name}"))?;
     let mut guard = WORDS.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(w) = guard.as_mut() {
         if !matches!(w.child.try_wait(), Ok(None)) {
