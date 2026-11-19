@@ -141,6 +141,141 @@ pub extern "C" fn fx_telemetry(slot: usize) -> f32 {
     st().rack.slots.get(slot).map(|x| x.effect.telemetry()).unwrap_or(0.0)
 }
 
+// ─── THE BOARD ──────────────────────────────────────────────────────────────
+//
+// Atmosphere's effects as Wave's board (RJ, 17 Nov 2026: "Put Atmosphere's FX
+// on the board"): the same graph of nodes and cables, run by the same engine
+// (`wave::BoardPlan`, which the Wave page's master bus runs), here on
+// Atmosphere's voice, its `in:voice`; its sends are silent. With a board laid
+// the worklet runs it instead of the chain.
+//
+// A board arrives as plain text in [`bd_text`], one line each:
+//   `N <id> <kind> <on 0|1>` a node, then `P <key> <value>` for its controls;
+//   `C <from> <fromPort> <to> <toPort>` a cable.
+
+struct BoardState {
+    plan: Option<wave::BoardPlan>,
+    kinds: Vec<String>,
+    text: Vec<u8>,
+    l: Vec<f32>,
+    r: Vec<f32>,
+}
+
+static mut BOARD: Option<BoardState> = None;
+
+#[allow(static_mut_refs)]
+fn bd() -> &'static mut BoardState {
+    unsafe {
+        BOARD.get_or_insert_with(|| BoardState { plan: None, kinds: Vec::new(), text: vec![0; 65_536], l: vec![0.0; MAX_FRAMES], r: vec![0.0; MAX_FRAMES] })
+    }
+}
+
+/// A board from its text form (see above).
+pub fn parse_board(src: &str) -> wave::Board {
+    let mut b = wave::Board { name: "Atmosphere".into(), ..Default::default() };
+    for line in src.lines() {
+        let w: Vec<&str> = line.split_whitespace().collect();
+        match w.as_slice() {
+            ["N", id, kind, on] => b.nodes.push(wave::Node::new(id, kind, 0.0, 0.0).switched(*on != "0")),
+            ["P", key, v] => {
+                if let (Some(n), Ok(v)) = (b.nodes.last_mut(), v.parse::<f32>()) {
+                    n.params.retain(|(k, _)| k != key);
+                    n.params.push(((*key).into(), v));
+                }
+            }
+            ["C", a, ap, z, zp] => b.cables.push(wave::Cable::new(a, ap, z, zp)),
+            _ => {}
+        }
+    }
+    b
+}
+
+/// Where a board's text, or a key, is written.
+#[no_mangle]
+pub extern "C" fn bd_text() -> *mut u8 {
+    bd().text.as_mut_ptr()
+}
+
+fn bd_str(len: usize) -> String {
+    let b = bd();
+    String::from_utf8_lossy(&b.text[..len.min(b.text.len())]).into_owned()
+}
+
+/// Lay the board in the first `len` bytes of [`bd_text`]: its node count, or
+/// −1 if it was refused (a loop, a stranded port), the last board kept then.
+#[no_mangle]
+pub extern "C" fn bd_load(len: usize) -> i32 {
+    let board = parse_board(&bd_str(len));
+    let sr = st().sr as f32;
+    match wave::BoardPlan::compile(&board, sr) {
+        Ok(plan) => {
+            let b = bd();
+            b.kinds = board.nodes.iter().map(|n| n.kind.clone()).collect();
+            b.plan = Some(plan);
+            board.nodes.len() as i32
+        }
+        Err(_) => -1,
+    }
+}
+
+/// No board: the chain, if any, again.
+#[no_mangle]
+pub extern "C" fn bd_clear() {
+    let b = bd();
+    b.plan = None;
+    b.kinds.clear();
+}
+
+/// Is a board laid?
+#[no_mangle]
+pub extern "C" fn bd_active() -> u32 {
+    bd().plan.is_some() as u32
+}
+
+/// One control of node `node`, by the key in the first `len` bytes of [`bd_text`].
+#[no_mangle]
+pub extern "C" fn bd_set(node: usize, len: usize, value: f32) -> u32 {
+    let key = bd_str(len);
+    let b = bd();
+    let Some(kind) = b.kinds.get(node).and_then(|k| wave::board::Kind::parse(k)) else { return 0 };
+    let Some(i) = kind.params().iter().position(|p| p.key == key) else { return 0 };
+    b.plan.as_mut().is_some_and(|p| p.set_param(node, i, value)) as u32
+}
+
+/// A node on or off.
+#[no_mangle]
+pub extern "C" fn bd_on(node: usize, on: u32) -> u32 {
+    bd().plan.as_mut().is_some_and(|p| p.set_on(node, on != 0)) as u32
+}
+
+/// Run `frames` frames of [`fx_buf`] through the board, in place.
+#[no_mangle]
+pub extern "C" fn bd_process(frames: usize) {
+    let n = frames.min(MAX_FRAMES);
+    let s = st();
+    let b = bd();
+    let Some(plan) = b.plan.as_mut() else { return };
+    for i in 0..n {
+        b.l[i] = s.buf[2 * i];
+        b.r[i] = s.buf[2 * i + 1];
+    }
+    plan.process(&mut b.l[..n], &mut b.r[..n]);
+    for i in 0..n {
+        s.buf[2 * i] = b.l[i];
+        s.buf[2 * i + 1] = b.r[i];
+    }
+}
+
+/// How hard node `node` is driven now, 0–1 (its output's peak), for the cables.
+#[no_mangle]
+pub extern "C" fn bd_peak(node: usize) -> f32 {
+    let b = bd();
+    let Some(plan) = b.plan.as_ref() else { return 0.0 };
+    let mut pk = vec![[0.0f32; 2]; plan.node_count()];
+    plan.peaks(&mut pk);
+    pk.get(node).map(|p| p[0].max(p[1])).unwrap_or(0.0)
+}
+
 #[cfg(test)]
 fn prism_suites() -> &'static [Suite] {
     fx::prism::prism_fx::suite::SUITES
@@ -149,6 +284,30 @@ fn prism_suites() -> &'static [Suite] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_board_runs_atmosphere_through_its_effects() {
+        fx_init(48_000);
+        let src = "N invoice in:voice 1\nN g gain 1\nP db -6\nN out out 1\nC invoice o g i\nC g o out i\n";
+        assert_eq!(parse_board(src).nodes.len(), 3);
+        let b = bd();
+        b.text[..src.len()].copy_from_slice(src.as_bytes());
+        assert_eq!(bd_load(src.len()), 3);
+        let s = st();
+        for i in 0..256 { s.buf[2 * i] = 0.5; s.buf[2 * i + 1] = 0.5; }
+        for _ in 0..40 { for i in 0..256 { s.buf[2 * i] = 0.5; s.buf[2 * i + 1] = 0.5; } bd_process(128); }
+        let got = s.buf[0];
+        assert!((got - 0.5 * 10f32.powf(-6.0 / 20.0)).abs() < 0.02, "{got}");
+        // A loop is refused, and the board before it kept.
+        let bad = "N invoice in:voice 1\nN g gain 1\nN out out 1\nC invoice o g i\nC g o g i\nC g o out i\n";
+        b.text[..bad.len()].copy_from_slice(bad.as_bytes());
+        assert_eq!(bd_load(bad.len()), -1);
+        assert_eq!(bd_active(), 1);
+        // A control by key.
+        let k = "db";
+        b.text[..k.len()].copy_from_slice(k.as_bytes());
+        assert_eq!(bd_set(1, k.len(), 0.0), 1);
+    }
 
     #[test]
     fn every_kind_the_suites_name_is_made() {

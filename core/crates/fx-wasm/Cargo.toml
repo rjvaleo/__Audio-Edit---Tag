@@ -10,3 +10,4 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 fx = { path = "../fx" }
+wave = { path = "../wave" }
