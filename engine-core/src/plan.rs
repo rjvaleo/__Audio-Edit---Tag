@@ -13,6 +13,7 @@
 //! alone, takes its place.
 
 mod parallel;
+mod components;
 use crate::engine::PatchError;
 use crate::guard::all_finite;
 use crate::module::{EventKind, Inputs, Io, Module, Outputs, Thing};
@@ -310,6 +311,8 @@ enum Op {
     Absorb(usize),
 }
 
+impl Op { fn node(self) -> usize { match self { Self::Process(index) | Self::Emit(index) | Self::Absorb(index) => index } } }
+
 /// Ring and scratch storage are made during compile. Running only replaces samples.
 struct AudioDelay {
     l: Box<[f32]>,
@@ -399,6 +402,8 @@ struct Mix {
 }
 
 struct Node {
+    event_source_start: usize,
+    event_source_len: usize,
     event_start: usize,
     event_len: usize,
     event_written: usize,
@@ -423,13 +428,14 @@ struct Node {
     out_count: usize,
 }
 
-struct Level { ops: Vec<Op>, serial: Vec<Op>, parallel: Vec<Op>, weight: usize, heavy: usize }
+struct Level { components: Vec<usize>, ops: Vec<Op>, serial: Vec<Op>, parallel: Vec<Op>, weight: usize, heavy: usize }
 pub(crate) struct Plan {
+    components: Vec<components::Component>,
+    local_events: Vec<(u32, EventKind)>,
     events: Vec<(u32, EventKind)>,
     levels: Vec<Level>,
     jobs: Vec<parallel::Job>,
     nodes: Vec<Node>,
-    ops: Vec<Op>,
     /// Every buffer. The first five are the silent input of each kind.
     pool: Vec<Buf>,
     /// Module number to its place in `nodes`.
@@ -470,11 +476,12 @@ impl Plan {
     /// The plan of an empty patch: silence.
     pub(crate) fn empty(max_block: usize) -> Plan {
         Plan {
+            components: Vec::new(),
+            local_events: Vec::new(),
             events: Vec::new(),
             levels: Vec::new(),
             jobs: Vec::new(),
             nodes: Vec::new(),
-            ops: Vec::new(),
             pool: Kind::ALL
                 .iter()
                 .map(|kind| Buf::new(*kind, max_block))
@@ -666,6 +673,7 @@ impl Plan {
                 });
             }
             nodes.push(Node {
+                event_source_start: 0, event_source_len: 0,
                 event_start: 0, event_len: 0, event_written: 0,
                 scratch: crate::module::EventScratch::new(&info.inputs, &info.outputs, max_block),
                 reads: vec![crate::pool::ReadBuf::empty(); info.inputs.len()],
@@ -701,32 +709,10 @@ impl Plan {
                 (true, _) => Op::Absorb(node),
             })
             .collect();
-        // Feedback's emit/absorb ordering remains on the original serial path.
-        // For a DAG every predecessor is in an earlier level, so no job reads
-        // another job's outputs while that level is in flight.
-        let mut levels: Vec<Level> = Vec::new();
-        if !split.iter().any(|split| *split) {
-            let mut depth = vec![0usize; count];
-            for &(node, _) in &steps {
-                let level = depth[node];
-                while levels.len() <= level { levels.push(Level { ops: Vec::new(), serial: Vec::new(), parallel: Vec::new(), weight: 0, heavy: 0 }); }
-                levels[level].ops.push(Op::Process(node));
-                let weight = infos[&ids[node]].parallel;
-                if weight == 0 { levels[level].serial.push(Op::Process(node)); }
-                else { levels[level].parallel.push(Op::Process(node)); }
-                levels[level].weight += weight;
-                levels[level].heavy += usize::from(weight > 0);
-                for &to in &next[node] { depth[to] = depth[to].max(level + 1); }
-            }
-        }
-        // Feedback halves share module state. A fixed sample tick keeps
-        // controls before both emit and absorb without event-driven graph cuts.
-        // Feed-forward plans retain their full block and worker levels.
-        let piece = (0..count)
-            .filter(|node| split[*node])
-            .map(|_| 1)
-            .min()
-            .unwrap_or(usize::MAX);
+        let delays: Vec<usize> = ids.iter().map(|id| infos[id].feedback_delay).collect();
+        let (levels, components) = components::compile(&next, &nodes, &ops, &pool, &delays, max_block);
+        // Feedback limits belong to their component, never the enclosing plan.
+        let piece = usize::MAX;
         let output_latency = spec
             .outs
             .keys()
@@ -751,11 +737,12 @@ impl Plan {
             node.module = staged.remove(&node.id);
         }
         Ok(Plan {
+            components,
+            local_events: Vec::new(),
             events: Vec::new(),
             levels,
             jobs: Vec::with_capacity(count),
             nodes,
-            ops,
             pool,
             by_id,
             out,
@@ -849,6 +836,7 @@ impl Plan {
 
     /// Reserve one queue's worth, shared across every recipient in this plan.
     pub(crate) fn reserve_events(&mut self, room: usize) {
+        self.local_events.reserve(room);
         self.events.resize(room, (0, EventKind::Param { index: 0, value: 0.0 }));
         for node in &mut self.nodes {
             let capacity = node.scratch.retired.capacity();
@@ -872,6 +860,7 @@ impl Plan {
                 node.asleep = false;
             }
         }
+        for node in &mut self.nodes { node.event_source_start = node.event_start; node.event_source_len = node.event_len; }
     }
 
     pub(crate) fn handle(&mut self, id: ModuleId, event: &EventKind) {
@@ -954,8 +943,9 @@ impl Plan {
         self.route_events(incoming);
         let Plan {
             events,
+            local_events,
+            components,
             nodes,
-            ops,
             levels,
             jobs,
             pool,
@@ -966,15 +956,18 @@ impl Plan {
             ..
         } = self;
         let step = *step;
-        if let Some(workers) = workers.filter(|_| levels.iter().any(|level| level.heavy >= 2)) {
-            for level in levels.iter() {
+        let mut workers = workers;
+        for level in levels.iter() {
+            for &index in &level.components {
+                *tripped += components[index].run(nodes, pool, events, local_events, n, rate, frame, sounds, step, *fade_left);
+            }
                 let active = level.parallel.iter().filter_map(|op| {
                     let Op::Process(index) = *op else { return None; };
                     let node = &nodes[index];
                     (!node.dead && !node.asleep && !(node.ghost && *fade_left == 0) && node.module.as_ref().is_some_and(|module| module.parallel_active())).then_some(node.weight)
                 });
                 let (heavy, weight) = active.fold((0usize, 0usize), |(count, sum), weight| (count+1, sum+weight));
-                if heavy >= 2 && weight.saturating_mul(n) >= 8192 {
+                if heavy >= 2 && weight.saturating_mul(n) >= 8192 && workers.is_some() {
                     *tripped += run_ops(nodes, pool, &level.serial, n, rate, frame, sounds, step, *fade_left, events);
                     jobs.clear();
                     for op in &level.parallel {
@@ -987,14 +980,11 @@ impl Plan {
                         let event_range = node.event_start..node.event_start+node.event_len;
                         jobs.push(parallel::Job::new(node, pool, n, rate, frame, sounds, *fade_left, &events[event_range]));
                     }
-                    parallel::dispatch(workers, jobs);
+                    parallel::dispatch(workers.as_deref_mut().unwrap(), jobs);
                     *tripped += jobs.iter().map(|job| job.tripped).sum::<u64>();
                 } else {
                     *tripped += run_ops(nodes, pool, &level.ops, n, rate, frame, sounds, step, *fade_left, events);
                 }
-            }
-        } else {
-            *tripped += run_ops(nodes, pool, ops, n, rate, frame, sounds, step, *fade_left, events);
         }
         let mut any = false;
         for src in out.iter_mut() {
