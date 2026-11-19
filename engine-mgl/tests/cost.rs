@@ -376,3 +376,105 @@ fn what_a_half_silent_patch_costs() {
     let times = timed(&mut audio, 6000);
     println!("{}", line("64 effects, half silent", &times));
 }
+
+/// Both clocks are sampled around the same callback. CPU is the calling
+/// audio thread's time, not the workers' summed CPU consumption.
+#[test]
+#[ignore = "a measurement: run it alone, in a release build"]
+fn parallel_branches_and_join_overhead() {
+    use engine_core::basics::{Gain, Sine};
+    struct Forced(Gain);
+    impl Module for Forced {
+        fn parallel_weight(&self)->usize{1024}
+        fn inputs(&self)->Vec<Kind>{self.0.inputs()}
+        fn outputs(&self)->Vec<Kind>{self.0.outputs()}
+        fn process(&mut self,io:&mut Io){self.0.process(io);}
+    }
+    for block in [64,128,512] {
+        for patch in ["wave16","light","forced-light"] {
+            for parallel in [false,true] {
+                let (mut ctl,mut audio)=engine(RATE,Config{parallel,max_block:512,fade_frames:0,..Config::default()});
+                if patch!="wave16"{ctl.add(1,Box::new(Sine::new(220.0,0.1))).unwrap();}
+                for id in 10..18 {
+                    let module:Box<dyn Module>=match patch {
+                        "wave16"=>Box::new(synth()),
+                        "forced-light"=>Box::new(Forced(Gain::new(0.5))),
+                        _=>Box::new(Gain::new(0.5)),
+                    };
+                    ctl.add(id,module).unwrap();
+                    if patch!="wave16"{ctl.connect(port(1,0),port(id,0)).unwrap();}
+                    ctl.connect_out(port(id,0)).unwrap();
+                }
+                ctl.commit().unwrap();
+                if patch=="wave16" {
+                    for id in 10..18 {for note in 0..16{ctl.send(id,EventKind::Note(NoteEvent::on(36+note*3,0.5))).unwrap();}}
+                }
+                let mut l=vec![0.0;block];let mut r=l.clone();
+                for _ in 0..100{audio.render(&mut l,&mut r);}
+                let mut wall=Vec::with_capacity(1000);let mut cpu=Vec::with_capacity(1000);
+                for _ in 0..1000 {
+                    let start_cpu=cpu_seconds();let start=Instant::now();
+                    audio.render(&mut l,&mut r);
+                    let elapsed=start.elapsed().as_secs_f64()*1000.0;
+                    cpu.push((cpu_seconds()-start_cpu)*1000.0);wall.push(elapsed);
+                }
+                wall.sort_by(f64::total_cmp);cpu.sort_by(f64::total_cmp);
+                println!("POOL_ROW patch={patch} block={block} parallel={parallel} wall_median={:.6} wall_p99={:.6} wall_worst={:.6} cpu_median={:.6} cpu_p99={:.6} cpu_worst={:.6} worker_jobs={}",at(&wall,0.5),at(&wall,0.99),wall[999],at(&cpu,0.5),at(&cpu,0.99),cpu[999],audio.worker_jobs());
+                if parallel && patch!="light"{assert!(audio.worker_jobs()>0);}else{assert_eq!(audio.worker_jobs(),0);}
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "a measurement: run it alone, in a release build"]
+fn parallel_break_even_sweep() {
+    struct Work(usize,f32);
+    impl Module for Work {
+        fn parallel_weight(&self)->usize{1024}
+        fn inputs(&self)->Vec<Kind>{vec![]}
+        fn outputs(&self)->Vec<Kind>{vec![Kind::Audio]}
+        fn process(&mut self,io:&mut Io){
+            let (l,r)=io.outs.audio(0);
+            for i in 0..io.n {
+                let mut value=self.1;
+                for _ in 0..self.0{value=value*0.99991+0.00001;}
+                l[i]=std::hint::black_box(value);r[i]=value;self.1+=0.0000001;
+            }
+        }
+    }
+    for work in [0,2,8,32,48,64,128,512] {
+        for parallel in [false,true] {
+            let (mut ctl,mut audio)=engine(RATE,Config{parallel,max_block:64,fade_frames:0,..Config::default()});
+            for id in 1..=8{ctl.add(id,Box::new(Work(work,0.25))).unwrap();ctl.connect_out(port(id,0)).unwrap();}
+            ctl.commit().unwrap();let mut l=[0.0;64];let mut r=l;
+            for _ in 0..100{audio.render(&mut l,&mut r);}
+            let mut wall=Vec::with_capacity(1000);let mut cpu=Vec::with_capacity(1000);
+            for _ in 0..1000{let cpu_start=cpu_seconds();let start=Instant::now();audio.render(&mut l,&mut r);wall.push(start.elapsed().as_secs_f64()*1000.0);cpu.push((cpu_seconds()-cpu_start)*1000.0);}
+            wall.sort_by(f64::total_cmp);cpu.sort_by(f64::total_cmp);
+            println!("BREAK_ROW work={work} parallel={parallel} wall_median={:.6} wall_p99={:.6} wall_worst={:.6} cpu_median={:.6} cpu_p99={:.6} cpu_worst={:.6}",at(&wall,0.5),at(&wall,0.99),wall[999],at(&cpu,0.5),at(&cpu,0.99),cpu[999]);
+        }
+    }
+}
+
+#[test]
+#[ignore = "a measurement: run it alone, in a release build"]
+fn parallel_effect_gate_probe() {
+    use engine_core::basics::Sine;
+    for entry in CATALOG {
+        if !matches!(entry.descriptor.category,prism_fx::Category::Reverb|prism_fx::Category::Spectral){continue;}
+        for block in [64,128,512] {
+            for parallel in [false,true] {
+                let (mut ctl,mut audio)=engine(RATE,Config{parallel,max_block:512,fade_frames:0,..Config::default()});
+                ctl.add(1,Box::new(Sine::new(220.0,0.1))).unwrap();
+                for id in 10..18{ctl.add(id,Box::new(effect(entry.descriptor.id))).unwrap();ctl.connect(port(1,0),port(id,0)).unwrap();ctl.connect_out(port(id,0)).unwrap();}
+                ctl.commit().unwrap();let mut l=vec![0.0;block];let mut r=l.clone();
+                for _ in 0..50{audio.render(&mut l,&mut r);}
+                let mut times=Vec::with_capacity(200);
+                for _ in 0..200{let start=Instant::now();audio.render(&mut l,&mut r);times.push(start.elapsed().as_secs_f64()*1000.0);}
+                times.sort_by(f64::total_cmp);
+                println!("EFFECT_ROW id={} block={block} parallel={parallel} median={:.6} worst={:.6} jobs={}",entry.descriptor.id,at(&times,0.5),times[199],audio.worker_jobs());
+            }
+        }
+    }
+}
