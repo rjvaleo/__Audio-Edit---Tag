@@ -399,3 +399,32 @@ oscillator on its own.
     `unreadable`. The stored board (and `GET /api/wave/patch`) carries `sound` only.
   - `GET /api/wave/fx` gives those two effects `sound: {key, label}` (`impulse`/`Impulse`,
     `thresholds`/`Threshold sound`), for the page's picker.
+
+### Whole-window Wave frame (A6)
+
+The page fills its workspace with one middle and a fixed 440 px right dock.
+The header and keyboard span both. At 2080 × 1100, Play runs at 1:1; below
+its 1900 × 1052 minimum workspace, one transform scales the entire frame.
+The panels and their type keep their sizes above that minimum. The keyboard
+remains 812 × 100 in frame coordinates. See [WAVE-WHOLE-WINDOW.md](WAVE-WHOLE-WINDOW.md)
+for the design and the A6 mock-up.
+
+Play shows all four envelopes and four LFOs together, with every control. Its
+fixed-height effects row follows the board's chain and scrolls horizontally.
+Each effect has power, up to four main continuous controls (all when fewer
+exist), their value pictures and modulation targets. Clicking a card selects
+and scrolls its full dock face; turning a control keeps the card selection.
+
+On Play, Create and Matrix, the dock contains the whole chain: split paths,
+oscillator sends, partial paths and a final Not Connected group. Every effect
+keeps its full parameter face. The dock remembers the top node and its offset
+between tabs and after board edits; deleting that node selects the next surviving
+scroll anchor. Each face's FX link opens that node on the board. On FX, the
+board fills the middle and the selected node's inspector occupies the same dock.
+
+SoundHack's shared faces use dark app sections, pictured knobs and icon choices
+wherever those faces appear, including the spectral modes. The parameter keys,
+ranges, defaults and write routes remain the same. Plain Wave knobs draw small
+value pictures with dim context and the changed part in colour; board nodes,
+the inspector and dock use the same drawing function. These are interface
+changes only: no Rust or recorded audio hashes change.
