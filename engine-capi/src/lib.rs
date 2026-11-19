@@ -70,6 +70,9 @@ fn code(error: PatchError) -> i32 {
         PatchError::Cycle(_) => -7,
         PatchError::BadSoundId(_) => -8,
         PatchError::QueueFull => -9,
+        PatchError::InvalidRate => -13,
+        PatchError::UnsupportedRate(_) => -14,
+        PatchError::RateBusy => -15,
     }
 }
 
@@ -247,11 +250,17 @@ pub unsafe extern "C" fn ne_frame(e: *mut NeEngine) -> u64 {
 #[no_mangle]
 pub unsafe extern "C" fn ne_add(e: *mut NeEngine, id: u32, kind: u32, a: f32, b: f32) -> i32 {
     match catch_unwind(AssertUnwindSafe(|| {
-        let Some(rate) = rate_of(e) else {
-            return NO_ENGINE;
-        };
         let Some(ctl) = ctl(e) else { return NO_ENGINE };
-        let module: Box<dyn Module> = match kind {
+        if kind == NE_GRAIN {
+            let module = engine_mgl::demo::grain(ctl.rate() as u32, a as u32, GRAIN_GRID, b as usize);
+            return ctl.add(id, Box::new(module)).map_or_else(code, |()| 0);
+        }
+        if kind == NE_WAVE {
+            let module = engine_mgl::demo::wave(ctl.rate());
+            return ctl.add(id, Box::new(module)).map_or_else(code, |()| 0);
+        }
+        if !(NE_SINE..=NE_MIX).contains(&kind) { return -10; }
+        let factory = Box::new(move |rate: f32, _max: usize| -> Box<dyn Module> { match kind {
             NE_SINE => Box::new(Sine::new(a, b)),
             NE_GAIN => Box::new(Gain::new(a)),
             NE_DELAY => Box::new(Delay::new(a as usize)),
@@ -271,9 +280,9 @@ pub unsafe extern "C" fn ne_add(e: *mut NeEngine, id: u32, kind: u32, a: f32, b:
                 b as usize,
             )),
             NE_MIX => Box::new(Mix::new(a as usize)),
-            _ => return -10,
-        };
-        ctl.add(id, module).map_or_else(code, |()| 0)
+            _ => unreachable!(),
+        } });
+        ctl.add_with_factory(id, factory).map_or_else(code, |()| 0)
     })) {
         Ok(value) => value,
         Err(payload) => {
@@ -306,7 +315,11 @@ pub unsafe extern "C" fn ne_add_fx(
             return -10;
         };
         match engine_mgl::Fx::new(name, rate) {
-            Some(fx) => ctl.add(id, Box::new(fx)).map_or_else(code, |()| 0),
+            Some(_) => {
+                let name = name.to_owned();
+                ctl.add_with_factory(id, Box::new(move |rate, _| Box::new(engine_mgl::Fx::new(&name, rate).unwrap())))
+                    .map_or_else(code, |()| 0)
+            },
             None => -10,
         }
     })) {
@@ -735,5 +748,23 @@ mod panic_tests {
             ctl.take_failures(),
             vec![engine_core::Failure::BoundaryPanicked]
         );
+    }
+}
+
+/// Rebuild the patch for a new output rate, on the controller thread.
+/// 0 queued; -13 invalid rate; -14 module has no factory; -15 change still fading.
+/// # Safety
+/// `e` came from ne_new. Must not overlap another controller call.
+#[no_mangle]
+pub unsafe extern "C" fn ne_set_rate(e: *mut NeEngine, rate: f32) -> i32 {
+    match catch_unwind(AssertUnwindSafe(|| {
+        let Some(ctl) = ctl(e) else { return NO_ENGINE; };
+        match ctl.set_rate(rate) {
+            Ok(_) => { ptr::addr_of_mut!((*e).rate).write(rate); 0 },
+            Err(error) => code(error),
+        }
+    })) {
+        Ok(status) => status,
+        Err(payload) => { std::mem::forget(payload); -12 }
     }
 }

@@ -145,7 +145,20 @@ pub struct Io<'a> {
 /// wait. Whatever it needs is sized in `new` or `prepare`. Its output for a
 /// run of samples must not depend on how that run is cut into pieces, which a
 /// module gets for free by carrying its state from sample to sample.
-pub trait Module: Send {
+pub trait Module: Send + Any {
+    /// Capture construction data before this module leaves the controller.
+    fn factory(&self) -> Option<crate::ModuleFactory> { None }
+    /// Optional typed state hand-over; both objects remain owned by plans.
+    fn transfer(&mut self, _from: &dyn Module, _rate: f32) {}
+
+    /// Fixed-size native state, read only at a rate hand-over on audio.
+    fn rate_state(&self) -> [f64; 8] { [0.0; 8] }
+    /// Restore native state into a replacement already prepared off audio.
+    /// Must not allocate, free, lock, or wait. Instrument attacks may restart.
+    fn rehome(&mut self, _state: [f64; 8], _rate: f32) {}
+    /// Current controls and held notes. The factory wrapper supplies these.
+    fn visit_events(&self, _visit: &mut dyn FnMut(EventKind)) {}
+
     /// The kind of each input, in port order. Asked once, off the audio thread.
     fn inputs(&self) -> Vec<Kind>;
 

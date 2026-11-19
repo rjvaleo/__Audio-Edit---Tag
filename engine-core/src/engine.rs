@@ -12,7 +12,8 @@ use crate::spsc::{self, Consumer, Producer};
 use crate::types::{Cable, Kind, ModuleId, PortRef, SoundRef};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use crate::rebuild::{ModuleFactory, Remember};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug)]
@@ -58,6 +59,9 @@ pub enum PatchError {
     BadSoundId(u32),
     /// The audio thread has not caught up. Nothing was sent.
     QueueFull,
+    InvalidRate,
+    UnsupportedRate(ModuleId),
+    RateBusy,
 }
 
 /// What a call to [`Controller::collect`] freed.
@@ -69,7 +73,18 @@ pub struct Collected {
     pub things: usize,
 }
 
+struct RateChange {
+    old: Option<Box<Plan>>,
+    rate: f32,
+    old_rate: f32,
+    left: Vec<f32>,
+    right: Vec<f32>,
+    at: usize,
+    length: usize,
+}
+
 enum Msg {
+    Rate { plan: Box<Plan>, change: Box<RateChange> },
     Event {
         module: ModuleId,
         kind: EventKind,
@@ -130,7 +145,11 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
     let (tx, rx) = spsc::channel(queue);
     let (back_tx, back_rx) = spsc::channel(queue);
     let bad = Arc::new(AtomicU64::new(0));
+    let changing = Arc::new(AtomicBool::new(false));
     let controller = Controller {
+        changing: Arc::clone(&changing),
+        factories: BTreeMap::new(),
+        opaque_state: BTreeSet::new(),
         bad: Arc::clone(&bad),
         rate,
         max_block,
@@ -149,6 +168,8 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
         versions: BTreeMap::new(),
     };
     let audio = AudioEngine {
+        changing,
+        transition: None,
         bad,
         rate,
         max_block,
@@ -177,6 +198,9 @@ pub enum Failure {
 }
 
 pub struct Controller {
+    changing: Arc<AtomicBool>,
+    factories: BTreeMap<ModuleId, ModuleFactory>,
+    opaque_state: BTreeSet<ModuleId>,
     failures: Vec<Failure>,
     /// See [`Controller::bad_blocks`].
     bad: Arc<AtomicU64>,
@@ -200,6 +224,61 @@ pub struct Controller {
 }
 
 impl Controller {
+    /// Construct replacements only on this thread. Existing `add` modules
+    /// remain supported; changing their rate requires an explicit factory.
+    pub fn add_with_factory(&mut self, id: ModuleId, factory: ModuleFactory) -> Result<(), PatchError> {
+        let module = Box::new(Remember::new(factory(self.rate, self.max_block)));
+        self.add(id, module)?;
+        self.factories.insert(id, factory);
+        Ok(())
+    }
+
+    pub fn rate(&self) -> f32 { self.rate }
+
+    /// Rebuild the edited patch at a new output rate. Unsupported patches
+    /// fail before any controller or audio state changes.
+    pub fn set_rate(&mut self, rate: f32) -> Result<u64, PatchError> {
+        if !rate.is_finite() || rate <= 0.0 { return Err(PatchError::InvalidRate); }
+        if self.changing.load(Ordering::Acquire) { return Err(PatchError::RateBusy); }
+        for id in self.now.infos.keys() {
+            if !self.factories.contains_key(id) || self.opaque_state.contains(id) { return Err(PatchError::UnsupportedRate(*id)); }
+        }
+        if self.tx.is_full() { return Err(PatchError::QueueFull); }
+        let mut staged = BTreeMap::new();
+        let mut patch = self.now.clone();
+        for (&id, factory) in &self.factories {
+            if !patch.infos.contains_key(&id) { continue; }
+            let mut module: Box<dyn Module> = Box::new(Remember::new(factory(rate, self.max_block)));
+            module.prepare(rate, self.max_block);
+            if let Some(old) = self.staged.get(&id) {
+                old.visit_events(&mut |event| module.handle(&event));
+            }
+            patch.infos.insert(id, Info { inputs: module.inputs(), outputs: module.outputs(),
+                feedback_delay: module.feedback_delay(), latency: module.latency(),
+                tail: module.tail(), can_sleep: module.can_sleep() });
+            staged.insert(id, module);
+        }
+        let generation = self.generation + 1;
+        let replaced = BTreeSet::new();
+        let spec = Spec::of(&patch, &patch, &replaced, 0, generation, self.max_block, true);
+        let plan = Box::new(Plan::compile(&spec, &mut staged)?);
+        let change = Box::new(RateChange { old: None, rate, old_rate: self.rate,
+            left: vec![0.0; self.max_block], right: vec![0.0; self.max_block],
+            at: 0, length: self.fade });
+        self.changing.store(true, Ordering::Release);
+        let seq = match self.push(self.last_plan_frame, Msg::Rate { plan, change }) {
+            Ok(seq) => seq,
+            Err(error) => { self.changing.store(false, Ordering::Release); return Err(error); }
+        };
+        self.staged.clear();
+        self.now = patch;
+        self.sent = self.now.clone();
+        self.lingering = Ghosts::default();
+        self.generation = generation;
+        self.rate = rate;
+        Ok(seq)
+    }
+
     /// Add a module to the patch. It is heard after the next `commit`.
     pub fn add(&mut self, id: ModuleId, mut module: Box<dyn Module>) -> Result<(), PatchError> {
         if id > MAX_MODULE_ID {
@@ -207,6 +286,10 @@ impl Controller {
         }
         if self.now.infos.contains_key(&id) {
             return Err(PatchError::DuplicateModule(id));
+        }
+        if let Some(factory) = module.factory() {
+            self.factories.insert(id, factory);
+            module = Box::new(Remember::new(module));
         }
         module.prepare(self.rate, self.max_block);
         self.now.infos.insert(
@@ -230,6 +313,8 @@ impl Controller {
             return false;
         }
         self.staged.remove(&id);
+        self.factories.remove(&id);
+        self.opaque_state.remove(&id);
         self.now
             .cables
             .retain(|cable| cable.from.module != id && cable.to.module != id);
@@ -390,18 +475,16 @@ impl Controller {
     /// module is not there, comes back to be freed by `collect`. A module
     /// not yet committed takes it at once.
     pub fn give(&mut self, module: ModuleId, slot: u32, thing: Thing) -> Result<u64, PatchError> {
+        // An arbitrary Thing cannot be cloned or reconstructed generically.
+        // Refuse a later rebuild rather than silently discard that state.
         if let Some(staged) = self.staged.get_mut(&module) {
             drop(staged.take(slot, thing));
+            self.opaque_state.insert(module);
             return Ok(self.seq);
         }
-        self.push(
-            0,
-            Msg::Thing {
-                module,
-                slot,
-                thing,
-            },
-        )
+        let result = self.push(0, Msg::Thing { module, slot, thing });
+        if result.is_ok() { self.opaque_state.insert(module); }
+        result
     }
 
     /// Hand a module something to take on `frame`.
@@ -412,14 +495,9 @@ impl Controller {
         slot: u32,
         thing: Thing,
     ) -> Result<u64, PatchError> {
-        self.push(
-            frame,
-            Msg::Thing {
-                module,
-                slot,
-                thing,
-            },
-        )
+        let result = self.push(frame, Msg::Thing { module, slot, thing });
+        if result.is_ok() { self.opaque_state.insert(module); }
+        result
     }
 
     /// Put a sound in the bank under `id`, replacing any there. The version
@@ -525,6 +603,8 @@ impl Controller {
 
 /// The sound card's side. `render` is the audio callback.
 pub struct AudioEngine {
+    changing: Arc<AtomicBool>,
+    transition: Option<Box<RateChange>>,
     failed: bool,
     bad: Arc<AtomicU64>,
     rate: f32,
@@ -570,6 +650,9 @@ impl AudioEngine {
         while pos < total {
             self.apply_due();
             let mut n = (total - pos).min(self.max_block).min(self.plan.piece());
+            if let Some(change) = &self.transition {
+                n = n.min(change.old.as_ref().unwrap().piece());
+            }
             if let Some(next) = self.pending.first() {
                 // Cut the piece where the next message lands.
                 let until = next.frame - self.frame;
@@ -587,6 +670,28 @@ impl AudioEngine {
                 &mut left[pos..pos + n],
                 &mut right[pos..pos + n],
             );
+            if let Some(change) = self.transition.as_mut() {
+                change.old.as_mut().unwrap().run(n, change.old_rate, frame, &self.sounds,
+                    &mut change.left[..n], &mut change.right[..n]);
+                let tripped = change.old.as_mut().unwrap().take_tripped();
+                if tripped > 0 { self.bad.fetch_add(tripped, Ordering::Relaxed); }
+                for i in 0..n {
+                    let gain = if change.length == 0 { 1.0 } else {
+                        ((change.at + i + 1) as f32 / change.length as f32).min(1.0)
+                    };
+                    if gain < 1.0 {
+                        left[pos+i] = change.left[i] * (1.0-gain) + left[pos+i] * gain;
+                        right[pos+i] = change.right[i] * (1.0-gain) + right[pos+i] * gain;
+                    }
+                }
+                change.at += n;
+                if change.at >= change.length {
+                    self.report_panics();
+                    let done = self.transition.take().unwrap();
+                    self.give_back(Back::Thing(done));
+                    self.changing.store(false, Ordering::Release);
+                }
+            }
             pos += n;
             self.frame += n as u64;
             self.report_panics();
@@ -620,10 +725,12 @@ impl AudioEngine {
 
     fn report_panics(&mut self) {
         while let Some((id, payload)) = self.plan.take_panic() {
-            self.give_back(Back::Failure {
-                report: Failure::ModulePanicked { id },
-                payload,
-            });
+            self.give_back(Back::Failure { report: Failure::ModulePanicked { id }, payload });
+        }
+        loop {
+            let panic = self.transition.as_mut().and_then(|change| change.old.as_mut()).and_then(|plan| plan.take_panic());
+            let Some((id, payload)) = panic else { break; };
+            self.give_back(Back::Failure { report: Failure::ModulePanicked { id }, payload });
         }
     }
 
@@ -658,7 +765,18 @@ impl AudioEngine {
         while self.pending.first().is_some_and(|message| message.frame <= self.frame) {
             let Stamped { seq, msg, .. } = self.pending.pop().unwrap();
             match msg {
-                Msg::Event { module, kind } => self.plan.handle(module, &kind),
+                Msg::Event { module, kind } => {
+                    self.plan.handle(module, &kind);
+                    if let Some(change) = self.transition.as_mut() {
+                        change.old.as_mut().unwrap().handle(module, &kind);
+                    }
+                },
+                Msg::Rate { mut plan, mut change } => {
+                    plan.rehome(&self.plan, change.rate);
+                    change.old = Some(std::mem::replace(&mut self.plan, plan));
+                    self.rate = change.rate;
+                    self.transition = Some(change);
+                },
                 Msg::Plan { plan, after } => {
                     self.land(plan);
                     if let Some(after) = after {

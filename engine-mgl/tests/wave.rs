@@ -375,3 +375,28 @@ fn a_boards_controls_are_knobs() {
     let first = first_difference(&moved, &plain).expect("switching a node out is heard");
     assert!((6_000..6_032).contains(&first), "from the line after its sample: {first}");
 }
+
+#[test]
+fn a_held_wave_note_survives_output_rate_changes_without_audio_heap_work() {
+    assert_the_check_is_on();
+    let (mut ctl, mut audio) = engine(48000.0, Config { max_block: 512, fade_frames: 480, ..Config::default() });
+    ctl.add(1, Box::new(engine_mgl::demo::wave(48000.0))).unwrap();
+    ctl.add(2, Box::new(engine_mgl::Fx::new("gain", 48000.0).unwrap().set(0, -18.0))).unwrap();
+    ctl.connect(port(1,0), port(2,0)).unwrap(); ctl.connect_out(port(2,0)).unwrap(); ctl.commit().unwrap();
+    ctl.send(1, EventKind::Note(NoteEvent::on(48, 0.8))).unwrap();
+    let mut l=[0.0;512]; let mut r=l;
+    for _ in 0..16 { audio.render(&mut l,&mut r); }
+    for rate in [44100.0,48000.0] {
+        ctl.set_rate(rate).unwrap();
+        let before=counted(); let mut last=l[511]; let mut jump=0.0f32;
+        for _ in 0..32 {
+            audio.render(&mut l,&mut r);
+            assert!(l.iter().all(|v| v.is_finite()));
+            for &v in &l { jump=jump.max((v-last).abs()); last=v; }
+            assert!(l.iter().map(|v| v*v).sum::<f32>() > 1.0e-8, "held note went silent");
+        }
+        assert!(jump < 0.05, "largest sample step {jump}");
+        assert_eq!(counted(),before,"heap activity in rate switch");
+        ctl.collect();
+    }
+}

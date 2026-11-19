@@ -93,6 +93,15 @@ impl Suite {
 }
 
 impl Module for Suite {
+    fn factory(&self) -> Option<engine_core::ModuleFactory> {
+        let mode = self.module.mode();
+        let params: Vec<_> = (0..self.module.descriptor().params.len()).map(|i| self.module.param(i)).collect();
+        Some(Box::new(move |rate, _| {
+            let mut module = ModuleKernel::new(mode, rate).unwrap();
+            for (i, value) in params.iter().enumerate() { module.set_param(i, *value); }
+            Box::new(Suite { module, rate, waiting: None, carrier: None, done: None })
+        }))
+    }
     fn inputs(&self) -> Vec<Kind> {
         vec![Kind::Audio]
     }

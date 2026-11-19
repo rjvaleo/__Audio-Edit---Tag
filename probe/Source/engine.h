@@ -15,6 +15,8 @@ enum { NE_SINE = 1, NE_GAIN, NE_DELAY, NE_LFO, NE_CLOCK, NE_PULSE, NE_VOICE, NE_
 
 NeEngine* ne_new (float rate, uint32_t max_block, uint32_t log_applied, uint32_t fade_frames);
 void ne_free (NeEngine*);
+// Controller thread. 0 queued; -13 bad rate, -14 unsupported module, -15 busy.
+int32_t ne_set_rate(NeEngine*, float rate);
 int32_t ne_render (NeEngine*, float* l, float* r, uint32_t n);
 uint64_t ne_frame (NeEngine*);
 uint64_t ne_bad_blocks (NeEngine*);

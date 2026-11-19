@@ -12,6 +12,7 @@ use prism_fx::{Descriptor, DynKernel};
 pub struct Fx {
     kernel: Box<dyn DynKernel>,
     rate: f32,
+    sound_recipe: Option<(std::sync::Arc<[f32]>, usize, f32)>,
     /// prism-fx's Place around the effect, if it was `placed`.
     place: Option<Place>,
 }
@@ -35,6 +36,7 @@ impl Fx {
         prism_fx::make(id, rate).map(|kernel| Fx {
             kernel,
             rate,
+            sound_recipe: None,
             place: None,
         })
     }
@@ -48,6 +50,7 @@ impl Fx {
     /// Hand the effect its sound (an impulse, a grain source), interleaved.
     /// Effects that take none ignore it.
     pub fn sound(mut self, samples: &[f32], channels: usize, rate: f32) -> Fx {
+        self.sound_recipe = Some((samples.into(), channels, rate));
         self.kernel.set_sound(samples, channels, rate);
         self
     }
@@ -74,6 +77,19 @@ impl Fx {
 }
 
 impl Module for Fx {
+    fn factory(&self) -> Option<engine_core::ModuleFactory> {
+        let id = self.kernel.descriptor().id;
+        let params: Vec<_> = (0..self.kernel.descriptor().params.len()).map(|i| self.kernel.param(i)).collect();
+        let placed = self.place.as_ref().map(|place| place.settings());
+        let sound = self.sound_recipe.clone();
+        Some(Box::new(move |rate, _| {
+            let mut module = Fx::new(id, rate).unwrap();
+            for (i, value) in params.iter().enumerate() { module.kernel.set_param(i, *value); }
+            if let Some((samples, channels, rate)) = &sound { module = module.sound(samples, *channels, *rate); }
+            if let Some(settings) = placed { module = module.placed(); module.place.as_mut().unwrap().set(settings); }
+            Box::new(module)
+        }))
+    }
     fn inputs(&self) -> Vec<Kind> {
         vec![Kind::Audio]
     }

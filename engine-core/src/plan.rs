@@ -751,6 +751,24 @@ impl Plan {
     /// Take over, from the plan before, every module this plan also has, and
     /// the level of every cable both have. Audio thread: boxes and numbers
     /// change hands, nothing is made or freed.
+    pub(crate) fn rehome(&mut self, old: &Plan, rate: f32) {
+        for node in &mut self.nodes {
+            let Some(from) = old.node_of(node.id) else { continue; };
+            let before = &old.nodes[from];
+            node.dead = before.dead;
+            if let (Some(module), Some(previous)) = (node.module.as_mut(), before.module.as_ref()) {
+                if let Err(payload) = catch_unwind(AssertUnwindSafe(|| {
+                    previous.visit_events(&mut |event| module.handle(&event));
+                    module.rehome(previous.rate_state(), rate);
+                    module.transfer(previous.as_ref(), rate);
+                })) {
+                    node.dead = true;
+                    node.panic = Some(payload);
+                }
+            }
+        }
+    }
+
     pub(crate) fn adopt(&mut self, old: &mut Plan) {
         for node in &mut self.nodes {
             let Some(from) = old.node_of(node.id) else {

@@ -8,6 +8,7 @@ use engine_core::{Io, Kind, Module};
 pub struct Ceiling;
 
 impl Module for Ceiling {
+    fn factory(&self) -> Option<engine_core::ModuleFactory> { Some(Box::new(|_, _| Box::new(Ceiling))) }
     fn inputs(&self) -> Vec<Kind> {
         vec![Kind::Audio]
     }

@@ -175,6 +175,7 @@ impl Handle {
 /// its sample. What it plays is then the same however the sound card's
 /// blocks fall.
 pub struct Grain {
+    rebuildable: bool,
     core: Core,
     shared: Arc<Shared>,
     keys: Arc<GrainKeys>,
@@ -216,6 +217,7 @@ impl Grain {
         // twice. They are limited by a number (`VOICES`, or `poly`).
         shared.voices.set_offline(true);
         Grain {
+            rebuildable: true,
             core: Core::new(grid, 2, params, Arc::clone(&source)).with_keys(Arc::clone(&keys)),
             shared,
             keys,
@@ -231,13 +233,15 @@ impl Grain {
     }
 
     /// Start with this rack after the engines.
-    pub fn rack(self, rack: mgl_fx::Rack) -> Grain {
+    pub fn rack(mut self, rack: mgl_fx::Rack) -> Grain {
+        self.rebuildable = false;
         self.shared.set_rack(Some(rack));
         self
     }
 
     /// Start with the sound's separated parts (the Hybrid engine's).
-    pub fn parts(self, parts: Arc<Parts>) -> Grain {
+    pub fn parts(mut self, parts: Arc<Parts>) -> Grain {
+        self.rebuildable = false;
         self.shared.set_parts(parts);
         self
     }
@@ -384,7 +388,8 @@ impl Grain {
     }
 
     /// Start with the layers' engines.
-    pub fn bank(self, bank: LayerBank) -> Grain {
+    pub fn bank(mut self, bank: LayerBank) -> Grain {
+        self.rebuildable = false;
         self.shared.set_bank(bank);
         self
     }
@@ -403,7 +408,8 @@ impl Grain {
     /// above C8 play from. Without this they are made by a helper thread
     /// when such a key first asks (`Handle::collect` starts it), and until
     /// they arrive the key plays from the sound itself.
-    pub fn octaves(self) -> Grain {
+    pub fn octaves(mut self) -> Grain {
+        self.rebuildable = false;
         self.shared.build_octaves();
         self
     }
@@ -459,6 +465,15 @@ impl Grain {
 }
 
 impl Module for Grain {
+    fn factory(&self) -> Option<engine_core::ModuleFactory> {
+        if !self.rebuildable { return None; }
+        let shared = Arc::clone(&self.shared); let grid = self.grid;
+        Some(Box::new(move |rate, _| {
+            let params = shared.params().expect("grain settings poisoned");
+            let source = shared.source().expect("grain source poisoned");
+            Box::new(Grain::new(rate as u32, grid, params, source).poly(shared.voices.cap() as usize))
+        }))
+    }
     fn inputs(&self) -> Vec<Kind> {
         vec![Kind::Notes]
     }

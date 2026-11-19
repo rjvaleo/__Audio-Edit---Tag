@@ -317,3 +317,22 @@ fn only_the_sound_card_boundary_flushes_denormals() {
     assert_eq!(l.map(f32::to_bits), [0x0040_0000; 4]);
     assert_eq!(r.map(f32::to_bits), [0x0040_0000; 4]);
 }
+
+#[test]
+fn c_rate_change_reports_errors_and_accepts_callbacks_beyond_capacity() {
+    unsafe {
+        assert_eq!(ne_set_rate(ptr::null_mut(),44100.0),-11);
+        let e=ne_new(48000.0,512,0,128);
+        assert_eq!(ne_add(e,1,NE_SINE,220.0,0.1),0);
+        assert_eq!(ne_connect_out(e,1,0),0);assert!(ne_commit(e,0)>0);
+        render(e,512,512);
+        assert_eq!(ne_set_rate(e,f32::NAN),-13);
+        assert_eq!(ne_set_rate(e,44100.0),0);
+        assert_eq!(ne_set_rate(e,48000.0),-15);
+        let (l,r)=render(e,4096,4096);
+        assert!(l.iter().chain(&r).all(|v| v.is_finite()));
+        assert!(l.iter().any(|v| v.abs()>0.01));
+        assert_eq!(ne_set_rate(e,48000.0),0);
+        render(e,1024,32);ne_collect(e);ne_free(e);
+    }
+}

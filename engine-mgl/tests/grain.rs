@@ -1042,3 +1042,25 @@ fn how_long_the_deck_takes_to_answer() {
         );
     }
 }
+
+#[test]
+fn a_held_grain_note_survives_rate_switches_without_audio_allocations() {
+    let (mut ctl,mut audio)=engine(48000.0,Config{max_block:512,fade_frames:480,..Config::default()});
+    ctl.add(1,Box::new(engine_mgl::demo::grain(48000,0,128,4))).unwrap();
+    ctl.connect_out(port(1,0)).unwrap();ctl.commit().unwrap();
+    ctl.send(1,knob(grain::KEY_MODE,2.0)).unwrap();
+    ctl.send(1,knob(grain::RUN,0.0)).unwrap();
+    ctl.send(1,EventKind::Note(NoteEvent::on(48,0.8))).unwrap();
+    let mut l=[0.0;512];let mut r=l;
+    for _ in 0..20 {audio.render(&mut l,&mut r);}
+    assert!(l.iter().any(|v|v.abs()>0.001), "initial note silent");
+    for rate in [44100.0,48000.0] {
+        ctl.set_rate(rate).unwrap();let before=counted();let mut energy=0.0;
+        for _ in 0..20 {
+            audio.render(&mut l,&mut r);assert!(l.iter().all(|v|v.is_finite()));
+            energy+=l.iter().map(|v|v*v).sum::<f32>();
+        }
+        assert!(energy>0.001,"held grain note went silent: rate {rate}, energy {energy}");
+        assert_eq!(counted(),before,"audio heap activity during Grain rate switch");ctl.collect();
+    }
+}

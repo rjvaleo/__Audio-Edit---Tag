@@ -33,6 +33,7 @@ pub enum WaveThing {
 /// after its sample: at most 31 samples late, and the same however the sound
 /// card's blocks fall.
 pub struct Wave {
+    seed: Option<u32>,
     synth: Synth,
     /// The block last made, and how much of it has gone out.
     l: [f32; Wave::GRID],
@@ -66,6 +67,7 @@ impl Wave {
     /// A synth for `rate` (the engine's), with the default patch and no tables.
     pub fn new(rate: f32) -> Wave {
         Wave {
+            seed: None,
             synth: Synth::new(rate, Self::GRID),
             l: [0.0; Self::GRID],
             r: [0.0; Self::GRID],
@@ -88,6 +90,7 @@ impl Wave {
 
     /// Seed the voices' randomness.
     pub fn seed(mut self, seed: u32) -> Wave {
+        self.seed = Some(seed);
         self.synth.set_seed(seed);
         self
     }
@@ -102,6 +105,28 @@ impl Wave {
 }
 
 impl Module for Wave {
+    fn factory(&self) -> Option<engine_core::ModuleFactory> {
+        let state = self.synth.state();
+        let seed = self.seed;
+        let tables: [Option<Arc<Wavetable>>; 3] = std::array::from_fn(|i| self.synth.table(i).cloned());
+        let bank: [Option<Arc<Wavetable>>; wave::choice::BANK] = std::array::from_fn(|i| self.synth.bank_table(i).cloned());
+        Some(Box::new(move |rate, _| {
+            let mut module = Wave::new(rate).patch(state);
+            if let Some(seed) = seed { module = module.seed(seed); }
+            for (i, table) in tables.iter().enumerate() {
+                if let Some(table) = table { module.synth.set_table(i, Arc::clone(table)); }
+            }
+            for (i, table) in bank.iter().enumerate() {
+                if let Some(table) = table { module.synth.set_bank_table(i, Arc::clone(table)); }
+            }
+            Box::new(module)
+        }))
+    }
+    fn transfer(&mut self, from: &dyn Module, _rate: f32) {
+        if let Some(from) = (from as &dyn std::any::Any).downcast_ref::<Wave>() {
+            self.synth.adopt(from.synth.state());
+        }
+    }
     fn inputs(&self) -> Vec<Kind> {
         vec![Kind::Notes]
     }

@@ -728,3 +728,31 @@ fn a_one_second_tail_finishes_then_sleeps_and_wakes_bit_identically() {
         }
     }
 }
+
+#[test]
+fn rate_switches_rebuild_off_audio_and_crossfade_without_audio_heap_work() {
+    use engine_core::basics::{Clock, Gain, Sine};
+    let (mut ctl, mut audio) = engine(48000.0, Config { max_block: 512, fade_frames: 128, ..Config::default() });
+    ctl.add_with_factory(1, Box::new(|_, _| Box::new(Sine::new(220.0, 0.2)))).unwrap();
+    ctl.add_with_factory(2, Box::new(|_, _| Box::new(Gain::new(0.5)))).unwrap();
+    ctl.add_with_factory(3, Box::new(|_, _| Box::new(Clock::new(120.0, true)))).unwrap();
+    ctl.connect(port(1,0), port(2,0)).unwrap(); ctl.connect_out(port(2,0)).unwrap(); ctl.commit().unwrap();
+    let mut l = [0.0; 512]; let mut r = l;
+    audio.render(&mut l, &mut r);
+    ctl.send(2, EventKind::Param { index: 0, value: 0.25 }).unwrap();
+    audio.render(&mut l, &mut r);
+    for rate in [44100.0, 48000.0] {
+        let before = counted();
+        ctl.set_rate(rate).unwrap();
+        let mut last = l[511];
+        for _ in 0..32 {
+            audio.render(&mut l, &mut r);
+            for &value in &l {
+                assert!(value.is_finite()); assert!((value-last).abs() < 0.004); last = value;
+            }
+            assert!(l.iter().any(|v| v.abs() > 0.001));
+        }
+        assert_eq!(counted(), before, "rate transition allocated or freed on audio");
+        ctl.collect();
+    }
+}

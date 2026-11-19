@@ -20,6 +20,8 @@ mod engine;
 pub mod guard;
 mod module;
 mod plan;
+mod rebuild;
+pub use rebuild::ModuleFactory;
 pub mod rt;
 mod sound;
 pub mod spsc;

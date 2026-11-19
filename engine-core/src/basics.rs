@@ -27,6 +27,8 @@ impl Sine {
 }
 
 impl Module for Sine {
+    fn rate_state(&self) -> [f64; 8] { let mut state = [0.0; 8]; state[0] = self.phase; state }
+    fn rehome(&mut self, state: [f64; 8], _rate: f32) { self.phase = state[0]; }
     fn inputs(&self) -> Vec<Kind> {
         vec![Kind::Control]
     }
@@ -161,6 +163,8 @@ impl Lfo {
 }
 
 impl Module for Lfo {
+    fn rate_state(&self) -> [f64; 8] { let mut state = [0.0; 8]; state[0] = self.phase; state }
+    fn rehome(&mut self, state: [f64; 8], _rate: f32) { self.phase = state[0]; }
     fn inputs(&self) -> Vec<Kind> {
         vec![]
     }
@@ -197,6 +201,10 @@ impl Clock {
 }
 
 impl Module for Clock {
+    fn rate_state(&self) -> [f64; 8] { [self.state.beat, self.state.bpm, self.state.playing as u8 as f64, 0.0, 0.0, 0.0, 0.0, 0.0] }
+    fn rehome(&mut self, state: [f64; 8], _rate: f32) {
+        self.state.beat = state[0]; self.state.bpm = state[1]; self.state.playing = state[2] != 0.0;
+    }
     fn inputs(&self) -> Vec<Kind> {
         vec![]
     }
@@ -236,6 +244,9 @@ impl Pulse {
 }
 
 impl Module for Pulse {
+    fn rate_state(&self) -> [f64; 8] { [self.last_beat, self.off_at, self.held as u8 as f64, 0.0, 0.0, 0.0, 0.0, 0.0] }
+    fn rehome(&mut self, state: [f64; 8], _rate: f32) { self.last_beat = state[0]; self.off_at = state[1]; self.held = state[2] != 0.0; }
+
     fn inputs(&self) -> Vec<Kind> {
         vec![Kind::Clock]
     }
@@ -299,6 +310,15 @@ impl Voice {
 }
 
 impl Module for Voice {
+    fn transfer(&mut self, from: &dyn Module, _rate: f32) {
+        if let Some(from) = (from as &dyn std::any::Any).downcast_ref::<Voice>() {
+            self.note = from.note;
+            self.freq = from.freq;
+            self.phase = from.phase;
+            self.level = from.level;
+            self.held = from.held;
+        }
+    }
     fn inputs(&self) -> Vec<Kind> {
         vec![Kind::Notes]
     }
@@ -343,6 +363,11 @@ impl Keys {
 }
 
 impl Module for Keys {
+    fn transfer(&mut self, from: &dyn Module, _rate: f32) {
+        if let Some(from) = (from as &dyn std::any::Any).downcast_ref::<Keys>() {
+            self.waiting.extend_from_slice(&from.waiting);
+        }
+    }
     fn inputs(&self) -> Vec<Kind> {
         vec![]
     }

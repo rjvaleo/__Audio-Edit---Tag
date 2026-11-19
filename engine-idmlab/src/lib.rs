@@ -87,6 +87,7 @@ fn layout(kind: ModuleKind) -> Option<Layout> {
 
 /// A control cable turning a knob: `knob + cable × scale`, held inside
 /// `min..=max`. idMLab calls this a route.
+#[derive(Clone)]
 struct Route {
     param: usize,
     scale: f32,
@@ -100,6 +101,8 @@ struct Route {
 /// played by notes; then one control input for each [`Wrapped::route`].
 /// Its outputs: each stereo audio output, then each modulation output.
 pub struct Wrapped {
+    kind: ModuleKind,
+    variant: u32,
     module: Box<dyn LabModule>,
     layout: Layout,
     ins: Vec<Frame>,
@@ -135,6 +138,7 @@ impl Wrapped {
             }
         }
         Ok(Wrapped {
+            kind, variant,
             module,
             layout,
             ins: vec![Frame::default(); in_count],
@@ -178,6 +182,15 @@ impl Wrapped {
 }
 
 impl Module for Wrapped {
+    fn factory(&self) -> Option<engine_core::ModuleFactory> {
+        let (kind, variant) = (self.kind, self.variant);
+        let params = self.params.clone(); let routes = self.routes.clone();
+        Some(Box::new(move |rate, _| {
+            let mut module = Wrapped::new(kind, variant, rate).unwrap();
+            module.params.clone_from(&params); module.routes.clone_from(&routes);
+            Box::new(module)
+        }))
+    }
     fn inputs(&self) -> Vec<Kind> {
         let mut kinds = vec![Kind::Audio; self.layout.ins.len()];
         if self.layout.notes {
