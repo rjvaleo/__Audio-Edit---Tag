@@ -11,6 +11,10 @@ tar -C "$HERE" --exclude target --exclude build --exclude .git --exclude results
 until ssh mbp "mkdir ~/mgl-test/.lock 2>/dev/null"; do sleep 20; done
 trap 'ssh mbp "rm -rf ~/mgl-test/.lock"' EXIT
 ssh mbp "echo 'idmlab-native probe (coordinator)' > ~/mgl-test/.lock/who"
+# Codex's shared cargo runs (~/mgl-test/.slots/<n>) never start while the
+# lock is held, but one already running carries on: wait for those to end, so
+# nothing builds beside a timing run.
+ssh mbp 'until [ -z "$(for d in ~/mgl-test/.slots/*; do [ -f "$d/pid" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null && echo x; done)" ]; do sleep 10; done'
 # The MacBook's command-line tools carry a stale, partial copy of the C++
 # headers that hides the SDK's; point at the SDK's (see ../PHASE0.md).
 ssh mbp 'zsh -lc "export PATH=\$HOME/.cargo/bin:\$PATH; export CXXFLAGS=\"-isystem \$(xcrun --show-sdk-path)/usr/include/c++/v1\"; cd ~/idmlab-native/native/probe && (test -f build/CMakeCache.txt || cmake -S . -B build -DJUCE_DIR=\$HOME/idmlab-native/JUCE -DCMAKE_BUILD_TYPE=Release > configure.log 2>&1) && cmake --build build --config Release -j 6 > build.log 2>&1; echo build exit \$?; grep -E \"error|warning: unused\" build.log | head -20"'

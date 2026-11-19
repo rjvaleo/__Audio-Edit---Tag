@@ -36,6 +36,10 @@ ssh mbp "cp $T/after/crates/prism-grain/tests/wsola_trial.rs $T/before/crates/pr
 until ssh mbp "mkdir ~/mgl-test/.lock 2>/dev/null"; do sleep 20; done
 trap 'ssh mbp "rm -rf ~/mgl-test/.lock"' EXIT
 ssh mbp "echo 'WSOLA trial renders (coordinator)' > ~/mgl-test/.lock/who"
+# Codex's shared cargo runs (~/mgl-test/.slots/<n>) never start while the
+# lock is held, but one already running carries on: wait for those to end, so
+# nothing builds beside a timing run.
+ssh mbp 'until [ -z "$(for d in ~/mgl-test/.slots/*; do [ -f "$d/pid" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null && echo x; done)" ]; do sleep 10; done'
 ssh mbp "export PATH=\$HOME/.cargo/bin:\$PATH CARGO_TARGET_DIR=\$HOME/idmlab-native/pg-target
 set -e
 rm -rf $T/out-before $T/out-after
