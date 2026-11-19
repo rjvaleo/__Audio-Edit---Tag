@@ -527,6 +527,15 @@ impl Rack {
         Rack { slots: Vec::new(), meters: None, dry: Vec::new(), xfade: Vec::new(), place_l: Vec::new(), place_r: Vec::new(), tripped: 0 }
     }
 
+    /// Build a rack with scratch for `max_samples` interleaved samples.
+    /// Real-time callers must stay within that capacity (frames times channels).
+    /// Larger calls still grow on demand, just as they do with [`Rack::new`].
+    pub fn with_capacity(max_samples: usize) -> Self {
+        let mut rack = Self::new();
+        rack.reserve_mix(max_samples);
+        rack
+    }
+
     /// How many blocks have been silenced because an effect, or what came into
     /// the rack, gave a sample that was not a number.
     pub fn tripped(&self) -> u32 {

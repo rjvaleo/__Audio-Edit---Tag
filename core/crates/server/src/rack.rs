@@ -704,7 +704,7 @@ impl RackSpec {
                 moved("gain", sample_rate, &[("db".to_string(), *db)], || Box::new(Gain { db: *db }))
             }
             SlotSpec::Gain { db, .. } => Box::new(Gain { db: *db }),
-            SlotSpec::Eq { settings, .. } => moved("eq", sample_rate, &eq_params(settings), || Box::new(Eq::new(*settings))),
+            SlotSpec::Eq { settings, .. } => moved("eq", sample_rate, &eq_params(settings), || Box::new(Eq::with_channels(*settings, channels))),
             SlotSpec::Comp { settings, .. } => {
                 moved("compressor", sample_rate, &comp_params(settings), || Box::new(Compressor::new(*settings)))
             }
@@ -744,7 +744,7 @@ impl RackSpec {
     }
 
     pub fn build(&self, sample_rate: u32, channels: usize) -> Rack {
-        let mut rack = Rack::new();
+        let mut rack = Rack::with_capacity(crate::live::MAX_BLOCK * channels.max(1));
         for (i, s) in self.slots.iter().enumerate() {
             let effect = self.build_slot(i, sample_rate, channels);
             // A bypassed slot is built and switched off rather than skipped, so
@@ -769,7 +769,6 @@ impl RackSpec {
                 slot.set_mix(m.wet, m.level);
             }
         }
-        rack.reserve_mix(crate::live::MAX_BLOCK * channels.max(1));
         // Last, always. The channel compressor exists to hold whatever the
         // chain produced under the ceiling, which it can only do from the end.
         if self.master.is_active() {

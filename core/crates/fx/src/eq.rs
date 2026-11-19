@@ -151,6 +151,15 @@ impl Eq {
         }
     }
 
+    /// Prepare the per-channel filter state off the audio thread.
+    /// Processing more channels still grows on demand; real-time callers must
+    /// stay within the prepared width. Fewer channels use only their own states.
+    pub fn with_channels(settings: EqSettings, channels: usize) -> Self {
+        let mut eq = Self::new(settings);
+        eq.states.resize(channels.max(1), [State::default(); 8]);
+        eq
+    }
+
     /// Recompute coefficients if the settings or sample rate have changed.
     fn rebuild(&mut self, sample_rate: u32) {
         if self.built_for == (sample_rate, self.settings) {

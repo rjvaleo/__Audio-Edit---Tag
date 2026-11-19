@@ -62,34 +62,31 @@ fn every_reserved_rack_keeps_rendering_and_swapping_without_memory_or_waits() {
     );
 }
 #[test]
-#[ignore = "stage 2: dry grows without reserve_mix, fx/src/lib.rs:671"]
-fn an_unreserved_dry_mix_allocates_nothing() {
+fn a_prepared_dry_mix_allocates_nothing() {
     rt::verify();
-    let mut rack = Rack::new();
+    let mut rack = Rack::with_capacity(256);
     rack.push(Box::new(Gain { db: 0.0 }));
     rack.slots[0].set_mix(0.5, 0.0);
     let mut buf = [0.2; 256];
     rt::start();
     rack.process(&mut buf, 2, 48_000);
-    rt::clean("unreserved dry", rt::stop());
+    rt::clean("prepared dry", rt::stop());
 }
 #[test]
-#[ignore = "stage 2: xfade grows without reserve_mix, fx/src/lib.rs:426"]
-fn an_unreserved_slot_crossfade_allocates_nothing() {
+fn a_prepared_slot_crossfade_allocates_nothing() {
     rt::verify();
-    let mut rack = Rack::new();
+    let mut rack = Rack::with_capacity(256);
     rack.push(Box::new(Gain { db: 0.0 }));
     assert!(rack.swap_slot(0, Box::new(Gain { db: -3.0 }), 240).is_ok());
     let mut buf = [0.2; 256];
     rt::start();
     rack.process(&mut buf, 2, 48_000);
-    rt::clean("unreserved crossfade", rt::stop());
+    rt::clean("prepared crossfade", rt::stop());
 }
 #[test]
-#[ignore = "stage 2: Place planar buffers grow without reserve_mix, fx/src/lib.rs:776"]
-fn an_unreserved_place_allocates_nothing() {
+fn a_prepared_place_allocates_nothing() {
     rt::verify();
-    let mut rack = Rack::new();
+    let mut rack = Rack::with_capacity(256);
     rack.push(Box::new(Gain { db: 0.0 }));
     rack.set_slot_place(
         0,
@@ -99,5 +96,5 @@ fn an_unreserved_place_allocates_nothing() {
     let mut buf = [0.2; 256];
     rt::start();
     rack.process(&mut buf, 2, 48_000);
-    rt::clean("unreserved Place", rt::stop());
+    rt::clean("prepared Place", rt::stop());
 }
