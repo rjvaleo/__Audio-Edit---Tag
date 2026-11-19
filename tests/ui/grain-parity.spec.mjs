@@ -316,13 +316,17 @@ test('⌥-drag scrubs and leaves Start alone; a region\'s strip selects it', asy
   });
   const posts = [];
   page.on('request', (r) => { if (r.method() === 'POST' && r.url().endsWith('/api/engine/transport')) posts.push(r.postDataJSON()); });
-  // The overview every page shares (416): not scaled with the page.
-  const box = await page.locator('#poCanvas').boundingBox();
-  const cue = await page.evaluate(() => state.cue);
+  // SOURCE's strip along the bottom (since 18 Nov 2026, when the shared
+  // overview left the Grain page).
+  const box = await page.locator('#gsCloud').boundingBox();
+  // The engine's own poll can name another file meanwhile; the scrub seeks only
+  // the file the engine has, so it is named again just before.
+  const [g, cue] = await page.evaluate(() => { engine.path = state.selectedFile.path; const g = gsCloudGeo(); return [{ w: g.w, h: g.h }, state.cue]; });
+  const k = box.width / g.w, strip = box.y + (g.h - 7) * k;
   await page.keyboard.down('Alt');
-  await page.mouse.move(box.x + box.width * 0.5, box.y + 30);
+  await page.mouse.move(box.x + box.width * 0.5, strip);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.6, box.y + 30, { steps: 3 });
+  await page.mouse.move(box.x + box.width * 0.6, strip, { steps: 3 });
   await page.mouse.up();
   await page.keyboard.up('Alt');
   await page.waitForTimeout(120);
@@ -330,8 +334,8 @@ test('⌥-drag scrubs and leaves Start alone; a region\'s strip selects it', asy
   expect(await page.evaluate(() => state.cue)).toBe(cue);
   expect(await page.evaluate(() => state.sel)).toBeNull();
 
-  // The strip along the bottom of the wave.
-  const y = box.y + box.height - 13 - 4;
+  // The region's strip, just above the time.
+  const y = box.y + (g.h - 14 - 4) * k;
   await page.mouse.click(box.x + box.width * 0.55, y);
   await page.waitForTimeout(100);
   const sel = await page.evaluate(() => [state.sel?.start, state.sel?.end, Math.round(gsFile().frames * 0.4), Math.round(gsFile().frames * 0.7)]);

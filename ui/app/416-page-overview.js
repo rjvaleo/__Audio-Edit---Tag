@@ -45,12 +45,20 @@ const PO = {
 const PO_H = { min: 48, max: 240 };
 const PO_HKEY = 'mgl.pageOverview.h';
 const PO_HDEF = 72;
-/// The modes it shows in: Edit, Grain, Prism and Chop (all `edit`), the room,
-/// Compose, Wave (`synth`), Seq and Draw (`draw`), the last showing Seq's
-/// frame. Not Browse (`overview`), Theme, Atmosphere (RJ, 16 Nov 2026:
+/// The modes it shows in: Edit and FX (both `edit`; not the pages in
+/// `PO_NOT_ON`), Compose and Draw (`draw`), the last showing Seq's frame. Not Browse
+/// (`overview`), Theme, Atmosphere (RJ, 16 Nov 2026:
 /// "remove the file overview from the top" — it is an instrument of its own)
 /// or Wave (`synth`; RJ, 17 Nov 2026: "we're not playing that sound here").
-const PO_MODES = ['edit', 'room', 'compose', 'seq', 'draw'];
+const PO_MODES = ['edit', 'compose', 'draw'];
+/// The edit pages that stand it down: each has the whole sound in a window of
+/// its own (RJ, 18 Nov 2026: "grain does not need the overview, move all
+/// functionality into the source window"; "do not need on prism", "don't need
+/// on chop"). Grain's SOURCE (`401-grain-views.js`) takes its loop, Start and
+/// regions; Prism plays its own sound in its own SOURCE; Chop has its own
+/// overview again. Visual (`room`) and Seq left `PO_MODES` the same day ("don't
+/// need on visual", "don't need on sequence").
+const PO_NOT_ON = ['grain', 'prism', 'chop', 'visuals'];
 /// The shortest stretch the zoom goes down to, in seconds.
 const PO_MINSPAN = 0.01;
 
@@ -76,7 +84,10 @@ const poDirty = () => { PO.key = ''; };
 /// Called by `setMode` after its toggles, so a page that fits itself to the
 /// centre measures the centre with the strip in it.
 function poSync() {
-  const want = PO_MODES.includes(state.mode);
+  // Grain's own SOURCE is the v12 page's (`gsOn`); the old page, with the
+  // switch off, still has only the strip.
+  const own = state.mode === 'edit' && PO_NOT_ON.includes(editPage) && (gsOn() || !GS_SUBPAGES.concat('grain').includes(editPage));
+  const want = PO_MODES.includes(state.mode) && !own;
   PO.el.classList.toggle('hidden', !want);
   PO.on = want;
   poDirty();

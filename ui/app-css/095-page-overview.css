@@ -42,7 +42,6 @@
 }
 .po-grip:hover::after, .po-grip.on::after { background: var(--on); }
 
-/* The overviews it stands in for: the Edit page's, and Chop's own (its part,
-   the cuts and the double-click, is the strip's now). */
+/* The overview it stands in for: the Edit page's. Chop's own is back since
+   18 Nov 2026, when the strip left the Chop page (`PO_NOT_ON`, 416). */
 #overview { display: none !important; }
-.chop-app .chop-overw { display: none; }

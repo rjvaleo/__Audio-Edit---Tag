@@ -50,9 +50,9 @@ function gsBuild() {
       <span class="gs-chip gs-btn" id="gsRegChip" title="Loop region: click to step to the next region"></span>
       <span class="gs-chip gs-btn" id="gsLoopChip" title="Loop: the head goes back to the loop start at its end">⟲ Loop</span>
       <span class="gs-sp"></span>
-      <div class="gs-zb"><span class="gs-ib" id="gsFollow" title="Follow the playhead: keep it on screen while the detail is zoomed in">⇥</span><select class="gs-midi" id="gsFollowMode" title="How the view keeps up with the playhead"><option value="scroll">scroll</option><option value="page">page</option></select><span class="gs-ro" id="gsCzRo"></span><span class="gs-ib" id="gsCzOut" title="Zoom out">−</span><span class="gs-ib" id="gsCzIn" title="Zoom in round the head (or scroll on the detail)">+</span><span class="gs-ib zt" id="gsCzFit" title="The whole loop (or double-click the detail)">Fit</span></div>
+      <div class="gs-zb"><span class="gs-ib" id="gsFollow" title="Follow the playhead: keep it on screen while the detail is zoomed in">⇥</span><select class="gs-midi" id="gsFollowMode" title="How the view keeps up with the playhead"><option value="scroll">scroll</option><option value="page">page</option></select><span class="gs-ro" id="gsCzRo"></span><span class="gs-ib" id="gsCzOut" title="Zoom out">−</span><span class="gs-ib" id="gsCzIn" title="Zoom in round the head (or scroll on the detail)">+</span><span class="gs-ib zt" id="gsCzFit" title="The whole sound (or double-click SOURCE)">Fit</span></div>
      </div>
-     <div class="gs-well"><canvas id="gsCloud" data-w="1338" data-h="96" title="Only what is between the brackets. Inside the box moves the read head; beside it, across is Position jitter and up and down is Pitch jitter. Scroll to zoom, double-click for the whole loop"></canvas><span class="gs-ro gs-cloudro" id="gsCloudRo"></span></div>
+     <div class="gs-well"><canvas id="gsCloud" data-w="1338" data-h="96" title="The whole sound. Along the bottom, drag across for a loop, click to move Start, ⌥-drag to scrub, click a region's strip to loop it; along the top, drag a bracket or the Start flag. Inside the box moves the read head; beside it, across is Position jitter and up and down is Pitch jitter. Scroll to zoom, double-click for the whole sound"></canvas><span class="gs-ro gs-cloudro" id="gsCloudRo"></span></div>
     </div>
     <div class="gs-lower">
      <div class="gs-mod gs-panel" id="gsShared"><div class="gs-g3"><div class="gs-gcol" id="gsSh1"></div><div class="gs-gcol" id="gsSh2"></div><div class="gs-gcol" id="gsSh3"></div></div></div>
@@ -341,11 +341,12 @@ function gsTick(now) {
   if (GS_FX.view === 'fx') return;
   if (now - GS_KEYS.glyph > 80) { GS_KEYS.glyph = now; gsAnimateGlyphs(); }
   if (GS_KEYS.mini !== state.overview) { GS_KEYS.mini = state.overview; gsDrawMini(); }
-  // The whole file is the overview above every page, which keeps its own frame
-  // loop (416); the detail shows the loop, so it follows the same things.
+  // SOURCE shows the whole file with the loop, Start and the regions on it
+  // (since 18 Nov 2026, when the shared overview left this page).
   const sel = state.sel ? `${state.sel.start}|${state.sel.end}` : '';
   const stamp = gsHeadLive() ? now : 0, frames = state.overview?.frames || 0;
-  const loopKey = `${frames}|${sel}|${state.cue}|${state.loopOn}|${stamp}`;
+  const ann = state.annotations ? `${(state.annotations.regions || []).length}|${(state.annotations.markers || []).length}` : '';
+  const loopKey = `${frames}|${sel}|${state.cue}|${state.loopOn}|${stamp}|${ann}`;
   const clKey = [loopKey, GS.czA, GS.czB, GS.engine, GS_DET.got, GS_DET.staticKey, state.grains?.total, GS_PIC.pcm ? GS_PIC.serial : 0].concat(
     ['position', 'positionJitterMs', 'windowMs', 'wrap', 'cloud', 'ratio', 'scan', 'preserveTransients', 'sensitivity', 'floor', 'guardHops', 'overlap', 'vocWindowMs', 'anchorFrames', 'rateHz', 'densityHz', 'layers', 'semitones', 'envelope'].map(gsRead)).join('|');
   if (clKey !== GS_KEYS.cl || GS_DET.want !== GS_DET.got) { GS_KEYS.cl = clKey; gsDrawCloud(); }

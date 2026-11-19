@@ -408,58 +408,76 @@ test('Randomize is the tray\'s Random and its Undo puts back exactly what was th
   expect(await page.locator('#gsRndUndo').isVisible()).toBe(false);
 });
 
-test('the overview moves the loop and Start; the detail shows between the brackets and zooms', async ({ page }) => {
+test('SOURCE moves the loop and Start, on its strip and its handles; it shows the whole sound and zooms', async ({ page }) => {
+  // RJ, 18 Nov 2026: "grain does not need the overview, move all functionality
+  // into the source window - selection, loop, start point, all the things".
+  // The loop is made on the strip along the bottom (his pick), so a drag
+  // beside the read head is still Position and Pitch jitter.
   await openPage(page);
-  // The whole file is the overview every page shares (416), above the page.
-  const box = await page.locator('#poCanvas').boundingBox();
-  const y = box.y + box.height * 0.6, at = (u) => box.x + box.width * u;
-
-  // A drag across makes a loop.
-  await page.mouse.move(at(0.3), y);
-  await page.mouse.down();
-  await page.mouse.move(at(0.5), y, { steps: 4 });
-  await page.mouse.move(at(0.6), y, { steps: 4 });
-  await page.mouse.up();
+  expect(await page.isVisible('#pageOv')).toBe(false);
+  await page.waitForFunction(() => GS_DET.got === GS_DET.want && GS_DET.p);
+  const box = await page.locator('#gsCloud').boundingBox();
+  const g = await page.evaluate(() => { const g = gsCloudGeo(); return { w: g.w, h: g.h }; });
+  const k = box.width / g.w, at = (u) => box.x + box.width * u;
+  const strip = box.y + (g.h - 7) * k, handle = box.y + 6 * k, flag = box.y + 15 * k;
   const frames = await page.evaluate(() => state.overview.frames);
-  let sel = await page.evaluate(() => state.sel);
+  const X = (f) => box.x + (6 + f / frames * (g.w - 12)) * k;
+
+  // It shows the whole sound, and asks the server for all of it.
+  const view = await page.evaluate(() => [...gsCloudView(), gsFile().len]);
+  expect(view[0]).toBe(0);
+  expect(view[1]).toBeCloseTo(view[2], 6);
+  const got = await page.evaluate(() => [GS_DET.p.from, GS_DET.p.to, gsFile().frames]);
+  expect(got[0]).toBe(0);
+  expect(Math.abs(got[1] - got[2])).toBeLessThanOrEqual(1);
+
+  // A drag across the strip makes a loop, and Start goes to its start.
+  await page.mouse.move(at(0.3), strip);
+  await page.mouse.down();
+  await page.mouse.move(at(0.5), strip, { steps: 4 });
+  await page.mouse.move(at(0.6), strip, { steps: 4 });
+  await page.mouse.up();
+  const sel = await page.evaluate(() => state.sel);
   expect(sel.start / frames).toBeGreaterThan(0.27);
   expect(sel.end / frames).toBeLessThan(0.63);
   expect(await page.evaluate(() => state.cue)).toBe(sel.start);
 
-  // A bracket moves one end.
-  const X = (s) => box.x + 6 + s / frames * (box.width - 12);
-  await page.mouse.move(X(sel.end), y);
+  // A bracket's handle moves one end.
+  await page.mouse.move(X(sel.end), handle);
   await page.mouse.down();
-  await page.mouse.move(at(0.8), y, { steps: 5 });
+  await page.mouse.move(at(0.8), handle, { steps: 5 });
   await page.mouse.up();
   const sel2 = await page.evaluate(() => state.sel);
   expect(sel2.start).toBe(sel.start);
   expect(sel2.end).toBeGreaterThan(sel.end);
 
-  // A click moves Start and leaves the loop.
-  await page.mouse.click(at(0.5), y);
-  const cue = await page.evaluate(() => state.cue);
+  // A click on the strip moves Start and leaves the loop.
+  await page.mouse.click(at(0.5), strip);
+  let cue = await page.evaluate(() => state.cue);
   expect(cue / frames).toBeGreaterThan(0.45);
   expect(cue / frames).toBeLessThan(0.55);
   expect(await page.evaluate(() => state.sel)).toEqual(sel2);
 
-  // The detail asks the server for the loop.
-  await page.waitForFunction(() => GS_DET.got === GS_DET.want && GS_DET.p);
-  const got = await page.evaluate(() => [GS_DET.p.from - state.sel.start, GS_DET.p.to - state.sel.end]);
-  expect(Math.abs(got[0])).toBeLessThanOrEqual(1);
-  expect(Math.abs(got[1])).toBeLessThanOrEqual(1);
+  // The flag moves Start too.
+  await page.mouse.move(X(cue), flag);
+  await page.mouse.down();
+  await page.mouse.move(at(0.65), flag, { steps: 5 });
+  await page.mouse.up();
+  cue = await page.evaluate(() => state.cue);
+  expect(cue / frames).toBeGreaterThan(0.6);
+  expect(cue / frames).toBeLessThan(0.7);
+  expect(await page.evaluate(() => state.sel)).toEqual(sel2);
 
-  // Its zoom stays inside the brackets.
+  // Its zoom stays inside the sound, and Fit is the whole of it.
   await page.click('#gsCzIn');
   // Written on the next frame, so it is waited for rather than read at once.
   await expect(page.locator('#gsCzRo')).toHaveText(/×/);
-  const [ca, cb, a, b] = await page.evaluate(() => { const L = gsLoop(); return [...gsCloudView(), L.a, L.b]; });
-  expect(ca).toBeGreaterThanOrEqual(a - 1e-6);
-  expect(cb).toBeLessThanOrEqual(b + 1e-6);
-  expect(cb - ca).toBeLessThan((b - a) * 0.6);
+  const [ca, cb, len] = await page.evaluate(() => [...gsCloudView(), gsFile().len]);
+  expect(ca).toBeGreaterThanOrEqual(-1e-6);
+  expect(cb).toBeLessThanOrEqual(len + 1e-6);
+  expect(cb - ca).toBeLessThan(len * 0.6);
   await page.click('#gsCzFit');
-  // The reading is drawn by the frame loop, on the next frame.
-  await expect(page.locator('#gsCzRo')).toHaveText('loop');
+  await expect(page.locator('#gsCzRo')).toHaveText('whole');
 });
 
 test('dragging in the detail moves Position, and beside the box Spray and Pitch jitter', async ({ page }) => {

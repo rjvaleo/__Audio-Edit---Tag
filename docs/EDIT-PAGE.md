@@ -46,8 +46,12 @@ The whole open file, in one strip under the Now Playing bar, the full width of t
 in the same place on every page. So as you click from page to page, the waveform overview should not change, but
 everything under it … should." It is one element, so it is the same on every page.
 
-- **Where:** Edit, Grain, Prism, Chop, Wave, Seq, Atmosphere, the room and Compose (`PO_MODES`, set by `poSync`
-  from `setMode`). Not Browse or Theme.
+- **Where:** Edit, FX, Compose and Draw (`PO_MODES`, less the pages in `PO_NOT_ON`, set by `poSync` from `setMode`).
+  Since 18 Nov 2026 not Grain, Prism, Chop, Visual or Seq (RJ: "grain does not need the overview, move all
+  functionality into the source window - selection, loop, start point, all the things"; "do not need on prism";
+  "don't need on chop"; "don't need on visual"; "don't need on sequence"). Grain's SOURCE has the loop, Start and
+  the regions (`401-grain-views.js`), Prism plays its own sound in its own SOURCE, and Chop has its own overview
+  again. Not Browse, Theme, Atmosphere or Wave either. `tests/ui/no-overview.spec.mjs` goes page to page by the rail.
 - **What it shows:** the file in the sound's colours (`edColourAt`, plain until measured), the time, markers and
   regions, the loop (outside dimmed, its two brackets), the green Start flag and the playhead; on Grain, each Poly
   voice's head and a held note's. It was Grain's overview (`gsDrawOverview`) and keeps all of its gestures:

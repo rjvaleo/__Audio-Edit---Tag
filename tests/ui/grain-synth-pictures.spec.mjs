@@ -376,42 +376,31 @@ test('with the switch off, none of it runs', async ({ page }) => {
   await page.waitForFunction((p) => edSound.path === p && !!edSound.mono, path, { timeout: 10_000 });
 });
 
-test('the whole file runs across the top, above the page, in the sound\'s colours', async ({ page }) => {
-  // RJ, 13 Nov 2026: one big overview above WSOLA and the rest, where the loop
-  // and Start are set; SOURCE keeps only the loop, and the trace is gone. Since
-  // 14 Nov 2026 it is the overview every page shares (416), above the page, and
-  // SOURCE runs the full width under the engine tabs.
+test('SOURCE runs the full width under the engine tabs, with the whole sound; the overview is not on Grain', async ({ page }) => {
+  // RJ, 13 Nov 2026: one big overview above WSOLA and the rest; since 14 Nov
+  // the one every page shares. Since 18 Nov 2026 it is not on Grain at all
+  // ("grain does not need the overview, move all functionality into the source
+  // window"): SOURCE shows the whole sound, the loop and Start on it.
   const errs = errors(page);
   await openPage(page);
   const got = await page.evaluate(() => {
-    const ov = poCanvas.getBoundingClientRect(), view = document.getElementById('grainView').getBoundingClientRect();
     const src = gsPSrc.getBoundingClientRect(), tabs = gsEngTabs.getBoundingClientRect();
-    // SOURCE runs the width of the Grain page, which is scaled whole to fit
-    // (`gsFit`): at 1440 x 900, with the shared strip above it and the page
-    // 990 tall, the fit is by height and the page is narrower than the view.
     const app = document.querySelector('#grainView .gs-app').getBoundingClientRect();
     return {
-      inGrain: !!poCanvas.closest('#grainView'), old: !!document.getElementById('gsSrcPic'), trace: !!document.getElementById('gsTrace'),
-      above: ov.bottom <= view.top + 1, wide: ov.width / view.width, srcUnderTabs: src.top >= tabs.bottom, srcWide: src.width / app.width,
+      old: !!document.getElementById('gsSrcPic'), trace: !!document.getElementById('gsTrace'),
+      srcUnderTabs: src.top >= tabs.bottom, srcWide: src.width / app.width,
     };
   });
-  expect(got).toMatchObject({ inGrain: false, old: false, trace: false, above: true, srcUnderTabs: true });
-  expect(got.wide).toBeGreaterThan(0.9);
+  expect(got).toMatchObject({ old: false, trace: false, srcUnderTabs: true });
   expect(got.srcWide).toBeGreaterThan(0.9);
-  // Coloured once measured, from the samples the page already read: no second fetch.
-  await page.waitForFunction(() => !!edSound.an && edSound.path === state.selectedFile.path, null, { timeout: 20_000 });
-  await page.waitForTimeout(200);
-  const alpha = await page.evaluate(() => {
-    const el = poCanvas, d = el.getContext('2d').getImageData(0, 0, el.width, el.height).data;
-    let max = 0;
-    for (let k = 3; k < d.length; k += 4) max = Math.max(max, d[k]);
-    return max;
-  });
-  expect(alpha, 'the overview is still the plain one').toBeGreaterThan(200);
-  // The effects page leaves it where it is: it is the same on every page.
+  expect(await page.isVisible('#pageOv')).toBe(false);
+  const [a, b, len] = await page.evaluate(() => [...gsCloudView(), gsFile().len]);
+  expect(a).toBe(0);
+  expect(b).toBeCloseTo(len, 6);
+  // The effects page does not bring it back.
   await page.evaluate(() => gsFxSetView('fx'));
-  expect(await page.isVisible('#pageOv')).toBe(true);
+  expect(await page.isVisible('#pageOv')).toBe(false);
   await page.evaluate(() => gsFxSetView('eng'));
-  expect(await page.isVisible('#pageOv')).toBe(true);
+  expect(await page.isVisible('#pageOv')).toBe(false);
   expect(errs).toEqual([]);
 });

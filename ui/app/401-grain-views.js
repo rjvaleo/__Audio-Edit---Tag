@@ -1,31 +1,41 @@
 // ================================================================ Grain: the views
 //
-// The detail of the sound. The whole file is the overview every page shares
-// (`416-page-overview.js`): its loop brackets and its green Start flag are where
-// you choose the part of the sound. The detail, full width under the engine
-// tabs, shows only what lies between those brackets, with the engine's own marks
-// on it and its own zoom.
+// SOURCE, full width under the engine tabs: the whole sound, with the loop's
+// brackets, the green Start flag, the regions and the engine's own marks on it,
+// and its own zoom. Since 18 Nov 2026 it is where the part of the sound is
+// chosen; the overview every page shares (`416-page-overview.js`) stands down
+// on Grain (RJ: "grain does not need the overview, move all functionality into
+// the source window - selection, loop, start point, all the things").
 //
-// Both are drawn from the server's peaks (`/api/peaks`, `clips=1`, the timeline
-// the selection and the cue are counted on). The overview uses `state.overview`,
-// which the app keeps anyway; the detail fetches its own, at its own width, for
-// the range it is showing.
+// - the strip along the bottom, where the time is written: a drag across makes
+//   a new loop, a click moves Start, ⌥ scrubs, and a region's strip selects it;
+// - the handles along the top drag an end of the loop or Start;
+// - in between, as before: the read head's box moves Position, beside it
+//   across is Position jitter and up and down is Pitch jitter (RJ chose the
+//   strip for the loop so these stay).
+//
+// Drawn from the server's peaks (`/api/peaks`, `clips=1`, the timeline the
+// selection and the cue are counted on), fetched at its own width for the
+// range in view; `state.overview` until they come.
 
 /// What the detail is showing and what has been fetched for it.
 const GS_DET = { want: '', got: '', seq: 0, timer: 0, a: 0, b: 0, p: null, cen: null, on: [], med: 0.01, staticKey: '', cv: null, rg: null };
 
 // ──────────────────────────────────────────────────────────── the detail's zoom
 
-/// The detail's range: the loop, or the part of it that has been zoomed to.
+/// The length of the sound, in seconds, which SOURCE shows whole.
+const gsSndLen = () => gsFile()?.len || 1;
+
+/// The detail's range: the whole sound, or the part of it that has been zoomed to.
 function gsCloudView() {
-  const { a, b } = gsLoop();
-  if (!(GS.czB > GS.czA)) return [a, b];
-  const L = Math.min(GS.czB - GS.czA, b - a), x = wvClamp(GS.czA, a, b - L);
+  const len = gsSndLen();
+  if (!(GS.czB > GS.czA)) return [0, len];
+  const L = Math.min(GS.czB - GS.czA, len), x = wvClamp(GS.czA, 0, len - L);
   return [x, x + L];
 }
 
 function gsZoomCloud(f, at) {
-  const [ca, cb] = gsCloudView(), { a, b } = gsLoop();
+  const [ca, cb] = gsCloudView(), a = 0, b = gsSndLen();
   at = at ?? (ca + cb) / 2;
   let na = at - (at - ca) * f, nb = at + (cb - at) * f;
   if (nb - na >= b - a - 1e-6) { GS.czA = GS.czB = 0; return; }
@@ -36,8 +46,8 @@ function gsZoomCloud(f, at) {
 }
 
 function gsZoomRo() {
-  const [ca, cb] = gsCloudView(), { a, b } = gsLoop();
-  gsTxt('gsCzRo', GS.czB > GS.czA ? `${((b - a) / (cb - ca)).toFixed(1)}×` : 'loop');
+  const [ca, cb] = gsCloudView();
+  gsTxt('gsCzRo', GS.czB > GS.czA ? `${(gsSndLen() / (cb - ca)).toFixed(1)}×` : 'whole');
 }
 
 // ──────────────────────────────────────────────────────── fetching the detail
@@ -146,8 +156,8 @@ function gsRidge(a, b, W, useDetail) {
 
 // ─────────────────────────────────────────────────────────── the whole file
 
-// The whole file, with the loop brackets and Start, is the overview every page
-// shares now (`416-page-overview.js`): it is drawn and dragged there.
+// The whole file, with the loop brackets and Start, is SOURCE itself since
+// 18 Nov 2026 (`gsDrawLoop`, `gsWireDetail`).
 
 /// Start, to a time in seconds of the sound.
 function gsMoveCue(s) {
@@ -316,6 +326,7 @@ function gsDrawCloud() {
   c.fillStyle = cl.t2;
   c.fillText(gsFms(ww * 1000), Math.min(bx + bw + 4, w - 60), h - 18);
   gsDrawMarks(c, geo, cl);
+  gsDrawLoop(c, geo, cl);
   gsDrawVoiceHeads(c, X, 18, h - 18, 30, 12, cl, (s) => s >= a && s <= b);
   if (gsNoteHead() != null) {
     const nh = gsHead();
@@ -388,16 +399,79 @@ function gsDrawMarks(c, geo, cl) {
   }
   const sc = gsRead('scan'), r = gsRead('ratio'), L = gsLoop(), per = Math.abs(sc) > 1e-3 ? (L.b - L.a) * r / Math.abs(sc) : Infinity;
   gsLbl(c, `Stretch ${r.toFixed(2)}× · Scan ${sc.toFixed(2)}× → ${Number.isFinite(per) ? 'a pass lasts ' + gsFmtS(per) : 'frozen at Start'}`, 10, 16, cl.t2);
-  if (GS.czB > GS.czA) gsLbl(c, `${L.a.toFixed(2)}–${L.b.toFixed(2)} s`, w - 60, 16, cl.acc, 'rgba(5,6,9,.78)', 'right');
   c.restore();
 }
 
+/// The strip along SOURCE's bottom, where the time is written and a new loop is
+/// drawn, and the band along its top where the handles are taken hold of.
+const GS_STRIP = 14, GS_TOP = 24;
+
+/// The loop on SOURCE, as the shared overview drew it (416): outside it dimmed,
+/// its brackets with their handles, its length, the regions and markers, and
+/// the strip along the bottom.
+function gsDrawLoop(c, geo, cl) {
+  const { X, w, h } = geo, { a, b } = gsLoop(), bot = h - GS_STRIP;
+  c.save();
+  c.beginPath(); c.rect(4, 0, w - 8, h); c.clip();
+  gsDrawAnnotations(c, X, 4, bot, cl);
+  const ra = X(a), rb = X(b);
+  c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(4, 0, Math.max(0, ra - 4), h); c.fillRect(rb, 0, Math.max(0, w - 4 - rb), h);
+  c.fillStyle = 'rgba(255,255,255,.035)'; c.fillRect(4, bot, w - 8, h - bot);
+  c.strokeStyle = cl.acc; c.lineWidth = 1.4;
+  c.beginPath(); c.moveTo(ra, 1); c.lineTo(ra, bot); c.moveTo(rb, 1); c.lineTo(rb, bot); c.stroke();
+  for (const x of [ra, rb]) {
+    c.fillStyle = cl.acc; c.beginPath(); c.roundRect(x - 4, 1, 8, 10, 3); c.fill();
+    c.fillStyle = 'rgba(0,0,0,.5)'; c.fillRect(x - 1.5, 3, 1, 6); c.fillRect(x + 0.5, 3, 1, 6);
+  }
+  c.font = `600 9px ${cl.mono}`;
+  gsLbl(c, `${gsRegLabel().toUpperCase()} · LOOP ${(b - a).toFixed(2)} S`, w - 16, 16, cl.acc, 'rgba(5,6,9,.78)', 'right');
+  c.restore();
+}
+
+/// The loop, Start and the regions, as the shared overview had them (416): on
+/// the strip along the bottom a drag across is a new loop, a click moves Start,
+/// ⌥ scrubs and a region's strip selects it; along the top, a bracket's handle
+/// moves an end and the flag moves Start. Anywhere else, the read head (below).
+function gsLoopGrab(x, y) {
+  const f = gsFile();
+  if (!f) return null;
+  const { X, h } = gsCloudGeo(), bot = h - GS_STRIP, { a, b } = gsLoop();
+  const r = gsRegionAt(x, y, X, bot);
+  if (r) return { sm: 'region', r };
+  if (y < GS_TOP) {
+    const da = Math.abs(x - X(a)), db = Math.abs(x - X(b)), dc = Math.abs(x - X(gsCue()));
+    const br = Math.min(da, db) < 6 ? (da <= db ? 'a' : 'b') : null, cue = dc < 6 ? 'cue' : null;
+    // The bracket's handle sits above the flag (`gsDrawLoop`, `gsDrawMarks`).
+    if (br && cue) return { sm: y < 11 ? br : 'cue' };
+    if (br || cue) return { sm: br || cue };
+  }
+  return y >= bot ? { sm: 'sel' } : null;
+}
+
 /// Inside the box moves Position; beside it, across is Spray and up and down is
-/// Pitch jitter. The wheel zooms into the loop at the pointer; double-click is
-/// the whole loop again.
+/// Pitch jitter. The loop and Start are taken first (`gsLoopGrab`). The wheel
+/// zooms at the pointer; double-click is the whole sound again.
 function gsWireDetail() {
   const g = GS_CV.gsCloud, el = g.el;
   let mode = null, touched = false;
+  // The loop's gesture, while one is going: which, where it started, how far.
+  let sm = null, s0 = 0, moved = 0, ends = null;
+  const toS = (x) => { const { a, b, w } = gsCloudGeo(); return wvClamp(a + (x - 6) / (w - 12) * (b - a), 0, gsSndLen()); };
+  const scrub = (s) => { const f = gsFile(); if (f) gsSeekTo(Math.round(s * f.sr)); };
+  const loopMove = (dx, e) => {
+    const s = toS(wvLocal(el, e)[0]), { a, b } = ends;
+    moved += Math.abs(dx);
+    if (sm === 'scrub') scrub(s);
+    else if (sm === 'a') gsSetLoop(Math.min(s, b - 0.05), b);
+    else if (sm === 'b') gsSetLoop(a, Math.max(s, a + 0.05));
+    else if (sm === 'cue') gsMoveCue(s);
+    else if (sm === 'sel' && moved > 3) { gsSetLoop(Math.min(s0, s), Math.max(s0, s)); gsMoveCue(Math.min(s0, s)); }
+  };
+  const loopUp = () => {
+    if (sm === 'sel' && moved <= 3) { gsMoveCue(s0); seekSource(state.cue); }
+    else if (sm && sm !== 'scrub' && state.loopOn && state.sel) seekSource(state.sel.start);
+    sm = null;
+  };
   const hp = () => {
     const f = gsFile();
     return gsReadWrap(gsHead() + (gsCloudActive() && f ? gsRead('position') * f.len : 0));
@@ -418,17 +492,33 @@ function gsWireDetail() {
       gsSend(GS_C.positionJitterMs, true);
     }
   };
-  gsDrag(el, (dx, dy, e) => apply(e), (e) => {
+  gsDrag(el, (dx, dy, e) => (sm ? loopMove(dx, e) : apply(e)), (e) => {
     const f = gsFile();
-    if (!f) { mode = null; return; }
+    mode = null; sm = null;
+    if (!f) return;
+    const [lx, ly] = wvLocal(el, e), got = gsLoopGrab(lx, ly);
+    if (got || (e.altKey && ly >= gsCloudGeo().h - GS_STRIP)) {
+      ends = gsLoop(); moved = 0; s0 = toS(lx);
+      if (got?.sm === 'region') { state.sel = { start: got.r.start, end: got.r.end }; drawSelection(); applyLoop(); return; }
+      sm = e.altKey && (!got || got.sm === 'sel') ? 'scrub' : got.sm;
+      if (sm === 'scrub') scrub(s0);
+      return;
+    }
     const { X } = gsCloudGeo(), [x] = wvLocal(el, e), w2 = gsRead('windowMs') / 2000;
     const bw = Math.max(6, X(hp() + w2) - X(hp() - w2));
     mode = Math.abs(x - X(hp())) <= bw / 2 + 5 ? 'pos' : 'spray';
     touched = false;
     apply(e);
   }, () => {
+    if (sm) { loopUp(); return; }
     if (mode && touched) gsCommit(GS_C.positionJitterMs);
     mode = null;
+  });
+  // What a press here would take hold of, shown by the pointer.
+  el.addEventListener('pointermove', (e) => {
+    if (e.buttons) return;
+    const [x, y] = wvLocal(el, e), g = gsLoopGrab(x, y)?.sm;
+    el.style.cursor = g === 'a' || g === 'b' || g === 'cue' ? 'ew-resize' : g === 'region' ? 'pointer' : g === 'sel' ? 'crosshair' : '';
   });
   el.addEventListener('wheel', (e) => {
     e.preventDefault();
