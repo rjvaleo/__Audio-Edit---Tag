@@ -616,6 +616,8 @@ fn rack_four_control_cost() {
                 costs.push(cpu_ns() - start);
                 assert!(audio.iter().all(|v| v.is_finite()));
             }
+            let slot_ns = block as u64 * 1_000_000_000 / 48_000;
+            println!("DEADLINE kind=rack block={} n={} over_half={} over_full={}", block, costs.len(), costs.iter().filter(|&&n| n > slot_ns/2).count(), costs.iter().filter(|&&n| n > slot_ns).count());
             costs.sort_unstable();
             println!("RACK_FOUR_COST chunk={} convolution={} block={} n={} median_ns={} p99_ns={} worst_ns={} controls={:?}", CONTROL_CHUNK, convolution, block, costs.len(), costs[costs.len()/2], costs[(costs.len()-1)*99/100], costs[costs.len()-1], controls);
         }
@@ -639,6 +641,7 @@ fn prism_pad_callback_cost() {
     }
     for entry in fx::prism::catalogue() {
         let d = entry.descriptor;
+        if std::env::var("PAD_COST_ONLY").is_ok_and(|id| id != d.id) { continue; }
         let Some(pad) = d.panel.pad else {
             continue;
         };
@@ -677,8 +680,14 @@ fn prism_pad_callback_cost() {
                     hash = (hash ^ sample.to_bits() as u64).wrapping_mul(1099511628211);
                 }
             }
+            let slot_ns = block as u64 * 1_000_000_000 / 48_000;
+            println!("DEADLINE kind=pad block={} n={} over_half={} over_full={}", block, costs.len(), costs.iter().filter(|&&n| n > slot_ns/2).count(), costs.iter().filter(|&&n| n > slot_ns).count());
             costs.sort_unstable();
             println!("PAD_CALLBACK_COST id={} block={} median_ns={} p99_ns={} worst_ns={} hash={hash:016x}",d.id,block,costs[costs.len()/2],costs[(costs.len()-1)*99/100],costs[costs.len()-1]);
         }
     }
 }
+
+#[test]
+#[ignore = "047 repeated callback measurements"]
+fn review_callback_cost() { rack_four_control_cost(); prism_pad_callback_cost(); }
