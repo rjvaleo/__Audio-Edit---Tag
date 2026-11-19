@@ -173,6 +173,39 @@ function wvDrawFace(g, v, wave, ghost, o = {}) {
   c.restore();
 }
 
+/// A small parameter picture: dim reference, coloured part moved by the value.
+/// Shared by the plain synth controls and board nodes, inspector and dock.
+function wvDrawControlPic(g, u, key) {
+  const { c, w, h } = g, cl = wvCl();
+  const x = w * .23, y = h * .27, width = w * .54, height = h * .46;
+  c.save();
+  c.translate(x, y);
+  c.lineWidth = 1;
+  c.strokeStyle = cl.t3;
+  c.beginPath(); c.moveTo(0, height / 2); c.lineTo(width, height / 2); c.stroke();
+  c.strokeStyle = cl.acc;
+  c.beginPath();
+  if (/pan|width|spread|mix|wet|dry|key/i.test(key)) {
+    const at = u * width;
+    c.moveTo(at, 0); c.lineTo(at, height);
+    c.moveTo(0, height); c.lineTo(at, height * .35); c.lineTo(width, height);
+  } else if (/cut|freq|tone|res|band.*q/i.test(key)) {
+    const at = width * (.15 + .7 * u);
+    c.moveTo(0, height * .2); c.lineTo(at, height * .2);
+    c.quadraticCurveTo(at + width * .15, height * .05, width, height);
+  } else if (/drive|gain|db|level|threshold|ratio/i.test(key)) {
+    const k = .15 + .7 * u;
+    c.moveTo(0, height); c.lineTo(width * k, height * (1 - k)); c.lineTo(width, height * (1 - k));
+  } else {
+    for (let i = 0; i <= 24; i++) {
+      const x = i / 24 * width, y = height / 2 - Math.sin(i / 24 * Math.PI * (1 + 5 * u)) * height * .42;
+      if (i) c.lineTo(x, y); else c.moveTo(x, y);
+    }
+  }
+  c.stroke();
+  c.restore();
+}
+
 /// A plain knob, with its modulation when it has any.
 function wvDrawKnob(id, key, bip) {
   const k = WVW[id];
@@ -181,6 +214,7 @@ function wvDrawKnob(id, key, bip) {
   const v = wvG(key);
   c.clearRect(0, 0, w, h);
   wvKnobRing(k, v, wvModOf(key), { bip, pointer: 1 });
+  wvDrawControlPic(k, v, key);
 }
 
 function wvDrawUniFace(g, cur, n, det, spr) {

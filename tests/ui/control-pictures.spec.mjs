@@ -185,3 +185,54 @@ test('a pointer on a control\'s slider reaches it, picture or not', async ({ pag
   }
   expect(missed, 'sliders a pointer does not reach').toEqual([]);
 });
+
+// The ring and pointer describe travel, not what a parameter does. Only the
+// face canvas or a semantic SVG in the picture well counts as its picture.
+function cpBlank(knob) {
+  for (const cv of knob.querySelectorAll('canvas')) {
+    const pixels = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) return false;
+  }
+  const owner = knob.closest('.ui-knob') || knob;
+  return !owner.querySelector('.ui-pic path[d], .ui-pic line, .ui-pic polyline, .ui-pic polygon, .ui-pic circle, .ui-pic rect, svg.pic path[d], svg.pic line, svg.pic circle');
+}
+
+test('every knob on Wave has its picture', async ({ page }) => {
+  test.setTimeout(120_000);
+  const kinds = ['in:voice', 'wave:drive', 'fx:hp-chorus', 'fx:spectral-dynamics', 'fx:ambient-fdn', 'fx:eq', 'out'];
+  const nodes = kinds.map((kind, i) => ({ id: `cp${i}`, kind, on: true, x: 80 + i * 190, y: 120, params: {} }));
+  const cables = nodes.slice(1).map((n, i) => ({ from: [nodes[i].id, 'o'], to: [n.id, 'i'] }));
+  expect((await page.request.post('/api/wave/board', { data: { name: 'Picture audit', nodes, cables } })).ok()).toBe(true);
+  await page.setViewportSize({ width: 2080, height: 1100 });
+  await page.goto('/');
+  await page.locator('#leftRail .rl-item[data-mode="synth"]').click();
+  await page.waitForFunction(() => WV.connected && WV.board?.name === 'Picture audit' && state.suites?.length);
+  const blank = [];
+  const audit = async (scope, label) => {
+    const missing = await page.evaluate(({ scope, source }) => {
+      const cpBlank = (0, eval)(`(${source})`);
+      return [...document.querySelectorAll(`${scope} .ui-kn`)].filter((kn) => kn.getClientRects().length && cpBlank(kn)).map((kn) =>
+        kn.querySelector('canvas')?.dataset.tgt || kn.querySelector('canvas')?.id || kn.closest('.ui-knob')?.querySelector('.ui-kname')?.textContent || kn.closest('.wv-kl')?.textContent.trim() || '?');
+    }, { scope, source: cpBlank.toString() });
+    blank.push(...missing.map((s) => `${label}: ${s}`));
+  };
+  for (const view of ['play', 'create', 'matrix', 'fx']) {
+    await page.locator(`#wvViews [data-v="${view}"]`).click();
+    await page.waitForTimeout(150);
+    await audit('#wvMid', view);
+    if (view !== 'fx') {
+      for (const id of nodes.slice(1, -1).map((n) => n.id)) {
+        await page.evaluate((id) => wvDockScrollTo(id), id);
+        await page.waitForTimeout(100);
+        await audit(`#wvChainDock [data-card="${id}"]`, `${view} dock ${id}`);
+      }
+    } else {
+      for (const id of nodes.slice(1, -1).map((n) => n.id)) {
+        await page.evaluate((id) => wvBoardSelect({ t: 'node', id }), id);
+        await page.waitForTimeout(100);
+        await audit('#wvFinsp', `inspector ${id}`);
+      }
+    }
+  }
+  expect(blank, 'Wave knobs without a value picture').toEqual([]);
+});

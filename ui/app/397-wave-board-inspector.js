@@ -648,6 +648,7 @@ function wvDrawBoardKnob(g, n, p) {
   const m = wvModOf(`board:${n.id}:${p.key}`), v = wvPN(p, wvPVal(n, p));
   g.c.clearRect(0, 0, g.w, g.h);
   wvKnobRing(g, v, m, { bip: wvPBip(p), pointer: 1 });
+  wvDrawControlPic(g, v, p.key);
 }
 
 // ─────────────────────────────────────────────────────────────── the frame
