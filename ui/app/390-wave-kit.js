@@ -558,7 +558,6 @@ const WV = {
   kbLo: 48,
   bend: 0,
   mw: 0,
-  slot: { env: 'env1', lfo: 'lfo1' }, // v8: which envelope and LFO the Play slots show
   mx: 'pins',              // v8: the Matrix as pins or as rows
   board: null,             // v8: the FX board, as the engine stores it
   tilt: [0.5, 0.5, 0.5],   // how far each oscillator's table leans back

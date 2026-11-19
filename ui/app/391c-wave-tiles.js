@@ -1,16 +1,13 @@
 // ================================================ Wave: the modulation tiles
 //
 // v8 (mock-up F). Every envelope and LFO is a tile: mostly its picture, with
-// one line of readings under it that drag. Play shows four large ones (Amp, a
-// slot for ENV 2–4, LFO 1, a slot for LFO 2–4, picked by the 2 · 3 · 4 buttons
-// in the slot's header); the Matrix shows all eight, smaller. The two are the
+// one line of readings under it that drag. Play and Matrix both show all
+// eight tiles, with every control, at the same fixed size. The two are the
 // same controls on the same keys. A tile's header pill, and every tile in the
 // strips (the playing hand and the macros), drags onto any control to make the
 // source move it: anything with a `data-tgt`, on any view, a board control
 // included. A click lights what the source moves.
 
-/// The Play slots: which tiles each can show. ENV 2 and LFO 2 by default.
-const WV_SLOTS = { env: ['env1', 'env2', 'env3'], lfo: ['lfo1', 'lfo2', 'lfo3'] };
 const WV_ADSR = [['a', 'Attack'], ['d', 'Decay'], ['s', 'Sustain'], ['r', 'Release']];
 const WV_LMODES = [['free', 'Free', 'Free: runs all the time, the same for every note'], ['trig', 'Trig', 'Trig: starts again from the beginning on each note'], ['env', 'Env', 'Env: plays once per note, then holds its last value']];
 const WV_LREAD = [['lr', 'Rate', 'rate', 'Rate: drag up and down, Shift for fine. Hz or Sync beside the picture sets how it counts'], ['ls', 'Smooth', 'smooth', 'Smooth: rounds off the corners of the shape'], ['li', 'Rise', 'rise', 'Rise: how long it takes to fade in after each note']];
@@ -33,49 +30,39 @@ function wvTileGrab(src, P) {
   return `<span class="wv-grab ${amp ? 'fixed' : ''}" ${amp ? '' : `data-src="${src}"`} style="--c:${wvSrcColour(src)}" title="${wvTileTip(src)}">${amp ? '' : '<i class="gr"></i>'}${wvSrcLab(src)}${em}</span>`;
 }
 
-const wvSlotBtns = (slot, src) => `<span class="wv-slot">${WV_SLOTS[slot].map((j) => `<span class="wv-sb wv-btn ${j === src ? 'on' : ''}" data-slotpick="${slot}" data-s="${j}" style="--c:${wvSrcColour(j)}" title="Show ${wvSrcLab(j)} in this tile">${wvSrcLab(j).slice(-1)}</span>`).join('')}</span>`;
-
 /// A reading that drags, and takes a dropped source: its top line is the
 /// modulation range, in the source's colour, with a dot where it is now.
 const wvRdEl = (tgt, n, tip, extra = '') => `<div class="wv-rd wv-btn" data-tgt="${tgt}" ${extra} title="${tip}"><span>${n}</span><b></b><i class="bar"></i><i class="mb"></i><i class="md"></i></div>`;
 
-function wvEnvTile(P, src, big, slot) {
-  const px = WV_TILE_PX[big ? 'big' : 'small'], tg = `<span class="wv-tgts ${big ? 'ov' : ''}" id="wv${P}tg${src}"></span>`;
-  return `<div class="wv-tile ${big ? 'big' : ''}" data-tile="${src}" data-p="${P}" ${slot ? `data-slot="${slot}"` : ''} style="--c:${wvSrcColour(src)}">
-   <div class="wv-th">${wvTileGrab(src, P)}${big ? '<span class="wv-sp"></span>' : tg}${slot ? wvSlotBtns(slot, src) : ''}<i class="act"></i></div>
-   <div class="wv-well"><canvas id="wv${P}ev${src}" data-w="${px.env}" data-h="${px.h}" title="${src === 'amp' ? 'Amp envelope' : wvSrcLab(src)}: drag a point. Attack and decay across, sustain up and down, release across"></canvas>${big ? tg : ''}</div>
+function wvEnvTile(P, src, big) {
+  const px = WV_TILE_PX[big ? 'big' : 'small'], overlay = big || P === 'p', tg = `<span class="wv-tgts ${overlay ? 'ov' : ''}" id="wv${P}tg${src}"></span>`;
+  return `<div class="wv-tile ${big ? 'big' : ''}" data-tile="${src}" data-p="${P}" style="--c:${wvSrcColour(src)}">
+   <div class="wv-th">${wvTileGrab(src, P)}${overlay ? '<span class="wv-sp"></span>' : tg}<i class="act"></i></div>
+   <div class="wv-well"><canvas id="wv${P}ev${src}" data-w="${px.env}" data-h="${px.h}" title="${src === 'amp' ? 'Amp envelope' : wvSrcLab(src)}: drag a point. Attack and decay across, sustain up and down, release across"></canvas>${overlay ? tg : ''}</div>
    <div class="wv-rds four">${WV_ADSR.map(([k, n]) => wvRdEl(`${src}.${k}`, n, `${n}: drag up and down, Shift for fine. Drop a source here to modulate it`, `data-env="${src}" data-k="${k}"`)).join('')}</div></div>`;
 }
 
-function wvLfoTile(P, src, big, slot) {
-  const px = WV_TILE_PX[big ? 'big' : 'small'], tg = `<span class="wv-tgts ${big ? 'ov' : ''}" id="wv${P}tg${src}"></span>`;
-  return `<div class="wv-tile ${big ? 'big' : ''}" data-tile="${src}" data-p="${P}" ${slot ? `data-slot="${slot}"` : ''} style="--c:${wvSrcColour(src)}">
-   <div class="wv-th">${wvTileGrab(src, P)}${big ? '<span class="wv-sp"></span>' : tg}${slot ? wvSlotBtns(slot, src) : ''}<i class="act"></i></div>
-   <div class="wv-lb"><div class="wv-well"><canvas id="wv${P}lv${src}" data-w="${px.lfo}" data-h="${px.h}" title="${wvSrcLab(src)}: its shape, and where it is now. Drag a point to draw your own; double-click to add one"></canvas>${big ? tg : ''}</div>
+function wvLfoTile(P, src, big) {
+  const px = WV_TILE_PX[big ? 'big' : 'small'], overlay = big || P === 'p', tg = `<span class="wv-tgts ${overlay ? 'ov' : ''}" id="wv${P}tg${src}"></span>`;
+  return `<div class="wv-tile ${big ? 'big' : ''}" data-tile="${src}" data-p="${P}" style="--c:${wvSrcColour(src)}">
+   <div class="wv-th">${wvTileGrab(src, P)}${overlay ? '<span class="wv-sp"></span>' : tg}<i class="act"></i></div>
+   <div class="wv-lb"><div class="wv-well"><canvas id="wv${P}lv${src}" data-w="${px.lfo}" data-h="${px.h}" title="${wvSrcLab(src)}: its shape, and where it is now. Drag a point to draw your own; double-click to add one"></canvas>${overlay ? tg : ''}</div>
     <div class="wv-lcol"><div class="wv-lshp wv-btn" data-lshape="${src}" title="Shape: click to pick another"><svg viewBox="0 0 16 14"><path d=""/></svg></div>
      <div class="wv-seg wv-vseg" data-lmode="${src}">${WV_LMODES.map(([k, l, t]) => `<span data-k="${k}" title="${t}">${l}</span>`).join('')}</div>
      <div class="wv-seg wv-vseg" data-lsync="${src}"><span data-k="0" title="Hz: the rate runs free of the tempo">Hz</span><span data-k="1" title="Sync: the rate locks to the tempo, in bars and notes">Sync</span></div></div></div>
    <div class="wv-rds three">${WV_LREAD.map(([k, n, key, t]) => wvRdEl(`${src}.${key}`, n, t + '. Drop a source here to modulate it', `id="wv${P}${k}${src}" data-lfo="${src}" data-lk="${key}"`)).join('')}</div></div>`;
 }
 
-/// Play's four large tiles and its strip.
+/// Play shows every source tile at the Matrix's fixed size.
 function wvBuildPlayTiles() {
-  $('wvPEnvTiles').innerHTML = wvEnvTile('p', 'amp', 1) + WV_SLOTS.env.map((s) => wvEnvTile('p', s, 1, 'env')).join('');
-  $('wvPLfoTiles').innerHTML = wvLfoTile('p', 'lfo0', 1) + WV_SLOTS.lfo.map((s) => wvLfoTile('p', s, 1, 'lfo')).join('');
-  $('wvSrcStrip').innerHTML = WV_STRIP.map((s) => `<div class="wv-sc wv-btn ${s.g0 && s.kind === 'macro' ? 'g0' : ''}" data-src="${s.key}" style="--c:${wvSrcColour(s.key)}" title="${wvTileTip(s.key)}"><i class="act"></i><b>${s.label}</b><canvas id="wvSc${s.key}" data-w="54" data-h="13"></canvas></div>`).join('');
+  $('wvPEnvTiles').innerHTML = ['amp', 'env1', 'env2', 'env3'].map((s) => wvEnvTile('p', s, 0)).join('');
+  $('wvPLfoTiles').innerHTML = ['lfo0', 'lfo1', 'lfo2', 'lfo3'].map((s) => wvLfoTile('p', s, 0)).join('');
 }
 
 /// The Matrix view's eight small tiles.
 function wvBuildMatrixTiles(env, lfo) {
   env.innerHTML = ['amp', 'env1', 'env2', 'env3'].map((s) => wvEnvTile('m', s, 0)).join('');
   lfo.innerHTML = ['lfo0', 'lfo1', 'lfo2', 'lfo3'].map((s) => wvLfoTile('m', s, 0)).join('');
-}
-
-/// Show one envelope or LFO in its Play slot.
-function wvSetSlot(kind, src) {
-  WV.slot[kind] = src;
-  wvSyncTiles();
-  wvRenderTileTargets();
 }
 
 // ─────────────────────────────────────────────────────────────── wiring
@@ -103,7 +90,6 @@ function wvWireTiles(root) {
   root.querySelectorAll('[data-lshape]').forEach((b) => b.addEventListener('click', () => wvLfoMenu(b, +b.dataset.lshape.slice(3))));
   root.querySelectorAll('[data-lmode] span').forEach((b) => b.addEventListener('click', () => wvCommit(`${b.parentElement.dataset.lmode}.mode`, b.dataset.k)));
   root.querySelectorAll('[data-lsync] span').forEach((b) => b.addEventListener('click', () => wvCommit(`${b.parentElement.dataset.lsync}.sync`, +b.dataset.k)));
-  root.querySelectorAll('[data-slotpick]').forEach((b) => b.addEventListener('click', () => wvSetSlot(b.dataset.slotpick, b.dataset.s)));
   wvWireSrc(root);
 }
 
@@ -220,12 +206,8 @@ function wvRenderTileTargets() {
   });
 }
 
-/// The lit choices on every tile, and which tiles the Play slots show.
+/// The lit choices on every tile.
 function wvSyncTiles() {
-  for (const slot of Object.keys(WV_SLOTS)) {
-    document.querySelectorAll(`#wvViewPlay .wv-tile[data-slot="${slot}"]`).forEach((t) => { t.style.display = t.dataset.tile === WV.slot[slot] ? '' : 'none'; });
-    document.querySelectorAll(`[data-slotpick="${slot}"]`).forEach((b) => b.classList.toggle('on', b.dataset.s === WV.slot[slot]));
-  }
   for (let L = 0; L < 4; L++) {
     // v8b: the shape it plays, which a row onto it may have stepped.
     const sh = WV_LFO_SHAPES.find((q) => q[0] === (wvChoiceNow(`lfo${L}.shape`) || 'drawn')) || WV_LFO_SHAPES[7];

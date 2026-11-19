@@ -134,3 +134,39 @@ test('every effect face fits the dock without horizontal clipping', async ({ pag
   });
   expect(failures).toEqual([]);
 });
+
+test('Play shows all eight envelopes and LFOs with every control', async ({ page }) => {
+  await wave(page);
+  for (const src of ['amp', 'env1', 'env2', 'env3', 'lfo0', 'lfo1', 'lfo2', 'lfo3']) {
+    const tile = page.locator(`#wvViewPlay [data-p="p"][data-tile="${src}"]`);
+    await expect(tile).toBeVisible();
+    await expect(tile.locator('.wv-slot')).toHaveCount(0);
+    if (src.startsWith('lfo')) {
+      await expect(tile.locator('[data-lmode] span')).toHaveText(['Free', 'Trig', 'Env']);
+      await expect(tile.locator('[data-lsync] span')).toHaveText(['Hz', 'Sync']);
+      await expect(tile.locator('.wv-rd')).toHaveCount(3);
+    } else await expect(tile.locator('.wv-rd')).toHaveCount(4);
+    const r = await tile.boundingBox(), g = await geometry(page);
+    expect(r.x).toBeGreaterThanOrEqual(g.mid.x);
+    expect(r.x + r.width).toBeLessThanOrEqual(g.dock.x);
+    expect(r.y + r.height).toBeLessThan(g.keys.y);
+  }
+  const fx = await page.locator('#wvFxRow').boundingBox();
+  expect(fx.y + fx.height).toBeLessThanOrEqual((await geometry(page)).keys.y);
+  expect(await page.evaluate(() => WV.scale)).toBe(1);
+});
+
+test('Env 3 attack still drags on Play', async ({ page }) => {
+  await wave(page);
+  const canvas = page.locator('#wvpevenv2');
+  await expect(canvas).toBeVisible();
+  const point = await page.evaluate(() => {
+    const g = WVW.wvpevenv2, p = wvEnvPts(g, wvEnv('env2')).a, r = g.el.getBoundingClientRect();
+    return { x: r.x + p[0] * WV.scale, y: r.y + p[1] * WV.scale, before: wvG('env2.a') };
+  });
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.mouse.move(point.x + 18, point.y, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => wvG('env2.a'))).not.toBe(point.before);
+});

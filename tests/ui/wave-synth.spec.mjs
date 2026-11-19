@@ -414,12 +414,11 @@ test('v7: badges name what moves each module, in the source\'s colour, and lead 
   await expect(page.locator('#wvCu0')).toHaveClass(/wv-hl/);
   await page.mouse.move(5, 5);
   await expect(page.locator('#waveView .wv-hl')).toHaveCount(0);
-  // v8: a click on LFO 3's badge shows LFO 3 in Play's LFO slot.
-  await expect(page.locator('#wvViewPlay .wv-tile[data-tile="lfo2"]')).toBeHidden();
+  // Every LFO stays visible when a badge picks its source.
+  await expect(page.locator('#wvViewPlay .wv-tile[data-tile="lfo2"]')).toBeVisible();
   await page.locator('#wvMoved1 .wv-badge').click();
   await expect(page.locator('#wvViewPlay .wv-tile[data-tile="lfo2"]')).toBeVisible();
-  await expect(page.locator('#wvViewPlay .wv-tile[data-tile="lfo1"]')).toBeHidden();
-  expect(await page.evaluate(() => WV.slot.lfo)).toBe('lfo2');
+  await expect(page.locator('#wvViewPlay .wv-tile[data-tile="lfo1"]')).toBeVisible();
 
   // A new route is a new badge: LFO 1's pill dragged onto osc C's table.
   const tab = await page.locator('#wvViewPlay .wv-tile[data-tile="lfo0"] .wv-grab').boundingBox();

@@ -211,10 +211,9 @@ test('the Matrix\'s tiles edit the same keys as Play\'s', async ({ page }) => {
   const after = await page.evaluate(() => WV.p['env2.a']);
   expect(after).toBeGreaterThan(before);
   await expect.poll(async () => (await (await page.request.get('/api/wave/patch')).json()).params['env2.a']).toBeCloseTo(after, 4);
-  // Play shows ENV 3 in its slot when it is picked, with the same value.
+  // Play shows all envelopes at once, with the same edited value.
   await page.locator('#wvViews [data-v="play"]').click();
-  await page.locator('#wvViewPlay [data-slotpick="env"][data-s="env2"]').first().click();
   await expect(page.locator('#wvViewPlay .wv-tile[data-tile="env2"]')).toBeVisible();
-  await expect(page.locator('#wvViewPlay .wv-tile[data-tile="env1"]')).toBeHidden();
+  await expect(page.locator('#wvViewPlay .wv-tile[data-tile="env1"]')).toBeVisible();
   await expect(page.locator('#wvViewPlay .wv-rd[data-tgt="env2.a"] b')).toHaveText(await page.locator('#wvViewMatrix .wv-rd[data-tgt="env2.a"] b').textContent());
 });

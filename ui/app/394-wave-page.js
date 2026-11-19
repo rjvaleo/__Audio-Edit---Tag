@@ -8,9 +8,9 @@
 // tooltips and the keys' glide. v8 adds the Matrix's pickers and the board's
 // right-click menus, and Delete on the board.
 
-// The existing views need 1460 × 862 including their header and keys.
-// The common dock adds 440 px; later Play packing sets the final minimum.
-const WV_MIN = { w: 1900, h: 862 };
+// Fixed rows: 370 + 190 + 162 + 120, three 10 px gaps, 16 px padding,
+// a 44 px header and 120 px keys. The 1460 px middle plus dock needs 1900.
+const WV_MIN = { w: 1900, h: 1052 };
 
 /// The computer keys, in pitch order: A–K the whites, W–U the blacks, and on
 /// past K as far as the row goes. The same letters the Edit page plays.

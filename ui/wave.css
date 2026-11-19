@@ -600,3 +600,16 @@ body.synthpage #overview { display: none; }
 #waveView #wvViewFx { padding: 4px 10px 4px; min-width: 0; }
 
 #waveView .wv-rackface .ic .it span { white-space: normal; }
+
+/* Play: fixed synth, all eight source tiles, utility panels, then effects. */
+#waveView .wv-play-tiles { height: 190px; }
+#waveView .wv-play-tiles .wv-tiles { gap: 6px; }
+#waveView .wv-play-utilities { display: flex; gap: 10px; width: 1432px; height: 162px; flex: none; }
+#waveView .wv-play-utilities :is(.wv-mix, .wv-voice9) { width: 430px; height: 162px; flex: none; }
+#waveView .wv-play-utilities .wv-strip9 { width: 552px; height: 162px; flex-direction: column; align-items: flex-start; justify-content: center; }
+#waveView .wv-play-utilities .wv-sk { width: auto; }
+#waveView .wv-play-utilities .wv-sc9 { display: grid; grid-template-columns: repeat(7, 62px); gap: 4px; }
+#waveView .wv-play-utilities .wv-sc.g0 { margin-left: 0; }
+#waveView .wv-fxrow { width: 1432px; height: 120px; flex: none; }
+
+#waveView #wvViewPlay .wv-tgts.ov { max-width: calc(100% - 10px); }

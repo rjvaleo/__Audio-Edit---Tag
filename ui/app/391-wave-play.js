@@ -112,15 +112,12 @@ function wvBuildPlay(view) {
    ${wvBuildFilter(0)}
    <div class="wv-route8"><span class="wv-hint">Route</span><div class="wv-seg" id="wvFroute">${WV_FROUTES.map(([k, l, t, d]) => `<span data-k="${k}" title="${t}"><svg viewBox="0 0 30 14"><path d="${d}"/></svg>${l}</span>`).join('')}</div></div>
    ${wvBuildFilter(1)}</div>`));
-  const row = wvH(`<div class="wv-modrow">
-   <div class="wv-modl">
-    <div class="wv-tl"><div class="wv-mod wv-panel wv-grp"><span class="wv-vlab">ENVELOPES</span><div class="wv-tiles" id="wvPEnvTiles"></div></div>
-     <div class="wv-mod wv-panel wv-grp"><span class="wv-vlab">LFOS</span><div class="wv-tiles" id="wvPLfoTiles"></div></div></div>
-    <div class="wv-mod wv-panel wv-strip9"><div class="wv-sk"><b>MORE SOURCES</b><span class="wv-hint">drag onto a control</span></div><div class="wv-sc9" id="wvSrcStrip"></div></div></div>
-   <div class="wv-rcol9"></div></div>`);
-  view.append(top, row);
+  const row = wvH(`<div class="wv-tl wv-play-tiles">
+    <div class="wv-mod wv-panel wv-grp8"><span class="wv-vlab">ENVELOPES</span><div class="wv-tiles" id="wvPEnvTiles"></div></div>
+    <div class="wv-mod wv-panel wv-grp8"><span class="wv-vlab">LFOS</span><div class="wv-tiles" id="wvPLfoTiles"></div></div></div>`);
+  const rc = wvH('<div class="wv-play-utilities"></div>');
+  view.append(top, row, rc, wvH('<div id="wvFxRow" class="wv-fxrow"></div>'));
   wvBuildPlayTiles();
-  const rc = row.querySelector('.wv-rcol9');
   rc.appendChild(wvBuildMix());
   rc.appendChild(wvH(`<div class="wv-mod wv-panel wv-voice9">
    <div class="wv-mh"><span class="wv-nm">VOICE</span><span class="wv-sp"></span>
@@ -130,6 +127,10 @@ function wvBuildPlay(view) {
     <div class="wv-well"><canvas id="wvGlide" data-w="268" data-h="84" data-tgt="voice.glide"></canvas></div>
     <div class="wv-lab wv-col wv-vl"><span>Bend</span><span class="wv-chip wv-btn" id="wvBendRange" title="Pitch-bend range: click for the next"><b class="wv-mono" id="wvBendRo"></b></span>
      <span>Tempo</span><span class="wv-chip wv-btn wv-tempo" id="wvTempoRo" title="Tempo: drag up and down. Synced LFOs follow it; double-click for 120"></span></div></div></div>`));
+  rc.appendChild(wvH(`<div class="wv-mod wv-panel wv-strip9"><div class="wv-sk"><b>MORE SOURCES</b><span class="wv-hint">drag onto a control</span></div><div class="wv-sc9" id="wvSrcStrip"></div></div>`));
+  // The strip is mounted after the tiles; populate its source controls now.
+  $('wvSrcStrip').innerHTML = WV_STRIP.map((s) => `<div class="wv-sc wv-btn ${s.g0 && s.kind === 'macro' ? 'g0' : ''}" data-src="${s.key}" style="--c:${wvSrcColour(s.key)}" title="${wvTileTip(s.key)}"><i class="act"></i><b>${s.label}</b><canvas id="wvSc${s.key}" data-w="54" data-h="13"></canvas></div>`).join('');
+
 }
 
 // ─────────────────────────────────────────────────────────────── wiring
@@ -348,11 +349,8 @@ function wvHlMod(src, dst, on) {
   });
 }
 
-/// A source picked from a badge or a pill: an envelope or LFO goes into its
-/// Play slot, and it lights what it moves for a moment.
+/// A source picked from a badge or pill lights what it moves for a moment.
 function wvSelectSrc(src) {
-  const s = wvSrcOf(src);
-  if (s && s.kind === 'env' && src !== 'env1' || s && s.kind === 'lfo' && src !== 'lfo0') wvSetSlot(s.kind, src);
   const ms = WV.mods.filter((m) => m.src === src);
   ms.forEach((m) => wvHlMod(src, m.dst, true));
   if (!ms.length) wvHlMod(src, '', true);
