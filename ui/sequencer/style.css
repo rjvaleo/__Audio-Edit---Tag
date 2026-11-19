@@ -125,10 +125,10 @@ select {
 }
 select option, select optgroup { background: var(--look-panel); color: var(--look-text); }
 
-.seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r-m); background: var(--look-well); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8); flex: none; }
-.seg button { height: 22px; padding: 0 9px; display: inline-flex; align-items: center; border-radius: 4px; color: var(--look-text-3); font: 500 11px var(--ui); white-space: nowrap; }
-.seg button:hover { color: var(--look-text); }
-.seg button.on {
+.seg, .mf-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r-m); background: var(--look-well); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8); flex: none; }
+.seg button, .mf-seg button { height: 22px; padding: 0 9px; display: inline-flex; align-items: center; border-radius: 4px; color: var(--look-text-3); font: 500 11px var(--ui); white-space: nowrap; }
+.seg button:hover, .mf-seg button:hover { color: var(--look-text); }
+.seg button.on, .mf-seg button.on {
   color: var(--on);
   background: linear-gradient(180deg, var(--look-panel-hi), var(--look-panel));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.6), inset 0 -2px 0 var(--on);
@@ -451,7 +451,7 @@ body:not(.journey-on) .journey .j-knobs,
 body:not(.journey-on) .journey .j-kinds { opacity: 0.5; }
 
 /* ─── ACCOMPANY ───────────────────────────────────────────────────────────── */
-.accompany .ph .seg button { height: 20px; font-size: 10px; padding: 0 8px; }
+.accompany .ph .seg button, .accompany .ph .mf-seg button { height: 20px; font-size: 10px; padding: 0 8px; }
 .accompany .ph > .meta:first-of-type { flex: 0 1 auto; min-width: 0; }
 .ac-bar { color: var(--f-pitch); font-size: 10px; flex: 0 1 auto; min-width: 0; margin-right: 14px; }
 .ac-parts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }

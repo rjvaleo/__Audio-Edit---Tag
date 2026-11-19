@@ -836,7 +836,7 @@ function mfBuildUI() {
   playsCap.className = "cap";
   playsCap.textContent = "Plays";
   const srcSeg = document.createElement("span");
-  srcSeg.className = "seg mf-src";
+  srcSeg.className = "mf-seg mf-src";
   srcSeg.id = "mfSrcSeg";
   srcSeg.innerHTML = '<button type="button" class="on" data-v="own">Its own patterns</button><button type="button" data-v="midi">A MIDI file</button>';
   const grow = ph.querySelector(".grow");
