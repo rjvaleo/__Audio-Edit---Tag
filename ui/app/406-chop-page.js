@@ -45,6 +45,20 @@ function chopFit() {
   if (chop.mono) chopPaintLane();
 }
 
+/// Coming onto the page, the whole sound is what is chopped: the loop on the
+/// overview is the whole file, whatever another page left it as, and so are S
+/// and E (RJ, 18 Nov 2026: "even if on another page we only had a little bit
+/// of the sound selected, when we come here, we want to select the whole sound
+/// on the top so that the whole thing gets chopped").
+function chopEnter() {
+  const f = gsFile();
+  if (f) gsSetLoop(0, f.len);
+  if (chop.mono && (chop.region.s !== 0 || chop.region.e !== chop.len)) {
+    chop.region = { s: 0, e: chop.len };
+    chopRecut();
+  }
+}
+
 // ───────────────────────────────────────────────────────────── the Looks
 
 /// Grain's five Looks are themes now (`theme-palettes.js`), chosen on the Theme
@@ -97,9 +111,12 @@ function chopRestyle() {
   over.addEventListener('pointerup', () => { over.onpointermove = null; });
   over.addEventListener('dblclick', () => { if (chop.mono) chopFit0(); });
   new ResizeObserver(chopFit).observe($('dockChop'));
+  let was = false;
   new MutationObserver(() => {
     const here = document.body.classList.contains('choppage');
     chopBorrow(here);
+    if (here && !was) chopEnter();
+    was = here;
     if (here) { chopFit(); chopRestyle(); chopPaintLane(); }
   }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   const pills = (id, key) => $(id).addEventListener('click', (e) => {
