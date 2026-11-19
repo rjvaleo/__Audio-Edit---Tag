@@ -125,6 +125,7 @@ fn patch(case: usize, parallel: bool) -> (Controller, AudioEngine) {
     (ctl, audio)
 }
 fn cpu() -> f64 {
+    #[cfg(unix)]
     unsafe {
         let mut t = libc::timespec {
             tv_sec: 0,
@@ -136,6 +137,8 @@ fn cpu() -> f64 {
         );
         t.tv_sec as f64 + t.tv_nsec as f64 * 1e-9
     }
+    #[cfg(not(unix))]
+    panic!("the optional thread CPU diagnostic needs a Unix clock");
 }
 fn at(times: &[f64], q: f64) -> f64 {
     times[((times.len() - 1) as f64 * q) as usize]
@@ -186,11 +189,18 @@ fn write_feedback_reference() {
 }
 #[test]
 fn feedback_matches_031() {
-    let bytes = include_bytes!("data/feedback-031.bin");
-    let reference: Vec<u32> = bytes
-        .chunks_exact(4)
-        .map(|v| u32::from_le_bytes(v.try_into().unwrap()))
-        .collect();
+    // The bits 031 recorded are Apple silicon's; another processor's maths
+    // differs in the last places (AUDIO-PLAN §9 Q6). There the claim is the
+    // scheduling one: every block size, serial or on the pool, gives the bits
+    // a 512-frame serial render gives on that machine.
+    let reference: Vec<u32> = if cfg!(target_arch = "aarch64") {
+        include_bytes!("data/feedback-031.bin")
+            .chunks_exact(4)
+            .map(|v| u32::from_le_bytes(v.try_into().unwrap()))
+            .collect()
+    } else {
+        bits_at(false, 512)
+    };
     for parallel in [false, true] {
         for block in [1, 7, 64, 128, 512] {
             let actual = bits_at(parallel, block);

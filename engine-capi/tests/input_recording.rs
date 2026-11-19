@@ -1,5 +1,16 @@
 use engine_capi::*;
 use std::{ptr, sync::Mutex};
+/// What a sample is after the sound-card clamp. On x86 the render's
+/// denormals-are-zero (stage 0) reads a subnormal as a zero of its sign; Apple
+/// silicon's flush-to-zero leaves an input that is only copied alone.
+fn through(v: f32) -> f32 {
+    if cfg!(target_arch = "x86_64") && v.is_subnormal() {
+        0.0f32.copysign(v)
+    } else {
+        v
+    }
+}
+
 fn sample(i: usize, c: usize) -> f32 {
     match i % 19 {
         0 => return -0.0,
@@ -33,7 +44,7 @@ fn c_input_pairs_loop_back_at_every_size_and_old_render_is_silence() {
                 0
             );
             for i in 0..n as usize {
-                assert_eq!(l[i].to_bits(), channels[2][i].to_bits());
+                assert_eq!(l[i].to_bits(), through(channels[2][i]).to_bits());
                 assert_eq!(r[i].to_bits(), 0);
             }
         }
