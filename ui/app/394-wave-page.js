@@ -8,8 +8,9 @@
 // tooltips and the keys' glide. v8 adds the Matrix's pickers and the board's
 // right-click menus, and Delete on the board.
 
-const WV_W = 1460;
-const WV_H = 862;
+// The existing views need 1460 × 862 including their header and keys.
+// The common dock adds 440 px; later Play packing sets the final minimum.
+const WV_MIN = { w: 1900, h: 862 };
 
 /// The computer keys, in pitch order: A–K the whites, W–U the blacks, and on
 /// past K as far as the row goes. The same letters the Edit page plays.
@@ -36,10 +37,13 @@ function wvBuild() {
     <span class="wv-ro" id="wvVoicesRo">0 voices</span>
     <canvas id="wvMaster" class="wv-well" data-w="120" data-h="22" title="Master: what comes out. Drag across for the volume"></canvas>
    </div>
+   <div id="wvMid">
    <section class="wv-view" id="wvViewPlay"></section>
    <section class="wv-view" id="wvViewCreate"></section>
    <section class="wv-view" id="wvViewMatrix"></section>
    <section class="wv-view" id="wvViewFx" style="flex-direction:column"></section>
+   </div>
+   <aside id="wvRdock"></aside>
    <div class="wv-dock">
     <div class="wv-wheels"><canvas class="wv-well wv-wheel" id="wvBend" data-w="30" data-h="100" title="Pitch bend: drag up and down. Springs back when let go"></canvas><canvas class="wv-well wv-wheel" id="wvModw" data-w="30" data-h="100" title="Mod wheel: drag up and down. Stays where you leave it"></canvas></div>
     <div class="wv-kbinfo"><div class="wv-seg" id="wvOct"><span data-oct="-1" title="An octave down (Z)">−</span><span class="on wv-mono" id="wvOctRo"></span><span data-oct="1" title="An octave up (X)">+</span></div>
@@ -126,10 +130,10 @@ function wvFit() {
   if (!app) return;
   const cw = host.clientWidth, ch = host.clientHeight;
   if (!cw || !ch) return;
-  // One size, never scaled to the window: it scrolls (RJ, 17 Nov 2026: "it's a
-  // fixed size… we scroll around on the page to get to it").
-  const s = 1;
+  const s = Math.min(1, cw / WV_MIN.w, ch / WV_MIN.h);
   WV.scale = s;
+  app.style.width = `${cw / s}px`;
+  app.style.height = `${ch / s}px`;
   app.style.transform = `scale(${s})`;
 }
 

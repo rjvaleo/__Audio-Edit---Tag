@@ -35,6 +35,7 @@ test('Grain with nothing open starts on the pulse wave, and its keys are the one
 });
 
 test('Wave: no overview, the one keyboard, one size; its board has no list and offers the rack\'s effects with their faces', async ({ page }) => {
+  await page.setViewportSize({ width: 2080, height: 1100 });
   await page.goto('/');
   await go(page, '.rl-item[data-mode="synth"]');
   await page.waitForFunction(() => WV.built);

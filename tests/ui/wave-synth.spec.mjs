@@ -259,7 +259,7 @@ const clipped = `(() => {
   return out;
 })()`;
 
-test('nothing inside the page is clipped or overflows, and it is one size at any window', async ({ page }) => {
+test('nothing inside the page is clipped or overflows, and small windows scale the frame', async ({ page }) => {
   await openWave(page);
   // Room for the whole page: nothing in it clipped or overflowing.
   await page.setViewportSize({ width: 2400, height: 1300 });
@@ -269,15 +269,21 @@ test('nothing inside the page is clipped or overflows, and it is one size at any
     await page.waitForTimeout(150);
     expect(await page.evaluate(clipped), `${v} at 2400×1300`).toEqual([]);
   }
-  // One size, never scaled (RJ, 17 Nov 2026: "it's a fixed size… we scroll
-  // around on the page to get to it"): in a small window it scrolls.
+  // Below the common breakpoint all tabs fit at one scale (RJ, 18 Nov).
   for (const size of [{ width: 1600, height: 1000 }, { width: 1180, height: 760 }]) {
     await page.setViewportSize(size);
     await page.waitForTimeout(250);
-    const fit = await page.evaluate(() => ({ scale: WV.scale, w: document.querySelector('#waveView .wv-app').getBoundingClientRect().width, sw: $('waveView').scrollWidth, sh: $('waveView').scrollHeight }));
-    expect(fit.scale).toBe(1);
-    expect(Math.round(fit.w)).toBe(1460);
-    expect(fit.sw).toBeGreaterThanOrEqual(Math.min(1460, fit.sw));
+    const fit = await page.evaluate(() => {
+      const host = $('waveView'), app = host.querySelector('.wv-app').getBoundingClientRect();
+      return { scale: WV.scale, w: app.width, h: app.height, cw: host.clientWidth,
+        ch: host.clientHeight, sw: host.scrollWidth, sh: host.scrollHeight };
+    });
+    expect(fit.scale).toBeGreaterThan(0);
+    expect(fit.scale).toBeLessThan(1);
+    expect(fit.w).toBeCloseTo(fit.cw, 1);
+    expect(fit.h).toBeCloseTo(fit.ch, 1);
+    expect(fit.sw).toBe(fit.cw);
+    expect(fit.sh).toBe(fit.ch);
   }
 });
 
