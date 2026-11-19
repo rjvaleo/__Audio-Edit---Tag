@@ -184,3 +184,68 @@ function wvDrawChainDock(t) {
     wvDrawInspectorFace(card.el, wvNode(id), card.pictures, t, memo);
   }
 }
+
+const WV_FXROW = { board: null, stamp: '', controls: [] };
+
+function wvFxRowParams(n) {
+  const main = wvFacePr(n), extra = wvNodeSpec(n).filter((p) => !p.choices && !p.toggle && !main.some((q) => q.key === p.key));
+  return main.concat(extra).slice(0, 4);
+}
+
+function wvRenderFxRow() {
+  const host = $('wvFxRow');
+  if (!host || !WV.board) return;
+  const stamp = JSON.stringify([WV.board.nodes.map((n) => [n.id, n.kind, n.on]), WV.board.cables, WV_FXCAT.list.length]);
+  if (WV_FXROW.board === WV.board && WV_FXROW.stamp === stamp) return;
+  WV_FXROW.board = WV.board;
+  WV_FXROW.stamp = stamp;
+  const layout = wvChainLayout(WV.board), ids = [];
+  const flatten = (items) => items.forEach((x) => {
+    if (x.t === 'node') ids.push(x.id);
+    else if (x.t === 'split') x.paths.forEach(flatten);
+    else flatten(x.path);
+  });
+  flatten(layout.items);
+  ids.push(...layout.unconnected);
+  host.innerHTML = ids.map((id) => {
+    const n = wvNode(id), params = wvFxRowParams(n);
+    return `<div class="wv-panel wv-mod wv-fxcard" data-fxcard="${wvEsc(id)}" style="--cc:${wvNodeCol(n)}">
+      <div class="wv-mh"><span class="wv-pw wv-btn ${n.on !== false ? 'on' : ''}" data-row-power="${wvEsc(id)}" title="Power: off passes the sound through untouched">${WV_PWR}</span><span class="wv-fxcard-name">${wvEsc(wvNodeName(n))}</span></div>
+      <div class="wv-fxrow-controls">${params.map((p) => `<div class="ui-knob wv-fxrow-control"><div class="ui-kr">${uiPic('', '0 0 64 48', 'side')}${wvBoardKnob(n, p)}</div><span class="ui-lab"><span class="ui-kname">${wvEsc(p.label)}</span><b class="ui-kval"></b></span></div>`).join('') || '<span class="wv-hint">No settings</span>'}</div></div>`;
+  }).join('');
+  WV_FXROW.controls = [];
+  host.querySelectorAll('canvas[data-fxk]').forEach((el) => {
+    const [id, key] = el.dataset.fxk.split('|'), cell = el.closest('.wv-fxrow-control');
+    WV_FXROW.controls.push({ id, key, g: wvCv(el), pic: cell.querySelector('.ui-pic'), value: cell.querySelector('.ui-kval'), last: null });
+  });
+  wvWireBoardKnobs(host);
+  host.querySelectorAll('[data-fxcard]').forEach((card) => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.ui-knob, [data-row-power]')) return;
+      wvDockScrollTo(card.dataset.fxcard);
+      host.querySelectorAll('[data-fxcard]').forEach((el) => el.classList.toggle('sel', el === card));
+    });
+  });
+  host.querySelectorAll('[data-row-power]').forEach((button) => button.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const n = wvNode(button.dataset.rowPower);
+    wvBoardParam(n.id, 'on', n.on === false, false);
+    wvRenderBoard();
+  }));
+  wvDrawFxRow();
+}
+
+function wvDrawFxRow() {
+  for (const ctl of WV_FXROW.controls) {
+    const n = wvNode(ctl.id), p = n && wvParamOf(n, ctl.key);
+    if (!p) continue;
+    wvDrawBoardKnob(ctl.g, n, p);
+    const v = wvPVal(n, p);
+    if (v !== ctl.last) {
+      ctl.last = v;
+      const pk = FXP.picFor(p);
+      ctl.pic.innerHTML = FXP.noText(FXP.PIC[pk](wvPN(p, v), v, p));
+      wvTxtEl(ctl.value, wvFmtP(p, v));
+    }
+  }
+}

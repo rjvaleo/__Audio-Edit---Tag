@@ -139,3 +139,53 @@ test('all catalogue faces fit their full chain cards', async ({ page }) => {
   });
   expect(errors).toEqual([]);
 });
+
+test('Play effects row has every effect in order and up to four real controls with pictures', async ({ page }) => {
+  await openChain(page);
+  const row = page.locator('#wvFxRow [data-fxcard]');
+  await expect(row).toHaveCount(7);
+  expect(await row.evaluateAll((es) => es.map((e) => e.dataset.fxcard))).toEqual(['drive', 'chorus', 'echo', 'spec', 'mesh', 'plate', 'eq']);
+  const expected = await page.evaluate(() => WV.board.nodes.filter(wvIsFx).map((n) => ({ id: n.id,
+    count: Math.min(4, wvNodeSpec(n).filter((p) => !p.choices && !p.toggle).length) })));
+  for (const { id, count } of expected) {
+    const card = page.locator(`#wvFxRow [data-fxcard="${id}"]`);
+    await expect(card.locator('canvas[data-fxk]')).toHaveCount(count);
+    await expect(card.locator('.ui-pic path, .ui-pic line, .ui-pic polyline, .ui-pic circle').first()).toBeAttached();
+  }
+  const size = await row.evaluateAll((es) => es.map((e) => e.offsetWidth));
+  expect(new Set(size).size).toBe(1);
+  expect(await page.locator('#wvFxRow').evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true);
+});
+test('clicking an effects-row card scrolls and selects its dock card', async ({ page }) => {
+  await openChain(page);
+  await page.locator('#wvFxRow [data-fxcard="plate"] .wv-fxcard-name').click();
+  const card = page.locator('#wvChainDock [data-card="plate"]');
+  await expect(card).toHaveClass(/sel/);
+  const r = await card.boundingBox(), host = await page.locator('#wvChainDock').boundingBox();
+  expect(r.y).toBeGreaterThanOrEqual(host.y - 1);
+  expect(r.y).toBeLessThan(host.y + host.height);
+});
+test('an effects-row knob moves its board parameter without selecting the card', async ({ page }) => {
+  await openChain(page);
+  const before = await page.evaluate(() => wvPVal(wvNode('drive'), wvParamOf(wvNode('drive'), 'drive')));
+  const b = await page.locator('#wvFxRow canvas[data-tgt="board:drive:drive"]').boundingBox();
+  expect(b).not.toBeNull();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2 - 20, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await (await page.request.get('/api/wave/board')).json()).nodes.find((n) => n.id === 'drive').params.drive).toBeGreaterThan(before);
+  await expect(page.locator('#wvChainDock [data-card="drive"]')).not.toHaveClass(/sel/);
+});
+test('a More Sources pill dropped on a row knob creates a board mapping', async ({ page }) => {
+  await openChain(page);
+  await expect(page.locator('#wvFxRow canvas[data-tgt="board:drive:drive"]')).toBeVisible();
+  const from = await page.locator('#wvSrcStrip [data-src="macro0"]').boundingBox();
+  const to = await page.locator('#wvFxRow canvas[data-tgt="board:drive:drive"]').boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
+  await page.mouse.up();
+  await expect.poll(async () => (await (await page.request.get('/api/wave/patch')).json()).mods)
+    .toEqual([expect.objectContaining({ src: 'macro0', dst: 'board:drive:drive', amt: 0.3 })]);
+});

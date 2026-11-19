@@ -626,3 +626,14 @@ body.synthpage #overview { display: none; }
 #waveView .wv-chain-split { border: 1px dashed var(--wv-line); border-radius: var(--r-m); margin-bottom: 10px; }
 #waveView .wv-chain-path + .wv-chain-path { border-top: 1px dashed var(--wv-line); }
 #waveView .wv-chain-send { border-left: 2px dashed var(--wv-mod); }
+
+/* A fixed-size effects row below the synth, scrolling only sideways. */
+#waveView .wv-fxrow { display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; padding-bottom: 6px; }
+#waveView .wv-fxcard { width: 248px; height: 108px; flex: none; padding: 6px 8px; cursor: pointer; }
+#waveView .wv-fxcard.sel { box-shadow: inset 0 2px var(--wv-on); }
+#waveView .wv-fxcard .wv-mh { height: 20px; flex: none; }
+#waveView .wv-fxcard-name { font: 600 var(--fs-s) var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#waveView .wv-fxrow-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+#waveView .wv-fxrow-control { min-width: 0; }
+#waveView .wv-fxrow-control .ui-lab { width: 100%; text-align: center; }
+#waveView .wv-fxrow-control .ui-lab > * { white-space: normal; overflow-wrap: anywhere; }

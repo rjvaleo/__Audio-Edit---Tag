@@ -119,7 +119,7 @@ function wvShowView(v) {
   if (v === 'create') wvSyncCreate();
   // Badges and the tiles' targets are fitted to their headers, and the main
   // path to its strip, which only have a width on screen.
-  if (v === 'play') wvRenderBadges();
+  if (v === 'play') { wvRenderBadges(); wvRenderFxRow(); }
   if (v === 'play' || v === 'matrix') wvRenderTileTargets();
   if (v === 'fx') { wvRenderChain(); wvRenderInspector(); }
   wvCloseMenus();
@@ -247,7 +247,7 @@ function wvKeyUp(e) {
 function wvFrame(ts) {
   if (!WV.showing) { WV.raf = 0; return; }
   const t = ts / 1000;
-  if (WV.view === 'play') wvDrawPlay(t);
+  if (WV.view === 'play') { wvDrawPlay(t); wvDrawFxRow(); }
   else if (WV.view === 'create') wvDrawCreate(t);
   else if (WV.view === 'matrix') wvDrawMatrix(t);
   else if (WV.view === 'fx') wvDrawFx(t);
