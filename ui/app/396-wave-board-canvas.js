@@ -37,7 +37,8 @@ function wvBuildFx(view) {
     <div class="wv-well wv-fwell wv-scroll" id="wvFwell"><div class="wv-world" id="wvWorld"></div>
      <div class="wv-fstat"><span class="note" id="wvFnote"></span><span class="wv-hint" id="wvFhint">Right-click to add · drag from an out to an in to patch · Delete removes · drag the grid to pan, wheel to zoom</span></div>
      <div class="wv-fzoom"><span class="wv-ib" id="wvZout" title="Zoom out">−</span><span class="wv-ro" id="wvZro">100 %</span><span class="wv-ib" id="wvZin" title="Zoom in">+</span><span class="wv-bt wv-btn" id="wvZfit" title="Fit the whole board">Fit</span><span class="wv-bt wv-btn" id="wvZ100" title="Actual size">100%</span></div></div></div>
-   <div class="wv-panel wv-mod wv-finsp" id="wvFinsp"></div></div>`));
+   </div>`));
+  $('wvRdock').appendChild(wvH('<div class="wv-panel wv-mod wv-finsp" id="wvFinsp"></div>'));
 }
 
 function wvWireFx() {

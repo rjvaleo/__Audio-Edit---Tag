@@ -112,6 +112,7 @@ function wvShowView(v) {
   });
   const ids = { play: 'wvViewPlay', create: 'wvViewCreate', matrix: 'wvViewMatrix', fx: 'wvViewFx' };
   for (const [k, id] of Object.entries(ids)) document.getElementById(id).classList.toggle('on', k === v);
+  $('wvFinsp').hidden = v !== 'fx';
   if (v === 'matrix') wvRenderMatrix();
   if (v === 'create') wvSyncCreate();
   // Badges and the tiles' targets are fitted to their headers, and the main

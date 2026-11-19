@@ -84,3 +84,53 @@ test('scaled keys still play the key under the pointer', async ({ page }) => {
   } finally { await page.mouse.up(); }
   await expect.poll(() => page.evaluate(() => WV.held.has(60))).toBe(false);
 });
+
+test('on FX the board fills the middle and its inspector is in the dock', async ({ page }) => {
+  await wave(page);
+  await page.locator('#wvViews [data-v="fx"]').click();
+  await expect(page.locator('#wvRdock #wvFinsp')).toBeVisible();
+  const g = await geometry(page), well = await page.locator('.wv-fwell').boundingBox();
+  expect(well.width).toBeGreaterThanOrEqual(g.mid.width - 40);
+  expect(Math.abs(well.y + well.height - g.keys.y)).toBeLessThanOrEqual(20);
+});
+
+test('every effect face fits the dock without horizontal clipping', async ({ page }) => {
+  test.setTimeout(120_000);
+  await wave(page);
+  await page.waitForFunction(() => WV.connected && WV_FXCAT.list.length && state.suites?.length);
+  await page.locator('#wvViews [data-v="fx"]').click();
+  await expect(page.locator('#wvRdock #wvFinsp')).toBeVisible();
+  const failures = await page.evaluate(async () => {
+    const failures = [];
+    for (const f of WV_FXCAT.list) {
+      const b = { name: 'Face fit', nodes: [
+        { id: 'invoice', kind: 'in:voice', x: 16, y: 16, on: true, params: {} },
+        { id: 'face', kind: f.kind, x: 200, y: 16, on: true, params: {} },
+        { id: 'out', kind: 'out', x: 600, y: 16, on: true, params: {} },
+      ], cables: [{ from: ['invoice', 'o'], to: ['face', 'i'] }, { from: ['face', 'o'], to: ['out', 'i'] }] };
+      const posted = await wvBoardFetch('/api/wave/board', 'POST', b);
+      if (!posted.ok) { failures.push(`${f.kind}: board rejected`); continue; }
+      wvBoardAdopt(b);
+      wvRenderBoard();
+      wvBoardSelect({ t: 'node', id: 'face' });
+      const face = document.querySelector('#wvFinsp .wv-rackface');
+      if (!face) { failures.push(`${f.kind}: missing face`); continue; }
+      const bounds = face.getBoundingClientRect();
+      for (const el of [face, ...face.querySelectorAll('*')]) {
+        // SVG graphics report glyph/path metrics, not HTML overflow. Pad
+        // dots and meter carets intentionally cross their internal wells;
+        // their visible elements must still remain inside the whole face.
+        const internalHandle = el.matches('.prism-pad') || el.querySelector(':scope > .fx-caret');
+        if (el instanceof HTMLElement && !internalHandle && el.clientWidth && el.scrollWidth > el.clientWidth + 1)
+          failures.push(`${f.kind}: ${el.tagName}.${el.className} ${el.scrollWidth}>${el.clientWidth}`);
+        if (el instanceof HTMLElement && el.getClientRects().length) {
+          const r = el.getBoundingClientRect();
+          if (r.width && (r.left < bounds.left - 1 || r.right > bounds.right + 1))
+            failures.push(`${f.kind}: ${el.tagName}.${el.className} outside face`);
+        }
+      }
+    }
+    return failures;
+  });
+  expect(failures).toEqual([]);
+});

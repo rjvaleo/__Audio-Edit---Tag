@@ -51,9 +51,9 @@ function wvInspFx(n) {
   if (rest.length) gs.push(['More', rest]);
   return wvInspHead(wvCatCol(wvNodeCat(n), 64), wvNodeName(n).toUpperCase(), `${wvNodeCat(n).toUpperCase()} · ${wvNodeMaker(n)}`, `${sp.length} control${sp.length === 1 ? '' : 's'}`, `<span class="wv-pw wv-btn ${n.on ? 'on' : ''}" data-ipw title="Power: off passes the sound through untouched">${WV_PWR}</span>`)
     + wvInspPic + `<div class="iscroll wv-scroll">${snd ? `<div class="ig"><div class="igh">${wvEsc(snd.label.toUpperCase())}</div><div class="isnd ${wvSoundState(n)}"><span class="nm" title="${wvEsc(n.sound || '')}">${wvEsc(wvSoundText(n))}</span><span class="wv-bt wv-btn" data-snd="${wvEsc(n.id)}" title="${wvEsc(snd.label)}: pick a sound from the library">Pick…</span></div></div>` : ''}`
-    + gs.map(([l, ps]) => `<div class="ig"><div class="igh">${wvEsc(l.toUpperCase())}</div><div class="igrid">${ps.map((p) => wvInspCtl(n, p)).join('')}</div></div>`).join('')
+    + '<div class="wv-rackface">' + gs.map(([l, ps]) => `<div class="ig"><div class="igh">${wvEsc(l.toUpperCase())}</div><div class="igrid">${ps.map((p) => wvInspCtl(n, p)).join('')}</div></div>`).join('')
     + (sp.length ? '' : `<div class="wv-hint">${wvEsc(wvNodeName(n))} has no settings: ${n.kind === 'fx:invert' ? 'it flips the wave upside down' : 'it swaps left and right'}.</div>`)
-    + wvInspMods(n) + '</div><div class="ifoot"><span class="wv-bt wv-btn" data-idel title="Remove this node and its cables">Remove</span><span class="wv-bt wv-btn" data-irst title="Every control back to its default">Defaults</span><span class="wv-sp"></span><span class="wv-hint">Delete removes it too</span></div>';
+    + '</div>' + wvInspMods(n) + '</div><div class="ifoot"><span class="wv-bt wv-btn" data-idel title="Remove this node and its cables">Remove</span><span class="wv-bt wv-btn" data-irst title="Every control back to its default">Defaults</span><span class="wv-sp"></span><span class="wv-hint">Delete removes it too</span></div>';
 }
 
 function wvInspRouting(n) {

@@ -850,3 +850,16 @@ body.prism-mapping #dockHyper #prismSettings .prism-knob .ui-kn { cursor: copy; 
 .fx-sect > div > .fxf { flex-grow: .7; }
 .fx-face .ui-knob .ui-lab { overflow: hidden; }
 .fx-face .ui-knob .ui-lab > * { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+/* A Wave dock face keeps labels and readouts whole at its 440 px width. */
+.wv-rackface :is(.k, .v, .ui-kval, .seg-btn, .sh-key, .wv-hint) {
+  white-space: normal; overflow-wrap: anywhere; min-width: 0; max-width: 100%;
+}
+.wv-rackface .hp-face .prism-pad { box-sizing: content-box; }
+.wv-rackface .sh-keycap .sh-key { height: auto; min-height: 36px; }
+
+.wv-rackface .fx-sect > b { white-space: normal; overflow-wrap: anywhere; }
+.wv-rackface .fx-sect > b > span { min-width: 0; }
+/* Threshold handles need room on the left of their narrow meter wells. */
+.wv-rackface .fx-mtr:has(.fx-caret) { padding-left: 16px; padding-right: 4px; }
+.wv-rackface .fx-dyn-mid { grid-template-columns: 36px minmax(0, 1fr) 12px 36px; }

@@ -422,7 +422,7 @@ body.synthpage #overview { display: none; }
 #waveView .wv-fit em { font-style: normal; color: var(--wv-acc); }
 #waveView .wv-fnone { white-space: normal; padding: 6px 4px; }
 #waveView .wv-fghost { position: fixed; z-index: 95; pointer-events: none; transform: translate(-50%, -50%); padding: 0 10px; height: 24px; }
-#waveView .wv-fcan { width: 1082px; flex: none; padding: 8px; gap: 6px; }
+#waveView .wv-fcan { flex: 1; min-width: 0; padding: 8px; gap: 6px; }
 #waveView .wv-fstrip { height: 30px; flex: none; display: flex; align-items: center; }
 #waveView .wv-gxc { width: 38px; height: var(--h-l); margin: 0 1px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; position: relative; padding: 0; cursor: grab;
   box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--c) 70%, transparent), inset 0 1px 0 rgba(var(--white-rgb), .08), 0 1px 2px rgba(var(--black-rgb), .6); }
@@ -533,7 +533,8 @@ body.synthpage #overview { display: none; }
 #waveView .wv-fchain .chi.insL { box-shadow: -4px 0 0 -1px var(--wv-acc), inset 0 -2px 0 var(--cc); }
 #waveView .wv-fchain .chi.insR { box-shadow: 4px 0 0 -1px var(--wv-acc), inset 0 -2px 0 var(--cc); }
 #waveView .wv-fchain .cha { color: var(--wv-t3); font-size: var(--fs-m); flex: none; }
-#waveView .wv-finsp { width: 340px; flex: none; padding: 8px 10px 10px; gap: 6px; }
+#waveView .wv-finsp { width: 100%; height: 100%; min-width: 0; padding: 8px 12px 10px; gap: 6px; }
+#waveView .wv-finsp[hidden] { display: none; }
 #waveView .wv-finsp .wv-mh .ce { width: 3px; height: 16px; border-radius: var(--r-s); background: var(--cc); flex: none; box-shadow: 0 0 6px var(--cc); }
 #waveView .wv-finsp .wv-mh .wv-nm { overflow: hidden; flex-shrink: 1; }
 #waveView .wv-finsp .sub { display: flex; gap: 6px; align-items: center; height: 12px; font: 600 var(--fs-xs) var(--mono); letter-spacing: .06em; color: color-mix(in srgb, var(--cc) 75%, var(--wv-t3)); white-space: nowrap; }
@@ -594,3 +595,8 @@ body.synthpage #overview { display: none; }
 
 /* The keys stay on screen while the page, one size, scrolls. */
 #waveView .wv-dock { position: sticky; bottom: 0; z-index: 6; background: var(--wv-chassis); }
+
+/* The board uses the middle to its edges; the inspector has its own dock. */
+#waveView #wvViewFx { padding: 4px 10px 4px; min-width: 0; }
+
+#waveView .wv-rackface .ic .it span { white-space: normal; }
