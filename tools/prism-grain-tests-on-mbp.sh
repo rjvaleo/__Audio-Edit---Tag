@@ -13,4 +13,6 @@ ssh mbp "echo 'prism-grain tests (coordinator)' > ~/mgl-test/.lock/who"
 # lock is held, but one already running carries on: wait for those to end, so
 # nothing builds beside a timing run.
 ssh mbp 'until [ -z "$(for d in ~/mgl-test/.slots/*; do [ -f "$d/pid" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null && echo x; done)" ]; do sleep 10; done'
-ssh mbp "export PATH=\$HOME/.cargo/bin:\$PATH CARGO_TARGET_DIR=\$HOME/idmlab-native/pg-target; cd $R/pg-check && cargo test --release -p prism-grain --no-fail-fast $* 2>&1"
+# The Supermassive tests read captures kept on the iMac; the MacBook has a
+# read-only copy of them for the workers, used here too.
+ssh mbp "export PATH=\$HOME/.cargo/bin:\$PATH SM_CAPTURES=\$HOME/codex/fixtures/captures CARGO_TARGET_DIR=\$HOME/idmlab-native/pg-target; cd $R/pg-check && cargo test --release -p prism-grain --no-fail-fast $* 2>&1"
