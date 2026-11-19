@@ -17,8 +17,9 @@ case "$MGL_REF" in
 esac
 R='~/idmlab-native'
 git -C "$FX" archive --format=tar HEAD | ssh mbp "rm -rf $R/GitHub/prism-fx && mkdir -p $R/GitHub/prism-fx && tar -x -f - -C $R/GitHub/prism-fx"
-# `ui` too: the server crate embeds the interface at build time.
-git -C "$MGL" archive --format=tar "$MGL_REV" core ui | ssh mbp "rm -rf $R/MultiGrainLive && mkdir -p $R/MultiGrainLive && tar -x -f - -C $R/MultiGrainLive"
+# The whole tree but the sound library: the server crate embeds the interface,
+# the visualiser and a tool at build time.
+git -C "$MGL" archive --format=tar "$MGL_REV" -- . ':(exclude)Audio Library' | ssh mbp "rm -rf $R/MultiGrainLive && mkdir -p $R/MultiGrainLive && tar -x -f - -C $R/MultiGrainLive"
 until ssh mbp "mkdir ~/mgl-test/.lock 2>/dev/null"; do sleep 20; done
 trap 'ssh mbp "rm -rf ~/mgl-test/.lock"' EXIT
 ssh mbp "echo 'MGL engine tests (coordinator)' > ~/mgl-test/.lock/who"
