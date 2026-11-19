@@ -84,3 +84,56 @@ fn a_plug_into_the_wrong_kind_of_socket_is_refused() {
     assert_eq!(ctl.connect_out(port(1, 0)), Err(PatchError::NotAudio(port(1, 0))));
     assert_eq!(ctl.add(1, Box::new(Keys::new())).err(), Some(PatchError::DuplicateModule(1)));
 }
+
+// Keep the former Vec insertion/removal algorithm here as an independent
+// reference, including clamping stamps that arrived after their frame.
+#[test]
+fn scrambled_bursts_match_the_old_waiting_list_message_for_message() {
+    let config = Config { max_block: 128, queue: 4096, fade_frames: 0, log_applied: true };
+    let (mut ctl, mut audio) = engine(RATE, config);
+    ctl.add(1, Box::new(Dc(1.0))).unwrap();
+    ctl.add(2, Box::new(Gain::new(1.0))).unwrap();
+    ctl.connect(port(1, 0), port(2, 0)).unwrap();
+    ctl.connect_out(port(2, 0)).unwrap();
+    ctl.commit().unwrap();
+    let (mut left, mut right) = ([0.0; 128], [0.0; 128]);
+    audio.render(&mut left, &mut right);
+    ctl.collect();
+    ctl.take_applied();
+    let mut reference: Vec<(u64, u64)> = Vec::new();
+    let mut state = 0x73a9_51d2_u64;
+    let mut random = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut sent = 0;
+    let mut checked = 0;
+    while sent < 4096 || !reference.is_empty() {
+        let burst = (1 + random() as usize % 127).min(4096 - sent);
+        for _ in 0..burst {
+            // Shared frame buckets exercise ties across arrival bursts;
+            // some are already past, others land on block boundaries.
+            let stamp = 128 + (random() % 256) * 16;
+            let seq = ctl.send_at(stamp, 2, EventKind::Param { index: 0, value: 0.5 }).unwrap();
+            let frame = stamp.max(audio.frame());
+            let at = reference.partition_point(|message| message.0 <= frame);
+            reference.insert(at, (frame, seq));
+        }
+        sent += burst;
+        let end = audio.frame() + 128;
+        let mut expected = Vec::new();
+        while reference.first().is_some_and(|message| message.0 < end) {
+            let (frame, seq) = reference.remove(0);
+            expected.push((seq, frame));
+        }
+        audio.render(&mut left, &mut right);
+        ctl.collect();
+        let actual = ctl.take_applied();
+        assert_eq!(actual, expected, "block ending at {end}");
+        checked += actual.len();
+    }
+    assert_eq!(checked, 4096);
+    assert_eq!(audio.lost(), 0);
+}

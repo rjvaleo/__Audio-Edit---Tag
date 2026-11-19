@@ -1,6 +1,9 @@
 //! The two halves: the controller on the app's thread and the audio engine
 //! on the sound card's.
 
+mod waiting;
+use waiting::Pending;
+
 use crate::module::{EventKind, Module, Thing};
 use crate::plan::{Ghosts, Info, PatchState, Plan, Spec, MAX_MODULE_ID};
 use crate::rt;
@@ -115,7 +118,7 @@ pub fn engine(rate: f32, config: Config) -> (Controller, AudioEngine) {
         frame: 0,
         rx,
         tx: back_tx,
-        pending: Vec::with_capacity(queue),
+        pending: Pending::new(queue),
         held: Vec::with_capacity(queue),
         room: queue,
         fade: config.fade_frames as u64,
@@ -398,7 +401,7 @@ pub struct AudioEngine {
     rx: Consumer<Stamped>,
     tx: Producer<Back>,
     /// Messages waiting for their frame, earliest first.
-    pending: Vec<Stamped>,
+    pending: Pending,
     /// Things to free that the queue back had no room for yet.
     held: Vec<Back>,
     room: usize,
@@ -472,14 +475,13 @@ impl AudioEngine {
             if message.frame < self.frame {
                 message.frame = self.frame;
             }
-            let at = self.pending.partition_point(|waiting| waiting.frame <= message.frame);
-            self.pending.insert(at, message);
+            self.pending.push(message);
         }
     }
 
     fn apply_due(&mut self) {
         while self.pending.first().is_some_and(|message| message.frame <= self.frame) {
-            let Stamped { seq, msg, .. } = self.pending.remove(0);
+            let Stamped { seq, msg, .. } = self.pending.pop().unwrap();
             match msg {
                 Msg::Event { module, kind } => self.plan.handle(module, &kind),
                 Msg::Plan { plan, after } => {
@@ -529,8 +531,7 @@ impl AudioEngine {
     fn follow_with(&mut self, after: Box<Plan>) {
         if self.pending.len() < self.room {
             let frame = self.frame + self.fade + 2;
-            let at = self.pending.partition_point(|waiting| waiting.frame <= frame);
-            self.pending.insert(at, Stamped { frame, seq: 0, msg: Msg::After(after) });
+            self.pending.push(Stamped { frame, seq: 0, msg: Msg::After(after) });
         } else {
             self.give_back(Back::Plan(after));
         }
