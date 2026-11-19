@@ -24,13 +24,33 @@ fn timed(audio: &mut AudioEngine, blocks: usize) -> Vec<f64> {
     let mut l = [0.0f32; BLOCK];
     let mut r = [0.0f32; BLOCK];
     let mut times = Vec::with_capacity(blocks);
+    let thread_cpu = std::env::var_os("NATIVE_COST_THREAD_CPU").is_some();
     for _ in 0..blocks {
-        let start = Instant::now();
-        audio.render(&mut l, &mut r);
-        times.push(start.elapsed().as_secs_f64() * 1000.0);
+        if thread_cpu {
+            let start = cpu_seconds();
+            audio.render(&mut l, &mut r);
+            times.push((cpu_seconds() - start) * 1000.0);
+        } else {
+            let start = Instant::now();
+            audio.render(&mut l, &mut r);
+            times.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
     }
     times.sort_by(|a, b| a.total_cmp(b));
     times
+}
+
+/// Optional diagnostic clock: excludes time the scheduler ran another thread.
+/// Select identically on the before/after branches; wall time stays the default.
+fn cpu_seconds() -> f64 {
+    #[cfg(unix)]
+    unsafe {
+        let mut t = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        assert_eq!(libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut t), 0);
+        t.tv_sec as f64 + t.tv_nsec as f64 * 1e-9
+    }
+    #[cfg(not(unix))]
+    panic!("the optional thread CPU diagnostic needs a Unix clock");
 }
 
 fn at(times: &[f64], part: f64) -> f64 {

@@ -20,3 +20,6 @@ mgl-fx = { package = "fx", path = "../../MultiGrainLive/core/crates/fx" }
 mgl-edit = { package = "edit", path = "../../MultiGrainLive/core/crates/edit" }
 audio-core = { path = "../../MultiGrainLive/core/crates/audio-core" }
 prism-grain = { path = "../../GitHub/prism-fx/crates/prism-grain" }
+
+[dev-dependencies]
+libc = "0.2"
