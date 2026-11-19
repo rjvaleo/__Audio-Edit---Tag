@@ -48,6 +48,7 @@
 //! The DC blocker runs on the oscillator's output, after warps and shapers,
 //! since fold, quant and crush can all leave DC behind.
 
+use crate::cache::Last;
 use crate::fx::{js_round, Shaper};
 use crate::table::{Wavetable, FRAME_LEN, FRAME_MASK, MIP_LEVELS};
 use crate::warp::{eval, fract, Warp, WarpMode};
@@ -130,10 +131,10 @@ pub(crate) fn herm(d: &[f32], base: usize, i: usize, t: f32) -> f32 {
 /// The four samples around index `i` of the frame at `base`.
 #[inline(always)]
 fn points(d: &[f32], base: usize, i: usize) -> [f32; 4] {
-    assert!(base + FRAME_LEN <= d.len());
+    debug_assert!(base + FRAME_LEN <= d.len());
     // SAFETY: every index is `base` plus something masked to the frame, and
-    // the frame lies inside `d` (checked above, once per read rather than
-    // four times; this is the innermost loop of the synth).
+    // frame_at only returns bases within the table's complete frames; the
+    // debug assertion above checks that invariant in the innermost read.
     unsafe {
         [
             *d.get_unchecked(base + ((i + FRAME_MASK) & FRAME_MASK)),
@@ -205,6 +206,11 @@ pub(crate) struct OscVoice {
     norm_target: [f32; MAX_UNISON],
     dc: [DcBlocker; 2],
     fresh: bool,
+    detune: [Last<1, f32>; MAX_UNISON],
+    pan_math: [Last<1, [f32; 2]>; MAX_UNISON],
+    mip: [[Last<1, (usize, f32)>; 2]; MAX_UNISON],
+    norm_glide: Last<1, f32>,
+    dc_pole: Last<1, f32>,
 }
 
 impl OscVoice {
@@ -220,6 +226,11 @@ impl OscVoice {
             norm_target: [1.0; MAX_UNISON],
             dc: [DcBlocker::default(); 2],
             fresh: true,
+            detune: [Last::new(); MAX_UNISON],
+            pan_math: [Last::new(); MAX_UNISON],
+            mip: [[Last::new(); 2]; MAX_UNISON],
+            norm_glide: Last::new(),
+            dc_pole: Last::new(),
         }
     }
 
@@ -274,7 +285,7 @@ impl OscVoice {
         for u in 0..n {
             let d = if n == 1 { 0.0 } else { -1.0 + 2.0 * u as f32 / (n - 1) as f32 };
             let cents = d * p.det * 60.0;
-            let hz = p.hz * (cents / 1200.0).exp2();
+            let hz = p.hz * self.detune[u].get([cents], || (cents / 1200.0).exp2());
             let inc_f = hz / p.sr;
             // Pan for this copy, ramped from last block's.
             let off = if n == 1 || (n % 2 == 1 && u == n / 2) {
@@ -286,7 +297,8 @@ impl OscVoice {
             };
             let pan = (p.pan + off).clamp(-1.0, 1.0);
             let th = (pan + 1.0) * std::f32::consts::FRAC_PI_4;
-            let target = [th.cos() * gain, th.sin() * gain];
+            let trig = self.pan_math[u].get([th], || [th.cos(), th.sin()]);
+            let target = [trig[0] * gain, trig[1] * gain];
             let start = if self.fresh || u >= self.n { target } else { self.pan[u] };
             self.pan[u] = target;
             if !(inc_f > 0.0 && inc_f < 0.5) {
@@ -297,11 +309,13 @@ impl OscVoice {
             let inc = (inc_f as f64 * 4_294_967_296.0) as u32;
 
             let mut slope = base_slope;
-            let (mlevel, _) = mip_for(2.0 * inc_f);
+            let mf = 2.0 * inc_f;
+            let (mlevel, _) = self.mip[u][0].get([mf], || mip_for(mf));
             if has_fm {
                 slope *= 1.0 + 2.0 * fm_k * p.fm.table.max_slope(mlevel);
             }
-            let (level, xw) = mip_for(inc_f * slope);
+            let lf = inc_f * slope;
+            let (level, xw) = self.mip[u][1].get([lf], || mip_for(lf));
             let d0 = table.data(level);
             let d1 = table.data((level + 1).min(MIP_LEVELS - 1));
             let md = p.fm.table.data(mlevel);
@@ -312,7 +326,7 @@ impl OscVoice {
             let dgr = (target[1] - start[1]) / blen as f32;
             let mut ph = self.phase[u];
             self.crush_k[u] = -1;
-            let norm_glide = 1.0 - (-1.0 / (0.005 * p.sr)).exp();
+            let norm_glide = self.norm_glide.get([p.sr], || 1.0 - (-1.0 / (0.005 * p.sr)).exp());
             for i in 0..blen {
                 let (a0, b0, u0) = (fa[i], fb[i], fu[i]);
                 let read = |x: f32| read_at(d0, d1, xw, a0, b0, u0, x);
@@ -356,7 +370,7 @@ impl OscVoice {
         }
         self.n = n;
         self.fresh = false;
-        let rdc = dc_pole(p.sr);
+        let rdc = self.dc_pole.get([p.sr], || dc_pole(p.sr));
         for i in 0..blen {
             l[i] = self.dc[0].tick(l[i], rdc);
             r[i] = self.dc[1].tick(r[i], rdc);

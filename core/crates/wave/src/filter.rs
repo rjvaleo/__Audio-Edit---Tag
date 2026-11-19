@@ -25,6 +25,7 @@
 //! architecture's fuller formant model is for later.
 
 use crate::patch::FilterType;
+use crate::cache::Last;
 
 #[derive(Clone, Copy, Default)]
 struct Svf {
@@ -77,6 +78,7 @@ pub(crate) struct Filter {
     delay: f32,
     fb: f32,
     fresh: bool,
+    tangent: [Last<2, f32>; 3],
 }
 
 impl Filter {
@@ -94,6 +96,7 @@ impl Filter {
             delay: 1.0,
             fb: 0.0,
             fresh: true,
+            tangent: [Last::new(); 3],
         }
     }
 
@@ -137,7 +140,8 @@ impl Filter {
                 let fq = 2.0 + p.res.clamp(0.0, 1.0) * 18.0;
                 for b in 0..3 {
                     let f = VOWELS[i][b] + (VOWELS[i + 1][b] - VOWELS[i][b]) * u;
-                    g[b] = (std::f32::consts::PI * f.min(nyq) / sr).tan();
+                    let f = f.min(nyq);
+                    g[b] = self.tangent[b].get([f, sr], || (std::f32::consts::PI * f / sr).tan());
                     k[b] = 1.0 / fq;
                     gain[b] = FORMANT_GAIN[b];
                 }
@@ -147,7 +151,7 @@ impl Filter {
                 delay = (sr / cut).clamp(1.0, len - 3.0);
                 fb = 0.97 * p.res.clamp(0.0, 1.0);
             }
-            _ => g[0] = (std::f32::consts::PI * cut / sr).tan(),
+            _ => g[0] = self.tangent[0].get([cut, sr], || (std::f32::consts::PI * cut / sr).tan()),
         }
         if self.fresh {
             self.g = g;

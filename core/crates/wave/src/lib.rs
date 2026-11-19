@@ -71,6 +71,7 @@ pub mod filter;
 mod fx;
 mod lfo;
 mod master_fx;
+mod cache;
 mod osc;
 pub mod patch;
 pub mod synth;

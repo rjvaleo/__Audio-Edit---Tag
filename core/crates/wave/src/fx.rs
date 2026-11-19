@@ -66,11 +66,12 @@ impl OscFx {
     pub fn reset(&mut self) {
         let len = self.buf[0].len();
         let n = self.dirty.min(len);
+        let end = self.w;
+        let first = n.min(end);
         for c in self.buf.iter_mut() {
-            // The written part ends at `w`; clear back from there.
-            for i in 0..n {
-                c[(self.w + len - 1 - i) % len] = 0.0;
-            }
+            // The written interval ends at w; its wrapped part is the tail.
+            c[end - first..end].fill(0.0);
+            c[len - (n - first)..].fill(0.0);
         }
         self.dirty = 0;
         self.w = 0;
@@ -241,6 +242,28 @@ impl Shaper {
             FxMode::Ring => Shaper::Ring { a, r: 1.0 + js_round(b * 7.0) },
             FxMode::Comb => Shaper::Comb { a, d: 2.0 + b * 10.0 },
             _ => Shaper::None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod reset_tests {
+    use super::OscFx;
+    #[test]
+    fn dirty_spans_clear_exactly_the_written_ring_positions() {
+        let mut fx = OscFx::new(48_000.0);
+        let len = fx.buf[0].len();
+        for (w, dirty) in [(0,0), (0,1), (1,1), (7,3), (3,7), (0,len), (len-1,len+17)] {
+            for c in &mut fx.buf { c.fill(0.25); }
+            fx.w = w;
+            fx.dirty = dirty;
+            let mut expected = fx.buf.clone();
+            for c in &mut expected {
+                for i in 0..dirty.min(len) { c[(w + len - 1 - i) % len] = 0.0; }
+            }
+            fx.reset();
+            assert_eq!(fx.buf, expected, "w={w}, dirty={dirty}");
+            assert_eq!((fx.w, fx.dirty), (0,0));
         }
     }
 }

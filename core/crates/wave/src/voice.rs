@@ -73,6 +73,7 @@
 //! start on their note; a chord sliding in from the last note played is not
 //! what a poly patch wants.
 
+use crate::cache::Last;
 use crate::board::{Stereo, SENDS, SEND_NOISE, SEND_OSC0, SEND_SUB};
 use crate::choice::{osc_choice, BANK, CHOICES, C_FILT, C_FX, C_LFO, C_TABLE, C_WARP};
 use crate::env::{Adsr, Stage};
@@ -235,6 +236,7 @@ pub(crate) struct Voice {
     noise: Noise,
     noise_gain: f32,
     filt: [Filter; 2],
+    cutoff: [Last<3, f32>; 2],
     dc_sub: f32,
     /// Every key's value after modulation, as of the last block.
     pub vals: [f32; NUM_PARAMS],
@@ -280,6 +282,7 @@ impl Voice {
             noise: Noise::default(),
             noise_gain: 0.0,
             filt: [Filter::new(sr), Filter::new(sr)],
+            cutoff: [Last::new(); 2],
             dc_sub: 0.0,
             vals: [0.0; NUM_PARAMS],
             src: [0.0; SRC_COUNT],
@@ -662,13 +665,15 @@ impl Voice {
         self.noise_gain = noise_target;
 
         // ── filters ──────────────────────────────────────────────────────────
-        let fp = |f: usize, c: &[u8; CHOICES]| {
+        let pitch = self.pitch;
+        let mut fp = |f: usize, c: &[u8; CHOICES]| {
             let b = FILT_BASE + f * FILT_STRIDE;
             let key = v[b + F_KEY];
             FilterParams {
                 typ: FilterType::ALL[c[C_FILT + f] as usize],
                 cut_norm: v[b + F_CUT],
-                cut_hz: cutoff_hz(v[b + F_CUT]) * (key * (self.pitch - 60.0) / 12.0).exp2(),
+                cut_hz: self.cutoff[f].get([v[b + F_CUT], key, pitch], ||
+                    cutoff_hz(v[b + F_CUT]) * (key * (pitch - 60.0) / 12.0).exp2()),
                 res: v[b + F_RES],
                 drive: v[b + F_DRIVE],
             }
