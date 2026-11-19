@@ -46,3 +46,96 @@ test('a branch stopping short does not hide its other path or duplicate shared e
   expect(await layout(page, board(['drive', 'dead', 'echo'], ['voice>drive', 'drive>dead', 'drive>echo', 'echo>out'])))
     .toEqual({ items: [node('drive'), { t: 'split', from: 'drive', to: 'out', paths: [[node('dead')], [node('echo')]] }], unconnected: [] });
 });
+
+const a6 = () => board([['drive', 'wave:drive'], ['chorus', 'fx:hp-chorus'], 'echo', ['spec', 'fx:spectral-dynamics'], ['mesh', 'fx:ambient-fdn'], ['plate', 'fx:dattorro-plate'], 'eq'],
+  ['voice>drive', 'drive>chorus', 'chorus>echo', 'echo>spec', 'spec>eq', 'drive>mesh', 'mesh>plate', 'plate>eq', 'eq>out']);
+async function openChain(page) {
+  const b = a6();
+  b.name = 'A6 dock';
+  b.nodes = b.nodes.map((n, i) => ({ ...n, on: true, params: {}, x: 100 + i * 150, y: 100 }));
+  expect((await page.request.post('/api/wave/mods', { data: { mods: [] } })).ok()).toBe(true);
+  const r = await page.request.post('/api/wave/board', { data: b });
+  expect(r.ok(), await r.text()).toBe(true);
+  await page.setViewportSize({ width: 2080, height: 1100 });
+  await page.goto('/');
+  await page.locator('#leftRail .rl-item[data-mode="synth"]').click();
+  await page.waitForFunction(() => WV.connected && WV.board?.name === 'A6 dock' && state.suites?.length);
+}
+const cards = (page) => page.locator('#wvChainDock [data-card]');
+test('Play dock lists the full A6 chain with labelled paths', async ({ page }) => {
+  await openChain(page);
+  await expect(cards(page)).toHaveCount(7);
+  expect(await cards(page).evaluateAll((es) => es.map((e) => e.dataset.card)))
+    .toEqual(['drive', 'chorus', 'echo', 'spec', 'mesh', 'plate', 'eq']);
+  await expect(page.locator('#wvChainDock .wv-chain-split-label')).toContainText('SPLITS AFTER DRIVE, INTO EQ');
+  await expect(page.locator('#wvChainDock .wv-chain-path-label')).toHaveText(['PATH 1 · 3 EFFECTS', 'PATH 2 · 2 EFFECTS']);
+});
+test('the FX link opens that card’s effect on the board', async ({ page }) => {
+  await openChain(page);
+  await page.locator('#wvChainDock [data-card="echo"] [data-openfx]').click();
+  await expect(page.locator('#wvViewFx')).toBeVisible();
+  expect(await page.evaluate(() => WV_BOARD_VIEW.sel)).toEqual({ t: 'node', id: 'echo' });
+});
+test('a dock card power button bypasses its board node', async ({ page }) => {
+  await openChain(page);
+  await page.locator('#wvChainDock [data-card="drive"] [data-card-power]').click();
+  await expect.poll(() => page.evaluate(() => wvNode('drive').on)).toBe(false);
+  await expect.poll(async () => (await (await page.request.get('/api/wave/board')).json()).nodes.find((n) => n.id === 'drive').on).toBe(false);
+});
+test('the dock keeps Plate at the top by node after Mesh is removed', async ({ page }) => {
+  await openChain(page);
+  await expect(cards(page)).toHaveCount(7);
+  await page.evaluate(() => wvDockScrollTo('plate'));
+  const offset = () => page.evaluate(() => {
+    const host = $('wvChainDock').getBoundingClientRect(), card = document.querySelector('#wvChainDock [data-card="plate"]').getBoundingClientRect();
+    return (card.top - host.top) / WV.scale;
+  });
+  await expect.poll(offset).toBeLessThanOrEqual(2);
+  await page.locator('#wvViews [data-v="fx"]').click();
+  await page.evaluate(() => { wvBoardSelect({ t: 'node', id: 'mesh' }); wvBoardDelete(); });
+  await expect.poll(async () => (await (await page.request.get('/api/wave/board')).json()).nodes.some((n) => n.id === 'mesh')).toBe(false);
+  await page.locator('#wvViews [data-v="play"]').click();
+  await expect(page.locator('#wvChainDock [data-card="mesh"]')).toHaveCount(0);
+  await expect.poll(offset).toBeLessThanOrEqual(2);
+  expect(await offset()).toBeGreaterThanOrEqual(-2);
+});
+test('Create and Matrix keep the same chain dock', async ({ page }) => {
+  await openChain(page);
+  await expect(cards(page)).toHaveCount(7);
+  const order = await cards(page).evaluateAll((es) => es.map((e) => e.dataset.card));
+  for (const v of ['create', 'matrix']) {
+    await page.locator(`#wvViews [data-v="${v}"]`).click();
+    await expect(page.locator('#wvChainDock')).toBeVisible();
+    expect(await cards(page).evaluateAll((es) => es.map((e) => e.dataset.card))).toEqual(order);
+  }
+});
+test('all catalogue faces fit their full chain cards', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openChain(page);
+  await expect(cards(page)).toHaveCount(7);
+  const errors = await page.evaluate(() => {
+    const errors = [];
+    for (const f of WV_FXCAT.list) {
+      wvBoardAdopt({ name: 'Card fit', nodes: [
+        { id: 'voice', kind: 'in:voice', on: true, params: {} },
+        { id: 'face', kind: f.kind, on: true, params: {} },
+        { id: 'out', kind: 'out', on: true, params: {} },
+      ], cables: [{ from: ['voice', 'o'], to: ['face', 'i'] }, { from: ['face', 'o'], to: ['out', 'i'] }] });
+      wvRenderChainDock();
+      const face = document.querySelector('#wvChainDock [data-card="face"] .wv-rackface');
+      if (!face) { errors.push(`${f.kind}: no full face`); continue; }
+      const bounds = face.getBoundingClientRect();
+      for (const el of [face, ...face.querySelectorAll('*')]) {
+        const handle = el.matches('.prism-pad') || el.querySelector(':scope > .fx-caret');
+        if (el instanceof HTMLElement && !handle && el.clientWidth && el.scrollWidth > el.clientWidth + 1)
+          errors.push(`${f.kind}: ${el.className} ${el.scrollWidth}>${el.clientWidth}`);
+        if (el instanceof HTMLElement && el.getClientRects().length) {
+          const r = el.getBoundingClientRect();
+          if (r.width && (r.left < bounds.left - 1 || r.right > bounds.right + 1)) errors.push(`${f.kind}: outside face`);
+        }
+      }
+    }
+    return errors;
+  });
+  expect(errors).toEqual([]);
+});

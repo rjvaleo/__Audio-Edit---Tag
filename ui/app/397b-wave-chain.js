@@ -88,3 +88,99 @@ function wvChainLayout(board) {
   }
   return { items, unconnected: nodes.filter((n) => wvIsFx(n) && !reached.has(n.id)).map((n) => n.id) };
 }
+
+const WV_CHAIN = { board: null, stamp: '', anchor: null, offset: 0, selected: null, cards: new Map() };
+
+function wvRememberDock() {
+  const host = $('wvChainDock');
+  if (!host || host.hidden || !host.getClientRects().length) return;
+  const top = host.getBoundingClientRect().top;
+  const card = [...host.querySelectorAll('[data-card]')].find((e) => e.getBoundingClientRect().bottom > top + 1);
+  if (card) {
+    WV_CHAIN.anchor = card.dataset.card;
+    WV_CHAIN.offset = (card.getBoundingClientRect().top - top) / (WV.scale || 1);
+  }
+}
+
+function wvDockScrollTo(id) {
+  const host = $('wvChainDock'), card = WV_CHAIN.cards.get(id)?.el;
+  if (!host || !card) return;
+  host.scrollTop += (card.getBoundingClientRect().top - host.getBoundingClientRect().top) / (WV.scale || 1);
+  WV_CHAIN.selected = id;
+  host.querySelectorAll('[data-card]').forEach((el) => el.classList.toggle('sel', el.dataset.card === id));
+  wvRememberDock();
+}
+
+function wvRenderChainDock() {
+  const dock = $('wvRdock');
+  if (!dock || !WV.board) return;
+  let host = $('wvChainDock');
+  if (!host) {
+    host = wvH('<div id="wvChainDock" class="wv-chain-dock wv-scroll"></div>');
+    dock.appendChild(host);
+    host.addEventListener('scroll', wvRememberDock, { passive: true });
+  }
+  if (WV.view === 'fx') { host.hidden = true; return; }
+  wvRememberDock();
+  host.hidden = false;
+  const stamp = JSON.stringify([WV.board.nodes.map((n) => [n.id, n.kind, n.on, n.sound]), WV.board.cables, !!state.suites?.length]);
+  if (WV_CHAIN.board === WV.board && WV_CHAIN.stamp === stamp) return;
+  const anchor = WV_CHAIN.anchor, offset = WV_CHAIN.offset, previous = [...WV_CHAIN.cards.keys()];
+  WV_CHAIN.board = WV.board;
+  WV_CHAIN.stamp = stamp;
+  WV_CHAIN.cards.clear();
+  const layout = wvChainLayout(WV.board);
+  const name = (id) => id.startsWith('in:') ? WV_IN[id]?.n || id : id === 'out' ? 'Out' : wvNodeName(wvNode(id));
+  const count = (items) => items.reduce((n, x) => n + (x.t === 'node' ? 1 : x.t === 'split' ? x.paths.reduce((n, p) => n + count(p), 0) : count(x.path)), 0);
+  const draw = (items) => items.map((x) => {
+    if (x.t === 'node') return `<article class="wv-panel wv-mod wv-finsp wv-chaincard" data-card="${wvEsc(x.id)}">${wvInspFx(wvNode(x.id))}</article>`;
+    if (x.t === 'send') return `<section class="wv-chain-send"><div class="wv-chain-send-label">FROM ${wvEsc(name(x.from).toUpperCase())} → ${wvEsc(name(x.to).toUpperCase())}</div>${draw(x.path)}</section>`;
+    return `<section class="wv-chain-split"><div class="wv-chain-split-label">SPLITS AFTER ${wvEsc(name(x.from).toUpperCase())}, INTO ${wvEsc(name(x.to).toUpperCase())}</div>${x.paths.map((p, i) => `<div class="wv-chain-path"><div class="wv-chain-path-label">PATH ${i + 1} · ${count(p)} EFFECTS</div>${draw(p)}</div>`).join('')}</section>`;
+  }).join('');
+  host.innerHTML = '<div class="wv-chain-end">VOICE</div>' + draw(layout.items)
+    + '<div class="wv-chain-end">OUT</div>'
+    + (layout.unconnected.length ? '<div class="wv-chain-end">NOT CONNECTED</div>' + draw(layout.unconnected.map((id) => ({ t: 'node', id }))) : '');
+  for (const el of host.querySelectorAll('[data-card]')) {
+    const id = el.dataset.card, n = wvNode(id);
+    const pictures = wvWireInspectorFace(el, n);
+    WV_CHAIN.cards.set(id, { el, pictures });
+    el.querySelector('[data-ipw]')?.setAttribute('data-card-power', id);
+    const open = wvH(`<span class="wv-bt wv-btn" data-openfx="${wvEsc(id)}" title="Open this effect on the FX board">⋀ FX ›</span>`);
+    el.querySelector('.wv-mh').appendChild(open);
+    open.addEventListener('click', () => {
+      wvShowView('fx');
+      wvBoardSelect({ t: 'node', id });
+    });
+    el.classList.toggle('sel', id === WV_CHAIN.selected);
+  }
+  // The same node, at the same distance from the top, survives changed card
+  // heights, reordering and deletion before it. A deleted anchor uses its
+  // surviving neighbour rather than a stale absolute pixel position.
+  wvSizeChainDock();
+  const at = previous.indexOf(anchor);
+  const neighbour = [...previous.slice(at + 1), ...previous.slice(0, Math.max(0, at)).reverse()].find((id) => WV_CHAIN.cards.has(id));
+  const target = WV_CHAIN.cards.get(anchor)?.el || WV_CHAIN.cards.get(neighbour)?.el;
+  if (target) host.scrollTop += (target.getBoundingClientRect().top - host.getBoundingClientRect().top) / (WV.scale || 1) - (WV_CHAIN.cards.has(anchor) ? offset : 0);
+  wvRememberDock();
+}
+
+/// Even a last, newly stranded card can return to the top of the viewport.
+function wvSizeChainDock() {
+  const host = $('wvChainDock'), last = [...WV_CHAIN.cards.values()].at(-1)?.el;
+  if (!host || host.hidden) return;
+  host.style.paddingBottom = `${last ? Math.max(0, host.clientHeight - last.offsetHeight) : 0}px`;
+}
+
+function wvDrawChainDock(t) {
+  const host = $('wvChainDock');
+  if (!host || host.hidden) return;
+  const bounds = host.getBoundingClientRect(), memo = new Map();
+  WV_NWAVE.waves.clear();
+  WV_NWAVE.specs.clear();
+  wvHistTick(t);
+  for (const [id, card] of WV_CHAIN.cards) {
+    const r = card.el.getBoundingClientRect();
+    if (r.bottom < bounds.top || r.top > bounds.bottom) continue;
+    wvDrawInspectorFace(card.el, wvNode(id), card.pictures, t, memo);
+  }
+}

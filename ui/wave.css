@@ -613,3 +613,16 @@ body.synthpage #overview { display: none; }
 #waveView .wv-fxrow { width: 1432px; height: 120px; flex: none; }
 
 #waveView #wvViewPlay .wv-tgts.ov { max-width: calc(100% - 10px); }
+
+/* The chain shares the inspector's full-width faces and control wiring. */
+#waveView .wv-chain-dock { height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; scrollbar-width: thin; }
+#waveView .wv-chain-dock[hidden] { display: none; }
+#waveView .wv-chain-dock::before { content: ''; position: absolute; left: 5px; top: 12px; bottom: 12px; width: 1px; background: var(--wv-line); pointer-events: none; }
+#waveView .wv-chaincard { height: auto; margin-bottom: 10px; }
+#waveView .wv-chaincard.sel { box-shadow: inset 3px 0 var(--wv-on); }
+#waveView .wv-chaincard .iscroll { flex: none; overflow: visible; margin: 0; padding: 0; }
+#waveView :is(.wv-chain-end, .wv-chain-split-label, .wv-chain-path-label, .wv-chain-send-label) { padding: 6px 12px; font: 600 var(--fs-xs)/1.4 var(--mono); color: var(--wv-t3); letter-spacing: .08em; }
+#waveView .wv-chain-end { color: var(--wv-t2); }
+#waveView .wv-chain-split { border: 1px dashed var(--wv-line); border-radius: var(--r-m); margin-bottom: 10px; }
+#waveView .wv-chain-path + .wv-chain-path { border-top: 1px dashed var(--wv-line); }
+#waveView .wv-chain-send { border-left: 2px dashed var(--wv-mod); }

@@ -101,13 +101,21 @@ function wvRenderInspector() {
   if (s && s.t === 'node' && !n) WV_BOARD_VIEW.sel = null;
   const c = s && s.t === 'cab' ? WV.board.cables[s.i] : null;
   el.innerHTML = n ? (wvIsIO(n) ? wvInspIO(n) : wvIsFx(n) ? wvInspFx(n) : wvInspRouting(n)) : c ? wvInspCable(c) : wvInspBoard();
+  WV_BOARD_CV.insp = wvWireInspectorFace(el, n);
+}
+
+/// The same controls on the selected inspector and on a chain card.
+function wvWireInspectorFace(el, n) {
   if (n) wvMountRackFace(el, n);
-  WV_BOARD_CV.insp = { pic: null, knobs: [] };
-  el.querySelectorAll('canvas[data-w]').forEach((cv) => { const g = wvCv(cv); if (cv.dataset.ip) WV_BOARD_CV.insp.pic = g; else WV_BOARD_CV.insp.knobs.push(g); });
+  const pictures = { pic: null, knobs: [] };
+  el.querySelectorAll('canvas[data-w]').forEach((cv) => { const g = wvCv(cv); if (cv.dataset.ip) pictures.pic = g; else pictures.knobs.push(g); });
   wvWireBoardKnobs(el);
   el.querySelectorAll('.ic .it span').forEach((sp) => { if (sp.scrollWidth > sp.clientWidth + 0.5) sp.closest('.ic').classList.add('wide'); });
   el.querySelector('[data-ipw]')?.addEventListener('click', () => { wvBoardParam(n.id, 'on', n.on === false, false); wvRenderBoard(); });
-  el.querySelector('[data-idel]')?.addEventListener('click', wvBoardDelete);
+  el.querySelector('[data-idel]')?.addEventListener('click', () => {
+    if (n) WV_BOARD_VIEW.sel = { t: 'node', id: n.id };
+    wvBoardDelete();
+  });
   el.querySelectorAll('[data-snd]').forEach((b) => b.addEventListener('click', () => wvSoundMenu(b, b.dataset.snd)));
   el.querySelector('[data-cdel]')?.addEventListener('click', wvBoardDelete);
   el.querySelector('[data-irst]')?.addEventListener('click', () => {
@@ -135,6 +143,7 @@ function wvRenderInspector() {
   });
   el.querySelectorAll('[data-sel]').forEach((r) => r.addEventListener('click', () => wvBoardSelect({ t: 'node', id: r.dataset.sel })));
   el.querySelectorAll('[data-mnode]').forEach((r) => { r.style.cursor = 'pointer'; r.addEventListener('click', () => wvBoardSelect({ t: 'node', id: r.dataset.mnode })); });
+  return pictures;
 }
 
 /// v8b: the sound picker of a Convolution or Spectral Dynamics node: the
@@ -696,8 +705,12 @@ function wvDrawFx(t) {
       c.fillRect(0, 2, w * lv, 4);
     });
   }
+  const S = WV_BOARD_VIEW.sel, sn = S && S.t === 'node' && wvNode(S.id);
+  wvDrawInspectorFace($('wvFinsp'), sn, WV_BOARD_CV.insp, t, memo);
+}
+
+function wvDrawInspectorFace(el, sn, I, t, memo) {
   // The inspector: its picture, its knobs, its values, its lit choices.
-  const el = $('wvFinsp'), S = WV_BOARD_VIEW.sel, sn = S && S.t === 'node' && wvNode(S.id), I = WV_BOARD_CV.insp;
   if (sn && I && I.pic) wvDrawNodePic(I.pic, sn, t, memo);
   if (sn && I) {
     for (const g of I.knobs) { const p = wvParamOf(sn, g.el.dataset.fxk.split('|')[1]); if (p) wvDrawBoardKnob(g, sn, p); }
@@ -722,6 +735,7 @@ function wvDrawFx(t) {
     i.style.width = `${Math.abs(m.amt) * 50}%`;
   });
   el.querySelectorAll('[data-mv]').forEach((b) => { const m = WV.mods[+b.dataset.mv]; if (m) wvTxtEl(b, wvAmtTxt(m.amt)); });
+  el.querySelectorAll('.ui-knob').forEach((kn) => kn.sync?.());
 }
 
 /// The rack's face in the inspector for an effect node: the rack draws it as it

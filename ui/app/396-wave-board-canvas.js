@@ -244,6 +244,7 @@ function wvRenderBoard() {
   wvMarkSel();
   wvRenderBar();
   wvRenderInspector();
+  wvRenderChainDock();
 }
 
 /// Knobs that work, on the nodes and in the inspector.

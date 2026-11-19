@@ -105,6 +105,7 @@ function wvWirePage() {
 }
 
 function wvShowView(v) {
+  if (WV.view !== 'fx') wvRememberDock();
   WV.view = v;
   document.querySelectorAll('#wvViews .wv-tab').forEach((x) => {
     x.classList.toggle('on', x.dataset.v === v);
@@ -113,6 +114,7 @@ function wvShowView(v) {
   const ids = { play: 'wvViewPlay', create: 'wvViewCreate', matrix: 'wvViewMatrix', fx: 'wvViewFx' };
   for (const [k, id] of Object.entries(ids)) document.getElementById(id).classList.toggle('on', k === v);
   $('wvFinsp').hidden = v !== 'fx';
+  wvRenderChainDock();
   if (v === 'matrix') wvRenderMatrix();
   if (v === 'create') wvSyncCreate();
   // Badges and the tiles' targets are fitted to their headers, and the main
@@ -136,6 +138,7 @@ function wvFit() {
   app.style.width = `${cw / s}px`;
   app.style.height = `${ch / s}px`;
   app.style.transform = `scale(${s})`;
+  wvSizeChainDock();
 }
 
 function wvSyncSoon() {
@@ -248,6 +251,7 @@ function wvFrame(ts) {
   else if (WV.view === 'create') wvDrawCreate(t);
   else if (WV.view === 'matrix') wvDrawMatrix(t);
   else if (WV.view === 'fx') wvDrawFx(t);
+  if (WV.view !== 'fx') wvDrawChainDock(t);
   wvDrawKeys();
   wvDrawPuck();
   wvDrawOut(t);
