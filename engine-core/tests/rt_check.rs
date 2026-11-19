@@ -118,3 +118,54 @@ fn mixing_and_recording_cost_the_audio_thread_no_memory() {
     assert_eq!(ctl.collect_things(&mut back).things, 10);
     assert!(back.iter().all(|thing| thing.downcast_ref::<Tape>().is_some_and(|tape| tape.l.len() == 400)));
 }
+
+struct BadOnce {
+    fired: bool,
+    recovered: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Module for BadOnce {
+    fn inputs(&self) -> Vec<Kind> { vec![] }
+    fn outputs(&self) -> Vec<Kind> { vec![Kind::Audio] }
+    fn process(&mut self, io: &mut Io) {
+        let (l, r) = io.outs.audio(0);
+        l.fill(0.25);
+        r.fill(0.5);
+        if !self.fired {
+            l[0] = f32::NAN;
+            self.fired = true;
+        }
+    }
+    fn recover(&mut self) {
+        self.recovered.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[test]
+fn a_bad_module_is_silenced_and_recovers_without_allocating() {
+    use engine_core::basics::Gain;
+    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+    let recovered = Arc::new(AtomicUsize::new(0));
+    let (mut ctl, mut audio) = engine(RATE, exact());
+    ctl.add(1, Box::new(BadOnce { fired: false, recovered: recovered.clone() })).unwrap();
+    ctl.add(2, Box::new(Gain::new(0.5))).unwrap();
+    ctl.connect(port(1, 0), port(2, 0)).unwrap();
+    ctl.connect_out(port(2, 0)).unwrap();
+    ctl.commit().unwrap();
+    let mut l = [0.0; 64];
+    let mut r = [0.0; 64];
+    let before = counted();
+    audio.render(&mut l, &mut r);
+    assert_eq!(l, [0.0; 64]);
+    assert_eq!(r, [0.0; 64]);
+    assert_eq!(ctl.bad_blocks(), 1);
+    assert_eq!(recovered.load(Ordering::SeqCst), 1);
+    for _ in 0..4 {
+        audio.render(&mut l, &mut r);
+        assert_eq!(l, [0.125; 64]);
+        assert_eq!(r, [0.25; 64]);
+    }
+    assert_eq!(counted(), before, "allocations or frees inside recovery or rendering");
+    assert_eq!(ctl.bad_blocks(), 1);
+    assert_eq!(recovered.load(Ordering::SeqCst), 1);
+}
