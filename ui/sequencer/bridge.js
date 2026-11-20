@@ -1292,6 +1292,7 @@ async function flush() {
     routeState: () => ({
       on: route.on, epoch: route.epoch, segs: route.segs.slice(), loop: loopSec, grid: grid.slice(),
       batches: route.batches, stats: route.stats, jumps: route.jumps, leadAt: route.leadAt, aheadNow: route.aheadNow,
+      late: seqLateSteps,
     }),
     /// The runs the sender kept rather than posted, taken — for the tests.
     routeSent: () => route.sent.splice(0),

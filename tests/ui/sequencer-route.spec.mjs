@@ -87,31 +87,66 @@ const ONSETS = () => {
   return { runs: sent.length, onsets, gaps, loud, epochs: [...new Set(sent.map((s) => s.epoch))] };
 };
 
+/// How often the page has been too busy to keep time: steps laid after their
+/// moment (each sounds late by however long the page was held up), and grids
+/// laid again (a step left out or played twice).
+const BUSY = () => {
+  const s = seqBridge.routeState();
+  return { late: s.late, jumps: s.jumps };
+};
+
+/// The first take the page kept time in. GitHub's runners draw in software and
+/// can hold a page up for a tenth of a second and more (19 Nov: a note 481
+/// frames late, another a whole step late), and a take like that says nothing
+/// about the stamps. `play(i)` plays take `i` and returns what it found, with
+/// `busy` read once the sound was flowing and again at its end; up to three are
+/// played, and the first the page was never too busy in is the one checked.
+async function cleanTake(play) {
+  const spoiled = [];
+  for (let i = 0; i < 3; i++) {
+    const got = await play(i);
+    const late = got.busyAfter.late - got.busyBefore.late;
+    const jumps = got.busyAfter.jumps - got.busyBefore.jumps;
+    if (late === 0 && jumps === 0) return got;
+    spoiled.push(`take ${i + 1}: ${late} steps laid late, ${jumps} grids laid again`);
+  }
+  throw new Error(`the page was too busy to keep time in every take (${spoiled.join('; ')})`);
+}
+
 test('routed and playing, every note is stamped on the engine frame of its step', async ({ page }) => {
   const frame = await enterSeq(page);
   const rate = await frame.evaluate(TONE);
   const step = Math.round(0.25 * rate);
-  await page.evaluate((r) => {
-    engine.device = true;
-    engine.deviceRate = r;
-    engine.position = Math.round(3.6 * r);
-    seq.routeSink = true;
+  await page.evaluate(() => {
     // How much the page had sent at the moment the host was told it was routed.
     window.addEventListener('message', (e) => {
       if (e.data && e.data.type === 'seq:route' && e.data.on) {
         seq.routedAfterBatches = seqFrame().contentWindow.seqBridge.routeState().batches;
       }
     });
-    seqSync(true, { preroll: true });
-  }, rate);
-  await page.waitForFunction(() => seq.routed === true, null, { timeout: 5_000 });
-  expect(await frame.evaluate(() => seqBridge.routeState().on)).toBe(true);
-  expect(await page.evaluate(() => seq.routedAfterBatches),
-    'the host was told the sound was going to the engine before any of it had gone').toBeGreaterThan(0);
-  await page.waitForTimeout(1_400);
-  await page.evaluate(() => seqSync(false));
-  await page.waitForTimeout(150);
-  const got = await frame.evaluate(ONSETS);
+  });
+  const got = await cleanTake(async () => {
+    await page.waitForFunction(() => seq.routed !== true, null, { timeout: 5_000 });
+    await frame.evaluate(() => seqBridge.routeSent());
+    await page.evaluate((r) => {
+      engine.device = true;
+      engine.deviceRate = r;
+      engine.position = Math.round(3.6 * r);
+      seq.routeSink = true;
+      seq.routedAfterBatches = null;
+      seqSync(true, { preroll: true });
+    }, rate);
+    await page.waitForFunction(() => seq.routed === true, null, { timeout: 5_000 });
+    const busyBefore = await frame.evaluate(BUSY);
+    expect(await frame.evaluate(() => seqBridge.routeState().on)).toBe(true);
+    expect(await page.evaluate(() => seq.routedAfterBatches),
+      'the host was told the sound was going to the engine before any of it had gone').toBeGreaterThan(0);
+    await page.waitForTimeout(1_400);
+    await page.evaluate(() => seqSync(false));
+    await page.waitForTimeout(150);
+    const busyAfter = await frame.evaluate(BUSY);
+    return { ...(await frame.evaluate(ONSETS)), busyBefore, busyAfter };
+  });
   expect(got.loud, 'nothing was sent').toBeGreaterThan(0.01);
   expect(got.gaps, 'the stamps skipped or went back').toEqual([]);
   expect(got.epochs.length).toBe(1);
@@ -121,6 +156,28 @@ test('routed and playing, every note is stamped on the engine frame of its step'
   got.onsets.forEach((f, i) => {
     expect(Math.abs(f - (first + i * step)), `note ${i + 1} at frame ${f}, not ${first + i * step}`).toBeLessThanOrEqual(2);
   });
+});
+
+test('a page held up past a step\'s moment counts the step as laid late', async ({ page }) => {
+  const frame = await enterSeq(page);
+  const rate = await frame.evaluate(TONE);
+  await page.evaluate((r) => {
+    engine.device = true;
+    engine.deviceRate = r;
+    engine.position = 0;
+    seq.routeSink = true;
+    seqSync(true, { preroll: true });
+  }, rate);
+  await page.waitForFunction(() => seq.routed === true, null, { timeout: 5_000 });
+  const before = await frame.evaluate(BUSY);
+  expect(before.late, 'the page does not count late steps').toEqual(expect.any(Number));
+  // Held up for 0.4 s, more than the scheduler looks ahead and more than a
+  // step: at least one step's moment passes before it can be laid.
+  await frame.evaluate(() => { const t = performance.now(); while (performance.now() - t < 400); });
+  await page.waitForTimeout(300);
+  const after = await frame.evaluate(BUSY);
+  await page.evaluate(() => seqSync(false));
+  expect(after.late, 'a step laid after its moment was not counted').toBeGreaterThan(before.late);
 });
 
 test('played and stopped again and again, the page sends the engine one stream, not one a Play', async ({ page }) => {
@@ -173,18 +230,24 @@ test('round the engine\'s loop the grid wraps where the engine will, and the sta
   const frame = await enterSeq(page);
   const rate = await frame.evaluate(TONE);
   const step = Math.round(0.25 * rate);
-  await page.evaluate((r) => {
-    seq.epoch = 41;
-    seqPost({
-      type: 'seq:transport', playing: true, at: 3.6, loop: { a: 3.5, b: 4.5 },
-      route: { rate: r, lead: 0.12, epoch: 41, sink: true },
-    });
-  }, rate);
-  await page.waitForFunction(() => seq.routed === true, null, { timeout: 5_000 });
-  await page.waitForTimeout(2_000);
-  await page.evaluate(() => seqPost({ type: 'seq:transport', playing: false }));
-  await page.waitForTimeout(150);
-  const got = await frame.evaluate(ONSETS);
+  const got = await cleanTake(async (i) => {
+    await page.waitForFunction(() => seq.routed !== true, null, { timeout: 5_000 });
+    await frame.evaluate(() => seqBridge.routeSent());
+    await page.evaluate(([r, epoch]) => {
+      seq.epoch = epoch;
+      seqPost({
+        type: 'seq:transport', playing: true, at: 3.6, loop: { a: 3.5, b: 4.5 },
+        route: { rate: r, lead: 0.12, epoch, sink: true },
+      });
+    }, [rate, 41 + i]);
+    await page.waitForFunction(() => seq.routed === true, null, { timeout: 5_000 });
+    const busyBefore = await frame.evaluate(BUSY);
+    await page.waitForTimeout(2_000);
+    await page.evaluate(() => seqPost({ type: 'seq:transport', playing: false }));
+    await page.waitForTimeout(150);
+    const busyAfter = await frame.evaluate(BUSY);
+    return { ...(await frame.evaluate(ONSETS)), busyBefore, busyAfter };
+  });
   const aF = Math.round(3.5 * rate);
   const bF = Math.round(4.5 * rate);
   // Once round in the first pass, and again each second after.

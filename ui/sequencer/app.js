@@ -544,6 +544,11 @@ let masterGain = null;
 /// own (RJ, 16 Nov 2026), joins the master after it, so Seq's Vol is not its.
 let seqVol = null;
 let isPlaying = false;
+/// Steps the scheduler laid after their moment, since the page opened. Such a
+/// step starts at once, late by however long the page was held up (a page
+/// busy past the scheduler's look-ahead); counted so the tests, and anyone
+/// reading the frame, can tell a late note from one stamped wrong.
+let seqLateSteps = 0;
 let currentStep = 0;
 // Which step boundary the scheduler lays next, counted from Play (or, in the
 // app, from the engine's zero: bridge.js sets it with the step). The Journey
@@ -1071,6 +1076,7 @@ function scheduler() {
     // Inside the granular app, the engine's loop: a step at or past its end is
     // laid again from its start (bridge.js). On its own there is no bridge.
     if (window.seqBridge && window.seqBridge.wrapBefore(nextNoteTime)) continue;
+    if (nextNoteTime < audioCtx.currentTime) seqLateSteps++;
     const step = steps[currentStep];
     const stepDur = (60 / bpm) * stepBeats;
     // Advance phases for PW-targeting LFOs and compute combined PWM modulation
