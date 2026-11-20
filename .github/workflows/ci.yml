@@ -103,6 +103,25 @@ jobs:
       # `playwright.config.mjs` starts `tools/scratch-server.mjs` itself, which
       # builds its own library and data directory in a temp dir and spawns the
       # binary above on a port of its own. Nothing here needs a real library.
+      # **The reference renders only when the instruments changed** (RJ, 20 Nov
+      # 2026: "run the exact sound only on things that have changed"): about
+      # seven minutes, so `REFERENCE_RENDERS` is set only when this push or pull
+      # request touches the sequencer's instruments, Chop, or the renders' own
+      # spec and manifest, and always on a run started by hand. See
+      # `tests/ui/reference-renders.spec.mjs`. Before the split, so the jobs are
+      # dealt with or without them.
+      - name: Did the instruments change?
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+             || ! git fetch -q --depth=1 origin "$base" \
+             || git diff --name-only "$base" HEAD | grep -Eq '^(ui/sequencer/|ui/chop|ui/app/[^/]*chop|tests/ui/reference-renders)'; then
+            echo "REFERENCE_RENDERS=1" >> "$GITHUB_ENV"
+            echo "the instruments changed, or there is nothing to compare with: the reference renders run"
+          else
+            echo "the instruments did not change: the reference renders are skipped"
+          fi
+
       # Job 1 starts four and a half minutes behind: it runs the Rust tests (4.5
       # min on 20 Nov) and the check.
       - name: Browser tests

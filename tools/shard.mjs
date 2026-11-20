@@ -33,7 +33,9 @@ if (!(n >= 1) || (!show && !(k >= 1 && k <= n))) {
 
 const seconds = JSON.parse(readFileSync(join(dir, 'durations.json'), 'utf8')).seconds;
 const files = readdirSync(dir).filter((f) => f.endsWith('.spec.mjs')).sort();
-const cost = (f) => seconds[f] ?? NEW;
+// The reference renders are skipped unless asked for (`REFERENCE_RENDERS`), and
+// a skipped file costs next to nothing.
+const cost = (f) => (f === 'reference-renders.spec.mjs' && !process.env.REFERENCE_RENDERS ? 1 : seconds[f] ?? NEW);
 // Longest first; ties by name, so every job works out the same deal.
 const order = [...files].sort((a, b) => cost(b) - cost(a) || (a < b ? -1 : 1));
 const jobs = Array.from({ length: n }, (_, i) => ({ load: i === 0 ? head : 0, files: [] }));
