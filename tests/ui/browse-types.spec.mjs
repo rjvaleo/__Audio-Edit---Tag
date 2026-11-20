@@ -16,10 +16,10 @@ async function browse(page) {
   await expect(page.locator('#btTypeList .bt-type').first()).toBeVisible();
 }
 
-test('Browse shows the types in place of the map, and Map is off the rail', async ({ page }) => {
+test('Browse shows the types in place of the map, and Map is on the rail under it', async ({ page }) => {
   await browse(page);
   await expect(page.locator('#browseMap')).toBeHidden();
-  await expect(page.locator('#leftRail .rl-child', { hasText: /^Map$/ })).toHaveCount(0);
+  await expect(page.locator('#leftRail .rl-child', { hasText: /Map$/ })).toHaveCount(1);
   // Every listed file is in exactly one type.
   const counts = await page.locator('#btTypeList .bt-type .bt-n').allTextContents();
   const sum = counts.reduce((a, t) => a + Number(t.replace(/,/g, '')), 0);
