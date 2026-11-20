@@ -29,6 +29,14 @@
 // Nothing here checks what an instrument sounds like; the specs beside this one
 // do that. The folder is `REFERENCE_RENDERS_OUT`, or `mgl-reference-renders` in
 // the system's temporary folder; the last test says where.
+//
+// **Only when asked, and only for what changed** (RJ, 20 Nov 2026: "run the exact
+// sound only on things that have changed, some things should change and get
+// better with time"). Skipped unless `REFERENCE_RENDERS` is set: `1` or `all`
+// renders every case, a list (`classic,drums`) only those instruments' cases.
+// CI sets it when the instruments' code changed (`.github/workflows/ci.yml`),
+// and `npm run test:changed` when the map says a change reaches this spec. It
+// is about seven minutes of the suite's seventy-two.
 
 import { test, expect } from './test.mjs';
 import { createHash } from 'node:crypto';
@@ -41,6 +49,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const MANIFEST = join(HERE, 'reference-renders', 'manifest.json');
 const M = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const OUT = process.env.REFERENCE_RENDERS_OUT || join(tmpdir(), 'mgl-reference-renders');
+const ASKED = (process.env.REFERENCE_RENDERS || '').trim();
+const ONLY = ASKED && !/^(1|all|yes|true)$/i.test(ASKED) ? new Set(ASKED.split(',').map((x) => x.trim()).filter(Boolean)) : null;
+const CASES = M.cases.filter((c) => !ONLY || ONLY.has(c.instrument));
+test.skip(!ASKED, 'reference renders run only when asked: REFERENCE_RENDERS=1, or a list of instruments');
 
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -657,7 +669,7 @@ test.beforeAll(() => {
   for (const [name, chs] of Object.entries(SIGNALS)) writeFileSync(join(OUT, 'inputs', `${name}.wav`), wavFile(interleaved(chs), chs.length, M.signals[name].rate));
 });
 
-for (const c of M.cases) {
+for (const c of CASES) {
   test(`${c.instrument}: ${c.id}`, async ({ page, browser }, info) => {
     test.setTimeout(180_000);
     rmSync(entryPath(c.id), { force: true });
@@ -704,9 +716,9 @@ for (const c of M.cases) {
 }
 
 test('the index: every case rendered twice, the same both times', async ({ browser }) => {
-  const missing = M.cases.filter((c) => !existsSync(entryPath(c.id))).map((c) => c.id);
+  const missing = CASES.filter((c) => !existsSync(entryPath(c.id))).map((c) => c.id);
   expect(missing, 'cases that were not rendered in this run').toEqual([]);
-  const cases = M.cases.map((c) => JSON.parse(readFileSync(entryPath(c.id), 'utf8')));
+  const cases = CASES.map((c) => JSON.parse(readFileSync(entryPath(c.id), 'utf8')));
   const inputs = Object.entries(SIGNALS).map(([name, chs]) => {
     const file = `inputs/${name}.wav`;
     return { name, file, rate: M.signals[name].rate, channels: chs.length, frames: chs[0].length, sha256: sha(readFileSync(join(OUT, file))) };

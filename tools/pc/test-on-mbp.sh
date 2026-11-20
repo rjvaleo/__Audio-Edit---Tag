@@ -36,4 +36,8 @@ git -C "$FX" archive --format=tar "$FXREV" | tar -x -f - -C "$X/prism-fx"
 ssh mbp "mkdir -p ~/mgl-test/MultiGrainLive ~/mgl-test/GitHub/prism-fx ~/mgl-test/results; rm -rf ~/mgl-test/MultiGrainLive/test-results"
 rsync -rlc --delete --exclude node_modules --exclude test-results "$X/MultiGrainLive/" mbp:mgl-test/MultiGrainLive/
 rsync -rlc --delete "$X/prism-fx/" mbp:mgl-test/GitHub/prism-fx/
-ssh mbp "zsh ~/mgl-test/MultiGrainLive/tools/pc/run-tests-mac.sh $*"
+# Settings that choose what runs, carried over (ssh passes no environment).
+ENVS=""
+[ -n "$REFERENCE_RENDERS" ] && ENVS="REFERENCE_RENDERS='$REFERENCE_RENDERS' "
+[ -n "$TEST_MAP_OUT" ] && ENVS="${ENVS}TEST_MAP_OUT='$TEST_MAP_OUT' "
+ssh mbp "${ENVS}zsh ~/mgl-test/MultiGrainLive/tools/pc/run-tests-mac.sh $*"

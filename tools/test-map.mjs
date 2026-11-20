@@ -2,19 +2,16 @@
 //
 //   npm run test:map
 //
-// Runs the whole suite once with `TEST_MAP_OUT` set, so `tests/ui/test.mjs`
+// Runs the whole suite once on the MacBook with `TEST_MAP_OUT` set, so `tests/ui/test.mjs`
 // records the functions each test ran after the page was ready, then turns the
 // offsets into line ranges of the files they are written in and saves
 // `tests/ui/test-map.json`. `tools/test-changed.mjs` reads it.
 //
 // The map is of the code as committed: it names the commit, and the runner
 // diffs against that commit, so the line numbers mean the same thing to both.
-// So the suite runs in a clean copy of the commit (a temporary git worktree,
-// `../.mgl-test-map`, built into `core/target/map/`), never in this folder: what is on disk here
-// may have uncommitted changes, or another session's edits arriving while the
-// suite runs, and the map must not see either.
+// So it refuses to run with anything uncommitted.
 
-import { readFileSync, writeFileSync, rmSync, existsSync, symlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -37,28 +34,24 @@ const atCommit = (path) => {
 };
 
 if (!process.argv.includes('--from-raw')) {
+  // **On the MacBook** (RJ, 18 Nov 2026: "Code locally, test externally"), the
+  // whole suite once, one test at a time, the reference renders included. The
+  // tree must be clean, so what is sent is exactly the commit the map names.
+  if (git('status', '--porcelain')) {
+    console.error('commit first: the map must be of exactly what is committed, and the MacBook gets the working tree');
+    process.exit(1);
+  }
   rmSync(raw, { force: true });
-  // Beside this folder, not in /tmp: the crates reach `prism-fx` by a relative
-  // path (`../../../../GitHub/prism-fx`), which holds only at the same depth.
-  const copy = join(dirname(root), '.mgl-test-map');
-  rmSync(copy, { recursive: true, force: true });
-  git('worktree', 'prune');
-  git('worktree', 'add', '--detach', copy, commit);
-  try {
-    symlinkSync(join(root, 'node_modules'), join(copy, 'node_modules'));
-    const env = { ...process.env, TEST_MAP_OUT: raw, CARGO_TARGET_DIR: join(root, 'core/target/map') };
-    // Built here first, with no time limit: from nothing it takes minutes, and
-    // the suite gives its server thirty seconds to answer.
-    const b = spawnSync('nice', ['-n', '10', 'cargo', 'build', '--release', '--manifest-path', join(copy, 'core/Cargo.toml')],
-      { cwd: copy, stdio: 'inherit', env });
-    if (b.status !== 0) throw new Error('the clean copy did not build');
-    // One worker, low priority, as every full run is.
-    const r = spawnSync('nice', ['-n', '10', 'npx', 'playwright', 'test', '--reporter=line'], {
-      cwd: copy, stdio: 'inherit', env,
-    });
-    if (r.status !== 0) console.error('some tests failed; the map is still made from what ran');
-  } finally {
-    git('worktree', 'remove', '--force', copy);
+  const home = spawnSync('ssh', ['mbp', 'echo $HOME'], { encoding: 'utf8' }).stdout.trim();
+  if (!home) { console.error('the MacBook did not answer (asleep?)'); process.exit(1); }
+  const there = `${home}/mgl-test/results/test-map.jsonl`;
+  spawnSync('ssh', ['mbp', `rm -f ${there}`]);
+  const r = spawnSync('sh', [join(root, 'tools/pc/test-on-mbp.sh')], {
+    cwd: root, stdio: 'inherit', env: { ...process.env, TEST_MAP_OUT: there, REFERENCE_RENDERS: '1' },
+  });
+  if (r.status !== 0) console.error('some tests failed; the map is still made from what ran');
+  if (spawnSync('scp', ['-q', `mbp:${there}`, raw], { stdio: 'inherit' }).status !== 0) {
+    console.error('could not fetch the record from the MacBook'); process.exit(1);
   }
 }
 if (!existsSync(raw)) { console.error(`nothing recorded at ${raw}`); process.exit(1); }

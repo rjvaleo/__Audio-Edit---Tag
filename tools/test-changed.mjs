@@ -15,10 +15,10 @@
 //   - the page, the stylesheets, the server, the test harness: every spec.
 // Rust: `cargo test -p` for each crate changed, and the crates that use it.
 //
-// One worker and low priority, always: the machine has to stay usable.
+// Run on the MacBook and the PC, never on this Mac (see the end).
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, basename } from 'node:path';
 
@@ -127,15 +127,21 @@ for (const s of list) console.log(`  ${s}  — ${specs.get(s)}`);
 console.log(`rust crates: ${crates.size ? [...crates].sort().join(', ') : 'none'}`);
 if (LIST) process.exit(0);
 
-let failed = false;
-if (crates.size) {
-  const r = spawnSync('nice', ['-n', '10', 'cargo', 'test', '--release', '--manifest-path', join(root, 'core/Cargo.toml'),
-    ...[...crates].flatMap((c) => ['-p', c])], { cwd: root, stdio: 'inherit' });
-  failed ||= r.status !== 0;
-}
+// **On the other machines, never here** (RJ, 18 Nov 2026: "Code locally, test
+// externally"): the browser specs on the MacBook, the Rust tests on the PC, both
+// at once. Each script sends the working tree as it is. The Rust side runs the
+// PC's whole Rust set (`tools/pc/run-tests.cmd`), a few minutes, whichever
+// crates changed. The reference renders run only when the map picks their spec
+// (`REFERENCE_RENDERS`, see that spec).
+const run = (script, args, env = {}) => new Promise((done) => {
+  const p = spawn('sh', [join(root, script), ...args], { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } });
+  p.on('close', (code) => done(code === 0));
+});
+const jobs = [];
+if (crates.size) jobs.push(run('tools/pc/test-on-pc.sh', ['rust']));
 if (list.length) {
-  const r = spawnSync('nice', ['-n', '10', 'npx', 'playwright', 'test', '--reporter=line',
-    ...list.map((s) => `tests/ui/${s}`)], { cwd: root, stdio: 'inherit' });
-  failed ||= r.status !== 0;
+  jobs.push(run('tools/pc/test-on-mbp.sh', list.map((s) => `tests/ui/${s}`),
+    list.includes('reference-renders.spec.mjs') ? { REFERENCE_RENDERS: '1' } : {}));
 }
-process.exit(failed ? 1 : 0);
+const ok = (await Promise.all(jobs)).every(Boolean);
+process.exit(ok ? 0 : 1);
