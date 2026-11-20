@@ -103,9 +103,10 @@ jobs:
       # `playwright.config.mjs` starts `tools/scratch-server.mjs` itself, which
       # builds its own library and data directory in a temp dir and spawns the
       # binary above on a port of its own. Nothing here needs a real library.
-      # Job 1 starts three minutes behind: it runs the Rust tests and the check.
+      # Job 1 starts four and a half minutes behind: it runs the Rust tests (4.5
+      # min on 20 Nov) and the check.
       - name: Browser tests
-        run: npx playwright test $(node tools/shard.mjs 5 ${{ matrix.shard }} --head 180)
+        run: npx playwright test $(node tools/shard.mjs 5 ${{ matrix.shard }} --head 270)
 
       - name: Keep the report if it failed
         if: failure() || cancelled()

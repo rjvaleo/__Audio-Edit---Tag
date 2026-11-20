@@ -22,9 +22,10 @@ const EXTERNAL = !!process.env.AUDIOLAB_TEST_PORT;
 // (Playwright's `TEST_PARALLEL_INDEX`, 0 to N−1, set in each worker before it
 // reads this file) drives the one on 8791 + k. A test file still runs from top to
 // bottom in one worker, on one server. One by default, and always one against an
-// external instance. The PC runs four (`tools/pc/run-tests.cmd`); the MacBook
-// stays at one (RJ, 20 Nov 2026: four at once "is a bad idea on the mac book, it
-// is OK on the PC").
+// external instance. Not used by default anywhere yet: the MacBook stays at one
+// (RJ, 20 Nov 2026: four at once "is a bad idea on the mac book, it is OK on the
+// PC"), and on the PC four at once took 48 minutes with 70 failures, most of them
+// timeouts (20 Nov), against about 30 minutes one at a time on the MacBook.
 const WORKERS = EXTERNAL ? 1 : Math.max(1, Number(process.env.MGL_WORKERS) || 1);
 const FIRST = 8791;
 const PORT = Number(process.env.AUDIOLAB_TEST_PORT) || FIRST + (Number(process.env.TEST_PARALLEL_INDEX) || 0);
