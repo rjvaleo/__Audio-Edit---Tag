@@ -119,6 +119,10 @@ test('the picker offers all of them, grouped', async ({ page }) => {
 });
 
 test('choosing any visual puts its own host on the stage', async ({ page }) => {
+  // Every visual in turn, 25 of them, each given a moment to land: 10 s on the
+  // MacBook, 17.5 s on a CI runner, 32 s on a slow one (20 Nov 2026), so the
+  // default 30 s is too little for the work, not a sign of a fault.
+  test.setTimeout(60_000);
   await open(page);
   await page.evaluate(() => setMode('room'));
   await page.waitForTimeout(600);
