@@ -1,6 +1,6 @@
 # Build it and run everything, on every push.
 #
-# Eight jobs side by side, each an eighth of the browser suite by time
+# Five jobs side by side, each a fifth of the browser suite by time
 # (`tools/shard.mjs`, from the times in `tests/ui/durations.json`). Each builds its
 # own binary and its tests drive that one — the interface is
 # `include_str!`-embedded, so testing a second build would be testing a second
@@ -9,7 +9,9 @@
 # Rust tests run in the first only. One job in a row passed an hour on 19 Nov
 # 2026 (1,031 browser tests) and was cancelled half way through. Four jobs cut
 # by Playwright's `--shard`, which splits by count, took 10.7 to 31.1 minutes
-# (the run waits for the slowest); split by time, eight take about 9 each.
+# (the run waits for the slowest). Split by time instead. Five, not more: this
+# account gets five macOS runners at once, and on 20 Nov eight jobs left three
+# waiting up to 18 minutes for one, so the run took 30 minutes anyway.
 
 name: CI
 
@@ -27,11 +29,11 @@ env:
 
 jobs:
   build-and-test:
-    name: Build and test (${{ matrix.shard }}/8)
+    name: Build and test (${{ matrix.shard }}/5)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5]
     # macOS, where the app is made and used. On Linux the suite measured the
     # runner more than the app: no AAC encoder in its Chromium, WebGL in
     # software, and the server going quiet through the prism tests (31 Oct
@@ -103,7 +105,7 @@ jobs:
       # binary above on a port of its own. Nothing here needs a real library.
       # Job 1 starts three minutes behind: it runs the Rust tests and the check.
       - name: Browser tests
-        run: npx playwright test $(node tools/shard.mjs 8 ${{ matrix.shard }} --head 180)
+        run: npx playwright test $(node tools/shard.mjs 5 ${{ matrix.shard }} --head 180)
 
       - name: Keep the report if it failed
         if: failure() || cancelled()
