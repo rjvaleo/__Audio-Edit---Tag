@@ -71,28 +71,30 @@ test('the room editor\'s controls can be clicked, not just dispatched at',
       .map((el) => el.id).filter(Boolean));
     expect(ids.length, 'no controls found in the room editor at all')
       .toBeGreaterThan(10);
-    for (const id of ids) {
-      const el = page.locator(`#${id}`);
-      if (!await el.isVisible()) continue;   // a chip inside a collapsed row
-      // The column scrolls, and a knob with its picture above it can sit below
-      // the fold: a pointer reaches it as a person does, after scrolling to it.
-      await el.scrollIntoViewIfNeeded();
-      const box = await el.boundingBox();
-      if (!box || box.width < 2 || box.height < 2) continue;
-      // A real pointer landing on it must find the slider and not the overlay.
-      // What a real pointer aimed at the middle of it would actually hit. The
-      // control itself, or something inside it — a `<span>` in a label counts,
-      // because the click still reaches the input through it.
-      const hit = await page.evaluate(({ x, y, want }) => {
-        const at = document.elementFromPoint(x, y);
-        if (!at) return null;
-        return at.closest(`#${want}`) || at.id === want
-          ? want
-          : (at.id || at.className || at.tagName);
-      }, { x: box.x + box.width / 2, y: box.y + box.height / 2, want: id });
-      expect(hit, `a pointer over #${id} lands on "${hit}" instead — that control `
-        + 'cannot be used').toBe(id);
-    }
+    // Each one brought into view and hit-tested in the page, in one go: done
+    // control by control from here it was four round trips each, and on
+    // GitHub's runner (and at a sixth of the MacBook's speed) the walk ran out
+    // of the test's 30 s (19 Nov).
+    const misses = await page.evaluate((ids) => {
+      const out = [];
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (!el || !el.checkVisibility()) continue;   // a chip inside a collapsed row
+        // The column scrolls, and a knob with its picture above it can sit below
+        // the fold: a pointer reaches it as a person does, after scrolling to it.
+        el.scrollIntoView({ block: 'center', inline: 'center' });
+        const box = el.getBoundingClientRect();
+        if (box.width < 2 || box.height < 2) continue;
+        // What a real pointer aimed at the middle of it would actually hit. The
+        // control itself, or something inside it — a `<span>` in a label counts,
+        // because the click still reaches the input through it.
+        const at = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        const hit = !at ? null : at.closest(`#${id}`) || at.id === id ? id : (at.id || at.className || at.tagName);
+        if (hit !== id) out.push(`a pointer over #${id} lands on "${hit}" instead`);
+      }
+      return out;
+    }, ids);
+    expect(misses, 'these controls cannot be used').toEqual([]);
 
     await page.locator('#reLayers .re-occ[data-occlude="grains"]').click({ timeout: 3000 });
     expect(await page.evaluate(() => roomOcclude().grains),
