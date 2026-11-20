@@ -37,10 +37,21 @@ async function laySong(request) {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   const beat = 0.5;
+  // The hats' noise is the same every run. It was Math.random, and one song
+  // in a dozen had a hat ranked first as a kick (19 Nov: "kick at 0:15.3",
+  // cut to 0.035 s), so Make kept a click and the test failed now and then.
+  let seed = 0x9e3779b9;
+  const noise = () => {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let z = seed;
+    z = Math.imul(z ^ (z >>> 15), z | 1);
+    z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+    return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
+  };
   wav(join(dir, 'drums.wav'), 16, (t) => {
     const b = t % beat, h = (t + beat / 2) % beat;
     const kick = b < 0.25 ? Math.sin(2 * Math.PI * (50 + 90 * Math.exp(-b * 40)) * b) * Math.exp(-b * 14) : 0;
-    const hat = h < 0.04 ? (Math.random() * 2 - 1) * Math.exp(-h * 120) * 0.5 : 0;
+    const hat = h < 0.04 ? (noise() * 2 - 1) * Math.exp(-h * 120) * 0.5 : 0;
     return kick * 0.9 + hat;
   });
   wav(join(dir, 'bass.wav'), 16, (t) => Math.sin(2 * Math.PI * 55 * t) * 0.5 * ((t % 1) < 0.8 ? 1 : 0.05));
