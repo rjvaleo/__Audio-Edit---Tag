@@ -14,14 +14,26 @@ import { defineConfig, devices } from '@playwright/test';
 // instance that is already running instead — the real one, with a real library,
 // which is the only way to exercise anything that needs sounds longer than the
 // scratch server's two one-second tones.
-const PORT = Number(process.env.AUDIOLAB_TEST_PORT) || 8791;
 const EXTERNAL = !!process.env.AUDIOLAB_TEST_PORT;
+
+// **Several tests at once, each with a server of its own.** One server holds one
+// engine and one document, so two tests on one server fight over both. With
+// `MGL_WORKERS=N`, N scratch servers start, on 8791, 8792, …, and worker k
+// (Playwright's `TEST_PARALLEL_INDEX`, 0 to N−1, set in each worker before it
+// reads this file) drives the one on 8791 + k. A test file still runs from top to
+// bottom in one worker, on one server. One by default, and always one against an
+// external instance. The PC runs four (`tools/pc/run-tests.cmd`); the MacBook
+// stays at one (RJ, 20 Nov 2026: four at once "is a bad idea on the mac book, it
+// is OK on the PC").
+const WORKERS = EXTERNAL ? 1 : Math.max(1, Number(process.env.MGL_WORKERS) || 1);
+const FIRST = 8791;
+const PORT = Number(process.env.AUDIOLAB_TEST_PORT) || FIRST + (Number(process.env.TEST_PARALLEL_INDEX) || 0);
 
 export default defineConfig({
   testDir: './tests/ui',
-  // The interface holds one document at a time and the server holds one engine.
-  // Running these in parallel would have them fighting over both.
-  workers: 1,
+  // The interface holds one document at a time and the server holds one engine,
+  // so each worker has a server of its own (see `WORKERS` above).
+  workers: WORKERS,
   fullyParallel: false,
   // A failing interface test is nearly always a real fault rather than a flake,
   // and retrying hides the difference.
@@ -57,12 +69,15 @@ export default defineConfig({
   },
   // Not started when pointed at an instance that is already up — killing the
   // user's own session to run a test would be a poor trade.
-  webServer: EXTERNAL ? undefined : {
+  webServer: EXTERNAL ? undefined : Array.from({ length: WORKERS }, (_, k) => ({
     command: 'node tools/scratch-server.mjs',
-    url: `http://127.0.0.1:${PORT}/api/state`,
+    url: `http://127.0.0.1:${FIRST + k}/api/state`,
+    env: { SCRATCH_PORT: String(FIRST + k) },
     reuseExistingServer: false,
-    timeout: 30_000,
+    // Each one runs a no-op `cargo build` first, and cargo lets one at a time
+    // into the build folder, so the last of several waits on the others.
+    timeout: 30_000 + 15_000 * k,
     stdout: 'ignore',
     stderr: 'pipe',
-  },
+  })),
 });

@@ -39,6 +39,9 @@ if "%1"=="rust" (
 )
 cd /d %APP%
 echo [%time%] browser tests
+rem Four tests at once, each worker with a scratch server of its own (playwright.config.mjs;
+rem RJ, 20 Nov 2026: four at once is OK on the PC, not on the MacBook). MGL_WORKERS=1 for one.
+if not defined MGL_WORKERS set MGL_WORKERS=4
 set PLAYWRIGHT_JSON_OUTPUT_NAME=%ROOT%\results\last.json
 call npx playwright test %* --reporter=line,json,./tools/pc/progress-reporter.mjs
 set CODE=%errorlevel%
