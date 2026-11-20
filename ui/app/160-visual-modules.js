@@ -16,9 +16,9 @@ const VIS_MODULES = [
     hint: 'The master bus as a room in perspective. Depth is time.' },
   { key: 'ridge', label: 'Ridgeline', canvas: 'visRidge', attach: (c) => rdgAttach(c),
     hint: 'Stacked lines, each hiding what is behind it. The waveform of the moment, pulled to the middle.' },
-  { key: 'room3d', label: 'Surfaces', canvas: 'visRoom3d', attach: (c) => r3Attach(c),
+  { key: 'room3d', label: 'Surfaces', canvas: 'visRoom3d', attach: (c) => r3Attach(c), babylon: true,
     hint: 'The stacked lines on all five surfaces of a room — floor, ceiling, both walls, and the sleeve itself on the back wall.' },
-  { key: 'stage', label: 'Stage', canvas: 'visStage', attach: (c) => stAttach(c),
+  { key: 'stage', label: 'Stage', canvas: 'visStage', attach: (c) => stAttach(c), babylon: true,
     hint: 'One room with real light, real air and real particles in it.' },
 ];
 

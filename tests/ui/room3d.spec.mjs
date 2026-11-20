@@ -20,9 +20,11 @@ async function openSurfaces(page) {
   await page.goto('/');
   await page.waitForFunction(
     () => typeof setMode === 'function' && typeof r3Attach === 'function'
-      && typeof BABYLON !== 'undefined',
+      && typeof babylonReady === 'function',
     { timeout: 30_000 },
   );
+  // The 3D engine is fetched on first use, not with the page.
+  expect(await page.evaluate(() => babylonReady())).toBe(true);
   await page.evaluate(async () => {
     const folder = state.folders[0].name;
     const files = await api(`/api/files?folder=${encodeURIComponent(folder)}`);

@@ -9,7 +9,9 @@ import { test, expect } from './test.mjs';
 
 async function openMap(page) {
   await page.goto('/');
-  await page.waitForFunction(() => typeof BABYLON !== 'undefined' && window.SoundMap, null, { timeout: 30_000 });
+  await page.waitForFunction(() => typeof babylonReady === 'function' && window.SoundMap, null, { timeout: 30_000 });
+  // The 3D engine is fetched on first use, not with the page.
+  expect(await page.evaluate(() => babylonReady())).toBe(true);
   // Map opens the graph views (`library-graph.spec.mjs`); the world is the
   // 3D choice in their strip.
   // Map is off the rail (14 Nov 2026); the map itself is kept.

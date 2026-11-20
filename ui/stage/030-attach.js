@@ -1,6 +1,7 @@
 /// Attach to a canvas. The same four methods every visual module answers.
 function stAttach(canvas) {
-  if (typeof BABYLON === 'undefined') return null;
+  // Not loaded with the page: see `babylonReady` in room3d.js.
+  if (typeof BABYLON === 'undefined') { babylonReady(); return null; }
   let engine;
   try {
     engine = new BABYLON.Engine(canvas, true, {

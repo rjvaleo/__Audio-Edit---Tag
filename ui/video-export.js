@@ -262,6 +262,8 @@ async function videoExport({ path, from, to, repeats, tail, size, fps, camera,
   // background colour, twice, in this file's own history.
   const pick = (typeof VIS_MODULES !== 'undefined' && VIS_MODULES.find((m) => m.key === module))
     || null;
+  // A 3D module's engine is fetched on first use (`babylonReady`, room3d.js).
+  if (pick && pick.babylon && typeof babylonReady === 'function') await babylonReady();
   const gl = pick ? pick.attach(canvas) : vgAttach(canvas);
   if (!gl) {
     throw new Error(pick && pick.key !== 'room'

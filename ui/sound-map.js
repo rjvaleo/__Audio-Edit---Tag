@@ -934,7 +934,11 @@
   function open() {
     if (!root) build();
     if (typeof BABYLON === 'undefined') {
-      if (typeof toast === 'function') toast('The 3D engine did not load');
+      // Fetched on first use (`babylonReady`, room3d.js), then opened.
+      babylonReady().then((ok) => {
+        if (ok) open();
+        else if (typeof toast === 'function') toast('The 3D engine did not load');
+      });
       return;
     }
     root.classList.remove('hidden');

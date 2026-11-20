@@ -1535,7 +1535,8 @@
 <!-- Every visualiser, described in one place. Before the modules, because it
      is what they are looked up in. See `docs/PORT-PLAN.md`. -->
 <script src="/vis-registry.js"></script>
-<script src="/vendor/babylon.js"></script>
+<!-- The 3D engine (/vendor/babylon.js) is not loaded here: `babylonReady` in
+     room3d.js fetches it the first time a 3D view asks. -->
 <script src="/room3d.js"></script>
 <script src="/stage.js"></script>
 <script src="/ridge.js"></script>

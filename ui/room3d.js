@@ -139,12 +139,30 @@ const R3_FACES = [
   ['right', 'Right'], ['back', 'Back wall'],
 ];
 
+/// **The 3D engine, fetched the first time a 3D view asks for it**, not with the
+/// page. It is 8 MB and was about 0.3 s of every page load (0.28 of 0.7 s on the
+/// MacBook, 20 Nov 2026), paid by every session and every test whether or not a
+/// 3D view was ever opened. Resolves to whether `BABYLON` is there. Until it is,
+/// `r3Attach` and `stAttach` answer null, which every caller already takes as
+/// "nothing to draw yet", and ask for it; the next frame attaches.
+let babylonLoading = null;
+function babylonReady() {
+  if (typeof BABYLON !== 'undefined') return Promise.resolve(true);
+  return babylonLoading ??= new Promise((done) => {
+    const s = document.createElement('script');
+    s.src = '/vendor/babylon.js';
+    s.onload = () => done(typeof BABYLON !== 'undefined');
+    s.onerror = () => { babylonLoading = null; done(false); };
+    document.head.appendChild(s);
+  });
+}
+
 /// Attach to a canvas. Returns the same four methods every visual module does.
 ///
 /// Null if the machine will not give an engine, which is a fallback and not an
 /// error — `vgAttach` has always answered the same way.
 function r3Attach(canvas) {
-  if (typeof BABYLON === 'undefined') return null;
+  if (typeof BABYLON === 'undefined') { babylonReady(); return null; }
   let engine;
   try {
     engine = new BABYLON.Engine(canvas, true, {
