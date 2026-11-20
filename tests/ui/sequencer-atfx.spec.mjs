@@ -173,6 +173,10 @@ const SEQ_RESET = "updateVol(70); document.getElementById('cutoffSlider').value 
 
 test('nothing of Seq\'s synth reaches it: Seq\'s volume, filter, delay and Space leave Atmosphere as it is', async ({ page }) => {
   await openAtmos(page);
+  // A first note, not measured: the first on a fresh page reads quieter than
+  // the next, by about 5 % on the MacBook (19 Nov, ten runs) and by enough on
+  // GitHub's runner that the case after it read 1.27 and 1.37 times as loud.
+  await atLevel(page, SEQ_RESET);
   const base = await atLevel(page, SEQ_RESET);
   expect(base.during).toBeGreaterThan(0.002);
   const cases = {
