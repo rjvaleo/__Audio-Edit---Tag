@@ -8,7 +8,7 @@ cd $R/MultiGrainLive
 [ -d node_modules ] || npm ci --no-audit --no-fund > $R/results/npm.log 2>&1
 [ -d "$HOME/Library/Caches/ms-playwright" ] || npx playwright install chromium > $R/results/pw.log 2>&1
 echo "[$(date +%T)] build"
-(cd core && cargo build --release -p audiolab -p fx-wasm 2> $R/results/build.log) || { echo "build failed, see results/build.log"; tail -20 $R/results/build.log; exit 1; }
+(cd core && cargo build --release -p audiolab -p fx-wasm --features audiolab/ui-from-disk 2> $R/results/build.log) || { echo "build failed, see results/build.log"; tail -20 $R/results/build.log; exit 1; }
 if [ "$1" = rust ]; then
   echo "[$(date +%T)] rust tests"
   (cd core && cargo test --release --no-fail-fast -p fx -p fx-wasm -p atmos -p songprint -p server > $R/results/rust.log 2>&1); code=$?

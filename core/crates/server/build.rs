@@ -19,6 +19,13 @@ const JOINED: &[(&str, &str, &str)] = &[
 ];
 
 fn main() {
+    // Nothing of `ui/` is embedded with `ui-from-disk` (`routes/assets.rs`), so
+    // nothing is joined and no interface file is watched: an interface change
+    // then rebuilds no Rust.
+    println!("cargo:rerun-if-changed=build.rs");
+    if std::env::var_os("CARGO_FEATURE_UI_FROM_DISK").is_some() {
+        return;
+    }
     for (folder, ext, out) in JOINED {
         join(folder, ext, out);
     }

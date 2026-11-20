@@ -24,7 +24,7 @@ if not exist %APP%\node_modules (call npm ci --no-audit --no-fund > %ROOT%\resul
 if not exist %ROOT%\pw-browsers (call npx playwright install chromium > %ROOT%\results\pw.log 2>&1)
 echo [%time%] build
 cd core
-cargo build --release -p audiolab -p fx-wasm 2> %ROOT%\results\build.log
+cargo build --release -p audiolab -p fx-wasm --features audiolab/ui-from-disk 2> %ROOT%\results\build.log
 if errorlevel 1 (echo build failed, see results\build.log & node %APP%\tools\pc\run-log.mjs end 1 & exit /b 1)
 node %APP%\tools\pc\run-log.mjs phase tests
 if "%1"=="rust" (

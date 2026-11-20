@@ -77,7 +77,9 @@ writeFileSync(join(data, 'config.json'), JSON.stringify({ library }));
 process.stderr.write('building the binary the tests will drive…\n');
 const built = spawnSync(
   'cargo',
-  ['build', '--release', '--manifest-path', join(root, 'core/Cargo.toml')],
+  // The interface from disk (`ui-from-disk`): an interface change rebuilds no
+  // Rust, and the page the tests see is the tree's `ui/` as it is now.
+  ['build', '--release', '--manifest-path', join(root, 'core/Cargo.toml'), '-p', 'audiolab', '--features', 'audiolab/ui-from-disk'],
   { stdio: ['ignore', 'ignore', 'inherit'] },
 );
 if (built.status !== 0) {

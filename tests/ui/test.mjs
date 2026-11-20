@@ -16,6 +16,15 @@ const MAP = process.env.TEST_MAP_OUT;
 
 export const test = MAP ? base.extend({
   page: async ({ page }, use, info) => {
+    // The server routes the test reached, from any page in its context: a
+    // change to one route's handler then reruns only the specs that call it.
+    const routes = new Set();
+    page.context().on('request', (r) => {
+      try {
+        const u = new URL(r.url());
+        if (u.hostname === '127.0.0.1' || u.hostname === 'localhost') routes.add(u.pathname);
+      } catch { /* not a URL */ }
+    });
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Profiler.enable');
     await cdp.send('Profiler.startPreciseCoverage', { callCount: true, detailed: false });
@@ -35,7 +44,10 @@ export const test = MAP ? base.extend({
       return r;
     };
     await use(page);
-    if (!ready) return;
+    if (!ready) {
+      appendFileSync(MAP, JSON.stringify({ spec: info.file.replace(/.*tests\/ui\//, ''), ran: {}, routes: [...routes] }) + '\n');
+      return;
+    }
     const after = (await cdp.send('Profiler.takePreciseCoverage')).result;
     // `takePreciseCoverage` resets the counts, so `after` is only what ran
     // since `ready`. A script's functions that ran at all are what the test
@@ -49,6 +61,6 @@ export const test = MAP ? base.extend({
         .map((f) => [f.ranges[0].startOffset, f.ranges[0].endOffset]);
       if (offs.length) ran[url] = offs;
     }
-    appendFileSync(MAP, JSON.stringify({ spec: info.file.replace(/.*tests\/ui\//, ''), ran }) + '\n');
+    appendFileSync(MAP, JSON.stringify({ spec: info.file.replace(/.*tests\/ui\//, ''), ran, routes: [...routes] }) + '\n');
   },
 }) : base;

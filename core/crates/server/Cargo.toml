@@ -5,6 +5,12 @@ edition.workspace = true
 license.workspace = true
 description = "Local HTTP server: serves the UI, streams audio, runs scans."
 
+[features]
+# The interface read from `ui/` on disk instead of compiled in: for test and
+# development builds, so an interface change rebuilds no Rust. The live build
+# leaves it off. See `src/routes/assets.rs`.
+ui-from-disk = []
+
 [dependencies]
 audio-core = { path = "../audio-core" }
 edit = { path = "../edit" }

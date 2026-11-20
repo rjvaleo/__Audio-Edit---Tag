@@ -77,8 +77,10 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('core/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      # The binary the browser tests drive reads the interface from `ui/` on
+      # disk (`ui-from-disk`), as every test run's does.
       - name: Build
-        run: cargo build --release --manifest-path core/Cargo.toml
+        run: cargo build --release --manifest-path core/Cargo.toml -p audiolab --features audiolab/ui-from-disk
 
       - name: Rust tests
         if: matrix.shard == 1

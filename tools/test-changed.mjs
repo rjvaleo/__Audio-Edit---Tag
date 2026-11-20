@@ -80,6 +80,42 @@ function reach(url, lines, why) {
   return loose;
 }
 
+/// The routes whose handlers a change to the server file `f` touches, or null
+/// when it touches anything else (or there is no route record in the map).
+///
+/// The table is `core/crates/server/src/routes.rs`: `("GET", "/api/x") => handler(…)`
+/// or `=> crate::module::handler(…)`. A changed line belongs to the top-level
+/// `fn` it falls in, in the file as it was at the map's commit; every one must
+/// be a handler the table names.
+function serverRoutes(f) {
+  if (!map?.routes || !f.endsWith('.rs') || !existsSync(join(root, f))) return null;
+  const rel = f.replace('core/crates/server/src/', '');
+  if (['routes.rs', 'routes/assets.rs', 'http.rs', 'serve.rs', 'lib.rs', 'state.rs', 'json.rs'].includes(rel)) return null;
+  const table = readFileSync(join(root, 'core/crates/server/src/routes.rs'), 'utf8');
+  const handlers = new Map(); // handler name → its paths
+  for (const m of table.matchAll(/\("[A-Z|" ]+",\s*"(\/[^"]*)"\)\s*=>\s*(?:crate::(?:\w+::)*)?(\w+)\(/g)) {
+    if (!handlers.has(m[2])) handlers.set(m[2], new Set());
+    handlers.get(m[2]).add(m[1]);
+  }
+  const old = spawnSync('git', ['show', `${base}:${f}`], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 26 });
+  if (old.status !== 0) return null; // a new file
+  const fns = []; // [line, name] of each top-level fn
+  old.stdout.split('\n').forEach((l, i) => {
+    const m = l.match(/^(?:pub(?:\([\w:]+\))? )?fn (\w+)/);
+    if (m) fns.push([i + 1, m[1]]);
+  });
+  const t = touched(f);
+  if (!t.code) return new Set();
+  const paths = new Set();
+  for (const line of t.lines) {
+    let name = null;
+    for (const [at, n] of fns) if (at <= line) name = n;
+    if (!name || !handlers.has(name)) return null;
+    for (const p of handlers.get(name)) paths.add(p);
+  }
+  return paths;
+}
+
 for (const f of changed) {
   if (f.startsWith('docs/') || f.endsWith('.md')) continue;
   if (f.startsWith('tests/ui/') && f.endsWith('.spec.mjs')) { if (existsSync(join(root, f))) add(basename(f), 'the spec changed'); continue; }
@@ -88,7 +124,15 @@ for (const f of changed) {
   const crate = f.match(/^core\/crates\/([^/]+)\//);
   if (crate) {
     crates.add(crate[1]);
-    if (crate[1] === 'server' || crate[1] === 'audiolab') every(`${f} serves the interface`);
+    if (crate[1] === 'server') {
+      // A change inside route handlers reruns the specs that call those routes;
+      // anything else in the server (its core, a helper, the table) reruns them all.
+      const paths = serverRoutes(f);
+      if (!paths) every(`${f} is server code every route can reach`);
+      else for (const [spec, rs] of Object.entries(map.routes)) {
+        if (rs.some((r) => paths.has(r))) add(spec, `${f} — a route it calls changed`);
+      }
+    } else if (crate[1] === 'audiolab') every(`${f} starts the server`);
     continue;
   }
   const part = f.match(/^ui\/app\/(.+\.js)$/);

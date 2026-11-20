@@ -82,9 +82,15 @@ const lineAt = (url, off) => {
 };
 
 const specs = {};
+// The server routes each spec reached: what its pages asked for, and every
+// `/api/…` path written in its source (for the calls made with Playwright's own
+// `request`, which no page sees).
+const routes = {};
 for (const line of readFileSync(raw, 'utf8').split('\n')) {
   if (!line) continue;
-  const { spec, ran } = JSON.parse(line);
+  const { spec, ran, routes: hit = [] } = JSON.parse(line);
+  const rs = routes[spec] ??= new Set();
+  for (const r of hit) rs.add(r);
   const per = specs[spec] ??= {};
   for (const [url, fns] of Object.entries(ran)) {
     if (!textOf(url)) continue;
@@ -92,8 +98,14 @@ for (const line of readFileSync(raw, 'utf8').split('\n')) {
     for (const [a, b] of fns) set.add(`${lineAt(url, a)}-${lineAt(url, b)}`);
   }
 }
+for (const spec of Object.keys(specs)) {
+  const text = atCommit(`tests/ui/${spec}`) || '';
+  for (const m of text.matchAll(/['"`](\/(?:api\/[\w\-/]+|audio))\b/g)) (routes[spec] ??= new Set()).add(m[1]);
+}
 const map = {
   commit,
+  // Spec → the server paths it reached.
+  routes: Object.fromEntries(Object.entries(routes).sort().map(([s, set]) => [s, [...set].sort()])),
   made: new Date().toISOString(),
   // Where each part starts in the joined `/app.js`, so a part's line can be
   // found in it.

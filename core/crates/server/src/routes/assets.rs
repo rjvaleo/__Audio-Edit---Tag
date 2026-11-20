@@ -1,4 +1,22 @@
 //! Everything the server embeds, and the build id made from it.
+//!
+//! **With the `ui-from-disk` feature nothing under `ui/` is embedded**: every
+//! constant below that comes from `ui/` is empty, and `ui_from_disk` serves the
+//! files from this source tree's `ui/` folder (or `AUDIOLAB_UI_DIR`) instead. The
+//! test runs build that way, so an interface change rebuilds no Rust; the live
+//! build embeds everything, as before. The visualiser's files, outside `ui/`,
+//! are always embedded.
+
+/// A text file under `ui/`: embedded, or empty with `ui-from-disk`.
+#[cfg(not(feature = "ui-from-disk"))]
+macro_rules! ui_text { ($p:expr) => { include_str!($p) }; }
+#[cfg(feature = "ui-from-disk")]
+macro_rules! ui_text { ($p:expr) => { "" }; }
+/// A binary file under `ui/`: embedded, or empty with `ui-from-disk`.
+#[cfg(not(feature = "ui-from-disk"))]
+macro_rules! ui_bytes { ($p:expr) => { include_bytes!($p) }; }
+#[cfg(feature = "ui-from-disk")]
+macro_rules! ui_bytes { ($p:expr) => { b"" }; }
 
 /// The 3D grain visualiser.
 ///
@@ -58,127 +76,127 @@ pub fn ui_build_id() -> u64 {
 /// the window with no error anywhere — which cost real time here, twice, and
 /// once to the owner rather than to me. The interface is embedded in the binary
 /// and changes with it; there is nothing here worth caching.
-pub const UI_HTML: &str = include_str!("../../../../../ui/index.html");
-pub const UI_CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.css"));
+pub const UI_HTML: &str = ui_text!("../../../../../ui/index.html");
+pub const UI_CSS: &str = ui_text!(concat!(env!("OUT_DIR"), "/app.css"));
 /// `ui/app/*.js`, joined in name order by `build.rs`.
-pub const UI_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/app.js"));
+pub const UI_JS: &str = ui_text!(concat!(env!("OUT_DIR"), "/app.js"));
 /// The palette-to-theme engine and the palettes it works on.
 ///
 /// Separate files rather than more of `app.js` because the engine is a port and
 /// is worth keeping recognisable as one — its arithmetic came from elsewhere and
 /// should stay diffable against where it came from.
-pub const THEME_JS: &str = include_str!("../../../../../ui/theme-derive.js");
+pub const THEME_JS: &str = ui_text!("../../../../../ui/theme-derive.js");
 /// The unified visualiser's renderer. See `docs/VISUALISER.md`.
-pub const VIS_GL_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/vis-gl.js"));
+pub const VIS_GL_JS: &str = ui_text!(concat!(env!("OUT_DIR"), "/vis-gl.js"));
 /// The solids the grain cloud draws its grains as. See `docs/GRAIN-SHAPES.md`.
-pub const GRAIN_SHAPES_JS: &str = include_str!("../../../../../ui/grain-shapes.js");
+pub const GRAIN_SHAPES_JS: &str = ui_text!("../../../../../ui/grain-shapes.js");
 /// The grain controls' glyphs (`ui/grain-glyphs.js`).
-pub const GRAIN_GLYPHS_JS: &str = include_str!("../../../../../ui/grain-glyphs.js");
+pub const GRAIN_GLYPHS_JS: &str = ui_text!("../../../../../ui/grain-glyphs.js");
 /// The room's palette: what each drawn thing is coloured with, and what that
 /// colour is read against. See `docs/ROOM-PAINT.md`.
-pub const ROOM_PAINT_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/room-paint.js"));
+pub const ROOM_PAINT_JS: &str = ui_text!(concat!(env!("OUT_DIR"), "/room-paint.js"));
 /// The ridgeline visualiser and the CP 1919 pulses it is measured against.
 /// See `docs/RIDGELINE.md`.
-pub const RIDGE_JS: &str = include_str!("../../../../../ui/ridge.js");
-pub const RIDGE_DATA_JS: &str = include_str!("../../../../../ui/ridge-data.js");
+pub const RIDGE_JS: &str = ui_text!("../../../../../ui/ridge.js");
+pub const RIDGE_DATA_JS: &str = ui_text!("../../../../../ui/ridge-data.js");
 /// **Babylon, vendored whole.** Everything this program serves is embedded, so
 /// the engine is too — eight megabytes of it. `include_bytes` rather than
 /// `include_str` because nothing here needs it as text and validating eight
 /// megabytes as UTF-8 at compile time buys nothing.
-pub const BABYLON_JS: &[u8] = include_bytes!("../../../../../ui/vendor/babylon.js");
+pub const BABYLON_JS: &[u8] = ui_bytes!("../../../../../ui/vendor/babylon.js");
 /// 3d-force-graph 1.73.4 (MIT, Vasco Asturiano), three.js inside: the sound
 /// map's 3D views. See `docs/THIRD-PARTY.md`.
-pub const FORCE_GRAPH_JS: &[u8] = include_bytes!("../../../../../ui/vendor/3d-force-graph.min.js");
-pub const ROOM3D_JS: &str = include_str!("../../../../../ui/room3d.js");
-pub const STAGE_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/stage.js"));
-pub const VIS_REGISTRY_JS: &str = include_str!("../../../../../ui/vis-registry.js");
-pub const ROOM_TEXT_JS: &str = include_str!("../../../../../ui/room-text.js");
+pub const FORCE_GRAPH_JS: &[u8] = ui_bytes!("../../../../../ui/vendor/3d-force-graph.min.js");
+pub const ROOM3D_JS: &str = ui_text!("../../../../../ui/room3d.js");
+pub const STAGE_JS: &str = ui_text!(concat!(env!("OUT_DIR"), "/stage.js"));
+pub const VIS_REGISTRY_JS: &str = ui_text!("../../../../../ui/vis-registry.js");
+pub const ROOM_TEXT_JS: &str = ui_text!("../../../../../ui/room-text.js");
 /// The MP4 muxer and the thing that drives it. See `docs/VIDEO-EXPORT.md`.
-pub const MP4_JS: &str = include_str!("../../../../../ui/mp4.js");
-pub const VIDEO_EXPORT_JS: &str = include_str!("../../../../../ui/video-export.js");
-pub const THEME_PALETTES_JS: &str = include_str!("../../../../../ui/theme-palettes.js");
+pub const MP4_JS: &str = ui_text!("../../../../../ui/mp4.js");
+pub const VIDEO_EXPORT_JS: &str = ui_text!("../../../../../ui/video-export.js");
+pub const THEME_PALETTES_JS: &str = ui_text!("../../../../../ui/theme-palettes.js");
 /// Every preference the interface keeps, and the table that says what each one
 /// is. Served before anything that reads a preference; see `ui/settings.js`.
-pub const SETTINGS_JS: &str = include_str!("../../../../../ui/settings.js");
+pub const SETTINGS_JS: &str = ui_text!("../../../../../ui/settings.js");
 /// Presets for one section at a time — a look, or a cloud — kept apart from the
 /// document's preset. Pure, like the store above; see `docs/SECTION-PRESETS.md`.
-pub const SECTION_PRESETS_JS: &str = include_str!("../../../../../ui/section-presets.js");
+pub const SECTION_PRESETS_JS: &str = ui_text!("../../../../../ui/section-presets.js");
 /// The scale sequencer, vendored whole from `rjvaleo/scale-sequencer` at commit
 /// `e0b8189` and served under `/sequencer/`, plus the one file that is ours:
 /// the bridge that ties its transport to the engine's and hands its sound to
 /// the room. See `docs/SEQUENCER.md`.
-pub const SEQ_HTML: &str = include_str!("../../../../../ui/sequencer/index.html");
-pub const SEQ_APP_JS: &str = include_str!("../../../../../ui/sequencer/app.js");
-pub const SEQ_PERF_JS: &str = include_str!("../../../../../ui/sequencer/performance.js");
-pub const SEQ_CSS: &str = include_str!("../../../../../ui/sequencer/style.css");
-pub const SEQ_PRESETS: &str = include_str!("../../../../../ui/sequencer/presets.json");
-pub const SEQ_BRIDGE_JS: &str = include_str!("../../../../../ui/sequencer/bridge.js");
+pub const SEQ_HTML: &str = ui_text!("../../../../../ui/sequencer/index.html");
+pub const SEQ_APP_JS: &str = ui_text!("../../../../../ui/sequencer/app.js");
+pub const SEQ_PERF_JS: &str = ui_text!("../../../../../ui/sequencer/performance.js");
+pub const SEQ_CSS: &str = ui_text!("../../../../../ui/sequencer/style.css");
+pub const SEQ_PRESETS: &str = ui_text!("../../../../../ui/sequencer/presets.json");
+pub const SEQ_BRIDGE_JS: &str = ui_text!("../../../../../ui/sequencer/bridge.js");
 /// Ours too: the sequencer's second synth, Atmosphere (13 Nov 2026).
-pub const SEQ_ATMOS_JS: &str = include_str!("../../../../../ui/sequencer/atmos.js");
+pub const SEQ_ATMOS_JS: &str = ui_text!("../../../../../ui/sequencer/atmos.js");
 /// Ours: the synths' keys and their MIDI channels (14 Nov 2026).
-pub const SEQ_KEYS_JS: &str = include_str!("../../../../../ui/sequencer/keys.js");
+pub const SEQ_KEYS_JS: &str = ui_text!("../../../../../ui/sequencer/keys.js");
 /// Ours: the sequencer in the app's look, its knobs' pictures and the theme (14 Nov 2026).
-pub const SEQ_LOOK_JS: &str = include_str!("../../../../../ui/sequencer/look.js");
+pub const SEQ_LOOK_JS: &str = ui_text!("../../../../../ui/sequencer/look.js");
 /// Ours: the Journey, the pattern's trip (14 Nov 2026).
-pub const SEQ_JOURNEY_JS: &str = include_str!("../../../../../ui/sequencer/journey.js");
+pub const SEQ_JOURNEY_JS: &str = ui_text!("../../../../../ui/sequencer/journey.js");
 /// Ours: the oscillators' and the output's scopes (14 Nov 2026).
-pub const SEQ_SCOPES_JS: &str = include_str!("../../../../../ui/sequencer/scopes.js");
+pub const SEQ_SCOPES_JS: &str = ui_text!("../../../../../ui/sequencer/scopes.js");
 /// Ours: Accompany, the bass, chords, arp and drone from the scale's own degrees (14 Nov 2026).
-pub const SEQ_ACCOMPANY_JS: &str = include_str!("../../../../../ui/sequencer/accompany.js");
+pub const SEQ_ACCOMPANY_JS: &str = ui_text!("../../../../../ui/sequencer/accompany.js");
 /// Ours: the Band's drums, the 808 synth, the kits and the grid (14 Nov 2026).
-pub const SEQ_DRUMS_JS: &str = include_str!("../../../../../ui/sequencer/drums.js");
+pub const SEQ_DRUMS_JS: &str = ui_text!("../../../../../ui/sequencer/drums.js");
 /// Ours: the Band, its instruments, mixer and styles (14 Nov 2026).
-pub const SEQ_BAND_JS: &str = include_str!("../../../../../ui/sequencer/band.js");
+pub const SEQ_BAND_JS: &str = ui_text!("../../../../../ui/sequencer/band.js");
 /// Ours: Draw, the drawing sequencer — a canvas whose marks play (14 Nov 2026).
-pub const SEQ_DRAW_JS: &str = include_str!("../../../../../ui/sequencer/draw.js");
+pub const SEQ_DRAW_JS: &str = ui_text!("../../../../../ui/sequencer/draw.js");
 /// Ours: the Band's MIDI file player — plays a .mid note for note through the Band (18 Nov 2026).
-pub const SEQ_MIDIFILE_JS: &str = include_str!("../../../../../ui/sequencer/midifile.js");
+pub const SEQ_MIDIFILE_JS: &str = ui_text!("../../../../../ui/sequencer/midifile.js");
 /// Ours: Clone a song, the host's Clone page, which writes the Band (14 Nov 2026).
-pub const SEQ_CLONE_JS: &str = include_str!("../../../../../ui/sequencer/clone.js");
+pub const SEQ_CLONE_JS: &str = ui_text!("../../../../../ui/sequencer/clone.js");
 /// Atmosphere's own effects: the page's side, the audio thread's, and the effect
 /// rack built for the browser (`tools/build-fx-wasm.sh`).
-pub const SEQ_ATFX_JS: &str = include_str!("../../../../../ui/sequencer/atfx.js");
-pub const SEQ_ATFX_WORKLET_JS: &str = include_str!("../../../../../ui/sequencer/atfx-worklet.js");
-pub const SEQ_ATFX_WASM: &[u8] = include_bytes!("../../../../../ui/sequencer/atfx.wasm");
+pub const SEQ_ATFX_JS: &str = ui_text!("../../../../../ui/sequencer/atfx.js");
+pub const SEQ_ATFX_WORKLET_JS: &str = ui_text!("../../../../../ui/sequencer/atfx-worklet.js");
+pub const SEQ_ATFX_WASM: &[u8] = ui_bytes!("../../../../../ui/sequencer/atfx.wasm");
 /// Atmosphere's physically modelled voice: the page's side, the audio thread's,
 /// and the engine built for the browser (`tools/build-fx-wasm.sh`).
-pub const SEQ_ATPHYS_JS: &str = include_str!("../../../../../ui/sequencer/atphys.js");
-pub const SEQ_ATMOS_WORKLET_JS: &str = include_str!("../../../../../ui/sequencer/atmos-worklet.js");
-pub const SEQ_ATMOS_WASM: &[u8] = include_bytes!("../../../../../ui/sequencer/atmos.wasm");
+pub const SEQ_ATPHYS_JS: &str = ui_text!("../../../../../ui/sequencer/atphys.js");
+pub const SEQ_ATMOS_WORKLET_JS: &str = ui_text!("../../../../../ui/sequencer/atmos-worklet.js");
+pub const SEQ_ATMOS_WASM: &[u8] = ui_bytes!("../../../../../ui/sequencer/atmos.wasm");
 /// The sequencer's performance panel, carried over to the grain page's
 /// Automation tab. See `docs/AUTOMATION-CAPTURE.md`.
-pub const PERF_PANEL_JS: &str = include_str!("../../../../../ui/perf-panel.js");
-pub const PRISM_PAD_JS: &str = include_str!("../../../../../ui/prism-pad.js");
+pub const PERF_PANEL_JS: &str = ui_text!("../../../../../ui/perf-panel.js");
+pub const PRISM_PAD_JS: &str = ui_text!("../../../../../ui/prism-pad.js");
 /// The Compose workspace and its compact panels. See `docs/COMPOSE.md`.
-pub const COMPOSE_JS: &str = include_str!("../../../../../ui/compose.js");
+pub const COMPOSE_JS: &str = ui_text!("../../../../../ui/compose.js");
 /// The picture's automation lanes. See `docs/COMPOSE.md`, phase three.
-pub const VISUAL_LANES_JS: &str = include_str!("../../../../../ui/visual-lanes.js");
+pub const VISUAL_LANES_JS: &str = ui_text!("../../../../../ui/visual-lanes.js");
 /// The left rail, and its own stylesheet. Ported from the edge build; it emits
 /// its own markup and depends on no rule in `app.css`. See `docs/RAIL.md`.
-pub const RAIL_JS: &str = include_str!("../../../../../ui/rail.js");
-pub const RAIL_CSS: &str = include_str!("../../../../../ui/rail.css");
+pub const RAIL_JS: &str = ui_text!("../../../../../ui/rail.js");
+pub const RAIL_CSS: &str = ui_text!("../../../../../ui/rail.css");
 /// The Wave page's stylesheet. See `docs/WAVE-SYNTH.md`.
-pub const WAVE_CSS: &str = include_str!("../../../../../ui/wave.css");
+pub const WAVE_CSS: &str = ui_text!("../../../../../ui/wave.css");
 /// The Grain page's own stylesheet (`ui/grain.css`), behind `prefs.grainUi`.
-pub const GRAIN_CSS: &str = include_str!("../../../../../ui/grain.css");
+pub const GRAIN_CSS: &str = ui_text!("../../../../../ui/grain.css");
 /// The Now Playing bar and the Edit page (`ui/edit.css`). See `docs/EDIT-PAGE.md`.
-pub const EDIT_CSS: &str = include_str!("../../../../../ui/edit.css");
+pub const EDIT_CSS: &str = ui_text!("../../../../../ui/edit.css");
 /// The 3D sound map. See `docs/SOUND-MAP.md`.
-pub const SOUND_MAP_JS: &str = include_str!("../../../../../ui/sound-map.js");
-pub const SOUND_MAP_CSS: &str = include_str!("../../../../../ui/sound-map.css");
-pub const LIBRARY_GRAPH_JS: &str = include_str!("../../../../../ui/library-graph.js");
-pub const LIBRARY_GRAPH_CSS: &str = include_str!("../../../../../ui/library-graph.css");
-pub const CHOP_JS: &str = include_str!("../../../../../ui/chop.js");
-pub const CHOP_CSS: &str = include_str!("../../../../../ui/chop.css");
+pub const SOUND_MAP_JS: &str = ui_text!("../../../../../ui/sound-map.js");
+pub const SOUND_MAP_CSS: &str = ui_text!("../../../../../ui/sound-map.css");
+pub const LIBRARY_GRAPH_JS: &str = ui_text!("../../../../../ui/library-graph.js");
+pub const LIBRARY_GRAPH_CSS: &str = ui_text!("../../../../../ui/library-graph.css");
+pub const CHOP_JS: &str = ui_text!("../../../../../ui/chop.js");
+pub const CHOP_CSS: &str = ui_text!("../../../../../ui/chop.css");
 /// The regular 4-polytopes and the projection that brings them into three
 /// dimensions. Pure geometry — see `docs/SHAPES-4D.md`.
-pub const SHAPES_4D_JS: &str = include_str!("../../../../../ui/shapes-4d.js");
+pub const SHAPES_4D_JS: &str = ui_text!("../../../../../ui/shapes-4d.js");
 /// The modelling-package panel that drives them: object manager, attribute
 /// manager, and six planes of rotation.
-pub const PANEL_4D_JS: &str = include_str!("../../../../../ui/panel-4d.js");
+pub const PANEL_4D_JS: &str = ui_text!("../../../../../ui/panel-4d.js");
 /// The Visual column's controls drawn as what they do: a picture over every
 /// knob, where each colour lands, the palette each generator makes.
-pub const CONTROL_PICTURES_JS: &str = include_str!("../../../../../ui/control-pictures.js");
+pub const CONTROL_PICTURES_JS: &str = ui_text!("../../../../../ui/control-pictures.js");
 
 /// **The interface from disk, for working on it.** With `AUDIOLAB_UI_DIR` set
 /// to a `ui/` folder, every interface file is read from that folder on every
@@ -191,7 +209,11 @@ pub const CONTROL_PICTURES_JS: &str = include_str!("../../../../../ui/control-pi
 pub fn ui_from_disk(method: &str, path: &str) -> Option<crate::http::Response> {
     use std::sync::OnceLock;
     static DIR: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
-    let dir = DIR.get_or_init(|| std::env::var_os("AUDIOLAB_UI_DIR").filter(|v| !v.is_empty()).map(std::path::PathBuf::from)).as_ref()?;
+    let dir = DIR.get_or_init(|| {
+        std::env::var_os("AUDIOLAB_UI_DIR").filter(|v| !v.is_empty()).map(std::path::PathBuf::from)
+            // Built with nothing embedded, the interface is this source tree's.
+            .or_else(|| cfg!(feature = "ui-from-disk").then(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../ui")))
+    }).as_ref()?;
     ui_file(dir, method, path)
 }
 
@@ -243,7 +265,7 @@ fn ui_file(dir: &std::path::Path, method: &str, path: &str) -> Option<crate::htt
     Some(crate::http::Response::ok(kind, body).with("Cache-Control", "no-store, must-revalidate"))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "ui-from-disk")))]
 mod from_disk {
     use super::ui_file;
 

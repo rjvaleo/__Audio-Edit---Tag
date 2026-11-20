@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 description = "Audio library browser, tagger and waveform editor."
 
+[features]
+# See the server's: the interface read from disk, for test builds.
+ui-from-disk = ["server/ui-from-disk"]
+
 [[bin]]
 name = "audiolab"
 path = "src/main.rs"
