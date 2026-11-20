@@ -18,8 +18,8 @@ async function openMap(page) {
   await page.evaluate(() => { for (const k of ['mapView', 'mapTint3', 'mapHoverPlays']) localStorage.removeItem(k); });
   await page.reload();
   await page.waitForFunction(() => window.LibraryGraph, null, { timeout: 30_000 });
-  // Map is off the rail (14 Nov 2026); the map itself is kept.
-  await page.evaluate(() => window.LibraryGraph.open());
+  await page.locator('#leftRail .rl-item[data-mode="overview"]').click();
+  await page.locator('#leftRail .rl-child', { hasText: 'Map' }).click();
   // The two sounds are listened to while the map is open, then placed.
   await page.waitForFunction(() => window.LibraryGraph.state.shown >= 2, null, { timeout: 45_000 });
 }
@@ -59,8 +59,7 @@ test('each view can be picked from the strip or with 1, 2 and 3, and is kept', a
   await expect.poll(() => page.evaluate(() => window.LibraryGraph.state.view)).toBe('cloud');
   await page.keyboard.press('2');
   await page.locator('.lg-close').click();
-  // Map is off the rail (14 Nov 2026); the map itself is kept.
-  await page.evaluate(() => window.LibraryGraph.open());
+  await page.locator('#leftRail .rl-child', { hasText: 'Map' }).click();
   await expect.poll(() => page.evaluate(() => window.LibraryGraph.state.view)).toBe('stars');
   // Every sound is still there, whichever view.
   await expect.poll(() => page.evaluate(() => window.LibraryGraph.state.shown)).toBe(2);
