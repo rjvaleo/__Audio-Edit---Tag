@@ -325,8 +325,14 @@ test('the Rate and Depth knobs read and drag, and a hand on a mapped control mov
   expect([...seen].map((v) => Math.round(v * 1000) / 1000).sort()).toEqual([0, 0.25]);
 
   // The bar is moved by hand with the LFO on it: the base goes, the swing follows.
+  // The save is held up for 0.7 s, as GitHub's runner held it (19 Nov). By then
+  // a poll asks only every half second and then every second, and this square
+  // swings at about 6 Hz, so each ask found it at the same point of its swing,
+  // low every time. Heard is read every 37 ms instead, no part of its period.
+  await page.route(/\/api\/edit$/, async (r) => { await new Promise((ok) => setTimeout(ok, 700)); await r.continue(); });
   await page.evaluate(() => { gsSetV('panSpread', 0.5); gsPostAll(); });
-  await expect.poll(() => heard(page, pan), { timeout: 2000 }).toBeGreaterThan(0.4);
+  await expect.poll(() => heard(page, pan), { timeout: 4000, intervals: [37] }).toBeGreaterThan(0.4);
+  await page.unroute(/\/api\/edit$/);
   const after = new Set();
   for (let i = 0; i < 25 && after.size < 2; i++) { after.add(await heard(page, pan)); await page.waitForTimeout(40); }
   expect([...after].map((v) => Math.round(v * 1000) / 1000).sort()).toEqual([0.25, 0.75]);
