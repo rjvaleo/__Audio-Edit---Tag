@@ -61,6 +61,10 @@ const PASS_BATCH: usize = 32;
 const LABEL_FLUSH: usize = 8;
 
 pub fn route(app: &Arc<App>, req: &Request) -> Response {
+    // Working on the interface: its files from a folder instead (`ui_from_disk`).
+    if let Some(r) = ui_from_disk(&req.method, &req.path) {
+        return r;
+    }
     match (req.method.as_str(), req.path.as_str()) {
         // The interface is compiled into the binary, so a new build is a new
         // page — but the browser was never told that. With no Cache-Control and

@@ -179,3 +179,101 @@ pub const PANEL_4D_JS: &str = include_str!("../../../../../ui/panel-4d.js");
 /// The Visual column's controls drawn as what they do: a picture over every
 /// knob, where each colour lands, the palette each generator makes.
 pub const CONTROL_PICTURES_JS: &str = include_str!("../../../../../ui/control-pictures.js");
+
+/// **The interface from disk, for working on it.** With `AUDIOLAB_UI_DIR` set
+/// to a `ui/` folder, every interface file is read from that folder on every
+/// request, so an edit is one reload away instead of a rebuild and a restart.
+/// The folders `build.rs` joins (`ui/app/*.js` into `app.js`, …) are joined
+/// here the same way, in name order. A path with no file in the folder (the
+/// visualiser's files, the vendored libraries, the `.wasm` builds when absent)
+/// falls through to the copy compiled in. Unset, nothing changes: the live app
+/// serves what it was built with. `uiBuild` stays the compiled one's.
+pub fn ui_from_disk(method: &str, path: &str) -> Option<crate::http::Response> {
+    use std::sync::OnceLock;
+    static DIR: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+    let dir = DIR.get_or_init(|| std::env::var_os("AUDIOLAB_UI_DIR").filter(|v| !v.is_empty()).map(std::path::PathBuf::from)).as_ref()?;
+    ui_file(dir, method, path)
+}
+
+/// One interface file from `dir`, as `ui_from_disk` serves it.
+fn ui_file(dir: &std::path::Path, method: &str, path: &str) -> Option<crate::http::Response> {
+    if !(method == "GET" || method == "HEAD") || path.starts_with("/api/") {
+        return None;
+    }
+    let rel = match path {
+        "/" | "/index.html" => "index.html",
+        "/sequencer" | "/sequencer/" => "sequencer/index.html",
+        p => p.strip_prefix('/')?,
+    };
+    if rel.split('/').any(|c| c.is_empty() || c == "." || c == "..") {
+        return None;
+    }
+    let ext = rel.rsplit('.').next().unwrap_or("");
+    let kind = match ext {
+        "js" => "text/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "html" => "text/html; charset=utf-8",
+        "json" => "application/json",
+        "wasm" => "application/wasm",
+        _ => return None,
+    };
+    // As `build.rs` JOINED: the folder, the parts' extension, the file served.
+    const JOINED: &[(&str, &str, &str)] = &[
+        ("app", "js", "app.js"),
+        ("app-css", "css", "app.css"),
+        ("room-paint", "js", "room-paint.js"),
+        ("vis-gl", "js", "vis-gl.js"),
+        ("stage", "js", "stage.js"),
+    ];
+    let body = if let Some((folder, part_ext, _)) = JOINED.iter().find(|(_, _, out)| *out == rel) {
+        let mut names: Vec<_> = std::fs::read_dir(dir.join(folder)).ok()?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == *part_ext))
+            .collect();
+        names.sort();
+        let mut joined = Vec::new();
+        for p in &names {
+            joined.extend(std::fs::read(p).ok()?);
+        }
+        joined
+    } else {
+        std::fs::read(dir.join(rel)).ok()?
+    };
+    Some(crate::http::Response::ok(kind, body).with("Cache-Control", "no-store, must-revalidate"))
+}
+
+#[cfg(test)]
+mod from_disk {
+    use super::ui_file;
+
+    fn dir() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../ui")
+    }
+
+    #[test]
+    fn a_joined_file_is_the_same_bytes_the_build_joined() {
+        let r = ui_file(&dir(), "GET", "/app.js").expect("app.js from disk");
+        assert_eq!(r.body, super::UI_JS.as_bytes());
+        let r = ui_file(&dir(), "GET", "/app.css").expect("app.css from disk");
+        assert_eq!(r.body, super::UI_CSS.as_bytes());
+    }
+
+    #[test]
+    fn a_plain_file_and_the_pages_come_from_the_folder() {
+        assert_eq!(ui_file(&dir(), "GET", "/rail.js").unwrap().body, super::RAIL_JS.as_bytes());
+        assert_eq!(ui_file(&dir(), "GET", "/").unwrap().body, super::UI_HTML.as_bytes());
+        assert_eq!(ui_file(&dir(), "GET", "/sequencer/").unwrap().body, super::SEQ_HTML.as_bytes());
+        assert_eq!(ui_file(&dir(), "GET", "/sequencer/keys.js").unwrap().body, super::SEQ_KEYS_JS.as_bytes());
+    }
+
+    #[test]
+    fn the_api_climbing_out_and_missing_files_fall_through() {
+        assert!(ui_file(&dir(), "GET", "/api/state").is_none());
+        assert!(ui_file(&dir(), "POST", "/app.js").is_none());
+        assert!(ui_file(&dir(), "GET", "/../core/Cargo.toml").is_none());
+        assert!(ui_file(&dir(), "GET", "/sequencer/../../README.md").is_none());
+        assert!(ui_file(&dir(), "GET", "/no-such-file.js").is_none());
+        assert!(ui_file(&dir(), "GET", "/p5.min.js").is_none());
+    }
+}
