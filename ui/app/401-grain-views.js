@@ -10,9 +10,11 @@
 // - the strip along the bottom, where the time is written: a drag across makes
 //   a new loop, a click moves Start, ⌥ scrubs, and a region's strip selects it;
 // - the handles along the top drag an end of the loop or Start;
-// - in between, as before: the read head's box moves Position, beside it
-//   across is Position jitter and up and down is Pitch jitter (RJ chose the
-//   strip for the loop so these stay).
+// - in between, a drag across is a new loop too, a click moves Start, and a
+//   bracket's line drags that end (RJ, 21 Nov 2026: "I can't click and drag on
+//   the waveform to set loop"); the read head's box still moves Position, and
+//   ⇧ with a drag beside it is Position jitter across and Pitch jitter up and
+//   down, which a plain drag there used to be.
 //
 // Drawn from the server's peaks (`/api/peaks`, `clips=1`, the timeline the
 // selection and the cue are counted on), fetched at its own width for the
@@ -430,14 +432,21 @@ function gsDrawLoop(c, geo, cl) {
 
 /// The loop, Start and the regions, as the shared overview had them (416): on
 /// the strip along the bottom a drag across is a new loop, a click moves Start,
-/// ⌥ scrubs and a region's strip selects it; along the top, a bracket's handle
-/// moves an end and the flag moves Start. Anywhere else, the read head (below).
+/// ⌥ scrubs and a region's strip selects it; a bracket, taken anywhere along
+/// its line, moves an end; along the top the flag moves Start. On the waveform
+/// itself a drag is a new loop too (below), unless it starts on the read head.
 function gsLoopGrab(x, y) {
   const f = gsFile();
   if (!f) return null;
   const { X, h } = gsCloudGeo(), bot = h - GS_STRIP, { a, b } = gsLoop();
   const r = gsRegionAt(x, y, X, bot);
   if (r) return { sm: 'region', r };
+  // A bracket's whole line, not only its handle (RJ, 21 Nov 2026: "I can't
+  // click and drag on the waveform to set loop").
+  if (y >= GS_TOP && y < bot && state.sel && state.sel.end > state.sel.start) {
+    const da = Math.abs(x - X(a)), db = Math.abs(x - X(b));
+    if (Math.min(da, db) < 6) return { sm: da <= db ? 'a' : 'b' };
+  }
   if (y < GS_TOP) {
     const da = Math.abs(x - X(a)), db = Math.abs(x - X(b)), dc = Math.abs(x - X(gsCue()));
     const br = Math.min(da, db) < 6 ? (da <= db ? 'a' : 'b') : null, cue = dc < 6 ? 'cue' : null;
@@ -448,9 +457,13 @@ function gsLoopGrab(x, y) {
   return y >= bot ? { sm: 'sel' } : null;
 }
 
-/// Inside the box moves Position; beside it, across is Spray and up and down is
-/// Pitch jitter. The loop and Start are taken first (`gsLoopGrab`). The wheel
-/// zooms at the pointer; double-click is the whole sound again.
+/// On the read head's box a drag moves Position. Anywhere else on the
+/// waveform a drag across is a new loop and a click moves Start, as on the
+/// strip (RJ, 21 Nov 2026: a drag there used to set Spray and Pitch jitter, so
+/// trying to make a loop scrambled the sound). ⇧ and a drag beside the box is
+/// Spray across and Pitch jitter up and down. The loop and Start are taken
+/// first (`gsLoopGrab`). The wheel zooms at the pointer; double-click is the
+/// whole sound again.
 function gsWireDetail() {
   const g = GS_CV.gsCloud, el = g.el;
   let mode = null, touched = false;
@@ -475,6 +488,12 @@ function gsWireDetail() {
   const hp = () => {
     const f = gsFile();
     return gsReadWrap(gsHead() + (gsCloudActive() && f ? gsRead('position') * f.len : 0));
+  };
+  // Whether `x` is on the read head's box: the window it reads, and a little.
+  const onHead = (x) => {
+    const { X } = gsCloudGeo(), w2 = gsRead('windowMs') / 2000;
+    const bw = Math.max(6, X(hp() + w2) - X(hp() - w2));
+    return Math.abs(x - X(hp())) <= bw / 2 + 5;
   };
   // The pointer's place, at once and on every move: the head goes under it, or
   // the spread reaches it. The tray's cloud pad.
@@ -504,9 +523,12 @@ function gsWireDetail() {
       if (sm === 'scrub') scrub(s0);
       return;
     }
-    const { X } = gsCloudGeo(), [x] = wvLocal(el, e), w2 = gsRead('windowMs') / 2000;
-    const bw = Math.max(6, X(hp() + w2) - X(hp() - w2));
-    mode = Math.abs(x - X(hp())) <= bw / 2 + 5 ? 'pos' : 'spray';
+    mode = onHead(lx) ? 'pos' : e.shiftKey ? 'spray' : null;
+    if (!mode) {
+      // A new loop, or Start, as on the strip.
+      ends = gsLoop(); moved = 0; s0 = toS(lx); sm = 'sel';
+      return;
+    }
     touched = false;
     apply(e);
   }, () => {
@@ -518,7 +540,8 @@ function gsWireDetail() {
   el.addEventListener('pointermove', (e) => {
     if (e.buttons) return;
     const [x, y] = wvLocal(el, e), g = gsLoopGrab(x, y)?.sm;
-    el.style.cursor = g === 'a' || g === 'b' || g === 'cue' ? 'ew-resize' : g === 'region' ? 'pointer' : g === 'sel' ? 'crosshair' : '';
+    el.style.cursor = g === 'a' || g === 'b' || g === 'cue' ? 'ew-resize' : g === 'region' ? 'pointer'
+      : g === 'sel' || (!g && !onHead(x)) ? 'crosshair' : '';
   });
   el.addEventListener('wheel', (e) => {
     e.preventDefault();

@@ -294,12 +294,15 @@ test('a stroke begun between the bars paints each one it crosses', async ({ page
   expect(after[1]).not.toBe(before[1]);
 });
 
-test('the detail answers a press, cloud or no cloud, as the pad did', async ({ page }) => {
+test('the detail answers a ⇧-press, cloud or no cloud, as the pad did', async ({ page }) => {
   await openPage(page);
   await holdEdits(page);
   expect(await page.evaluate(() => gsCloudActive())).toBe(false);
   const box = await page.locator('#gsCloud').boundingBox();
+  // Since 21 Nov 2026 a plain press there is Start, and a drag a loop (RJ).
+  await page.keyboard.down('Shift');
   await page.mouse.click(box.x + box.width * 0.8, box.y + box.height * 0.3);
+  await page.keyboard.up('Shift');
   await page.waitForTimeout(200);
   const [spray, pj] = await page.evaluate(() => [gsRead('positionJitterMs'), gsRead('pitchJitterSemis')]);
   expect(spray).toBeGreaterThan(0);

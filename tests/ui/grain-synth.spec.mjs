@@ -480,7 +480,38 @@ test('SOURCE moves the loop and Start, on its strip and its handles; it shows th
   await expect(page.locator('#gsCzRo')).toHaveText('whole');
 });
 
-test('dragging in the detail moves Position, and beside the box Spray and Pitch jitter', async ({ page }) => {
+test('a drag across the waveform makes a loop, and a bracket\'s line moves an end; jitter left alone', async ({ page }) => {
+  await openPage(page);
+  await page.waitForFunction(() => GS_DET.got === GS_DET.want && GS_DET.p);
+  await page.evaluate(() => { state.sel = null; drawSelection(); });
+  const box = await page.locator('#gsCloud').boundingBox(), y = box.y + box.height * 0.5;
+  const frames = await page.evaluate(() => gsFile().frames);
+  const jitter = [await draft(page, 'positionJitterMs'), await draft(page, 'pitchJitterSemis')];
+  // RJ, 21 Nov 2026: "I can't click and drag on the waveform to set loop".
+  await page.mouse.move(box.x + box.width * 0.3, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.45, y, { steps: 4 });
+  await page.mouse.move(box.x + box.width * 0.55, y, { steps: 4 });
+  await page.mouse.up();
+  const sel = await page.evaluate(() => state.sel);
+  expect(sel.start / frames).toBeGreaterThan(0.27);
+  expect(sel.end / frames).toBeLessThan(0.58);
+  expect(await page.evaluate(() => state.cue)).toBe(sel.start);
+  // The end bracket, taken halfway down its line.
+  const end = await page.evaluate(() => { const g = gsCloudGeo(); return g.X(gsLoop().b) / g.w; });
+  await page.mouse.move(box.x + box.width * end, y + 10);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.75, y + 10, { steps: 5 });
+  await page.mouse.up();
+  const sel2 = await page.evaluate(() => state.sel);
+  expect(sel2.start).toBe(sel.start);
+  expect(sel2.end / frames).toBeGreaterThan(0.7);
+  // Making a loop moves no jitter: that was the scrambled sound.
+  expect(await draft(page, 'positionJitterMs')).toBe(jitter[0]);
+  expect(await draft(page, 'pitchJitterSemis')).toBe(jitter[1]);
+});
+
+test('dragging in the detail moves Position, and ⇧ beside the box Spray and Pitch jitter', async ({ page }) => {
   await openPage(page);
   await pickEngine(page, 'granular');
   await page.waitForFunction(() => GS_DET.got === GS_DET.want && GS_DET.p);
@@ -493,10 +524,12 @@ test('dragging in the detail moves Position, and beside the box Spray and Pitch 
   await page.mouse.up();
   expect(await draft(page, 'position')).toBeGreaterThan(0);
   await page.waitForTimeout(250);
+  await page.keyboard.down('Shift');
   await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.3);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.85, box.y + box.height * 0.2, { steps: 4 });
   await page.mouse.up();
+  await page.keyboard.up('Shift');
   await page.waitForTimeout(250);
   expect(await draft(page, 'positionJitterMs')).toBeGreaterThan(0);
   expect(await draft(page, 'pitchJitterSemis')).toBeGreaterThan(0);
