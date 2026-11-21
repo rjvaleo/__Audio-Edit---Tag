@@ -15,6 +15,12 @@
 //! Knob `i` is the page's control [`KEYS`]`[i]`. Kinds and Sympathy's tuning
 //! are numbers: the kinds in `AT_KINDS` order, `symTune` 0 degrees, 1 root
 //! and fifth, 2 root.
+//!
+//! Given a [`Tuning`](crate::atmos::Tuning) on slot
+//! [`TUNING`](crate::atmos::TUNING), Sympathy takes its scale and root, and is
+//! tuned at once and again whenever a knob moves, notes or none. (The page
+//! tunes it only when its browser voice plays a note, which the physical
+//! voice never does; without a tuning this module does as the page does.)
 
 use engine_core::{EventKind, Io, Kind, Module, NoteEvent, NoteKind};
 
@@ -56,6 +62,9 @@ pub struct AtmosWebModule {
     pos: usize,
     /// The slot each held key plays in.
     held: [Option<usize>; 128],
+    /// The tuning given, if one was; Sympathy is then kept tuned.
+    tuning: Option<Box<crate::atmos::Tuning>>,
+    retune: bool,
 }
 
 impl AtmosWebModule {
@@ -70,7 +79,25 @@ impl AtmosWebModule {
             out: [[0.0; QUANTUM]; 2],
             pos: 0,
             held: [None; 128],
+            tuning: None,
+            retune: false,
         }
+    }
+
+    /// Start with `tuning`, before the module is added to a patch.
+    pub fn tuned(mut self, tuning: crate::atmos::Tuning) -> Self {
+        self.take_tuning(Box::new(tuning));
+        self
+    }
+
+    fn take_tuning(&mut self, t: Box<crate::atmos::Tuning>) -> Option<Box<crate::atmos::Tuning>> {
+        let mut cents = [0.0f64; 32];
+        let n = t.cents().len().min(32);
+        cents[..n].copy_from_slice(&t.cents()[..n]);
+        self.a.at.set_scale(&cents[..n]);
+        self.a.at.root_hz = t.root_hz();
+        self.retune = true;
+        self.tuning.replace(t)
     }
 
     /// Set a knob before the module is added to a patch.
@@ -85,6 +112,9 @@ impl AtmosWebModule {
         if let Some(key) = KEYS.get(index as usize) {
             if value.is_finite() && self.a.set(key, value as f64) {
                 self.knobs[index as usize] = value;
+                if self.tuning.is_some() {
+                    self.retune = true;
+                }
             }
         }
     }
@@ -132,6 +162,9 @@ impl AtmosWebModule {
         self.stage = [[0.0; QUANTUM]; 2];
         self.out = [[0.0; QUANTUM]; 2];
         self.held = [None; 128];
+        if let Some(t) = self.tuning.take() {
+            self.take_tuning(t);
+        }
     }
 }
 
@@ -144,12 +177,16 @@ impl Module for AtmosWebModule {
     }
     fn factory(&self) -> Option<engine_core::ModuleFactory> {
         let knobs = self.knobs.clone();
+        let tuning = self.tuning.clone();
         Some(Box::new(move |rate, _| {
             let mut m = AtmosWebModule::new(rate);
             for (i, v) in knobs.iter().enumerate() {
                 if !v.is_nan() {
                     m.knob(i as u32, *v);
                 }
+            }
+            if let Some(t) = &tuning {
+                m.take_tuning(t.clone());
             }
             Box::new(m)
         }))
@@ -200,6 +237,12 @@ impl Module for AtmosWebModule {
             self.preset.restore(controls);
             return Some(old as engine_core::Thing);
         }
+        if slot == crate::atmos::TUNING {
+            return match thing.downcast::<crate::atmos::Tuning>() {
+                Ok(t) => self.take_tuning(t).map(|old| old as engine_core::Thing),
+                Err(other) => Some(other),
+            };
+        }
         Some(thing)
     }
     fn process(&mut self, io: &mut Io) {
@@ -222,6 +265,10 @@ impl Module for AtmosWebModule {
             self.stage[1][self.pos] = ir.get(k).copied().unwrap_or(0.0);
             self.pos += 1;
             if self.pos == QUANTUM {
+                if self.retune {
+                    self.retune = false;
+                    self.a.retune_sympathy();
+                }
                 let [sl, sr] = self.stage;
                 let quiet = sl.iter().chain(sr.iter()).all(|v| *v == 0.0);
                 let input = if quiet { None } else { Some((&sl[..], &sr[..])) };

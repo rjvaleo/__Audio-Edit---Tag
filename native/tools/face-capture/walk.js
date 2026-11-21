@@ -111,6 +111,7 @@
     size: px(cs.fontSize), weight: parseInt(cs.fontWeight) || 400, italic: cs.fontStyle === 'italic',
     spacing: cs.letterSpacing === 'normal' ? 0 : px(cs.letterSpacing),
     colour: colour(cs.color), tabular: /tabular/.test(cs.fontVariantNumeric), align: cs.textAlign,
+    ...(cs.textOverflow === 'ellipsis' ? { ellipsis: true } : {}),
   });
 
   // ── pseudo-elements made real ──────────────────────────────────────────

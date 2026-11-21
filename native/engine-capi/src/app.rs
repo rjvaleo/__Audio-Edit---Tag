@@ -457,3 +457,127 @@ pub unsafe extern "C" fn na_table_dirs(a: *mut NaApp, paths: *const c_char) -> i
 pub unsafe extern "C" fn na_bad_blocks(a: *mut NaApp) -> u64 {
     guarded(0, || session(a).map_or(0, |s| s.controller().bad_blocks()))
 }
+
+/// Set one of Atmosphere module `id`'s keys by the page's name for it;
+/// `json` is its value: a knob's raw value (`atAtk` 0 to 100), a select's
+/// value ("pluck", "sine", "seq", "3"), `fx` the whole chain
+/// (`[{kind, on, params: {key: value}, wet, level}]`, laid again), or for
+/// `fx.<slot>.<key>` / `fx.<slot>.wet` / `fx.<slot>.level` / `fx.<slot>.on`
+/// one control of the running chain (nothing laid again). A key it does not
+/// keep is ignored (0).
+///
+/// # Safety
+/// `a` came from `na_new`; `key` and `json` are C strings.
+#[no_mangle]
+pub unsafe extern "C" fn na_atmos_set(a: *mut NaApp, id: u32, key: *const c_char, json: *const c_char) -> i32 {
+    guarded(-12, || {
+        let Some(s) = session(a) else { return NO_ENGINE };
+        match parse(text(json)) {
+            Ok(v) => status(a, s.atmos_set(id, text(key).unwrap_or(""), &v)),
+            Err(e) => fail(a, e),
+        }
+    })
+}
+
+/// Atmosphere module `id`'s state as JSON: every page key and its value.
+///
+/// # Safety
+/// `a` came from `na_new`; `buf` has room for `cap` bytes, or is null.
+#[no_mangle]
+pub unsafe extern "C" fn na_atmos_state(a: *mut NaApp, id: u32, buf: *mut c_char, cap: u32) -> u32 {
+    guarded(0, || match session(a).map(|s| s.atmos_state(id)) {
+        Some(Ok(v)) => give_text(&v.to_string(), buf, cap),
+        _ => 0,
+    })
+}
+
+/// What oscillator `which` (0 A, 1 B) of Atmosphere module `id` shows now
+/// (`atmos::Synth::view`), 32 floats into `out32`: its model's number
+/// (`AT_MODELS` order), or -1 when nothing sounds (`out32` left as it was).
+///
+/// # Safety
+/// `a` came from `na_new`; `out32` has room for 32 floats, or is null.
+#[no_mangle]
+pub unsafe extern "C" fn na_atmos_view(a: *mut NaApp, id: u32, which: u32, out32: *mut f32) -> i32 {
+    guarded(-12, || {
+        let Some(s) = session(a) else { return NO_ENGINE };
+        let mut v = [0.0f32; 32];
+        match s.atmos_view(id, which as usize, &mut v) {
+            Ok(Some(m)) => {
+                if !out32.is_null() {
+                    ptr::copy_nonoverlapping(v.as_ptr(), out32, 32);
+                }
+                m as i32
+            }
+            Ok(None) => -1,
+            Err(e) => fail(a, e),
+        }
+    })
+}
+
+/// The last `n` frames (at most 2048) of Atmosphere module `id`'s output,
+/// mono, oldest first, into `out`. How many were written.
+///
+/// # Safety
+/// `a` came from `na_new`; `out` has room for `n` floats, or is null.
+#[no_mangle]
+pub unsafe extern "C" fn na_atmos_scope(a: *mut NaApp, id: u32, out: *mut f32, n: u32) -> u32 {
+    guarded(0, || {
+        let Some(s) = session(a) else { return 0 };
+        if out.is_null() {
+            return 0;
+        }
+        s.atmos_scope(id, slice::from_raw_parts_mut(out, n as usize)).unwrap_or(0) as u32
+    })
+}
+
+/// Atmosphere module `id`'s FX line since the last call: its output peak
+/// into `peak`, and for each slot of the chain (up to `n`) its output peak
+/// into `peaks` and how hard its effect is working into `work`
+/// (`fx_telemetry`). Returns the chain's length.
+///
+/// # Safety
+/// `a` came from `na_new`; `peak` is one float or null; `peaks` and `work`
+/// have room for `n` floats each, or are null.
+#[no_mangle]
+pub unsafe extern "C" fn na_atmos_fx_meter(a: *mut NaApp, id: u32, peak: *mut f32, peaks: *mut f32, work: *mut f32, n: u32) -> u32 {
+    guarded(0, || {
+        let Some(s) = session(a) else { return 0 };
+        let Ok((p, slots)) = s.atmos_fx_meter(id) else { return 0 };
+        if !peak.is_null() {
+            *peak = p;
+        }
+        for (i, (pk, w)) in slots.iter().take(n as usize).enumerate() {
+            if !peaks.is_null() {
+                *peaks.add(i) = *pk;
+            }
+            if !work.is_null() {
+                *work.add(i) = *w;
+            }
+        }
+        slots.len() as u32
+    })
+}
+
+/// Every effect the FX line's insert menu offers, as atfx.js keeps it from
+/// `/api/fx`: `{suites: [{id, label, families: [{label, modes: [{kind,
+/// label, id}]}]}], shapers: {kind: {label, params: [{key, label, min, max,
+/// default, unit, log}]}}}`.
+///
+/// # Safety
+/// `buf` has room for `cap` bytes, or is null.
+#[no_mangle]
+pub unsafe extern "C" fn na_fx_kinds(buf: *mut c_char, cap: u32) -> u32 {
+    guarded(0, || give_text(&engine_app::fx_kinds_json().to_string(), buf, cap))
+}
+
+/// The Atmosphere page's own lists (`AT_KNOBS`, `AT_MODELS`, the LFOs'
+/// targets and shapes, Sympathy's tunings, `SCALES`, Seq's defaults), as
+/// captured from it: engine-app's `data/atmos-page.json`.
+///
+/// # Safety
+/// `buf` has room for `cap` bytes, or is null.
+#[no_mangle]
+pub unsafe extern "C" fn na_atmos_page(buf: *mut c_char, cap: u32) -> u32 {
+    guarded(0, || give_text(engine_app::atmos_part::PAGE_JSON, buf, cap))
+}

@@ -29,6 +29,8 @@ prism-grain = { path = "../../../GitHub/prism-fx/crates/prism-grain" }
 libm = "0.2"
 
 [dev-dependencies]
+# The page's own FX line (atfx.wasm), to check ours makes what it makes.
+fx-wasm = { path = "../../core/crates/fx-wasm" }
 libc = "0.2"
 # Reads the recording of the Chop page (`tests/reference/chop`).
 serde_json = { version = "1", features = ["float_roundtrip"] }

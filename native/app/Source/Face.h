@@ -46,8 +46,11 @@ void paintBox (juce::Graphics&, const juce::var& node, juce::Rectangle<float> r)
 void paintText (juce::Graphics&, const juce::var& node, juce::Rectangle<float> r, const juce::String& text, juce::Justification = juce::Justification::centredLeft);
 // A captured part by its file name, without ".json" (faces/…). idMLab's
 // canvas parts ("idmlab-bar", "-status", "-node-audio", "-menu", "-style")
-// come in the theme being worn; "wave" (via page) in its MGL twin.
+// come in the theme being worn; "wave" and "atmos" (via page) in its MGL twin.
+// "atmos" is { page, dock, size }: the frame's page and the keyboard dock.
 const juce::var& part (const juce::String& name);
+// A file built into the app, read whole (a gzipped one unpacked).
+juce::String embeddedFile (const juce::String& file);
 
 // ── themes and kits ───────────────────────────────────────────────────────
 // One entry in the theme picker: the theme idMLab's canvas wears, and the
@@ -99,6 +102,8 @@ public:
     // Draw node `first` with the look of node `second`: a switch lit or not
     // as the patch says, from the page's own lit and unlit buttons.
     std::map<int, int> styleFrom;
+    // Show this option of a select node (by its number), not the captured one.
+    std::map<int, int> selectValue;
 
 private:
     juce::var captured;

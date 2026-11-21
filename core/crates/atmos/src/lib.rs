@@ -215,6 +215,10 @@ enum Event {
     Off { at: u32, id: i32 },
 }
 
+/// The most degrees a scale given to [`Synth::set_scale`] keeps (the page's
+/// worklet sends at most 64).
+pub const SCALE_MAX: usize = 64;
+
 pub struct Synth {
     pub sr: f32,
     pub params: Params,
@@ -255,7 +259,13 @@ impl Synth {
             events: Vec::with_capacity(64),
             clock: 0,
             last_hz: 0.0,
-            scale: vec![0.0, 200.0, 400.0, 500.0, 700.0, 900.0, 1100.0],
+            scale: {
+                // Room for the longest scale the page sends (64 degrees), so
+                // `set_scale` never allocates on the audio thread.
+                let mut s = Vec::with_capacity(SCALE_MAX);
+                s.extend_from_slice(&[0.0, 200.0, 400.0, 500.0, 700.0, 900.0, 1100.0]);
+                s
+            },
             last_voice: 0,
             carry: [0.0; 2],
             // Down by 60 dB in 10 ms.
@@ -263,9 +273,12 @@ impl Synth {
         }
     }
 
-    /// The scale's degrees in cents, for the modal models' Fit.
+    /// The scale's degrees in cents, for the modal models' Fit. At most
+    /// [`SCALE_MAX`] degrees are kept; nothing is allocated, so it may be
+    /// called on the audio thread.
     pub fn set_scale(&mut self, cents: &[f32]) {
-        self.scale = cents.to_vec();
+        self.scale.clear();
+        self.scale.extend_from_slice(&cents[..cents.len().min(SCALE_MAX)]);
     }
 
     /// One control, by name. Unknown names are ignored (false).

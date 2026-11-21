@@ -185,6 +185,30 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         wave->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
         addAndMakeVisible (*wave);
     }
+    else if (kind.id == "atmos")
+    {
+        auto* host = &canvas.host;
+        const auto module = (uint32_t) id;
+        atmos = std::make_unique<AtmosFace> (
+            [host, module] (const juce::String& key, const juce::String& value) {
+                host->with ([&] (NaApp* a) { return na_atmos_set (a, module, key.toRawUTF8(), value.toRawUTF8()); });
+            },
+            [host, module] {
+                return juce::String (host->with ([&] (NaApp* a) { return naText ([&] (char* b, uint32_t cap) { return na_atmos_state (a, module, b, cap); }); }));
+            },
+            [host, module] (int which, float* out) { return (int) host->with ([&] (NaApp* a) { return na_atmos_view (a, module, (uint32_t) which, out); }); },
+            [host, module] (float* out, int n) { return (int) host->with ([&] (NaApp* a) { return na_atmos_scope (a, module, out, (uint32_t) n); }); },
+            [] { return juce::String (naText ([] (char* b, uint32_t cap) { return na_fx_kinds (b, cap); })); });
+        atmos->rate = (float) host->rate();
+        atmos->meter = [host, module] (float* peak, float* peaks, float* work, int n) {
+            return (int) host->with ([&] (NaApp* a) { return na_atmos_fx_meter (a, module, peak, peaks, work, (uint32_t) n); });
+        };
+        atmos->onNote = [host, module] (int n, float vel, bool on) {
+            host->with ([&] (NaApp* a) { return na_note (a, module, on ? 1u : 0u, (uint32_t) n, vel); });
+        };
+        atmos->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
+        addAndMakeVisible (*atmos);
+    }
     else if (kind.id == "midi-in")
     {
         channel = std::make_unique<juce::ComboBox>();
@@ -224,10 +248,10 @@ void Node::layout()
         const int y = collapsed ? 4 : 27 + 18 * (j->isInput ? in++ : out++);
         j->setTopLeftPosition (j->isInput ? -8 : w - 4, y);
     }
-    if (wave != nullptr)
+    if (auto* b = body())
     {
-        wave->setTopLeftPosition (bodyBounds().getTopLeft());
-        wave->setVisible (!collapsed);
+        b->setTopLeftPosition (bodyBounds().getTopLeft());
+        b->setVisible (!collapsed);
     }
     if (channel != nullptr)
     {
@@ -316,7 +340,7 @@ void Node::paintFrame (juce::Graphics& g)
         face::paintText (g, *n, closeR, juce::String::fromUTF8 ("\xc3\x97"), juce::Justification::centred);
 
     // The body of the small modules: idMLab's section with its title.
-    if (!collapsed && wave == nullptr)
+    if (!collapsed && body() == nullptr)
         if (auto* section = frameNode ("mm-node-section"))
         {
             const auto body = bodyBounds().toFloat().reduced (4);
@@ -487,7 +511,7 @@ void AddMenu::filter()
     const auto q = search.getText().trim().toLowerCase();
     // idMLab groups its modules by family; MGL's sit under their own.
     const std::vector<std::pair<juce::String, juce::StringArray>> groups {
-        { "MULTIGRAINLIVE", { "wave" } },
+        { "MULTIGRAINLIVE", { "wave", "atmos" } },
         { "MIDI", { "midi-in" } },
         { "AUDIO", { "output" } },
     };
@@ -1091,6 +1115,18 @@ void Canvas::duplicateSelection()
         {
             const auto patch = naText ([&] (char* b, uint32_t c) { return na_wave_patch (a, (uint32_t) src, b, c); });
             na_load_wave_patch (a, (uint32_t) made, patch.c_str());
+        }
+        if (made > 0 && kind == "atmos")
+        {
+            // Every key the original holds; the chain first, so its controls land on it.
+            const auto state = juce::JSON::parse (juce::String (naText ([&] (char* b, uint32_t c) { return na_atmos_state (a, (uint32_t) src, b, c); })));
+            if (auto* o = state.getDynamicObject())
+            {
+                na_atmos_set (a, (uint32_t) made, "fx", juce::JSON::toString (o->getProperty ("fx"), true).toRawUTF8());
+                for (const auto& p : o->getProperties())
+                    if (p.name.toString() != "fx")
+                        na_atmos_set (a, (uint32_t) made, p.name.toString().toRawUTF8(), juce::JSON::toString (p.value, true).toRawUTF8());
+            }
         }
         return made;
     });

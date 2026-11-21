@@ -75,3 +75,46 @@ fn the_app_builds_a_canvas_plays_it_saves_and_loads_it() {
         na_free(b);
     }
 }
+
+#[test]
+fn atmosphere_through_the_c_interface() {
+    let kinds: serde_json::Value = serde_json::from_str(&text(|b, c| unsafe { na_kinds(b, c) })).unwrap();
+    let at = kinds.as_array().unwrap().iter().find(|k| k["id"] == "atmos").unwrap();
+    assert_eq!((at["width"].as_u64(), at["height"].as_u64()), (Some(1500), Some(engine_app::ATMOS_HEIGHT as u64)));
+    assert_eq!(at["keyboard"], true);
+    let fx: serde_json::Value = serde_json::from_str(&text(|b, c| unsafe { na_fx_kinds(b, c) })).unwrap();
+    assert!(!fx["suites"].as_array().unwrap().is_empty());
+    let page: serde_json::Value = serde_json::from_str(&text(|b, c| unsafe { na_atmos_page(b, c) })).unwrap();
+    assert_eq!(page["knobs"].as_array().unwrap().len(), 62);
+    unsafe {
+        let a = na_new(48_000.0, 4096);
+        let k = CString::new("atmos").unwrap();
+        let id = na_add(a, k.as_ptr(), 0.0, 0.0) as u32;
+        let o = CString::new("output").unwrap();
+        let out = na_add(a, o.as_ptr(), 1600.0, 0.0) as u32;
+        assert_eq!(na_connect(a, id, 0, out, 0), 0);
+        let (key, val) = (CString::new("modelA").unwrap(), CString::new("\"bow\"").unwrap());
+        assert_eq!(na_atmos_set(a, id, key.as_ptr(), val.as_ptr()), 0);
+        let (key, val) = (CString::new("midi").unwrap(), CString::new("1").unwrap());
+        assert_eq!(na_atmos_set(a, id, key.as_ptr(), val.as_ptr()), 0, "an unknown key is ignored");
+        let state: serde_json::Value = serde_json::from_str(&text(|b, c| na_atmos_state(a, id, b, c))).unwrap();
+        assert_eq!(state["modelA"], "bow");
+        assert_eq!(state["atMA1"], 50.0);
+        assert_eq!(na_note(a, id, 1, 60, 0.8), 0);
+        let mut l = vec![0.0f32; 256];
+        let mut r = vec![0.0f32; 256];
+        let mut loud = 0.0f32;
+        for _ in 0..64 {
+            na_render(a, l.as_mut_ptr(), r.as_mut_ptr(), 256);
+            loud = l.iter().fold(loud, |m, x| m.max(x.abs()));
+        }
+        assert!(loud > 1e-3, "it plays: {loud}");
+        let mut v = [0.0f32; 32];
+        assert_eq!(na_atmos_view(a, id, 0, v.as_mut_ptr()), 1, "oscillator A is the bow");
+        let mut scope = vec![0.0f32; 2048];
+        assert_eq!(na_atmos_scope(a, id, scope.as_mut_ptr(), 2048), 2048);
+        assert!(scope.iter().any(|x| x.abs() > 1e-4));
+        assert_eq!(na_atmos_fx_meter(a, id, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), 0), 0);
+        na_free(a);
+    }
+}

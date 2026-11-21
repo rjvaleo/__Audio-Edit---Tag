@@ -40,7 +40,9 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
     setWantsKeyboardFocus (true);
     cl = wave::colours (captured["vars"]);
     model.loadTable = std::move (f);
-    if (auto* list = juce::JSON::parse (juce::String (naText ([] (char* b, uint32_t c) { return na_controls ("wave", b, c); }))).getArray())
+    // Kept while it is read: the parsed list lives in it.
+    const auto listed = juce::JSON::parse (juce::String (naText ([] (char* b, uint32_t c) { return na_controls ("wave", b, c); })));
+    if (auto* list = listed.getArray())
         controls = *list;
     index (captured["tree"], -1);
     for (int i = 0; i < 3; ++i)

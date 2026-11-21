@@ -13,6 +13,46 @@
 
 use engine_core::{EventKind, Io, Kind, Module, Thing};
 use mgl_fx::ParamIndex;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::Arc;
+
+/// How many frames a [`Scope`] keeps.
+pub const SCOPE_LEN: usize = 2048;
+
+/// The last [`SCOPE_LEN`] frames of a module's output, mono, written by the
+/// audio thread and read by the face whenever it likes. A reading may mix two
+/// blocks; for a picture nobody can tell.
+pub struct Scope {
+    buf: [AtomicU32; SCOPE_LEN],
+    pos: AtomicUsize,
+}
+
+impl Scope {
+    pub fn new() -> Arc<Scope> {
+        Arc::new(Scope { buf: std::array::from_fn(|_| AtomicU32::new(0)), pos: AtomicUsize::new(0) })
+    }
+
+    fn write(&self, l: &[f32], r: &[f32]) {
+        let mut p = self.pos.load(Ordering::Relaxed);
+        for (a, b) in l.iter().zip(r) {
+            self.buf[p].store(((a + b) * 0.5).to_bits(), Ordering::Relaxed);
+            p = (p + 1) % SCOPE_LEN;
+        }
+        self.pos.store(p, Ordering::Release);
+    }
+
+    /// The last `out.len()` frames (at most [`SCOPE_LEN`]), oldest first.
+    /// How many were written.
+    pub fn read(&self, out: &mut [f32]) -> usize {
+        let n = out.len().min(SCOPE_LEN);
+        let end = self.pos.load(Ordering::Acquire);
+        let start = (end + SCOPE_LEN - n) % SCOPE_LEN;
+        for (i, o) in out[..n].iter_mut().enumerate() {
+            *o = f32::from_bits(self.buf[(start + i) % SCOPE_LEN].load(Ordering::Relaxed));
+        }
+        n
+    }
+}
 
 /// A rack for [`Rack`], with its controls numbered, built on the app's
 /// thread. Knob `slot * 256 + n` is the slot's `n`th control
@@ -52,15 +92,26 @@ impl RackThing {
 }
 
 /// The effects rack: audio in 0, audio out 0. Empty, it passes the sound.
+/// Knob [`Rack::switch`]`(slot)` turns a slot on (1) or off (0).
 pub struct Rack {
     rack: Option<mgl_fx::Rack>,
     table: Vec<Vec<ParamIndex>>,
     rate: u32,
+    scope: Option<Arc<Scope>>,
 }
 
 impl Rack {
     pub fn new(rate: f32) -> Rack {
-        Rack { rack: None, table: Vec::new(), rate: rate.max(1.0) as u32 }
+        Rack { rack: None, table: Vec::new(), rate: rate.max(1.0) as u32, scope: None }
+    }
+
+    /// The same, writing what it puts out into `scope` every block.
+    pub fn with_scope(rate: f32, scope: Arc<Scope>) -> Rack {
+        Rack { scope: Some(scope), ..Rack::new(rate) }
+    }
+
+    pub const fn switch(slot: usize) -> u32 {
+        (1 << 16) + slot as u32
     }
 }
 
@@ -76,6 +127,12 @@ impl Module for Rack {
     }
     fn handle(&mut self, event: &EventKind) {
         if let EventKind::Param { index, value } = *event {
+            if index >= Self::switch(0) {
+                if let Some(s) = self.rack.as_mut().and_then(|r| r.slots.get_mut((index - Self::switch(0)) as usize)) {
+                    s.bypassed = value < 0.5;
+                }
+                return;
+            }
             let (slot, n) = ((index >> 8) as usize, (index & 0xff) as usize);
             if let (Some(rack), Some(&pi)) = (self.rack.as_mut(), self.table.get(slot).and_then(|t| t.get(n))) {
                 rack.set_param_index(slot, pi, value);
@@ -98,6 +155,9 @@ impl Module for Rack {
         r.copy_from_slice(ir);
         if let Some(rack) = self.rack.as_mut() {
             rack.process_planar(l, r, self.rate);
+        }
+        if let Some(scope) = &self.scope {
+            scope.write(l, r);
         }
     }
 }

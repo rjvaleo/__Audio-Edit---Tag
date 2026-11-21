@@ -131,6 +131,7 @@ struct Worn
     juce::String kit = "thinRing";
     juce::var idmlab;        // the idMLab theme's parts
     juce::var mgl;           // Wave's face in the MGL theme
+    juce::var atmos;         // Atmosphere's face in the MGL theme
     int stamp = 0;
 };
 Worn& wornState()
@@ -150,10 +151,24 @@ juce::Colour cssToColour (const juce::String& s)
 }
 } // namespace
 
+juce::String embeddedFile (const juce::String& file)
+{
+    return embedded (file);
+}
+
 const juce::var& page (const juce::String& name)
 {
     if (name == "wave" && wornState().mgl.isObject())
         return wornState().mgl;
+    if (name == "atmos")
+    {
+        auto& w = wornState();
+        if (!w.atmos.isObject())
+            w.atmos = juce::JSON::parse (embedded ("mgl-atmos-" + (w.choice >= 0 ? themeChoices()[(size_t) w.choice].mgl : juce::String ("default")) + ".json.gz"));
+        if (!w.atmos.isObject())
+            w.atmos = juce::JSON::parse (embedded ("mgl-atmos-default.json.gz"));
+        return w.atmos;
+    }
     static std::map<juce::String, juce::var> pages;
     auto it = pages.find (name);
     if (it == pages.end())
@@ -264,6 +279,7 @@ void wear (int choice, const juce::String& kit)
         const auto& c = list[(size_t) choice];
         w.idmlab = juce::JSON::parse (embedded ("idmlab-theme-" + juce::String (c.idmlab) + ".json.gz"));
         w.mgl = juce::JSON::parse (embedded ("mgl-theme-" + c.mgl + ".json.gz"));
+        w.atmos = juce::var();
         w.choice = choice;
     }
     w.kit = kit.isEmpty() ? juce::String ("thinRing") : kit;
@@ -645,9 +661,31 @@ void Chrome::drawText (juce::Graphics& g, const juce::var& n, const juce::var* l
         // The browser's text box is the font's ascent over its descent; the
         // baseline sits that far down it.
         const float baseline = r.getY() + (r.getHeight() - (f.getAscent() + f.getDescent())) / 2.0f + f.getAscent();
+        auto text = run["text"].toString();
+        float width = r.getWidth();
+        // Cut short with an ellipsis where the page does (text-overflow), to its box.
+        const auto box = rectOf (n["rect"]);
+        if ((bool) run["font"]["ellipsis"] && r.getRight() > box.getRight() + 0.5f)
+        {
+            const auto dots = juce::String::fromUTF8 ("\xe2\x80\xa6");
+            const float room = box.getRight() - r.getX();
+            while (text.isNotEmpty() && juce::GlyphArrangement::getStringWidth (f, text + dots) > room)
+                text = text.dropLastCharacters (1);
+            text = text.trimEnd() + dots;
+            width = juce::GlyphArrangement::getStringWidth (f, text);
+        }
         juce::GlyphArrangement glyphs;
-        glyphs.addLineOfText (f, run["text"].toString(), r.getX(), baseline);
-        glyphs.draw (g);
+        glyphs.addLineOfText (f, text, r.getX(), baseline);
+        // The width the browser gave it: the Mac's fonts are not quite the page's.
+        const float drawn = juce::GlyphArrangement::getStringWidth (f, text);
+        if (drawn > 1.0f && width > 1.0f && std::abs (drawn - width) > 0.5f && std::abs (drawn - width) < drawn * 0.2f)
+        {
+            juce::Graphics::ScopedSaveState keep (g);
+            g.addTransform (juce::AffineTransform::scale (width / drawn, 1.0f, r.getX(), baseline));
+            glyphs.draw (g);
+        }
+        else
+            glyphs.draw (g);
     }
 }
 
@@ -719,13 +757,22 @@ void Chrome::drawNode (juce::Graphics& g, const juce::var& n, const juce::var* l
             }
             drawable = slot.get();
         }
-        drawable->drawWithin (g, r, juce::RectanglePlacement::stretchToFit, 1.0f);
+        // Its own box (the SVG's width and height), not the bounds of what is
+        // drawn in it: an icon that leaves room round its strokes keeps it.
+        auto* composite = dynamic_cast<juce::DrawableComposite*> (drawable);
+        const auto area = composite != nullptr ? composite->getContentArea() : juce::Rectangle<float>();
+        if (!area.isEmpty())
+            drawable->draw (g, 1.0f, juce::RectanglePlacement (juce::RectanglePlacement::stretchToFit).getTransformToFit (area, r));
+        else
+            drawable->drawWithin (g, r, juce::RectanglePlacement::stretchToFit, 1.0f);
     }
 
     if (n["select"].isObject())
     {
         auto* options = n["select"]["options"].getArray();
-        const int chosen = (int) n["select"]["value"];
+        int chosen = (int) n["select"]["value"];
+        if (auto it = selectValue.find (i); it != selectValue.end())
+            chosen = it->second;
         if (options != nullptr && chosen >= 0 && chosen < options->size())
         {
             const auto f = font (n["font"]);

@@ -5,6 +5,7 @@
 #include "BinaryData.h"
 #include "Canvas.h"
 #include "Face.h"
+#include "AtmosFace.h"
 #include "WaveFace.h"
 #include "Host.h"
 #include "Places.h"
@@ -721,6 +722,65 @@ public:
             std::printf ("{\"window_ms\":%.1f,\"pan_step_ms\":%.1f,\"zoom_step_ms\":%.1f}\n", whole, panStep / 10, zoomStep / 10);
             return quit();
         }
+        if (args.size() >= 2 && args[0] == "--bench" && args[1] == "atmos")
+        {
+            // Atmosphere's face: drawn whole, again, and after a knob, a model and the big knob.
+            NaApp* a = na_new (48000.0f, 4096);
+            const auto id = (uint32_t) na_add (a, "atmos", 0, 0);
+            AtmosFace f (
+                [a, id] (const juce::String& key, const juce::String& value) { na_atmos_set (a, id, key.toRawUTF8(), value.toRawUTF8()); },
+                [a, id] { return juce::String (naText ([&] (char* b, uint32_t c) { return na_atmos_state (a, id, b, c); })); },
+                [a, id] (int which, float* o) { return (int) na_atmos_view (a, id, (uint32_t) which, o); },
+                [a, id] (float* o, int n) { return (int) na_atmos_scope (a, id, o, (uint32_t) n); },
+                [] { return juce::String (naText ([] (char* b, uint32_t c) { return na_fx_kinds (b, c); })); });
+            juce::Image frame (juce::Image::ARGB, f.getWidth() * 2, f.getHeight() * 2, true);
+            auto draw = [&] {
+                juce::Graphics g (frame);
+                g.addTransform (juce::AffineTransform::scale (2.0f));
+                f.paintEntireComponent (g, true);
+            };
+            auto ms = [] (auto&& fn) {
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                fn();
+                return juce::Time::getMillisecondCounterHiRes() - t0;
+            };
+            const double whole = ms (draw), again = ms (draw);
+            double knob = 0, model = 0, macro = 0;
+            for (int i = 0; i < 10; ++i)
+                knob += ms ([&] { f.setKey ("atFltCut", 40 + i); draw(); });
+            for (int i = 0; i < 10; ++i)
+                model += ms ([&] { f.setKey ("modelA", i % 2 ? "bow" : "pluck"); draw(); });
+            for (int i = 0; i < 10; ++i)
+                macro += ms ([&] { f.setKey ("atMacro", 40 + i); draw(); });
+            // The controls by hand: synthetic presses where the page has them.
+            auto press = [&] (juce::Point<float> at, juce::Point<float> to) {
+                auto src = juce::Desktop::getInstance().getMainMouseSource();
+                const auto now = juce::Time::getCurrentTime();
+                auto ev = [&] (juce::Point<float> p, bool dragged) {
+                    return juce::MouseEvent (src, p, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 1.0f, 0, 0, 0, 0, &f, &f, now, at, now, 1, dragged);
+                };
+                f.mouseDown (ev (at, false));
+                if (to != at)
+                    f.mouseDrag (ev (to, true));
+                f.mouseUp (ev (to, to != at));
+            };
+            press ({ 94, 84 }, { 94, 84 });                  // OSC A: Bowed string
+            press ({ 346, 160 }, { 346, 110 });              // its first knob, up 50 px
+            press ({ 1140, 196 }, { 1140, 236 });            // Cutoff, down 40 px
+            press ({ 956, 328 }, { 956, 328 });              // LFO tab 2
+            press ({ 963, 362 }, { 963, 312 });              // its Depth, up 50 px
+            std::printf ("{\"modelA\":\"%s\",\"atMA1\":%s,\"atFltCut\":%s,\"atL2Depth\":%s,\"atL1Depth\":%s}\n",
+                         f.valueOf ("modelA").toRawUTF8(), f.valueOf ("atMA1").toRawUTF8(), f.valueOf ("atFltCut").toRawUTF8(),
+                         f.valueOf ("atL2Depth").toRawUTF8(), f.valueOf ("atL1Depth").toRawUTF8());
+            const auto held = juce::String (naText ([&] (char* b, uint32_t c) { return na_atmos_state (a, id, b, c); }));
+            std::printf ("engine: %s\n", held.fromFirstOccurrenceOf ("\"atL2Depth\"", true, false).upToFirstOccurrenceOf (",", false, false).toRawUTF8());
+            for (auto& [name, t] : f.profile (2.0f))
+                if (t > 1.0)
+                    std::printf ("  %-16s %.1f ms\n", name.toRawUTF8(), t);
+            std::printf ("{\"whole_ms\":%.1f,\"again_ms\":%.1f,\"knob_move_ms\":%.1f,\"model_click_ms\":%.1f,\"macro_move_ms\":%.1f}\n", whole, again, knob / 10, model / 10, macro / 10);
+            na_free (a);
+            return quit();
+        }
         if (args.size() >= 1 && args[0] == "--bench")
         {
             NaApp* a = na_new (48000.0f, 4096);
@@ -789,6 +849,12 @@ public:
                 MainComponent main;
                 if (args.size() > 4)
                     main.wearForSnapshot (args[4].unquoted().replace ("_", " "), args.size() > 5 ? args[5] : juce::String ("thinRing"));
+                // ATMOS_CANVAS: an Atmosphere added below the starter patch, and all of it fitted.
+                if (juce::SystemStats::getEnvironmentVariable ("ATMOS_CANVAS", {}).isNotEmpty())
+                {
+                    main.canvasForBench().addModule ("atmos", { 0.0f, 1200.0f });
+                    main.canvasForBench().fit();
+                }
                 image = main.createComponentSnapshot (main.getLocalBounds(), true, scale);
             }
             else if (page == "wave-face")
@@ -810,6 +876,62 @@ public:
                         return t;
                     });
                 image = w.createComponentSnapshot (w.getLocalBounds(), true, scale);
+                na_free (a);
+            }
+            else if (page == "atmos-face")
+            {
+                // The live face, a real Atmosphere behind it (no sound card):
+                // --snapshot atmos-face out.png scale [theme_label] [key=json;key=json | @file of key=json lines] [note]
+                if (args.size() > 4 && args[4] != "-")
+                {
+                    const auto label = args[4].unquoted().replace ("_", " ");
+                    const auto& list = face::themeChoices();
+                    for (int i = 0; i < (int) list.size(); ++i)
+                        if (list[(size_t) i].label == label)
+                            face::wear (i, "thinRing");
+                }
+                NaApp* a = na_new (48000.0f, 4096);
+                const auto id = (uint32_t) na_add (a, "atmos", 0, 0);
+                const auto out = (uint32_t) na_add (a, "output", 0, 0);
+                na_connect (a, id, 0, out, 0);
+                AtmosFace f (
+                    [a, id] (const juce::String& key, const juce::String& value) { na_atmos_set (a, id, key.toRawUTF8(), value.toRawUTF8()); },
+                    [a, id] { return juce::String (naText ([&] (char* b, uint32_t c) { return na_atmos_state (a, id, b, c); })); },
+                    [a, id] (int which, float* o) { return (int) na_atmos_view (a, id, (uint32_t) which, o); },
+                    [a, id] (float* o, int n) { return (int) na_atmos_scope (a, id, o, (uint32_t) n); },
+                    [] { return juce::String (naText ([] (char* b, uint32_t c) { return na_fx_kinds (b, c); })); });
+                f.meter = [a, id] (float* peak, float* peaks, float* work, int n) { return (int) na_atmos_fx_meter (a, id, peak, peaks, work, (uint32_t) n); };
+                if (args.size() > 5 && args[5] != "-")
+                    for (const auto& kv : juce::StringArray::fromTokens (args[5].unquoted().startsWith ("@") ? juce::File (args[5].unquoted().substring (1)).loadFileAsString().trim() : args[5].unquoted(), ";\n", ""))
+                                            {
+                        // A value as JSON, or else as words (the command line keeps no quotes).
+                        const auto text = kv.fromFirstOccurrenceOf ("=", false, false);
+                        auto value = juce::JSON::fromString (text);
+                        f.setKey (kv.upToFirstOccurrenceOf ("=", false, false), value.isVoid() ? juce::var (text) : value);
+                    }
+                f.reload();
+                // ATMOS_STATE: print what the module holds, and the effects it offers.
+                if (juce::SystemStats::getEnvironmentVariable ("ATMOS_STATE", {}).isNotEmpty())
+                    std::printf ("%s\n%s\n", naText ([&] (char* b, uint32_t c) { return na_atmos_state (a, id, b, c); }).c_str(),
+                                 naText ([] (char* b, uint32_t c) { return na_fx_kinds (b, c); }).c_str());
+                if (args.size() > 6)
+                {
+                    // A note held a moment, so the pictures and the scope have something.
+                    const int n = args[6].getIntValue();
+                    na_note (a, id, 1, (uint32_t) n, 0.8f);
+                    std::vector<float> l (512), r (512);
+                    for (int k = 0; k < 60; ++k)
+                    {
+                        na_settle (a);
+                        na_render (a, l.data(), r.data(), 512);
+                        na_collect (a);
+                    }
+                    f.notePlayed (n);
+                    f.poll();
+                }
+                if (auto w = juce::SystemStats::getEnvironmentVariable ("ATMOS_WINDOW", {}); w.isNotEmpty())
+                    f.openFx (w.getIntValue());
+                image = f.createComponentSnapshot (f.getLocalBounds(), true, scale);
                 na_free (a);
             }
             else

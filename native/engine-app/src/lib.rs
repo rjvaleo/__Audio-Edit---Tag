@@ -20,6 +20,7 @@
 //! [`Session::set`]: a knob or a switch by its value, a choice by the
 //! number of its option.
 
+pub mod atmos_part;
 pub mod wave_patch;
 mod wave_part;
 
@@ -27,6 +28,7 @@ use engine_core::{engine, port, AudioEngine, Config, Controller, EventKind, Kind
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
+pub use atmos_part::{fx_kinds_json, AtmosPart};
 pub use wave_part::{frames_256, frames_for, read_table_wav, set_table_dirs, table_names, WavePart};
 use wave_part::Tables;
 
@@ -50,6 +52,9 @@ pub struct KindInfo {
     pub keyboard: bool,
 }
 
+/// Atmosphere's face's height, in pixels.
+pub const ATMOS_HEIGHT: u32 = 998;
+
 /// Every kind there is, in the order the app offers them.
 pub static KINDS: &[KindInfo] = &[
     KindInfo {
@@ -58,6 +63,16 @@ pub static KINDS: &[KindInfo] = &[
         // MGL's Wave page at its own size: the face inside idMLab's frame.
         width: 1900,
         height: 1052,
+        ins: &[("Notes", Kind::Notes)],
+        outs: &[("Audio", Kind::Audio)],
+        keyboard: true,
+    },
+    KindInfo {
+        id: "atmos",
+        title: "Atmosphere",
+        // MGL's Atmosphere page at its own size: the face inside idMLab's frame.
+        width: 1500,
+        height: ATMOS_HEIGHT,
         ins: &[("Notes", Kind::Notes)],
         outs: &[("Audio", Kind::Audio)],
         keyboard: true,
@@ -227,6 +242,7 @@ impl std::fmt::Display for AppError {
 /// A canvas module's own state.
 enum Part {
     Wave(Box<WavePart>),
+    Atmos(Box<AtmosPart>),
     /// Which channel it listens to: 0 all, 1 to 16 one.
     MidiIn { channel: u8 },
     Output,
@@ -256,6 +272,7 @@ pub struct Session {
     /// The app's own view of the canvas (zoom, scroll), kept as it gave it.
     view: Value,
     tables: Tables,
+    max_block: usize,
 }
 
 /// Canvas module `id`'s `k`th engine module.
@@ -270,9 +287,18 @@ impl Session {
     }
 
     pub fn with_config(rate: f32, config: Config) -> (Session, AudioEngine) {
+        let max_block = config.max_block.max(1);
         let (ctl, audio) = engine(rate, config);
-        let session =
-            Session { ctl, rate, modules: BTreeMap::new(), wires: Vec::new(), next: 1, view: Value::Null, tables: Tables::new() };
+        let session = Session {
+            ctl,
+            rate,
+            modules: BTreeMap::new(),
+            wires: Vec::new(),
+            next: 1,
+            view: Value::Null,
+            tables: Tables::new(),
+            max_block,
+        };
         (session, audio)
     }
 
@@ -304,6 +330,17 @@ impl Session {
                 self.ctl.add(engine_id(id, 0), Box::new(part.module(self.rate)))?;
                 Part::Wave(Box::new(part))
             }
+            "atmos" => {
+                let mut part = AtmosPart::new(saved.and_then(|s| s.get("atmos")))?;
+                let (v, w, f) = (engine_id(id, atmos_part::VOICE), engine_id(id, atmos_part::WEB), engine_id(id, atmos_part::FX));
+                self.ctl.add(v, Box::new(part.voice_module(self.rate)))?;
+                self.ctl.add(w, Box::new(part.web_module(self.rate)))?;
+                self.ctl.add(f, Box::new(part.fx_module(self.rate)))?;
+                self.ctl.connect(port(v, 0), port(w, 1))?;
+                self.ctl.connect(port(w, 0), port(f, 0))?;
+                part.lay(&mut self.ctl, f, self.rate, self.max_block)?;
+                Part::Atmos(Box::new(part))
+            }
             "midi-in" => {
                 let channel = saved.and_then(|s| s.get("channel")).and_then(Value::as_u64).unwrap_or(0).min(16) as u8;
                 self.ctl.add(engine_id(id, 0), Box::new(engine_core::basics::Keys::new()))?;
@@ -331,7 +368,11 @@ impl Session {
     /// Take a module off the canvas, and every cable to and from it.
     pub fn remove(&mut self, id: u32) -> Result<(), AppError> {
         let placed = self.modules.remove(&id).ok_or(AppError::NoSuchModule(id))?;
-        let count = if matches!(placed.part, Part::Output) { 2 } else { 1 };
+        let count = match placed.part {
+            Part::Output => 2,
+            Part::Atmos(_) => 3,
+            _ => 1,
+        };
         for k in 0..count {
             self.ctl.remove(engine_id(id, k));
         }
@@ -359,7 +400,8 @@ impl Session {
     fn engine_out(&self, (id, socket): (u32, u32)) -> Result<(engine_core::PortRef, Kind), AppError> {
         let m = self.modules.get(&id).ok_or(AppError::NoSuchModule(id))?;
         let (_, kind) = m.kind.outs.get(socket as usize).ok_or(AppError::NoSuchSocket)?;
-        Ok((port(engine_id(id, 0), socket), *kind))
+        let k = if matches!(m.part, Part::Atmos(_)) { atmos_part::FX } else { 0 };
+        Ok((port(engine_id(id, k), socket), *kind))
     }
 
     fn engine_in(&self, (id, socket): (u32, u32)) -> Result<(engine_core::PortRef, Kind), AppError> {
@@ -427,7 +469,7 @@ impl Session {
                 *channel = (value.max(0.0) as u8).min(16);
                 Ok(())
             }
-            Part::Output => Err(AppError::NoSuchControl(index)),
+            Part::Output | Part::Atmos(_) => Err(AppError::NoSuchControl(index)),
         }
     }
 
@@ -438,7 +480,7 @@ impl Session {
         Ok(match &m.part {
             Part::Wave(w) => w.values(),
             Part::MidiIn { channel } => vec![*channel as f32],
-            Part::Output => Vec::new(),
+            Part::Output | Part::Atmos(_) => Vec::new(),
         })
     }
 
@@ -562,6 +604,9 @@ impl Session {
                     Part::Wave(w) => {
                         o.insert("wave".into(), wave_patch::patch_json(w.patch()));
                     }
+                    Part::Atmos(a) => {
+                        o.insert("atmos".into(), a.state());
+                    }
                     Part::MidiIn { channel } => {
                         o.insert("channel".into(), (*channel).into());
                     }
@@ -607,6 +652,9 @@ impl Session {
             }
             if let Some(p) = m.get("wave") {
                 wave_patch::patch_from_json(p, wave::Patch::default()).map_err(AppError::BadFile)?;
+            }
+            if let Some(p) = m.get("atmos") {
+                AtmosPart::new(Some(p))?;
             }
             let at = |k: &str| m.get(k).and_then(Value::as_f64).unwrap_or(0.0) as f32;
             parsed.push((id as u32, kind_id, at("x"), at("y"), m));
@@ -654,8 +702,14 @@ impl Session {
                 o.insert("y".into(), wave_patch::num(m.y));
                 let values = self.values(*id).unwrap_or_default();
                 o.insert("values".into(), Value::Array(values.into_iter().map(wave_patch::num).collect()));
-                if let Part::Wave(w) = &m.part {
-                    o.insert("name".into(), w.patch().name.as_str().into());
+                match &m.part {
+                    Part::Wave(w) => {
+                        o.insert("name".into(), w.patch().name.as_str().into());
+                    }
+                    Part::Atmos(a) => {
+                        o.insert("atmos".into(), a.state());
+                    }
+                    _ => {}
                 }
                 Value::Object(o)
             })
@@ -714,5 +768,47 @@ impl Session {
         }
         self.sync_tables();
         Ok(())
+    }
+
+    fn atmos(&self, id: u32) -> Result<&AtmosPart, AppError> {
+        match self.modules.get(&id).map(|m| &m.part) {
+            Some(Part::Atmos(a)) => Ok(a),
+            _ => Err(AppError::NoSuchModule(id)),
+        }
+    }
+
+    /// Set one of Atmosphere module `id`'s keys by the page's name for it
+    /// (a knob's id at its raw value, a select's value, or `fx`, the whole
+    /// chain; `fx.<slot>.<key>` moves one control of the running chain).
+    /// A key it does not keep is ignored.
+    pub fn atmos_set(&mut self, id: u32, key: &str, value: &Value) -> Result<(), AppError> {
+        let (rate, max_block) = (self.rate, self.max_block);
+        match self.modules.get_mut(&id).map(|m| &mut m.part) {
+            Some(Part::Atmos(a)) => a.set(&mut self.ctl, engine_id(id, 0), key, value, rate, max_block),
+            _ => Err(AppError::NoSuchModule(id)),
+        }
+    }
+
+    /// Atmosphere module `id`'s state: every key the page keeps, and its value.
+    pub fn atmos_state(&self, id: u32) -> Result<Value, AppError> {
+        Ok(self.atmos(id)?.state())
+    }
+
+    /// What oscillator `which` (0 A, 1 B) of Atmosphere module `id` shows
+    /// now: its model's number, or None when nothing sounds.
+    pub fn atmos_view(&self, id: u32, which: usize, out: &mut [f32; 32]) -> Result<Option<usize>, AppError> {
+        Ok(self.atmos(id)?.view(which, out))
+    }
+
+    /// The last `out.len()` frames (at most [`engine_mgl::SCOPE_LEN`]) of
+    /// Atmosphere module `id`'s output, mono, oldest first. How many.
+    pub fn atmos_scope(&self, id: u32, out: &mut [f32]) -> Result<usize, AppError> {
+        Ok(self.atmos(id)?.scope.read(out))
+    }
+
+    /// Atmosphere module `id`'s FX line: its output peak, and each slot's
+    /// (peak, how hard it works), since the last reading.
+    pub fn atmos_fx_meter(&self, id: u32) -> Result<(f32, Vec<(f32, f32)>), AppError> {
+        Ok(self.atmos(id)?.fx_meter())
     }
 }

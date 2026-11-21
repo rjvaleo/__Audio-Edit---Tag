@@ -48,6 +48,23 @@ int32_t na_wave_wheel (NaApp*, uint32_t id, uint32_t which, float value);
 uint32_t na_table_frames (const char* name, float* out, uint32_t max);
 uint64_t na_bad_blocks (NaApp*);
 
+// Atmosphere: its state by the page's own keys (knob ids at raw values,
+// select values, "fx" the chain; "fx.<slot>.<key>|wet|level|on" one control
+// of the running chain). Unknown keys are ignored (0).
+int32_t na_atmos_set (NaApp*, uint32_t id, const char* key, const char* json);
+uint32_t na_atmos_state (NaApp*, uint32_t id, char* buf, uint32_t cap);
+// Oscillator which (0 A, 1 B): 32 floats; returns the model's number or -1.
+int32_t na_atmos_view (NaApp*, uint32_t id, uint32_t which, float* out32);
+// The last n frames (at most 2048) of its output, mono, oldest first; how many.
+uint32_t na_atmos_scope (NaApp*, uint32_t id, float* out, uint32_t n);
+// The FX line since the last call: output peak, and per chain slot its peak
+// and how hard it works; returns the chain's length.
+uint32_t na_atmos_fx_meter (NaApp*, uint32_t id, float* peak, float* peaks, float* work, uint32_t n);
+// The insert menu's effects ({suites, shapers}, as atfx.js keeps /api/fx).
+uint32_t na_fx_kinds (char* buf, uint32_t cap);
+// The page's own lists (data/atmos-page.json).
+uint32_t na_atmos_page (char* buf, uint32_t cap);
+
 #ifdef __cplusplus
 }
 #endif

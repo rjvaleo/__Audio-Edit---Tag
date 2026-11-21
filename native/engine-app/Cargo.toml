@@ -10,3 +10,7 @@ engine-core = { path = "../engine-core" }
 engine-mgl = { path = "../engine-mgl" }
 wave = { path = "../../core/crates/wave" }
 serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[dev-dependencies]
+# Atmosphere's synth driven by hand, to check the canvas module against it.
+atmos = { path = "../../core/crates/atmos" }
