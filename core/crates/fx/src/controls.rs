@@ -87,6 +87,21 @@ impl ControlMap {
         }
         Self { entries, place }
     }
+    /// How many controls the slot has: its effect's, then wet and level, then
+    /// Place's.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// The slot's `n`th control, in the order `len` counts them, with its key.
+    pub fn index(&self, n: usize) -> Option<(&str, ParamIndex)> {
+        self.entries.get(n).map(|(k, i)| (k.as_str(), *i))
+    }
+
     pub fn resolve(&self, key: &str) -> Option<ParamIndex> {
         self.entries
             .iter()
