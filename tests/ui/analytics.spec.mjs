@@ -237,8 +237,14 @@ test('nothing is sent anywhere but this machine', async ({ page }) => {
 
 test('the tab draws real data: controls, never touched, paths, sessions, date range, mouse', async ({ page, request }) => {
   await ready(page);
-  const now = Date.now();
-  const old = now - 10 * 86_400_000, recent = now - 5 * 60_000;
+  const now = await page.evaluate(() => Date.now());
+  // The recent session has to fall on today, because Today is what is checked
+  // below, and five minutes ago is yesterday for the first five minutes after
+  // midnight: GitHub's runner ran this at 00:02 (21 Nov) and Today lost it.
+  // So it is never before midnight, and its last event never after now.
+  const midnight = await page.evaluate((t) => new Date(t).setHours(0, 0, 0, 0), now);
+  const old = now - 10 * 86_400_000, recent = Math.max(midnight, now - 5 * 60_000);
+  if (recent + 31_000 > now) await page.waitForTimeout(recent + 31_000 - now + 100);
   const ev = [
     { t: old, s: 's-old', k: 'session', m: 'overview' },
     { t: old + 30_000, s: 's-old', k: 'mode', m: 'edit', d: { from: 'overview' } },
