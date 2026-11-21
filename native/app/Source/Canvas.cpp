@@ -103,6 +103,31 @@ void ModuleFace::build()
         sockets.push_back (std::move (socket));
     }
 
+    // Wave is MGL's own page, at its own size, under the header.
+    if (kind.id == "wave")
+    {
+        auto* host = &canvas.host;
+        const auto module = (uint32_t) id;
+        wave = std::make_unique<WaveFace> (
+            [host, module] (const juce::String& key, const juce::String& value) {
+                host->with ([&] (NaApp* a) { return na_wave_set (a, module, key.toRawUTF8(), value.toRawUTF8()); });
+            },
+            [host, module] {
+                return juce::String (host->with ([&] (NaApp* a) { return naText ([&] (char* b, uint32_t c) { return na_wave_patch (a, module, b, c); }); }));
+            },
+            [] (const juce::String& name) {
+                wave::Table t (na_table_frames (name.toRawUTF8(), nullptr, 0));
+                if (!t.empty())
+                    na_table_frames (name.toRawUTF8(), t.front().data(), (uint32_t) t.size());
+                return t;
+            });
+        wave->setTopLeftPosition (0, header);
+        addAndMakeVisible (*wave);
+        for (auto& s : sockets)
+            s->toFront (false);
+        return;
+    }
+
     // The controls, in a fixed grid between the sockets.
     const int left = 24, top = header + 6;
     const int columns = juce::jmax (1, (getWidth() - 2 * left) / cellW);

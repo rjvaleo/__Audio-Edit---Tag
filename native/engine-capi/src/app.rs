@@ -386,6 +386,41 @@ pub unsafe extern "C" fn na_load_wave_patch(a: *mut NaApp, id: u32, json: *const
     })
 }
 
+/// Set one of Wave module `id`'s keys by name; `json` is its value (a
+/// number, a "name", or [[x, y], ...] for an LFO's points).
+///
+/// # Safety
+/// `a` came from `na_new`; `key` and `json` are C strings.
+#[no_mangle]
+pub unsafe extern "C" fn na_wave_set(a: *mut NaApp, id: u32, key: *const c_char, json: *const c_char) -> i32 {
+    guarded(-12, || {
+        let Some(s) = session(a) else { return NO_ENGINE };
+        match parse(text(json)) {
+            Ok(v) => status(a, s.wave_set(id, text(key).unwrap_or(""), &v)),
+            Err(e) => fail(a, e),
+        }
+    })
+}
+
+/// A Wave table's frames at 256 points each, `max` frames at most, into
+/// `out` (room for `max * 256` floats). Returns how many frames it has (0 for
+/// a name found nowhere), which may be more than `max`.
+///
+/// # Safety
+/// `name` is a C string; `out` has room for `max * 256` floats, or is null.
+#[no_mangle]
+pub unsafe extern "C" fn na_table_frames(name: *const c_char, out: *mut f32, max: u32) -> u32 {
+    guarded(0, || {
+        let Some(frames) = engine_app::frames_256(text(name).unwrap_or("")) else { return 0 };
+        if !out.is_null() {
+            for (i, f) in frames.iter().take(max as usize).enumerate() {
+                ptr::copy_nonoverlapping(f.as_ptr(), out.add(i * 256), 256);
+            }
+        }
+        frames.len() as u32
+    })
+}
+
 /// The folders saved Wave tables are read from, one path a line, first
 /// first. Read only.
 ///

@@ -1,0 +1,499 @@
+#include "Face.h"
+
+#include "BinaryData.h"
+
+#include <cstring>
+#include <set>
+
+namespace face
+{
+namespace
+{
+juce::String sansName()
+{
+    // The Mac's system face, which the page falls back to.
+    static const juce::String name = [] {
+        for (auto n : { ".AppleSystemUIFont", "SF Pro Text", "SF Pro", "Helvetica Neue" })
+            if (juce::Font (juce::FontOptions (n, 13.0f, juce::Font::plain)).getTypefacePtr()->getName().isNotEmpty())
+                return juce::String (n);
+        return juce::Font::getDefaultSansSerifFontName();
+    }();
+    return name;
+}
+
+juce::String monoName()
+{
+    static const juce::String name = [] {
+        for (auto n : { ".AppleSystemUIFontMonospaced", "SF Mono", "Menlo" })
+        {
+            juce::Font f (juce::FontOptions (n, 13.0f, juce::Font::plain));
+            if (f.getTypefacePtr()->getName().isNotEmpty())
+                return juce::String (n);
+        }
+        return juce::Font::getDefaultMonospacedFontName();
+    }();
+    return name;
+}
+
+juce::String styleFor (int weight)
+{
+    if (weight >= 700)
+        return "Bold";
+    if (weight >= 600)
+        return "Semibold";
+    if (weight >= 500)
+        return "Medium";
+    return "Regular";
+}
+
+float num (const juce::var& v, float fallback = 0.0f)
+{
+    return v.isVoid() ? fallback : (float) (double) v;
+}
+
+// A CSS length against `of`: "30%", "12px", or a bare number.
+float length (const juce::var& v, float of, float fallback)
+{
+    if (v.isVoid() || v.isUndefined())
+        return fallback;
+    const auto s = v.toString().trim();
+    if (s.endsWith ("%"))
+        return s.dropLastCharacters (1).getFloatValue() / 100.0f * of;
+    if (s == "left" || s == "top")
+        return 0.0f;
+    if (s == "right" || s == "bottom")
+        return of;
+    if (s == "center")
+        return of * 0.5f;
+    return s.getFloatValue();
+}
+
+juce::Rectangle<float> rectOf (const juce::var& r)
+{
+    return { num (r[0]), num (r[1]), num (r[2]), num (r[3]) };
+}
+} // namespace
+
+juce::Font sans (float px, int weight)
+{
+    return juce::Font (juce::FontOptions().withName (sansName()).withStyle (styleFor (weight)).withPointHeight (px));
+}
+
+juce::Font mono (float px, int weight)
+{
+    return juce::Font (juce::FontOptions().withName (monoName()).withStyle (styleFor (weight)).withPointHeight (px));
+}
+
+juce::Font font (const juce::var& f)
+{
+    const float size = num (f["size"], 12.0f);
+    const int weight = (int) num (f["weight"], 400.0f);
+    auto out = f["family"].toString() == "mono" ? mono (size, weight) : sans (size, weight);
+    const float spacing = num (f["spacing"]);
+    if (std::abs (spacing) > 0.001f)
+        out = out.withExtraKerningFactor (spacing / size);
+    if ((bool) f["italic"])
+        out = out.italicised();
+    return out;
+}
+
+juce::Colour colour (const juce::var& c)
+{
+    if (!c.isArray())
+        return juce::Colours::transparentBlack;
+    return juce::Colour ((juce::uint8) (int) c[0], (juce::uint8) (int) c[1], (juce::uint8) (int) c[2], (float) (double) c[3]);
+}
+
+const juce::var& page (const juce::String& name)
+{
+    static std::map<juce::String, juce::var> pages;
+    auto it = pages.find (name);
+    if (it == pages.end())
+    {
+        int size = 0;
+        const auto resource = (name + ".json").replaceCharacter ('.', '_').replaceCharacter ('-', '_');
+        const char* data = BinaryData::getNamedResource (resource.toRawUTF8(), size);
+        juce::var parsed = data != nullptr ? juce::JSON::parse (juce::String::fromUTF8 (data, size)) : juce::var();
+        it = pages.emplace (name, parsed).first;
+    }
+    return it->second;
+}
+
+juce::Path box (const juce::Rectangle<float>& r, const juce::var& radius, float inset)
+{
+    juce::Path p;
+    const auto b = r.reduced (inset);
+    if (!radius.isArray())
+    {
+        p.addRectangle (b);
+        return p;
+    }
+    auto corner = [&] (int i) { return juce::jmax (0.0f, juce::jmin (num (radius[i]) - inset, b.getWidth() / 2, b.getHeight() / 2)); };
+    p.addRoundedRectangle (b.getX(), b.getY(), b.getWidth(), b.getHeight(), corner (0), corner (0), true, true, true, true);
+    // Corners differ: draw it properly.
+    const float tl = corner (0), tr = corner (1), br = corner (2), bl = corner (3);
+    if (std::abs (tl - tr) + std::abs (tl - br) + std::abs (tl - bl) > 0.01f)
+    {
+        p.clear();
+        const float x = b.getX(), y = b.getY(), w = b.getWidth(), h = b.getHeight();
+        const float k = 0.5523f;
+        p.startNewSubPath (x + tl, y);
+        p.lineTo (x + w - tr, y);
+        p.cubicTo (x + w - tr + tr * k, y, x + w, y + tr - tr * k, x + w, y + tr);
+        p.lineTo (x + w, y + h - br);
+        p.cubicTo (x + w, y + h - br + br * k, x + w - br + br * k, y + h, x + w - br, y + h);
+        p.lineTo (x + bl, y + h);
+        p.cubicTo (x + bl - bl * k, y + h, x, y + h - bl + bl * k, x, y + h - bl);
+        p.lineTo (x, y + tl);
+        p.cubicTo (x, y + tl - tl * k, x + tl - tl * k, y, x + tl, y);
+        p.closeSubPath();
+    }
+    return p;
+}
+
+void fillLayer (juce::Graphics& g, const juce::var& layer, juce::Rectangle<float> r, const juce::Path& shape)
+{
+    const auto type = layer["type"].toString();
+    auto* stops = layer["stops"].getArray();
+    if (stops == nullptr || stops->isEmpty() || (type != "linear" && type != "radial"))
+        return;
+
+    juce::ColourGradient grad;
+    juce::AffineTransform t;
+    float rayLength = 1.0f;
+    if (type == "linear")
+    {
+        const float a = juce::degreesToRadians (num (layer["angle"], 180.0f));
+        const juce::Point<float> dir (std::sin (a), -std::cos (a));
+        rayLength = std::abs (r.getWidth() * std::sin (a)) + std::abs (r.getHeight() * std::cos (a));
+        const auto c = r.getCentre();
+        grad = juce::ColourGradient (juce::Colours::black, c - dir * (rayLength / 2), juce::Colours::black, c + dir * (rayLength / 2), false);
+    }
+    else
+    {
+        const auto at = layer["at"];
+        const float cx = r.getX() + length (at[0], r.getWidth(), r.getWidth() / 2);
+        const float cy = r.getY() + length (at.size() > 1 ? at[1] : juce::var ("center"), r.getHeight(), r.getHeight() / 2);
+        const float fx = juce::jmax (cx - r.getX(), r.getRight() - cx), fy = juce::jmax (cy - r.getY(), r.getBottom() - cy);
+        float rx = fx * 1.41421356f, ry = fy * 1.41421356f;
+        const auto size = layer["size"];
+        if (size.size() >= 1 && size[0].toString().containsAnyOf ("0123456789"))
+        {
+            rx = length (size[0], r.getWidth(), rx);
+            ry = size.size() > 1 ? length (size[1], r.getHeight(), ry) : rx;
+        }
+        else if (size.size() >= 1 && size[0].toString() == "closest-side")
+            rx = juce::jmin (cx - r.getX(), r.getRight() - cx), ry = juce::jmin (cy - r.getY(), r.getBottom() - cy);
+        else if (size.size() >= 1 && size[0].toString() == "farthest-side")
+            rx = fx, ry = fy;
+        if (layer["shape"].toString() == "circle")
+            rx = ry = (size.size() >= 1 && size[0].toString().containsAnyOf ("0123456789")) ? rx : std::hypot (fx, fy);
+        rx = juce::jmax (rx, 0.01f);
+        ry = juce::jmax (ry, 0.01f);
+        rayLength = rx;
+        grad = juce::ColourGradient (juce::Colours::black, { cx, cy }, juce::Colours::black, { cx + rx, cy }, true);
+        t = juce::AffineTransform::scale (1.0f, ry / rx, cx, cy);
+    }
+
+    // The stops: positions as fractions of the ray; missing ones spread evenly.
+    const int n = stops->size();
+    std::vector<float> at ((size_t) n, -1.0f);
+    for (int i = 0; i < n; ++i)
+    {
+        const auto& s = stops->getReference (i);
+        if (!s["at"].isVoid() && !s["at"].isUndefined())
+            at[(size_t) i] = length (s["at"], 1.0f, -1.0f) / (s["at"].toString().endsWith ("%") ? 1.0f : rayLength);
+    }
+    if (at.front() < 0.0f)
+        at.front() = 0.0f;
+    if (at.back() < 0.0f)
+        at.back() = 1.0f;
+    for (int i = 1; i < n - 1; ++i)
+    {
+        if (at[(size_t) i] >= 0.0f)
+            continue;
+        int j = i;
+        while (at[(size_t) j] < 0.0f)
+            ++j;
+        const float a = at[(size_t) i - 1], b = at[(size_t) j];
+        for (int k = i; k < j; ++k)
+            at[(size_t) k] = a + (b - a) * (float) (k - i + 1) / (float) (j - i + 1);
+    }
+    for (int i = 1; i < n; ++i)
+        at[(size_t) i] = juce::jmax (at[(size_t) i], at[(size_t) i - 1]);
+    grad.clearColours();
+    const auto first = colour (stops->getReference (0)["colour"]), last = colour (stops->getReference (n - 1)["colour"]);
+    if (at.front() > 0.0f)
+        grad.addColour (0.0, first);
+    for (int i = 0; i < n; ++i)
+        grad.addColour (juce::jlimit (0.0, 1.0, (double) at[(size_t) i]), colour (stops->getReference (i)["colour"]));
+    if (at.back() < 1.0f)
+        grad.addColour (1.0, last);
+
+    g.setFillType (juce::FillType (grad).transformed (t));
+    g.fillPath (shape);
+}
+
+// ─────────────────────────────────────────────────────────────── Chrome
+
+Chrome::Chrome (const juce::var& c) : captured (c)
+{
+    setSize ((int) c["size"][0], (int) c["size"][1]);
+    setInterceptsMouseClicks (false, false);
+    index (captured["tree"]);
+    setBufferedToImage (true);
+}
+
+void Chrome::index (const juce::var& n)
+{
+    nodes[(int) n["i"]] = n;
+    if (n["canvas"].isString())
+        canvases[n["canvas"].toString()] = n;
+    if (n["svg"].isString())
+        svgs[(int) n["i"]] = juce::Drawable::createFromSVGString (n["svg"].toString());
+    if (auto* kids = n["kids"].getArray())
+        for (const auto& k : *kids)
+            index (k);
+}
+
+void Chrome::paint (juce::Graphics& g)
+{
+    const auto& back = captured["backdrop"];
+    const auto all = getLocalBounds().toFloat();
+    juce::Path whole;
+    whole.addRectangle (all);
+    if (back["bg"].isArray())
+        g.fillAll (colour (back["bg"]));
+    if (auto* layers = back["layers"].getArray())
+        for (int i = layers->size(); --i >= 0;)
+            fillLayer (g, layers->getReference (i), all, whole);
+    drawNode (g, captured["tree"]);
+}
+
+void Chrome::drawBox (juce::Graphics& g, const juce::var& n, juce::Rectangle<float> r)
+{
+    const auto outline = box (r, n["radius"]);
+
+    // Outer shadows, under the box.
+    if (auto* shadows = n["shadows"].getArray())
+        for (int i = shadows->size(); --i >= 0;)
+        {
+            const auto& s = shadows->getReference (i);
+            if ((bool) s["inset"])
+                continue;
+            const float spread = num (s["spread"]);
+            auto p = box (r.expanded (spread), n["radius"].isArray() ? n["radius"] : juce::var(), 0.0f);
+            p.applyTransform (juce::AffineTransform::translation (num (s["x"]), num (s["y"])));
+            const float blur = num (s["blur"]);
+            if (blur < 0.5f)
+            {
+                g.setColour (colour (s["colour"]));
+                g.fillPath (p);
+            }
+            else
+                juce::DropShadow (colour (s["colour"]), juce::roundToInt (blur), {}).drawForPath (g, p);
+        }
+
+    // The fill: the colour, then the layers, the first on top.
+    if (n["bg"].isArray())
+    {
+        g.setColour (colour (n["bg"]));
+        g.fillPath (outline);
+    }
+    if (auto* layers = n["layers"].getArray())
+        for (int i = layers->size(); --i >= 0;)
+            fillLayer (g, layers->getReference (i), r, outline);
+
+    // Inset shadows, inside the box.
+    if (auto* shadows = n["shadows"].getArray())
+    {
+        for (int i = shadows->size(); --i >= 0;)
+        {
+            const auto& s = shadows->getReference (i);
+            if (!(bool) s["inset"])
+                continue;
+            juce::Graphics::ScopedSaveState keep (g);
+            g.reduceClipRegion (outline);
+            const float spread = num (s["spread"]), blur = num (s["blur"]);
+            juce::Path hole;
+            hole.addRectangle (r.expanded (blur * 2 + 40));
+            auto inner = box (r.reduced (spread), n["radius"]);
+            inner.applyTransform (juce::AffineTransform::translation (num (s["x"]), num (s["y"])));
+            hole.addPath (inner);
+            hole.setUsingNonZeroWinding (false);
+            if (blur < 0.5f)
+            {
+                g.setColour (colour (s["colour"]));
+                g.fillPath (hole);
+            }
+            else
+                juce::DropShadow (colour (s["colour"]), juce::roundToInt (blur), {}).drawForPath (g, hole);
+        }
+    }
+
+    // The border.
+    if (auto* sides = n["border"].getArray())
+    {
+        const auto& t = sides->getReference (0);
+        bool same = true;
+        for (const auto& s : *sides)
+            same = same && s.isObject() && t.isObject() && std::abs (num (s["w"]) - num (t["w"])) < 0.01f && s["colour"] == t["colour"];
+        if (same && t.isObject())
+        {
+            const float w = num (t["w"]);
+            g.setColour (colour (t["colour"]));
+            g.strokePath (box (r, n["radius"], w / 2), juce::PathStrokeType (w));
+        }
+        else
+        {
+            for (int s = 0; s < 4; ++s)
+            {
+                const auto& side = sides->getReference (s);
+                if (!side.isObject())
+                    continue;
+                const float w = num (side["w"]);
+                g.setColour (colour (side["colour"]));
+                juce::Rectangle<float> strip = s == 0   ? r.withHeight (w)
+                                               : s == 1 ? r.withLeft (r.getRight() - w)
+                                               : s == 2 ? r.withTop (r.getBottom() - w)
+                                                        : r.withWidth (w);
+                g.fillRect (strip);
+            }
+        }
+    }
+}
+
+void Chrome::drawText (juce::Graphics& g, const juce::var& n, const juce::var* look)
+{
+    auto* runs = n["text"].getArray();
+    if (runs == nullptr || skipText.count ((int) n["i"]) > 0)
+        return;
+    auto* lookRuns = look != nullptr ? (*look)["text"].getArray() : nullptr;
+    for (int k = 0; k < runs->size(); ++k)
+    {
+        const auto& run = runs->getReference (k);
+        const auto f = font (run["font"]);
+        const auto r = rectOf (run["rect"]);
+        g.setFont (f);
+        const auto& tint = lookRuns != nullptr && lookRuns->size() > 0 ? lookRuns->getReference (juce::jmin (k, lookRuns->size() - 1)) : run;
+        g.setColour (colour (tint["font"]["colour"]));
+        if (run["turn"].isInt() || run["turn"].isDouble())
+        {
+            // A side label: the words turned, centred on their box.
+            juce::Graphics::ScopedSaveState keep (g);
+            const float turn = juce::degreesToRadians ((float) (double) run["turn"]);
+            g.addTransform (juce::AffineTransform::rotation (turn, r.getCentreX(), r.getCentreY()));
+            const auto text = run["text"].toString();
+            const float w = juce::GlyphArrangement::getStringWidth (f, text);
+            juce::GlyphArrangement glyphs;
+            glyphs.addLineOfText (f, text, r.getCentreX() - w / 2, r.getCentreY() + (f.getAscent() - f.getDescent()) / 2);
+            glyphs.draw (g);
+            continue;
+        }
+        // The browser's text box is the font's ascent over its descent; the
+        // baseline sits that far down it.
+        const float baseline = r.getY() + (r.getHeight() - (f.getAscent() + f.getDescent())) / 2.0f + f.getAscent();
+        juce::GlyphArrangement glyphs;
+        glyphs.addLineOfText (f, run["text"].toString(), r.getX(), baseline);
+        glyphs.draw (g);
+    }
+}
+
+namespace
+{
+// The first stroke or fill colour an SVG's markup gives, as drawn.
+juce::Colour firstColour (const juce::String& svg)
+{
+    for (auto attr : { "stroke=\"rgba(", "fill=\"rgba(" })
+    {
+        const int at = svg.indexOf (attr);
+        if (at < 0)
+            continue;
+        const auto body = svg.substring (at + (int) std::strlen (attr)).upToFirstOccurrenceOf (")", false, false);
+        auto p = juce::StringArray::fromTokens (body, ",", "");
+        if (p.size() == 4)
+            return juce::Colour ((juce::uint8) p[0].getIntValue(), (juce::uint8) p[1].getIntValue(), (juce::uint8) p[2].getIntValue(), p[3].getFloatValue());
+    }
+    return juce::Colours::transparentBlack;
+}
+} // namespace
+
+void Chrome::drawNode (juce::Graphics& g, const juce::var& n, const juce::var* look)
+{
+    const int i = (int) n["i"];
+    if (skip.count (i) > 0)
+        return;
+    // A switch drawn lit or not: its look from another of the page's own.
+    if (look == nullptr)
+        if (auto it = styleFrom.find (i); it != styleFrom.end())
+            if (auto jt = nodes.find (it->second); jt != nodes.end())
+                look = &jt->second;
+    const auto& style = look != nullptr ? *look : n;
+    const auto r = rectOf (n["rect"]);
+    const float opacity = num (style["opacity"], 1.0f);
+    if (opacity <= 0.001f)
+        return;
+    juce::Graphics::ScopedSaveState keep (g);
+    if (opacity < 1.0f)
+        g.beginTransparencyLayer (opacity);
+
+    {
+        // The look's fill and border, on this node's place and corners.
+        juce::var box = style;
+        if (look != nullptr)
+            if (auto* o = box.getDynamicObject())
+            {
+                auto copy = o->clone();
+                copy->setProperty ("rect", n["rect"]);
+                box = juce::var (copy.release());
+            }
+        drawBox (g, box, r);
+    }
+
+    if (auto it = svgs.find (i); it != svgs.end() && it->second != nullptr)
+    {
+        auto* drawable = it->second.get();
+        if (look != nullptr && (*look)["svg"].isString())
+        {
+            const int j = (int) (*look)["i"];
+            auto& slot = recoloured[{ i, j }];
+            if (slot == nullptr)
+            {
+                slot = drawable->createCopy();
+                slot->replaceColour (firstColour (n["svg"].toString()), firstColour ((*look)["svg"].toString()));
+            }
+            drawable = slot.get();
+        }
+        drawable->drawWithin (g, r, juce::RectanglePlacement::stretchToFit, 1.0f);
+    }
+
+    if (n["select"].isObject())
+    {
+        auto* options = n["select"]["options"].getArray();
+        const int chosen = (int) n["select"]["value"];
+        if (options != nullptr && chosen >= 0 && chosen < options->size())
+        {
+            const auto f = font (n["font"]);
+            g.setFont (f);
+            g.setColour (colour (n["font"]["colour"]));
+            g.drawText (options->getReference (chosen).toString(), r.reduced (8.0f, 0.0f), juce::Justification::centredLeft, false);
+        }
+    }
+
+    if ((bool) n["clip"])
+        g.reduceClipRegion (box (r, n["radius"]));
+    drawText (g, n, look);
+    if (auto* kids = n["kids"].getArray())
+    {
+        auto* lookKids = look != nullptr ? (*look)["kids"].getArray() : nullptr;
+        for (int k = 0; k < kids->size(); ++k)
+        {
+            const juce::var* kidLook = lookKids != nullptr && k < lookKids->size() ? &lookKids->getReference (k) : nullptr;
+            drawNode (g, kids->getReference (k), kidLook);
+        }
+    }
+
+    if (opacity < 1.0f)
+        g.endTransparencyLayer();
+}
+} // namespace face

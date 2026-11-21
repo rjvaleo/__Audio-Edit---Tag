@@ -9,6 +9,7 @@
 #pragma once
 
 #include "Host.h"
+#include "WaveFace.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -85,6 +86,7 @@ private:
     std::vector<std::unique_ptr<juce::Label>> labels;
     juce::MidiKeyboardState keyState;
     std::unique_ptr<juce::MidiKeyboardComponent> keyboard;
+    std::unique_ptr<WaveFace> wave;
     juce::TextButton close { "x" }, preset { "Preset" };
     juce::Point<int> grabbedAt;
     bool moving = false;

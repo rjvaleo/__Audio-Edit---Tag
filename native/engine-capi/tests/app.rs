@@ -26,7 +26,7 @@ fn render(a: *mut NaApp, frames: usize) -> Vec<f32> {
 fn the_app_builds_a_canvas_plays_it_saves_and_loads_it() {
     let kinds: serde_json::Value = serde_json::from_str(&text(|b, c| unsafe { na_kinds(b, c) })).unwrap();
     let wave_kind = kinds.as_array().unwrap().iter().find(|k| k["id"] == "wave").unwrap();
-    assert_eq!((wave_kind["width"].as_u64(), wave_kind["height"].as_u64()), (Some(1460), Some(862)));
+    assert_eq!((wave_kind["width"].as_u64(), wave_kind["height"].as_u64()), (Some(1900), Some(1080)));
     let kind = CString::new("wave").unwrap();
     let controls: serde_json::Value = serde_json::from_str(&text(|b, c| unsafe { na_controls(kind.as_ptr(), b, c) })).unwrap();
     assert_eq!(controls.as_array().unwrap().len(), 125 + 27);

@@ -27,7 +27,7 @@ use engine_core::{engine, port, AudioEngine, Config, Controller, EventKind, Kind
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
-pub use wave_part::{frames_for, read_table_wav, set_table_dirs, table_names, WavePart};
+pub use wave_part::{frames_256, frames_for, read_table_wav, set_table_dirs, table_names, WavePart};
 use wave_part::Tables;
 
 /// What the patch file says it is.
@@ -55,8 +55,9 @@ pub static KINDS: &[KindInfo] = &[
     KindInfo {
         id: "wave",
         title: "Wave",
-        width: 1460,
-        height: 862,
+        // MGL's Wave page at its own size, under the module's 28 px header.
+        width: 1900,
+        height: 1052 + 28,
         ins: &[("notes", Kind::Notes)],
         outs: &[("out", Kind::Audio)],
         keyboard: true,
@@ -664,6 +665,17 @@ impl Session {
             obj.insert("modules".into(), Value::Array(modules));
         }
         o
+    }
+
+    /// Set any of Wave module `id`'s keys by name (a number, a name, or an
+    /// LFO's points), as the Wave page sets them.
+    pub fn wave_set(&mut self, id: u32, key: &str, value: &Value) -> Result<(), AppError> {
+        match self.modules.get_mut(&id).map(|m| &mut m.part) {
+            Some(Part::Wave(w)) => w.set_key(&mut self.ctl, engine_id(id, 0), key, value)?,
+            _ => return Err(AppError::NoSuchModule(id)),
+        }
+        self.sync_tables();
+        Ok(())
     }
 
     /// Wave module `id`'s patch, for its preset to be saved.

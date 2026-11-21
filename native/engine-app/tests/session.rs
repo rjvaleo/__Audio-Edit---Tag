@@ -340,3 +340,31 @@ fn a_table_saved_by_mgl_is_read_as_mgl_reads_it_and_offered_as_a_choice() {
     assert_eq!(&options[..5], &wave::BUILTIN_NAMES.map(String::from)[..]);
     assert!(options.iter().any(|o| o == "hal sez..."));
 }
+
+#[test]
+fn a_key_set_by_name_is_what_the_wave_page_sends() {
+    let (mut s, _audio) = session();
+    let (_, wave, _) = canvas(&mut s);
+    s.wave_set(wave, "osc0.pos", &serde_json::json!(0.8)).unwrap();
+    assert_eq!(s.wave_patch(wave).unwrap().get_num("osc0.pos"), Some(0.8));
+    s.wave_set(wave, "filt0.type", &serde_json::json!("hp")).unwrap();
+    assert_eq!(s.wave_patch(wave).unwrap().get_str("filt0.type"), Some("hp"));
+    s.wave_set(wave, "lfo0.points", &serde_json::json!([[0, 0.2], [0.5, 1], [1, 0.2]])).unwrap();
+    assert_eq!(s.wave_patch(wave).unwrap().get_points("lfo0.points").unwrap().len(), 3);
+    assert!(s.wave_set(wave, "filt0.type", &serde_json::json!(3)).is_err(), "a name key takes a name");
+    assert!(s.wave_set(wave, "nothing", &serde_json::json!(1)).is_err());
+}
+
+#[test]
+fn a_table_is_read_at_the_pages_256_points() {
+    session();
+    for name in wave::BUILTIN_NAMES {
+        let raw = engine_app::frames_for(name).unwrap();
+        let at = engine_app::frames_256(name).unwrap();
+        assert_eq!(at.len(), raw.len(), "{name}");
+        if raw[0].len() == 256 {
+            assert_eq!(&at[0][..], &raw[0][..]);
+        }
+    }
+    assert!(engine_app::frames_256("no such table").is_none());
+}

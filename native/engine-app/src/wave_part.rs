@@ -322,6 +322,20 @@ impl WavePart {
         Ok(())
     }
 
+    /// Any key by its name, as MGL's `/api/wave/param` takes it: a number key
+    /// goes to the synth at once, anything else compiles the patch again.
+    pub(crate) fn set_key(&mut self, ctl: &mut Controller, module: ModuleId, key: &str, value: &serde_json::Value) -> Result<(), AppError> {
+        let mut next = self.patch.clone();
+        crate::wave_patch::apply_param(&mut next, key, value).map_err(AppError::BadFile)?;
+        self.patch = next;
+        if let Some(id) = wave::param_id(key) {
+            ctl.send(module, EventKind::Param { index: id.0 as u32, value: self.patch.values[id.index()] })?;
+        } else {
+            ctl.give(module, 0, Box::new(WaveThing::Patch(PatchState::new(&self.patch))))?;
+        }
+        Ok(())
+    }
+
     /// A whole new patch: compiled and handed over, its board too.
     pub(crate) fn adopt(&mut self, ctl: &mut Controller, module: ModuleId, patch: Patch, rate: f32) {
         self.patch = patch;
@@ -369,4 +383,31 @@ impl WavePart {
             }
         }
     }
+}
+
+/// A table's frames, each read at the 256 points the Wave page draws with,
+/// as the page resamples one (`wvResample`). None for a name found nowhere.
+pub fn frames_256(name: &str) -> Option<Vec<[f32; 256]>> {
+    let frames = frames_for(name)?;
+    Some(
+        frames
+            .iter()
+            .map(|f| {
+                let mut o = [0.0f32; 256];
+                if f.len() == 256 {
+                    o.copy_from_slice(f);
+                    return o;
+                }
+                for (n, out) in o.iter_mut().enumerate() {
+                    let p = n as f64 / 256.0 * f.len() as f64;
+                    let i = p.floor() as usize;
+                    let u = (p - i as f64) as f32;
+                    let a = f.get(i).copied().unwrap_or(0.0);
+                    let b = f[(i + 1) % f.len()];
+                    *out = a * (1.0 - u) + b * u;
+                }
+                o
+            })
+            .collect(),
+    )
 }

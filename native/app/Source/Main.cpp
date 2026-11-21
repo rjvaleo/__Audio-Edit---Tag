@@ -5,6 +5,8 @@
 // controls; save and load.
 
 #include "Canvas.h"
+#include "Face.h"
+#include "WaveFace.h"
 #include "Host.h"
 #include "Places.h"
 
@@ -148,9 +150,61 @@ class App final : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override { return "idMLab"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
-    bool moreThanOneInstanceAllowed() override { return false; }
+    bool moreThanOneInstanceAllowed() override { return true; }
 
-    void initialise (const juce::String&) override { window = std::make_unique<MainWindow> (getApplicationName()); }
+    void initialise (const juce::String& commandLine) override
+    {
+        // --snapshot <page> <file.png> [scale]: draw a page's face to a picture
+        // and quit, for comparing with MGL's own page (tools/face-capture).
+        auto args = juce::StringArray::fromTokens (commandLine, true);
+        args.trim();
+        args.removeEmptyStrings();
+        if (args.size() >= 3 && args[0] == "--snapshot")
+        {
+            const auto page = args[1].unquoted();
+            const float scale = args.size() > 3 ? args[3].getFloatValue() : 1.0f;
+            juce::Image image;
+            if (page == "wave-face")
+            {
+                // The live face, a real Wave behind it (no sound card).
+                NaApp* a = na_new (48000.0f, 4096);
+                juce::String dirs;
+                for (const auto& d : places::tableDirs())
+                    dirs << d.getFullPathName() << "\n";
+                na_table_dirs (a, dirs.toRawUTF8());
+                const auto id = (uint32_t) na_add (a, "wave", 0, 0);
+                WaveFace w (
+                    [a, id] (const juce::String& key, const juce::String& value) { na_wave_set (a, id, key.toRawUTF8(), value.toRawUTF8()); },
+                    [a, id] { return juce::String (naText ([&] (char* b, uint32_t c) { return na_wave_patch (a, id, b, c); })); },
+                    [] (const juce::String& name) {
+                        wave::Table t (na_table_frames (name.toRawUTF8(), nullptr, 0));
+                        if (!t.empty())
+                            na_table_frames (name.toRawUTF8(), t.front().data(), (uint32_t) t.size());
+                        return t;
+                    });
+                image = w.createComponentSnapshot (w.getLocalBounds(), true, scale);
+                na_free (a);
+            }
+            else
+            {
+                const auto& captured = face::page (page);
+                if (!captured.isObject())
+                {
+                    setApplicationReturnValue (2);
+                    return quit();
+                }
+                face::Chrome chrome (captured);
+                image = chrome.createComponentSnapshot (chrome.getLocalBounds(), true, scale);
+            }
+            juce::File out (args[2].unquoted());
+            out.deleteFile();
+            juce::FileOutputStream stream (out);
+            juce::PNGImageFormat png;
+            setApplicationReturnValue (stream.openedOk() && png.writeImageToStream (image, stream) ? 0 : 1);
+            return quit();
+        }
+        window = std::make_unique<MainWindow> (getApplicationName());
+    }
     void shutdown() override { window = nullptr; }
     void systemRequestedQuit() override { quit(); }
 

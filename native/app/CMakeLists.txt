@@ -35,7 +35,10 @@ juce_add_gui_app(idMLab
   BUNDLE_ID "local.idmlab.native"
   VERSION 0.1.0)
 add_dependencies(idMLab engine_build)
-target_sources(idMLab PRIVATE Source/Main.cpp Source/Host.cpp Source/Canvas.cpp)
+# Each page's look, captured from MGL's own page (tools/face-capture).
+juce_add_binary_data(idmlab_faces SOURCES faces/wave.json)
+target_sources(idMLab PRIVATE Source/Main.cpp Source/Host.cpp Source/Canvas.cpp Source/Face.cpp
+  Source/Canvas2D.cpp Source/WaveDraw.cpp Source/WaveFace.cpp)
 target_compile_definitions(idMLab PRIVATE
   JUCE_WEB_BROWSER=0
   JUCE_USE_CURL=0
@@ -43,6 +46,7 @@ target_compile_definitions(idMLab PRIVATE
   JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:idMLab,JUCE_VERSION>")
 target_link_libraries(idMLab PRIVATE
   "${ENGINE_LIB}"
+  idmlab_faces
   juce::juce_audio_utils
   juce::juce_audio_devices
   juce::juce_gui_basics
