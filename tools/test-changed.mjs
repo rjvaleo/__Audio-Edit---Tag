@@ -7,13 +7,16 @@
 // at (`tests/ui/test-map.json`, from `npm run test:map`), committed or not.
 //
 // Browser specs:
-//   - an interface script (`ui/app/*.js`, `ui/*.js`): the specs that ran a
-//     function containing a changed line. A changed line inside no function
-//     runs while the page loads, so every spec. Blank and comment lines run
+//   - an interface script (`ui/*.js`, `ui/sequencer/*.js`, …) or a part of a
+//     joined one (`ui/app/`, `ui/stage/`, `ui/vis-gl/`, `ui/room-paint/`): the
+//     specs that ran a function containing a changed line. A changed line
+//     inside no function runs while the page loads, so every spec. Blank and comment lines run
 //     nothing.
 //   - a spec: that spec. A spec the map has never seen: always.
-//   - the page, the stylesheets, the server, the test harness: every spec.
-// Rust: `cargo test -p` for each crate changed, and the crates that use it.
+//   - the page, the stylesheets (`ui/app-css/` too), the server outside its
+//     route handlers, the test harness: every spec.
+// Rust: `cargo test -p` for each crate changed, and the crates that use it, on
+// the PC; nothing else.
 //
 // Run on the MacBook and the PC, never on this Mac (see the end).
 
@@ -140,16 +143,18 @@ for (const f of changed) {
     } else if (crate[1] === 'audiolab') every(`${f} starts the server`);
     continue;
   }
-  const part = f.match(/^ui\/app\/(.+\.js)$/);
+  // A part of a joined script: its lines are found where the part starts in it.
+  const part = f.match(/^ui\/(app|room-paint|stage|vis-gl)\/([^/]+\.js)$/);
   const script = !part && f.match(/^ui\/(.+\.js)$/);
   if (map && (part || script)) {
     const t = touched(f);
     if (!t.code) continue;
-    if (part && !(part[1] in map.parts)) { every(`${f} is a new part`); continue; }
-    const url = part ? '/app.js' : `/${script[1]}`;
-    const lines = part ? t.lines.map((l) => map.parts[part[1]] + l - 1) : t.lines;
-    const loose = reach(url, lines, `${f} — a function it ran changed`);
-    if (loose.length) every(`${f}:${loose[0] - (part ? map.parts[part[1]] - 1 : 0)} runs as the page loads`);
+    const key = part && `${part[1]}/${part[2]}`;
+    if (part && !(key in (map.parts || {}))) { every(`${f} is a new part`); continue; }
+    const at = part ? map.parts[key] - 1 : 0;
+    const url = part ? `/${part[1]}.js` : `/${script[1]}`;
+    const loose = reach(url, t.lines.map((l) => at + l), `${f} — a function it ran changed`);
+    if (loose.length) every(`${f}:${loose[0] - at} runs as the page loads`);
     continue;
   }
   if (f.startsWith('core/')) continue;
@@ -178,16 +183,16 @@ if (LIST) process.exit(0);
 
 // **On the other machines, never here** (RJ, 18 Nov 2026: "Code locally, test
 // externally"): the browser specs on the MacBook, the Rust tests on the PC, both
-// at once. Each script sends the working tree as it is. The Rust side runs the
-// PC's whole Rust set (`tools/pc/run-tests.cmd`), a few minutes, whichever
-// crates changed. The reference renders run only when the map picks their spec
+// at once. Each script sends the working tree as it is. The Rust side tests only
+// the crates above (`tools/pc/run-tests.cmd rust <crate>…`), not the PC's whole
+// Rust set. The reference renders run only when the map picks their spec
 // (`REFERENCE_RENDERS`, see that spec).
 const run = (script, args, env = {}) => new Promise((done) => {
   const p = spawn('sh', [join(root, script), ...args], { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } });
   p.on('close', (code) => done(code === 0));
 });
 const jobs = [];
-if (crates.size) jobs.push(run('tools/pc/test-on-pc.sh', ['rust']));
+if (crates.size) jobs.push(run('tools/pc/test-on-pc.sh', ['rust', ...[...crates].sort()]));
 if (list.length) {
   jobs.push(run('tools/pc/test-on-mbp.sh', list.map((s) => `tests/ui/${s}`),
     list.includes('reference-renders.spec.mjs') ? { REFERENCE_RENDERS: '1' } : {}));

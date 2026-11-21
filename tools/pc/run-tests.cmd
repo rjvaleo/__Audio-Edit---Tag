@@ -27,10 +27,14 @@ cd core
 cargo build --release -p audiolab -p fx-wasm --features audiolab/ui-from-disk 2> %ROOT%\results\build.log
 if errorlevel 1 (echo build failed, see results\build.log & node %APP%\tools\pc\run-log.mjs end 1 & exit /b 1)
 node %APP%\tools\pc\run-log.mjs phase tests
+rem `rust` alone: the whole Rust set. `rust a b`: crates a and b only, as
+rem tools\test-changed.mjs asks for the crates a change reaches.
+set RUST_P=-p fx -p fx-wasm -p atmos -p songprint -p server-core -p server-ui -p server-library -p server-compose -p server-engine -p server-export -p server-stems -p server-analytics -p server
+if "%1"=="rust" if not "%~2"=="" call :only %*
 if "%1"=="rust" (
   echo [%time%] rust tests
   rem Into the run's own folder, then where it has always been: two runs once shared results\rust.log.
-  cargo test --release --no-fail-fast -p fx -p fx-wasm -p atmos -p songprint -p server-core -p server-ui -p server-library -p server-compose -p server-engine -p server-export -p server-stems -p server-analytics -p server > !MGL_RUN_DIR!\rust.log 2>&1
+  cargo test --release --no-fail-fast !RUST_P! > !MGL_RUN_DIR!\rust.log 2>&1
   set CODE=!errorlevel!
   copy /y !MGL_RUN_DIR!\rust.log %ROOT%\results\rust.log > nul
   findstr /c:"test result" /c:"FAILED" /c:"panicked" %ROOT%\results\rust.log
@@ -45,3 +49,12 @@ set CODE=%errorlevel%
 node tools\pc\run-log.mjs end %CODE%
 echo [%time%] done %CODE%
 exit /b %CODE%
+
+rem The crates after `rust`, as cargo's -p list.
+:only
+set RUST_P=
+:only_next
+shift
+if "%~1"=="" exit /b 0
+set RUST_P=!RUST_P! -p %~1
+goto only_next

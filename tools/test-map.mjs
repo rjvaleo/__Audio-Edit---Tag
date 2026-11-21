@@ -57,17 +57,24 @@ if (!process.argv.includes('--from-raw')) {
 if (!existsSync(raw)) { console.error(`nothing recorded at ${raw}`); process.exit(1); }
 
 // The text each served script is made from, by the URL it is served at, as
-// committed. `/app.js` is the parts joined in name order, as `build.rs` does.
-const parts = [];
-{
+// committed. A joined script (`/app.js`, `/room-paint.js`, `/stage.js`,
+// `/vis-gl.js`) is its folder's parts end to end in name order, as `build.rs`
+// joins them; `parts` says where each part starts in it. `ui/app-css/` is joined
+// too, but it is a stylesheet, and the record holds only scripts.
+const JOINED = ['app', 'room-paint', 'stage', 'vis-gl'];
+const parts = {}; // 'stage/010-x.js' → the line of `/stage.js` it starts on
+const sources = {};
+for (const folder of JOINED) {
   let line = 1;
-  for (const name of git('ls-tree', '--name-only', commit, 'ui/app/').split('\n').filter((f) => f.endsWith('.js')).sort()) {
+  const texts = [];
+  for (const name of git('ls-tree', '--name-only', commit, `ui/${folder}/`).split('\n').filter((f) => f.endsWith('.js')).sort()) {
     const text = atCommit(name);
-    parts.push({ name: name.replace('ui/app/', ''), text, line });
+    parts[name.replace(/^ui\//, '')] = line;
+    texts.push(text);
     line += text.split('\n').length - 1;
   }
+  sources[`/${folder}.js`] = texts.join('');
 }
-const sources = { '/app.js': parts.map((p) => p.text).join('') };
 const textOf = (url) => {
   if (!(url in sources)) sources[url] = atCommit(`ui${url}`);
   return sources[url];
@@ -107,9 +114,8 @@ const map = {
   // Spec → the server paths it reached.
   routes: Object.fromEntries(Object.entries(routes).sort().map(([s, set]) => [s, [...set].sort()])),
   made: new Date().toISOString(),
-  // Where each part starts in the joined `/app.js`, so a part's line can be
-  // found in it.
-  parts: Object.fromEntries(parts.map((p) => [p.name, p.line])),
+  // Where each part of a joined script starts in it, by its path under `ui/`.
+  parts,
   specs: Object.fromEntries(Object.entries(specs).sort().map(([spec, per]) => [spec,
     Object.fromEntries(Object.entries(per).map(([url, set]) => [url,
       [...set].map((r) => r.split('-').map(Number)).sort((x, y) => x[0] - y[0] || x[1] - y[1])]))])),

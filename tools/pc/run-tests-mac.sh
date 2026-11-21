@@ -10,8 +10,12 @@ cd $R/MultiGrainLive
 echo "[$(date +%T)] build"
 (cd core && cargo build --release -p audiolab -p fx-wasm --features audiolab/ui-from-disk 2> $R/results/build.log) || { echo "build failed, see results/build.log"; tail -20 $R/results/build.log; exit 1; }
 if [ "$1" = rust ]; then
-  echo "[$(date +%T)] rust tests"
-  (cd core && cargo test --release --no-fail-fast -p fx -p fx-wasm -p atmos -p songprint -p server-core -p server-ui -p server-library -p server-compose -p server-engine -p server-export -p server-stems -p server-analytics -p server > $R/results/rust.log 2>&1); code=$?
+  # `rust` alone: the whole Rust set. `rust a b`: crates a and b only.
+  shift
+  P=(-p fx -p fx-wasm -p atmos -p songprint -p server-core -p server-ui -p server-library -p server-compose -p server-engine -p server-export -p server-stems -p server-analytics -p server)
+  if [ $# -gt 0 ]; then P=(); for c in "$@"; do P+=(-p "$c"); done; fi
+  echo "[$(date +%T)] rust tests: ${P[*]}"
+  (cd core && cargo test --release --no-fail-fast "${P[@]}" > $R/results/rust.log 2>&1); code=$?
   grep -E "test result|FAILED|panicked" $R/results/rust.log | sort | uniq -c
   exit $code
 fi
