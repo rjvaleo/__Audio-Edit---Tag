@@ -8,7 +8,15 @@
 set -e -o pipefail
 HERE=${0:A:h:h}
 JUCE="/Volumes/1 TB Funtime/WORK DIR/tools/JUCE-9.0.5"
-BUILD="/Volumes/1 TB Funtime/WORK DIR/native-build/app-imac"
+# One build folder per checkout: the main one's is app-imac; a worktree's is
+# named after its branch, so sessions working at once never share a build.
+ROOT=$(git -C "$HERE" rev-parse --show-toplevel)
+BRANCH=$(git -C "$HERE" rev-parse --abbrev-ref HEAD | tr '/' '-')
+if [[ $ROOT == "$HOME/Documents/MultiGrainLive" ]]; then
+  BUILD="/Volumes/1 TB Funtime/WORK DIR/native-build/app-imac"
+else
+  BUILD="/Volumes/1 TB Funtime/WORK DIR/native-build/app-imac-$BRANCH"
+fi
 
 state=$(curl -s -m 5 localhost:8737/api/engine/state || true)
 if [[ $state == *'"playing":true'* || $state == *'"capturing":true'* ]]; then
