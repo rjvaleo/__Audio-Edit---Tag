@@ -479,6 +479,41 @@ pub unsafe extern "C" fn na_atmos_set(a: *mut NaApp, id: u32, key: *const c_char
     })
 }
 
+/// Atmosphere module `id` as one of MGL's presets (only Atmosphere's
+/// controls, as `getPresetState` keeps them), named `name`; the module is
+/// known by that name from now on. Its length, as `na_save` gives text.
+///
+/// # Safety
+/// `a` came from `na_new`; `name` is a C string; `buf` has room for `cap`
+/// bytes, or is null.
+#[no_mangle]
+pub unsafe extern "C" fn na_atmos_preset(a: *mut NaApp, id: u32, name: *const c_char, buf: *mut c_char, cap: u32) -> u32 {
+    guarded(0, || match session(a).map(|s| s.atmos_preset(id, text(name).unwrap_or(""))) {
+        Some(Ok(v)) => give_text(&v.to_string(), buf, cap),
+        _ => 0,
+    })
+}
+
+/// Give Atmosphere module `id` one of MGL's presets (an object with its
+/// `state`, as MGL's Seq saves and exports them): each of Atmosphere's
+/// controls it holds, and nothing else. How many it set, or an error.
+///
+/// # Safety
+/// `a` came from `na_new`; `json` is a C string.
+#[no_mangle]
+pub unsafe extern "C" fn na_load_atmos_preset(a: *mut NaApp, id: u32, json: *const c_char) -> i32 {
+    guarded(-12, || {
+        let Some(s) = session(a) else { return NO_ENGINE };
+        match parse(text(json)) {
+            Ok(v) => match s.load_atmos_preset(id, &v) {
+                Ok(n) => n as i32,
+                Err(e) => fail(a, e),
+            },
+            Err(e) => fail(a, e),
+        }
+    })
+}
+
 /// Atmosphere module `id`'s state as JSON: every page key and its value.
 ///
 /// # Safety

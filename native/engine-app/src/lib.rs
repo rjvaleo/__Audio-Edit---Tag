@@ -606,6 +606,7 @@ impl Session {
                     }
                     Part::Atmos(a) => {
                         o.insert("atmos".into(), a.state());
+                        o.insert("name".into(), a.name().into());
                     }
                     Part::MidiIn { channel } => {
                         o.insert("channel".into(), (*channel).into());
@@ -708,6 +709,7 @@ impl Session {
                     }
                     Part::Atmos(a) => {
                         o.insert("atmos".into(), a.state());
+                        o.insert("name".into(), a.name().into());
                     }
                     _ => {}
                 }
@@ -781,6 +783,26 @@ impl Session {
     /// (a knob's id at its raw value, a select's value, or `fx`, the whole
     /// chain; `fx.<slot>.<key>` moves one control of the running chain).
     /// A key it does not keep is ignored.
+    /// Atmosphere module `id` as one of MGL's presets, named `name` (and
+    /// known by it from now on).
+    pub fn atmos_preset(&mut self, id: u32, name: &str) -> Result<Value, AppError> {
+        let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        match self.modules.get_mut(&id).map(|m| &mut m.part) {
+            Some(Part::Atmos(a)) => Ok(a.preset(name, ms)),
+            _ => Err(AppError::NoSuchModule(id)),
+        }
+    }
+
+    /// Give Atmosphere module `id` one of MGL's presets: what it holds of
+    /// Atmosphere's controls. How many controls it set.
+    pub fn load_atmos_preset(&mut self, id: u32, preset: &Value) -> Result<usize, AppError> {
+        let (rate, max_block) = (self.rate, self.max_block);
+        match self.modules.get_mut(&id).map(|m| &mut m.part) {
+            Some(Part::Atmos(a)) => a.load_preset(&mut self.ctl, engine_id(id, 0), preset, rate, max_block),
+            _ => Err(AppError::NoSuchModule(id)),
+        }
+    }
+
     pub fn atmos_set(&mut self, id: u32, key: &str, value: &Value) -> Result<(), AppError> {
         let (rate, max_block) = (self.rate, self.max_block);
         match self.modules.get_mut(&id).map(|m| &mut m.part) {

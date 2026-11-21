@@ -335,3 +335,65 @@ fn sympathy_rings_on_the_physical_voice_in_its_tuning() {
     assert!(first_difference(&none, &some).is_some(), "Sympathy is heard");
     assert!(first_difference(&some, &root).is_some(), "tuned to the root alone, it rings otherwise");
 }
+
+#[test]
+fn a_preset_is_mgls_own_and_comes_back_exactly() {
+    let (mut s, mut audio) = session();
+    let (midi, at) = canvas(&mut s);
+    s.atmos_set(at, "modelB", &json!("membrane")).unwrap();
+    s.atmos_set(at, "atFltAmt", &json!(60)).unwrap();
+    s.atmos_set(at, "atL2Target", &json!("pan")).unwrap();
+    s.atmos_set(at, "tuneScale", &json!(just_scale().to_string())).unwrap();
+    s.atmos_set(at, "fx", &plate()).unwrap();
+    s.atmos_set(at, "fx.0.decay", &json!(0.3)).unwrap();
+    let preset = s.atmos_preset(at, "Low bells").unwrap();
+    // MGL's own shape (getPresetState): sliders by their ids, as strings;
+    // selects by their ids; the chain as the hidden field's JSON.
+    assert_eq!(preset["name"], "Low bells");
+    assert_eq!(preset["state"]["sliders"]["atFltAmtSlider"], "60");
+    assert_eq!(preset["state"]["selects"]["atModelBSelect"], "membrane");
+    assert_eq!(preset["state"]["selects"]["atL2TargetSelect"], "pan");
+    assert_eq!(preset["state"]["selects"]["atTuneScaleSelect"], just_scale().to_string());
+    let chain: Value = serde_json::from_str(preset["state"]["selects"]["atFxChain"].as_str().unwrap()).unwrap();
+    assert_eq!(chain[0]["params"]["decay"], 0.3);
+    assert!(preset["state"].get("steps").is_none(), "only Atmosphere's controls");
+    let saved = s.atmos_state(at).unwrap();
+    assert_eq!(saved["name"], "Low bells");
+    let first = play(&mut s, &mut audio, midi, 90);
+
+    // Another Atmosphere, moved elsewhere, given the preset: the same state, the same sound.
+    let (mut t, mut audio2) = session();
+    let (midi2, at2) = canvas(&mut t);
+    t.atmos_set(at2, "modelA", &json!("reed")).unwrap();
+    t.atmos_set(at2, "atVol", &json!(20)).unwrap();
+    let n = t.load_atmos_preset(at2, &serde_json::from_str(&preset.to_string()).unwrap()).unwrap();
+    assert!(n > 60, "every control: {n}");
+    assert_eq!(t.atmos_state(at2).unwrap(), saved);
+    assert_eq!(t.describe()["modules"].as_array().unwrap().iter().find(|m| m["kind"] == "atmos").unwrap()["name"], "Low bells");
+    let second = play(&mut t, &mut audio2, midi2, 90);
+    assert!(peak(&first) > 1e-3);
+    assert_same("preset", &first, &second);
+}
+
+#[test]
+fn a_seq_preset_from_before_atmosphere_moves_only_what_it_holds() {
+    let (mut s, _audio) = session();
+    let (_, at) = canvas(&mut s);
+    s.atmos_set(at, "atVol", &json!(33)).unwrap();
+    let before = s.atmos_state(at).unwrap();
+    // One of MGL's factory presets (ui/sequencer/presets.json): Seq's own
+    // sliders and selects, one of them an Atmosphere slider.
+    let seq = json!({ "id": "preset_1", "name": "Granfalloon Aria", "state": {
+        "sliders": { "tempoSlider": "120", "cutoffSlider": "40", "atWarmSlider": "70" },
+        "selects": { "waveSelect": "sawtooth", "rootSelect": "2" },
+        "steps": [], "scaleIdx": 3 } });
+    assert_eq!(s.load_atmos_preset(at, &seq).unwrap(), 1);
+    let after = s.atmos_state(at).unwrap();
+    for (k, v) in after.as_object().unwrap() {
+        match k.as_str() {
+            "atWarm" => assert_eq!(v, 70.0),
+            "name" => assert_eq!(v, "Granfalloon Aria"),
+            _ => assert_eq!(v, &before[k], "{k}"),
+        }
+    }
+}

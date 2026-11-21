@@ -101,6 +101,7 @@ public:
 
     void setValues (const juce::var& values);
     void setPatchName (const juce::String&);
+    const juce::String& patchName() const { return shownName; }
     void layout();
     void paint (juce::Graphics&) override;
     void paintOverChildren (juce::Graphics&) override;
@@ -113,7 +114,7 @@ public:
 
 private:
     Canvas& canvas;
-    juce::String patchName;
+    juce::String shownName;
     std::unique_ptr<juce::ComboBox> channel;
     juce::Point<int> grabbedAt;
     bool moving = false;
@@ -225,6 +226,13 @@ public:
     void set (int id, int index, float value);
     void openWavePreset (int id);
     void saveWavePreset (int id);
+    // Atmosphere's presets: MGL's own preset shape (a list, as its Seq
+    // exports them), only Atmosphere's controls in it.
+    void openAtmosPreset (int id);
+    void saveAtmosPreset (int id);
+    void loadAtmosPreset (int id, const juce::var& preset);
+    // The presets saved in the app's folder, each a menu item that loads it.
+    juce::PopupMenu atmosPresetList (int id);
 
     // A cable being dragged from a socket.
     void beginCable (Jack*);

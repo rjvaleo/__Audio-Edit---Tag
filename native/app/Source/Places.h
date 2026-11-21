@@ -32,6 +32,15 @@ inline juce::File wavePresets()
     return d;
 }
 
+// Atmosphere's presets: each file one of MGL's preset lists (what its Seq
+// exports and imports), holding only Atmosphere's controls.
+inline juce::File atmosPresets()
+{
+    auto d = home().getChildFile ("presets").getChildFile ("atmos");
+    d.createDirectory();
+    return d;
+}
+
 // MultiGrainLive's own data folder on this machine, read only.
 inline juce::File mgl()
 {

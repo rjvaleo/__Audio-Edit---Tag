@@ -53,6 +53,10 @@ uint64_t na_bad_blocks (NaApp*);
 // of the running chain). Unknown keys are ignored (0).
 int32_t na_atmos_set (NaApp*, uint32_t id, const char* key, const char* json);
 uint32_t na_atmos_state (NaApp*, uint32_t id, char* buf, uint32_t cap);
+// As one of MGL's presets (only Atmosphere's controls), named; and back:
+// how many controls a preset set, or an error.
+uint32_t na_atmos_preset (NaApp*, uint32_t id, const char* name, char* buf, uint32_t cap);
+int32_t na_load_atmos_preset (NaApp*, uint32_t id, const char* json);
 // Oscillator which (0 A, 1 B): 32 floats; returns the model's number or -1.
 int32_t na_atmos_view (NaApp*, uint32_t id, uint32_t which, float* out32);
 // The last n frames (at most 2048) of its output, mono, oldest first; how many.

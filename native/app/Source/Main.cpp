@@ -853,6 +853,14 @@ public:
                 if (juce::SystemStats::getEnvironmentVariable ("ATMOS_CANVAS", {}).isNotEmpty())
                 {
                     main.canvasForBench().addModule ("atmos", { 0.0f, 1200.0f });
+                    // ATMOS_PRESET=<file>: the first preset in it given to the new Atmosphere.
+                    if (auto file = juce::SystemStats::getEnvironmentVariable ("ATMOS_PRESET", {}); file.isNotEmpty())
+                    {
+                        const auto parsed = juce::JSON::parse (juce::File (file).loadFileAsString());
+                        const auto preset = parsed.isArray() ? parsed[0] : parsed;
+                        main.canvasForBench().loadAtmosPreset (main.canvasForBench().selectedNode, preset);
+                        std::printf ("presets listed: %d\n", main.canvasForBench().atmosPresetList (main.canvasForBench().selectedNode).getNumItems());
+                    }
                     main.canvasForBench().fit();
                 }
                 image = main.createComponentSnapshot (main.getLocalBounds(), true, scale);
@@ -928,6 +936,12 @@ public:
                     }
                     f.notePlayed (n);
                     f.poll();
+                }
+                // ATMOS_SAVE=<file>: save what it holds as a preset (a list of one), named after the file.
+                if (auto save = juce::SystemStats::getEnvironmentVariable ("ATMOS_SAVE", {}); save.isNotEmpty())
+                {
+                    const auto name = juce::File (save).getFileNameWithoutExtension().toStdString();
+                    juce::File (save).replaceWithText ("[" + juce::String (naText ([&] (char* b, uint32_t c) { return na_atmos_preset (a, id, name.c_str(), b, c); })) + "]");
                 }
                 if (auto w = juce::SystemStats::getEnvironmentVariable ("ATMOS_WINDOW", {}); w.isNotEmpty())
                     f.openFx (w.getIntValue());

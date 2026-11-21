@@ -278,14 +278,14 @@ void Node::setValues (const juce::var& values)
 
 void Node::setPatchName (const juce::String& name)
 {
-    patchName = name;
+    shownName = name;
     repaint();
 }
 
 void Node::paint (juce::Graphics& g)
 {
     // The frame, drawn once at 2x and kept: zooming and panning only move it.
-    const auto key = juce::String (getWidth()) + "x" + juce::String (getHeight()) + (collapsed ? "c" : "") + patchName + "/" + juce::String (face::stamp());
+    const auto key = juce::String (getWidth()) + "x" + juce::String (getHeight()) + (collapsed ? "c" : "") + shownName + "/" + juce::String (face::stamp());
     if (!frame.isValid() || frameKey != key)
     {
         frameKey = key;
@@ -323,7 +323,7 @@ void Node::paintFrame (juce::Graphics& g)
         if (auto* b = face::find (*menuSpan, "button"))
         {
             juce::Graphics::ScopedSaveState keep (g);
-            if (wave == nullptr)
+            if (body() == nullptr)
                 g.setOpacity (0.35f);
             face::paintText (g, *b, menuR, juce::String::fromUTF8 ("\xe2\x9a\x99\xe2\x96\xbe"), juce::Justification::centred);
         }
@@ -332,8 +332,8 @@ void Node::paintFrame (juce::Graphics& g)
     if (auto* n = frameNode ("n4-header__name"))
     {
         auto label = kind.title;
-        if (patchName.isNotEmpty())
-            label << juce::String::fromUTF8 (" \xc2\xb7 ") << patchName;
+        if (shownName.isNotEmpty())
+            label << juce::String::fromUTF8 (" \xc2\xb7 ") << shownName;
         face::paintText (g, *n, nameR, label);
     }
     if (auto* n = frameNode ("n4-header__close"))
@@ -393,6 +393,15 @@ void Node::mouseDown (const juce::MouseEvent& e)
     if (closeR.expanded (2).contains (p))
     {
         juce::MessageManager::callAsync ([c = &canvas, i = id] { c->removeModule (i); });
+        return;
+    }
+    if (menuR.expanded (2).contains (p) && atmos != nullptr)
+    {
+        juce::PopupMenu m;
+        m.addSubMenu ("Presets", canvas.atmosPresetList (id));
+        m.addItem ("Open preset...", [this] { canvas.openAtmosPreset (id); });
+        m.addItem ("Save preset...", [this] { canvas.saveAtmosPreset (id); });
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (menuR).toNearestInt()));
         return;
     }
     if (menuR.expanded (2).contains (p) && wave != nullptr)
@@ -1291,6 +1300,109 @@ void Canvas::saveWavePreset (int id)
         held->setProperty ("patch", juce::JSON::parse (juce::String::fromUTF8 (patch.c_str())));
         held->setProperty ("hidden", false);
         report (0, f.replaceWithText (juce::JSON::toString (juce::var (held.get()))) ? "Saved the preset " + f.getFileName() : "Couldn't write " + f.getFullPathName());
+    });
+}
+
+void Canvas::loadAtmosPreset (int id, const juce::var& preset)
+{
+    remember();
+    const auto text = juce::JSON::toString (preset, true).toStdString();
+    const int n = host.with ([&] (NaApp* a) { return na_load_atmos_preset (a, (uint32_t) id, text.c_str()); });
+    const auto name = preset["name"].toString();
+    if (n < 0)
+        return report (n, "Opening the preset " + name);
+    refresh();
+    // A Seq preset from before Atmosphere holds few of its controls: say so.
+    report (0, n == 0 ? name + " holds none of Atmosphere's controls"
+                      : n < 60 ? "Atmosphere took " + juce::String (n) + " controls from " + name + "; the rest are as they were"
+                               : "Atmosphere plays " + name);
+}
+
+namespace
+{
+// The presets a file holds: a list (as MGL's Seq exports them) or one.
+juce::Array<juce::var> presetsIn (const juce::File& f)
+{
+    const auto parsed = juce::JSON::parse (f.loadFileAsString());
+    juce::Array<juce::var> out;
+    if (auto* list = parsed.getArray())
+    {
+        for (const auto& p : *list)
+            if (p.isObject())
+                out.add (p);
+    }
+    else if (parsed.isObject())
+        out.add (parsed);
+    return out;
+}
+} // namespace
+
+juce::PopupMenu Canvas::atmosPresetList (int id)
+{
+    juce::PopupMenu m;
+    auto files = places::atmosPresets().findChildFiles (juce::File::findFiles, false, "*.json");
+    files.sort();
+    for (const auto& f : files)
+    {
+        const auto presets = presetsIn (f);
+        if (presets.size() == 1)
+        {
+            const auto p = presets[0];
+            m.addItem (f.getFileNameWithoutExtension(), [this, id, p] { loadAtmosPreset (id, p); });
+        }
+        else if (presets.size() > 1)
+        {
+            juce::PopupMenu sub;
+            for (const auto& p : presets)
+                sub.addItem (p["name"].toString(), [this, id, p] { loadAtmosPreset (id, p); });
+            m.addSubMenu (f.getFileNameWithoutExtension(), sub);
+        }
+    }
+    if (m.getNumItems() == 0)
+        m.addItem ("None saved yet", false, false, nullptr);
+    return m;
+}
+
+void Canvas::openAtmosPreset (int id)
+{
+    chooser = std::make_unique<juce::FileChooser> ("Open an Atmosphere preset, or presets MGL's Seq exported", places::atmosPresets(), "*.json");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this, id] (const juce::FileChooser& fc) {
+        const auto f = fc.getResult();
+        if (f == juce::File())
+            return;
+        const auto presets = presetsIn (f);
+        if (presets.isEmpty())
+            return report (0, f.getFileName() + " holds no presets");
+        if (presets.size() == 1)
+            return loadAtmosPreset (id, presets[0]);
+        // A list: choose one.
+        juce::PopupMenu m;
+        m.addSectionHeader (f.getFileNameWithoutExtension().toUpperCase());
+        for (const auto& p : presets)
+            m.addItem (p["name"].toString(), [this, id, p] { loadAtmosPreset (id, p); });
+        m.showMenuAsync (juce::PopupMenu::Options().withMousePosition());
+    });
+}
+
+void Canvas::saveAtmosPreset (int id)
+{
+    juce::String name = "Atmosphere";
+    if (auto it = nodes.find (id); it != nodes.end() && it->second->patchName().isNotEmpty())
+        name = it->second->patchName();
+    chooser = std::make_unique<juce::FileChooser> ("Save an Atmosphere preset", places::atmosPresets().getChildFile (juce::File::createLegalFileName (name) + ".json"), "*.json");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting, [this, id] (const juce::FileChooser& fc) {
+        auto f = fc.getResult();
+        if (f == juce::File())
+            return;
+        f = f.withFileExtension ("json");
+        const auto title = f.getFileNameWithoutExtension().toStdString();
+        const auto preset = host.with ([&] (NaApp* a) { return naText ([&] (char* b, uint32_t c) { return na_atmos_preset (a, (uint32_t) id, title.c_str(), b, c); }); });
+        if (preset.empty())
+            return report (-1, "Saving the preset");
+        // A list of one, as MGL's Seq exports them, so its Import takes it.
+        const bool ok = f.replaceWithText ("[" + juce::String::fromUTF8 (preset.c_str()) + "]");
+        refresh();
+        report (0, ok ? "Saved the preset " + f.getFileName() : "Couldn't write " + f.getFullPathName());
     });
 }
 

@@ -89,6 +89,26 @@ fn select_defaults() -> Vec<(String, String)> {
     out
 }
 
+/// A select's key here, as the page's element id: `modelA` is
+/// `atModelASelect`, `atL1Shape` `atL1ShapeSelect`, `symTune`
+/// `atSymTuneSelect`, `tuneScale` `atTuneScaleSelect`.
+fn page_select_id(key: &str) -> String {
+    if let Some(w) = key.strip_prefix("model") {
+        format!("atModel{w}Select")
+    } else if key == "symTune" {
+        "atSymTuneSelect".into()
+    } else if let Some(r) = key.strip_prefix("tune") {
+        format!("atTune{r}Select")
+    } else {
+        format!("{key}Select")
+    }
+}
+
+/// And back: the key a page select id is, if it is one of Atmosphere's.
+fn state_key_of_select(id: &str) -> Option<String> {
+    select_defaults().into_iter().map(|(k, _)| k).find(|k| page_select_id(k) == id)
+}
+
 /// `atExp`.
 fn at_exp(v: f64, lo: f64, hi: f64) -> f64 {
     lo * (hi / lo).powf(v / 100.0)
@@ -105,6 +125,8 @@ pub struct AtmosPart {
     selects: BTreeMap<String, String>,
     /// The chain, as the page keeps it.
     fx: Vec<Value>,
+    /// The preset it was last given or saved as ("" none): its header shows it.
+    name: String,
     sent_voice: Vec<f32>,
     sent_web: Vec<f32>,
     tuning: Tuning,
@@ -126,6 +148,7 @@ impl AtmosPart {
             knobs,
             selects,
             fx: Vec::new(),
+            name: String::new(),
             sent_voice: vec![f32::NAN; atmos::KEYS.len()],
             sent_web: vec![f32::NAN; atmos_web::module::KEYS.len()],
             tuning: Tuning::default(),
@@ -149,6 +172,10 @@ impl AtmosPart {
     /// a person chose it (a model card resets its oscillator's controls, the
     /// big knob opens the rest). False for a key it does not keep.
     fn put(&mut self, key: &str, v: &Value, chosen: bool) -> bool {
+        if key == "name" {
+            self.name = v.as_str().unwrap_or_default().to_string();
+            return true;
+        }
         if key == "fx" {
             let Some(a) = v.as_array() else { return false };
             self.fx = a.iter().filter(|s| s.get("kind").and_then(Value::as_str).is_some()).cloned().collect();
@@ -452,7 +479,84 @@ impl AtmosPart {
             o.insert(k.clone(), Value::String(s.clone()));
         }
         o.insert("fx".into(), Value::Array(self.fx.clone()));
+        o.insert("name".into(), Value::String(self.name.clone()));
         Value::Object(o)
+    }
+
+    /// The preset it was last given or saved as ("" none).
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Its state as one of MGL's presets (`getPresetState` in
+    /// ui/sequencer/app.js), with only Atmosphere's controls in it: every knob
+    /// as its slider (`atAtkSlider`, its value as the slider gives it, a
+    /// string), every select by its id, and the chain as `atFxChain`. MGL's
+    /// Seq can import it (a list of these) and load it, and sets only these.
+    pub fn preset(&mut self, name: &str, created_ms: u64) -> Value {
+        self.name = name.to_string();
+        let mut sliders = Map::new();
+        for (id, ..) in &page().knobs {
+            sliders.insert(format!("{id}Slider"), Value::String(format!("{}", self.v(id))));
+        }
+        let mut selects = Map::new();
+        for (k, s) in &self.selects {
+            selects.insert(page_select_id(k), Value::String(s.clone()));
+        }
+        selects.insert("atFxChain".into(), Value::String(Value::Array(self.fx.clone()).to_string()));
+        let mut state = Map::new();
+        state.insert("sliders".into(), Value::Object(sliders));
+        state.insert("selects".into(), Value::Object(selects));
+        let mut o = Map::new();
+        o.insert("id".into(), Value::String(format!("preset_{created_ms}")));
+        o.insert("name".into(), Value::String(name.to_string()));
+        o.insert("created".into(), Value::from(created_ms));
+        o.insert("state".into(), Value::Object(state));
+        Value::Object(o)
+    }
+
+    /// Take one of MGL's presets (`applyPresetState`): each Atmosphere slider
+    /// and select it has, and nothing else, so a Seq preset from before
+    /// Atmosphere moves only what it holds. A model chosen by a preset keeps
+    /// the preset's controls (the page's select, not its card). How many it set.
+    pub fn load_preset(&mut self, ctl: &mut Controller, base: ModuleId, preset: &Value, rate: f32, max_block: usize) -> Result<usize, AppError> {
+        let state = preset.get("state").unwrap_or(preset);
+        let had = self.fx.clone();
+        let mut n = 0;
+        if let Some(sl) = state.get("sliders").and_then(Value::as_object) {
+            for (id, v) in sl {
+                if let Some(k) = id.strip_suffix("Slider") {
+                    if page().knobs.iter().any(|kn| kn.0 == k) && self.put(k, v, false) {
+                        n += 1;
+                    }
+                }
+            }
+        }
+        if let Some(se) = state.get("selects").and_then(Value::as_object) {
+            for (id, v) in se {
+                if id == "atFxChain" {
+                    let chain = match v {
+                        Value::String(t) => serde_json::from_str(t).unwrap_or(Value::Array(Vec::new())),
+                        other => other.clone(),
+                    };
+                    if self.put("fx", &chain, false) {
+                        n += 1;
+                    }
+                } else if let Some(k) = state_key_of_select(id) {
+                    if self.put(&k, v, false) {
+                        n += 1;
+                    }
+                }
+            }
+        }
+        if let Some(name) = preset.get("name").and_then(Value::as_str) {
+            self.name = name.to_string();
+        }
+        if self.fx != had {
+            self.lay(ctl, base + FX, rate, max_block)?;
+        }
+        self.sync(ctl, base)?;
+        Ok(n)
     }
 
     /// What the face draws from: oscillator `which`'s live picture.
