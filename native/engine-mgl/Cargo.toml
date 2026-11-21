@@ -7,6 +7,8 @@ description = "MultiGrainLive's own instruments and effects, run inside the nati
 
 [dependencies]
 engine-core = { path = "../engine-core" }
+# idMLab's DSP: its port of Chromium's Web Audio, which the browser voice runs on.
+dsp-core = { path = "../../../GitHub/M Clone/rust/dsp-core" }
 # The shared effects and MGL's own crates, as they are (see engine-idmlab's
 # Cargo.toml for how the folders beside this one are laid out). MGL's crates
 # find prism-fx in `GitHub/prism-fx`, so this must name the same folder.

@@ -4,6 +4,7 @@
 
 mod ceiling;
 pub mod atmos;
+pub mod atmos_web;
 pub mod chop;
 pub mod demo;
 pub mod rack;
@@ -14,6 +15,7 @@ mod suite;
 mod wave;
 
 pub use crate::atmos::{Atmos, AtmosState};
+pub use crate::atmos_web::module::{AtmosWebModule, AtmosWebState};
 pub use crate::ceiling::Ceiling;
 pub use crate::chop::{Chop, ChopThing};
 pub use crate::rack::{Board, BoardThing, Rack, RackThing};
