@@ -402,6 +402,19 @@ pub unsafe extern "C" fn na_wave_set(a: *mut NaApp, id: u32, key: *const c_char,
     })
 }
 
+/// Wave module `id`'s wheels: `which` 0 the pitch wheel (-1 to 1), 1 the mod
+/// wheel, 2 aftertouch (0 to 1).
+///
+/// # Safety
+/// `a` came from `na_new`.
+#[no_mangle]
+pub unsafe extern "C" fn na_wave_wheel(a: *mut NaApp, id: u32, which: u32, value: f32) -> i32 {
+    guarded(-12, || match session(a) {
+        Some(s) => status(a, s.wave_wheel(id, which, value)),
+        None => NO_ENGINE,
+    })
+}
+
 /// A Wave table's frames at 256 points each, `max` frames at most, into
 /// `out` (room for `max * 256` floats). Returns how many frames it has (0 for
 /// a name found nowhere), which may be more than `max`.

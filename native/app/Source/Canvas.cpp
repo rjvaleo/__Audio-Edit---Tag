@@ -121,6 +121,12 @@ void ModuleFace::build()
                     na_table_frames (name.toRawUTF8(), t.front().data(), (uint32_t) t.size());
                 return t;
             });
+        wave->onNote = [host, module] (int n, float vel, bool on) {
+            host->with ([&] (NaApp* a) { return na_note (a, module, on ? 1u : 0u, (uint32_t) n, vel); });
+        };
+        wave->onWheel = [host, module] (int which, float value) {
+            host->with ([&] (NaApp* a) { return na_wave_wheel (a, module, (uint32_t) which, value); });
+        };
         wave->setTopLeftPosition (0, header);
         addAndMakeVisible (*wave);
         for (auto& s : sockets)

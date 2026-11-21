@@ -100,6 +100,25 @@ void Path::lineTo (float x, float y)
         p.lineTo (x, y);
 }
 
+void Path::roundRect (float x, float y, float w, float h, std::array<float, 4> r)
+{
+    const float k = 0.5523f;
+    for (auto& c : r)
+        c = juce::jmax (0.0f, juce::jmin (c, w / 2, h / 2));
+    const auto [tl, tr, br, bl] = r;
+    p.startNewSubPath (x + tl, y);
+    p.lineTo (x + w - tr, y);
+    p.cubicTo (x + w - tr + tr * k, y, x + w, y + tr - tr * k, x + w, y + tr);
+    p.lineTo (x + w, y + h - br);
+    p.cubicTo (x + w, y + h - br + br * k, x + w - br + br * k, y + h, x + w - br, y + h);
+    p.lineTo (x + bl, y + h);
+    p.cubicTo (x + bl - bl * k, y + h, x, y + h - bl + bl * k, x, y + h - bl);
+    p.lineTo (x, y + tl);
+    p.cubicTo (x, y + tl - tl * k, x + tl - tl * k, y, x + tl, y);
+    p.closeSubPath();
+    open = false;
+}
+
 void Path::arc (float x, float y, float r, float a0, float a1, bool ccw)
 {
     ellipse (x, y, r, r, 0.0f, a0, a1, ccw);

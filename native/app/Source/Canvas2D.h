@@ -14,6 +14,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <variant>
 #include <vector>
 
@@ -49,6 +50,8 @@ public:
     void ellipse (float x, float y, float rx, float ry, float rot, float a0, float a1, bool ccw = false);
     void rect (float x, float y, float w, float h) { p.addRectangle (x, y, w, h); }
     void roundRect (float x, float y, float w, float h, float r) { p.addRoundedRectangle (x, y, w, h, r); }
+    // Corners top-left, top-right, bottom-right, bottom-left, as the browser's.
+    void roundRect (float x, float y, float w, float h, std::array<float, 4> r);
     void closePath()
     {
         p.closeSubPath();
@@ -107,6 +110,7 @@ public:
     void ellipse (float x, float y, float rx, float ry, float rot, float a0, float a1, bool ccw = false) { current.ellipse (x, y, rx, ry, rot, a0, a1, ccw); }
     void rect (float x, float y, float w, float h) { current.rect (x, y, w, h); }
     void roundRect (float x, float y, float w, float h, float r) { current.roundRect (x, y, w, h, r); }
+    void roundRect (float x, float y, float w, float h, std::array<float, 4> r) { current.roundRect (x, y, w, h, r); }
     void closePath() { current.closePath(); }
 
     void fill() { fill (current); }

@@ -1076,4 +1076,392 @@ void drawLfo (c2d::Context& c, float w, float h, const Cl& cl, const Model& m, i
                 c.fill();
             }
 }
+juce::String dbTxt (float v)
+{
+    if (v < 0.01f)
+        return juce::String::fromUTF8 ("\xe2\x88\x92\xe2\x88\x9e");
+    const float d = 20 * std::log10 (v * v + 1e-9f);
+    return (d < 0 ? juce::String::fromUTF8 ("\xe2\x88\x92") : juce::String ("+")) + juce::String (std::abs (d), 1);
+}
+
+void drawMix (c2d::Context& x, float W0, float h, const Cl& cl, const Model& m, int c, const Frame* cur, float t)
+{
+    static const char* on[] = { "osc0.on", "osc1.on", "osc2.on", "sub.on", "noise.on" };
+    static const char* lv[] = { "osc0.level", "osc1.level", "osc2.level", "sub.level", "noise.level" };
+    const float w = W0 - 40;
+    const float v = clamp (m.g (lv[c])), X = 6 + (w - 12) * v, a = 0.4f + 0.6f * v;
+    x.globalAlpha = m.g (on[c]) >= 0.5f ? 1.0f : 0.35f;
+    x.save();
+    x.beginPath();
+    x.rect (6, 2, X - 6, h - 4);
+    x.clip();
+    c2d::Path p;
+    juce::Colour col = juce::Colours::transparentBlack;
+    auto line = [&] (int n, const std::function<float (float)>& y) {
+        for (int i = 0; i <= n; ++i)
+        {
+            const float u = (float) i / (float) n, yy = y (u);
+            if (i)
+                p.lineTo (6 + u * (w - 12), yy);
+            else
+                p.moveTo (6 + u * (w - 12), yy);
+        }
+    };
+    if (c < 3 && cur != nullptr)
+        line (140, [&] (float u) { return h / 2 - rd (*cur, u * 4) * (h * 0.36f) * a; });
+    else if (c == 3)
+    {
+        const int shape = (int) m.g ("sub.shape");
+        auto sh = [shape] (float q) {
+            if (shape == 1)
+                return 1 - 4 * std::abs (std::fmod (std::fmod (q + 0.25f, 1.0f) + 1.0f, 1.0f) - 0.5f);
+            if (shape == 2)
+                return (std::fmod (q, 1.0f) < 0.5f ? 1.0f : -1.0f) * 0.8f;
+            return std::sin (q * TAU);
+        };
+        const float oct = m.g ("sub.oct", 1);
+        const float cyc = 4 / std::pow (2.0f, oct > 0 ? oct : 1.0f);
+        line (140, [&] (float u) { return h / 2 - sh (u * cyc) * (h * 0.36f) * a; });
+    }
+    else
+    {
+        // Noise in its own colour, reseeded fourteen times a second.
+        long long sd = 7 + ((long long) std::floor (t * 14)) % 997;
+        float pr = 0;
+        const int nc = (int) m.g ("noise.color", 1);
+        static const char* cols[] = { "#e9edf2", "#f2a3c0", "#c08f60" };
+        col = c2d::css (cols[juce::jlimit (0, 2, nc)]);
+        line (170, [&] (float) {
+            sd = (sd * 16807) % 2147483647;
+            const float r = (float) sd / 2147483647.0f * 2 - 1;
+            pr = nc == 0 ? r : nc == 1 ? pr * 0.6f + r * 0.6f : pr * 0.9f + r * 0.35f;
+            return h / 2 - clamp (pr, -1, 1) * (h * 0.4f) * a;
+        });
+    }
+    if (col.getAlpha() > 0)
+    {
+        x.strokeStyle = col;
+        x.lineWidth = 1.1f;
+        x.shadowBlur = 6;
+        x.shadowColor = col;
+        x.stroke (p);
+        x.shadowBlur = 0;
+    }
+    else
+        trace (x, p, cl, 1.1f, 0.6f);
+    x.restore();
+    x.strokeStyle = cl.track;
+    x.lineWidth = 1;
+    x.beginPath();
+    x.moveTo (X, h / 2);
+    x.lineTo (w - 6, h / 2);
+    x.stroke();
+    x.fillStyle = cl.t;
+    x.beginPath();
+    x.roundRect (X - 2, 2, 4, h - 4, 2);
+    x.fill();
+    x.font = "9px mono";
+    x.textAlign = "right";
+    x.fillStyle = cl.t2;
+    x.fillText (dbTxt (v), W0 - 6, h / 2 + 3.5f);
+    x.textAlign = "left";
+    x.globalAlpha = 1;
+}
+
+namespace
+{
+constexpr int KB_N = 49;
+constexpr float KB_WW = 28, KB_BW = 18, KB_BH = 60, KB_H = 100;
+bool black (int n)
+{
+    const int pc = ((n % 12) + 12) % 12;
+    return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10;
+}
+} // namespace
+
+std::map<int, KeyRect> keyLayout (int lo)
+{
+    std::map<int, KeyRect> pos;
+    int i = 0;
+    for (int n = lo; n < lo + KB_N; ++n)
+        if (!black (n))
+            pos[n] = { (float) i++ * KB_WW, KB_WW, false };
+    for (int n = lo; n < lo + KB_N; ++n)
+        if (black (n))
+            pos[n] = { pos[n - 1].x + KB_WW - KB_BW / 2, KB_BW, true };
+    return pos;
+}
+
+int keyAt (int lo, float x, float y)
+{
+    const auto L = keyLayout (lo);
+    for (const auto& [n, k] : L)
+        if (k.black && x >= k.x && x < k.x + k.w && y < KB_BH)
+            return n;
+    for (const auto& [n, k] : L)
+        if (!k.black && x >= k.x && x < k.x + k.w)
+            return n;
+    return -1;
+}
+
+void drawKeys (c2d::Context& c, const Cl& cl, int lo, const std::function<bool (int)>& lit, float hue)
+{
+    const auto L = keyLayout (lo);
+    const float h = KB_H;
+    for (const auto& [n, k] : L)
+    {
+        if (k.black)
+            continue;
+        const bool on = lit (n);
+        auto gr = c.createLinearGradient (0, 0, 0, h);
+        gr.addColorStop (0, on ? "hsl(" + juce::String (hue) + ",35%,30%)" : "#2b2e34");
+        gr.addColorStop (1, on ? "hsl(" + juce::String (hue) + ",45%,22%)" : "#1d1f23");
+        c.fillStyle = gr;
+        c.beginPath();
+        c.roundRect (k.x + 1, 0, k.w - 2, h - 1, std::array<float, 4> { 0, 0, 4, 4 });
+        c.fill();
+        c.setFill ("rgba(255,255,255,.07)");
+        c.fillRect (k.x + 1, 0, k.w - 2, 1);
+        c.setFill ("rgba(0,0,0,.45)");
+        c.fillRect (k.x + k.w - 2, 0, 1, h - 1);
+        if (on)
+        {
+            c.setFill ("hsl(" + juce::String (hue) + ",70%,62%)");
+            c.shadowBlur = 10;
+            c.shadowColor = c2d::css ("hsl(" + juce::String (hue) + ",70%,62%)");
+            c.fillRect (k.x + 3, h - 9, k.w - 6, 4);
+            c.shadowBlur = 0;
+        }
+        if (((n % 12) + 12) % 12 == 0)
+        {
+            c.fillStyle = cl.t3;
+            c.font = "9px sans";
+            c.fillText ("C" + juce::String ((int) std::floor ((float) n / 12) - 1), k.x + 4, h - 12);
+        }
+    }
+    for (const auto& [n, k] : L)
+    {
+        if (!k.black)
+            continue;
+        const bool on = lit (n);
+        auto gr = c.createLinearGradient (0, 0, 0, KB_BH);
+        gr.addColorStop (0, on ? "#2c3038" : "#131417");
+        gr.addColorStop (1, on ? "#1d2026" : "#060708");
+        c.fillStyle = gr;
+        c.shadowBlur = 4;
+        c.setShadow ("rgba(0,0,0,.7)");
+        c.beginPath();
+        c.roundRect (k.x, 0, k.w, KB_BH, std::array<float, 4> { 0, 0, 3, 3 });
+        c.fill();
+        c.shadowBlur = 0;
+        if (on)
+        {
+            c.setFill ("hsl(" + juce::String (hue) + ",70%,62%)");
+            c.fillRect (k.x + 2, KB_BH - 7, k.w - 4, 3);
+        }
+    }
+}
+
+void drawWheel (c2d::Context& c, float w, float h, const Cl& cl, float v, bool bip)
+{
+    const float rest = bip ? h / 2 : h - 6, y = bip ? h / 2 - v * (h / 2 - 8) : h - 6 - v * (h - 12);
+    for (float yy = 6; yy < h - 4; yy += 4)
+    {
+        c.setFill ("rgba(255,255,255,.05)");
+        c.fillRect (6, yy, w - 12, 1);
+    }
+    auto gr = c.createLinearGradient (0, rest, 0, y);
+    gr.stops.push_back ({ 0.0f, cl.acc.withMultipliedAlpha (0.10f) });
+    gr.stops.push_back ({ 1.0f, cl.acc.withMultipliedAlpha (0.55f) });
+    c.fillStyle = gr;
+    c.fillRect (5, juce::jmin (rest, y), w - 10, std::abs (rest - y));
+    c.fillStyle = cl.t;
+    c.shadowBlur = 8;
+    c.shadowColor = cl.acc;
+    c.beginPath();
+    c.roundRect (4, y - 2, w - 8, 4, 2);
+    c.fill();
+    c.shadowBlur = 0;
+    c.fillStyle = cl.t3;
+    c.font = "9px mono";
+    c.textAlign = "center";
+    c.fillText (bip ? "PB" : "MOD", w / 2, 10);
+    c.textAlign = "left";
+}
+
+void drawPuck (c2d::Context& c, float w, float h, const Cl& cl, Model& m)
+{
+    const auto& T = m.table (m.s ("osc0.table"));
+    for (int gx = 0; gx < 4; ++gx)
+        for (int gy = 0; gy < 4; ++gy)
+        {
+            const auto f = frameAt (T, (float) gx / 3);
+            const float cw = (w - 12) / 4, ch = (h - 12) / 4, x0 = 6 + (float) gx * cw, y0 = 6 + (float) (3 - gy) * ch;
+            c.strokeStyle = cl.bloom (0.08f + 0.14f * (float) gy / 3);
+            c.lineWidth = 1;
+            c.stroke (path ([&] (float u) { return juce::Point<float> (x0 + 3 + u * (cw - 6), y0 + ch / 2 - rd (f, u) * ch * 0.3f * (0.5f + (float) gy / 6)); }, 20));
+        }
+    dot (c, 6 + clamp (m.g ("osc0.pos")) * (w - 12), 6 + (1 - clamp ((m.g ("filt0.cut") - 0.2f) / 0.7f)) * (h - 12), 4.5f, cl.acc);
+}
+
+void drawOut (c2d::Context& c, float w, float h, const Cl& cl)
+{
+    c.strokeStyle = cl.bloom (0.15f);
+    c.beginPath();
+    c.moveTo (6, h / 2);
+    c.lineTo (w - 6, h / 2);
+    c.stroke();
+}
+
+void drawMaster (c2d::Context& c, float w, float h, const Cl& cl, float master, float lvl)
+{
+    for (int i = 0; i < 24; ++i)
+    {
+        const bool on = (float) i / 24 < lvl;
+        c.fillStyle = on ? (i > 20 ? cl.acc : cl.bloom (0.8f)) : c2d::css ("rgba(255,255,255,.06)");
+        c.fillRect (4 + (float) i * 4.7f, 6, 3, 10);
+    }
+    const float x = 4 + clamp (master) * (w - 8);
+    c.fillStyle = cl.t;
+    c.beginPath();
+    c.roundRect (x - 1.5f, 2, 3, h - 4, 1.5f);
+    c.fill();
+}
+
+void drawMacro (c2d::Context& c, float w, float h, const Cl& cl, Model& m, int i)
+{
+    const float v = m.g ("macro" + juce::String (i)), cx = w / 2, cy = h / 2, r = w * 0.26f;
+    ring (c, w, v, cl);
+    c.save();
+    c.strokeStyle = cl.wave;
+    c.fillStyle = cl.bloom (0.8f);
+    c.lineWidth = 1.3f;
+    c.lineCap = "round";
+    c.lineJoin = "round";
+    const float L = cx - r;
+    switch (i)
+    {
+        case 0:
+            for (int q = 0; q < 6; ++q)
+            {
+                const float hh = r * 1.4f * (0.25f + 0.75f * std::pow (1 - (float) q / 6, 2 - 1.8f * v));
+                c.fillRect (L + (float) q * r / 3 + 1, cy + r * 0.7f - hh, r / 5, hh);
+            }
+            break;
+        case 1:
+            c.stroke (path ([&] (float u) { return juce::Point<float> (L + u * 2 * r, cy - std::sin (u * TAU * 2) * r * 0.7f * v); }, 40));
+            break;
+        case 2:
+        {
+            const float d = r * 0.2f + r * 0.75f * v;
+            c.beginPath();
+            c.moveTo (cx - d, cy - 4);
+            c.lineTo (cx - d - 4, cy);
+            c.lineTo (cx - d, cy + 4);
+            c.moveTo (cx + d, cy - 4);
+            c.lineTo (cx + d + 4, cy);
+            c.lineTo (cx + d, cy + 4);
+            c.moveTo (cx - d, cy);
+            c.lineTo (cx + d, cy);
+            c.stroke();
+            break;
+        }
+        case 3:
+            c.stroke (path ([&] (float u) {
+                float y = std::sin (u * TAU) * (1 + v * 4);
+                int g = 0;
+                while (std::abs (y) > 1 && g++ < 9)
+                    y = y > 1 ? 2 - y : -2 - y;
+                return juce::Point<float> (L + u * 2 * r, cy - y * r * 0.7f);
+            }, 60));
+            break;
+        case 4:
+            for (int q = 0; q < 5; ++q)
+            {
+                const float a = std::pow (0.35f + 0.55f * v, (float) q);
+                c.globalAlpha = a;
+                c.fillRect (L + (float) q * r * 0.42f, cy + r * 0.7f - r * 1.4f * a, 2, r * 1.4f * a);
+            }
+            break;
+        case 5:
+        {
+            const auto f = frameAt (m.table (m.s ("osc0.table")), v);
+            c.stroke (path ([&] (float u) { return juce::Point<float> (L + u * 2 * r, cy - rd (f, u) * r * 0.7f); }, 50));
+            break;
+        }
+        case 6:
+            c.stroke (path ([&] (float u) { return juce::Point<float> (L + u * 2 * r, cy + r * 0.7f - juce::jmin (1.0f, u / (0.05f + v * 0.9f)) * r * 1.4f); }, 40));
+            break;
+        default:
+            c.stroke (path ([&] (float u) { return juce::Point<float> (L + u * 2 * r, cy + r * 0.2f - (1 / (1 + std::exp (-(u - 0.6f) * 12))) * r * 0.9f * v); }, 40));
+    }
+    c.restore();
+}
+
+void drawTilePic (c2d::Context& c, float w, float h, const Cl& cl, const Model& m, const juce::String& src)
+{
+    const auto col = c2d::css (sourceColour (src));
+    const auto C = sourceCl (cl, src);
+    auto line = [&] (const c2d::Path& p, float lw = 1.3f) {
+        c.lineJoin = "round";
+        c.lineCap = "round";
+        c.strokeStyle = col;
+        c.lineWidth = lw;
+        c.shadowBlur = 6;
+        c.shadowColor = col;
+        c.stroke (p);
+        c.shadowBlur = 0;
+    };
+    auto fill = [&] (const c2d::Path& p, float x0, float x1) {
+        c2d::Path f (p);
+        f.lineTo (x1, h - 1);
+        f.lineTo (x0, h - 1);
+        f.closePath();
+        c.fillStyle = C.bloom (0.14f);
+        c.fill (f);
+    };
+    if (src.startsWith ("macro"))
+    {
+        const float v = m.g (src), cx = w / 2, cy = h / 2 + 1, r = h / 2 - 2, a0 = PI * 0.75f;
+        c.lineCap = "round";
+        c.setStroke ("rgba(255,255,255,.1)");
+        c.lineWidth = 2;
+        c.beginPath();
+        c.arc (cx, cy, r, a0, a0 + PI * 1.5f);
+        c.stroke();
+        c.strokeStyle = col;
+        c.shadowBlur = 6;
+        c.shadowColor = col;
+        c.beginPath();
+        c.arc (cx, cy, r, a0, a0 + PI * 1.5f * v + 1e-4f);
+        c.stroke();
+        c.shadowBlur = 0;
+    }
+    else if (src == "note")
+    {
+        for (int k = 0; k <= 24; ++k)
+        {
+            const float x = 1 + (float) k / 24 * (w - 2);
+            const bool blk = black (k);
+            c.setFill (blk ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.18)");
+            c.fillRect (x, h - (blk ? 4.0f : 6.0f), 1, blk ? 4.0f : 6.0f);
+        }
+        c.strokeStyle = C.bloom (0.35f);
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo (1, h - 7);
+        c.lineTo (w - 1, 1);
+        c.stroke();
+        dot (c, 1, h - 7, 2, col);
+    }
+    else
+    {
+        // The playing hand's last four seconds: nothing played yet.
+        auto y = [&] (float v) { return h - 2 - clamp (v) * (h - 4); };
+        const auto p = path ([&] (float u) { return juce::Point<float> (1 + u * (w - 2), y (0)); }, 60);
+        fill (p, 1, w - 1);
+        line (p);
+        dot (c, w - 2, y (0), 1.9f, juce::Colours::white);
+    }
+}
 } // namespace wave

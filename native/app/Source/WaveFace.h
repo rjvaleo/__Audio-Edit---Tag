@@ -30,6 +30,14 @@ public:
     using Frames = std::function<wave::Table (const juce::String&)>;
     WaveFace (Send, Patch, Frames);
 
+    // A note from the face's keys (on screen or the computer's), and the
+    // wheels: `which` 0 the pitch wheel, 1 the mod wheel.
+    std::function<void (int note, float velocity, bool on)> onNote;
+    std::function<void (int which, float value)> onWheel;
+
+    bool keyPressed (const juce::KeyPress&) override;
+    bool keyStateChanged (bool isKeyDown) override;
+
     // Read the patch again (after a preset, a load, or a change elsewhere).
     void reload();
 
@@ -65,6 +73,14 @@ private:
     };
     std::vector<Readout> readouts;
     std::map<int, juce::String> texts;           // node -> its reading now
+
+    // The keys: the lowest note shown, what is held, and by which computer key.
+    int kbLo = 48;
+    std::set<int> held;
+    std::map<juce::juce_wchar, int> keyNotes;
+    float bend = 0, mw = 0;
+    juce::String velText = juce::String::fromUTF8 ("vel \xe2\x80\x94");
+    void note (int n, float vel, bool on);
 
     // A drag in progress.
     std::function<void (float dx, float dy, const juce::MouseEvent&)> drag;

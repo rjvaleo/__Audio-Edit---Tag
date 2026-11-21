@@ -678,6 +678,23 @@ impl Session {
         Ok(())
     }
 
+    /// The pitch wheel (`which` 0, -1 to 1), the mod wheel (1) or aftertouch
+    /// (2, both 0 to 1) to Wave module `id`, as its page's wheels send them.
+    pub fn wave_wheel(&mut self, id: u32, which: u32, value: f32) -> Result<(), AppError> {
+        if !matches!(self.modules.get(&id).map(|m| &m.part), Some(Part::Wave(_))) {
+            return Err(AppError::NoSuchModule(id));
+        }
+        let index = match which {
+            0 => engine_mgl::Wave::BEND,
+            1 => engine_mgl::Wave::MOD_WHEEL,
+            2 => engine_mgl::Wave::AFTERTOUCH,
+            _ => return Err(AppError::NoSuchControl(which)),
+        };
+        let value = if which == 0 { value.clamp(-1.0, 1.0) } else { value.clamp(0.0, 1.0) };
+        self.ctl.send(engine_id(id, 0), EventKind::Param { index, value })?;
+        Ok(())
+    }
+
     /// Wave module `id`'s patch, for its preset to be saved.
     pub fn wave_patch(&self, id: u32) -> Result<&wave::Patch, AppError> {
         match self.modules.get(&id).map(|m| &m.part) {

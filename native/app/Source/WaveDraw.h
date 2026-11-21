@@ -91,6 +91,28 @@ void drawPick (c2d::Context&, float w, float h, const Cl&, const Table&);
 void drawLens (c2d::Context&, float w, float h, const Cl&, const Model&, const Frame& cur, int i);
 juce::String drawOfx (c2d::Context&, float w, float h, const Cl&, Model&, int i, float t);
 
+// The Mix row's bar for channel `c` (0 to 2 the oscillators, 3 the sub, 4 the
+// noise): its sound drawn as far as its level, the level's handle, its dB.
+void drawMix (c2d::Context&, float w, float h, const Cl&, const Model&, int c, const Frame* cur, float t);
+juce::String dbTxt (float v);
+
+// The shared keyboard (`kb1Draw`): 49 keys from `lo`, a C; `lit` says which
+// are sounding; `hue` colours them.
+struct KeyRect
+{
+    float x, w;
+    bool black;
+};
+std::map<int, KeyRect> keyLayout (int lo);
+int keyAt (int lo, float x, float y);
+void drawKeys (c2d::Context&, const Cl&, int lo, const std::function<bool (int)>& lit, float hue);
+void drawWheel (c2d::Context&, float w, float h, const Cl&, float v, bool bip);
+void drawPuck (c2d::Context&, float w, float h, const Cl&, Model&);
+void drawOut (c2d::Context&, float w, float h, const Cl&);
+void drawMaster (c2d::Context&, float w, float h, const Cl&, float master, float level);
+void drawMacro (c2d::Context&, float w, float h, const Cl&, Model&, int i);
+void drawTilePic (c2d::Context&, float w, float h, const Cl&, const Model&, const juce::String& src);
+
 struct EnvPts
 {
     juce::Point<float> o, a, d, s, r;

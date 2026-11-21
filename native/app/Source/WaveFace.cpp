@@ -37,6 +37,7 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
     const auto& captured = face::page ("wave");
     setSize (chrome.getWidth(), chrome.getHeight());
     addAndMakeVisible (chrome);
+    setWantsKeyboardFocus (true);
     cl = wave::colours (captured["vars"]);
     model.loadTable = std::move (f);
     if (auto* list = juce::JSON::parse (juce::String (naText ([] (char* b, uint32_t c) { return na_controls ("wave", b, c); }))).getArray())
@@ -143,6 +144,12 @@ void WaveFace::sync()
         txt ("wvKyr" + juce::String (i), pct (model.g (f + "key")));
     }
     txt ("wvTempoRo", juce::String (juce::roundToInt (wave::clamp (model.g ("tempo", 120), 30, 300))) + " BPM");
+    static const char* names[] = { "C", "C\xe2\x99\xaf", "D", "D\xe2\x99\xaf", "E", "F", "F\xe2\x99\xaf", "G", "G\xe2\x99\xaf", "A", "A\xe2\x99\xaf", "B" };
+    txt ("wvOctRo", juce::String::fromUTF8 (names[((kbLo % 12) + 12) % 12]) + juce::String ((int) std::floor ((float) kbLo / 12) - 1));
+    txt ("wvVelRo", velText);
+    for (int i = 0; i < 8; ++i)
+        txt ("wvMacr" + juce::String (i), juce::String (juce::roundToInt (model.g ("macro" + juce::String (i)) * 100)));
+    txt ("wvVoicesRo", "0 voices");
     for (const auto& r : readouts)
     {
         const float v = model.g (r.key);
@@ -283,6 +290,21 @@ void WaveFace::paintOverChildren (juce::Graphics& g)
             canvas (juce::String (knob.first) + si, [&] (c2d::Context& c, float w, float h) { wave::drawKnob (c, w, h, cl, model.g (key), key, false); });
         }
     }
+    for (int c = 0; c < 5; ++c)
+        canvas ("wvMixL" + juce::String (c), [&] (c2d::Context& x, float w, float h) { wave::drawMix (x, w, h, cl, model, c, c < 3 ? &curs[(size_t) c] : nullptr, t); });
+    canvas ("wvKeys", [&] (c2d::Context& c, float, float) {
+        wave::drawKeys (c, cl, kbLo, [this] (int n) { return held.count (n) > 0; }, 205 - 175 * wave::clamp (model.g ("osc0.pos")));
+    });
+    canvas ("wvBend", [&] (c2d::Context& c, float w, float h) { wave::drawWheel (c, w, h, cl, bend, true); });
+    canvas ("wvModw", [&] (c2d::Context& c, float w, float h) { wave::drawWheel (c, w, h, cl, mw, false); });
+    canvas ("wvPuck", [&] (c2d::Context& c, float w, float h) { wave::drawPuck (c, w, h, cl, model); });
+    canvas ("wvOutWave", [&] (c2d::Context& c, float w, float h) { wave::drawOut (c, w, h, cl); });
+    canvas ("wvMaster", [&] (c2d::Context& c, float w, float h) { wave::drawMaster (c, w, h, cl, model.g ("master", 0.8f), 0.0f); });
+    for (int i = 0; i < 8; ++i)
+        canvas ("wvMac" + juce::String (i), [&] (c2d::Context& c, float w, float h) { wave::drawMacro (c, w, h, cl, model, i); });
+    for (const auto& src : { "vel", "note", "mw", "at", "rand", "macro0", "macro1", "macro2", "macro3", "macro4", "macro5", "macro6", "macro7" })
+        canvas ("wvSc" + juce::String (src), [&] (c2d::Context& c, float w, float h) { wave::drawTilePic (c, w, h, cl, model, src); });
+
     // The tiles: the envelopes and LFOs, each in its own colour.
     for (const auto& src : { "amp", "env1", "env2", "env3" })
     {
@@ -374,6 +396,7 @@ void WaveFace::menu (const juce::String& key, const juce::StringArray& options, 
 
 void WaveFace::mouseDown (const juce::MouseEvent& e)
 {
+    grabKeyboardFocus();
     drag = nullptr;
     dragEnd = nullptr;
     last = e.position;
@@ -393,6 +416,19 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
         const auto r = rectOf (n["rect"]);
         if (!r.contains (at))
             continue;
+        if (auto mix = dataOf (n, "mixon"); mix.isNotEmpty())
+        {
+            static const char* on[] = { "osc0.on", "osc1.on", "osc2.on", "sub.on", "noise.on" };
+            const auto k = juce::String (on[juce::jlimit (0, 4, mix.getIntValue())]);
+            set (k, model.g (k) >= 0.5f ? 0.0 : 1.0);
+            return;
+        }
+        if (auto oct = dataOf (n, "oct"); oct.isNotEmpty())
+        {
+            kbLo = juce::jlimit (12, 96, kbLo + oct.getIntValue() * 12);
+            sync();
+            return;
+        }
         if (auto led = dataOf (n, "oscled"); led.isNotEmpty())
         {
             const auto k = "osc" + led + ".on";
@@ -505,6 +541,95 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
             return;
         }
     }
+    for (int c = 0; c < 5; ++c)
+        if (canvasAt ("wvMixL" + juce::String (c)))
+        {
+            static const char* lv[] = { "osc0.level", "osc1.level", "osc2.level", "sub.level", "noise.level" };
+            const auto r = rectOf (chrome.canvases["wvMixL" + juce::String (c)]["rect"]);
+            const auto key = juce::String (lv[c]);
+            // Where you click is the level, and it follows the pointer from there.
+            auto setLevel = [r, key, live] (juce::Point<float> p) { live (key, wave::clamp ((p.x - r.getX() - 6) / (212.0f - 40 - 12))); };
+            setLevel (at);
+            drag = [setLevel] (float, float, const juce::MouseEvent& ev) { setLevel (ev.position); };
+            return;
+        }
+    if (canvasAt ("wvKeys"))
+    {
+        // Glide across the keys; Shift keeps every key crossed sounding.
+        const auto r = rectOf (chrome.canvases["wvKeys"]["rect"]);
+        auto cur = std::make_shared<int> (-1);
+        auto downs = std::make_shared<std::set<int>>();
+        auto go = [this, r, cur, downs] (juce::Point<float> p, bool shift) {
+            const int n = wave::keyAt (kbLo, p.x - r.getX(), p.y - r.getY());
+            if (n < 0 || n == *cur)
+                return;
+            if (*cur >= 0 && !shift)
+            {
+                note (*cur, 0, false);
+                downs->erase (*cur);
+            }
+            *cur = n;
+            if (downs->count (n) > 0)
+                return;
+            const float vel = 0.4f + 0.6f * wave::clamp ((p.y - r.getY()) / r.getHeight());
+            note (n, vel, true);
+            downs->insert (n);
+            velText = "vel " + juce::String (juce::roundToInt (vel * 127));
+            sync();
+        };
+        go (at, e.mods.isShiftDown());
+        drag = [go] (float, float, const juce::MouseEvent& ev) { go (ev.position, ev.mods.isShiftDown()); };
+        dragEnd = [this, downs] {
+            for (int n : *downs)
+                note (n, 0, false);
+            downs->clear();
+        };
+        return;
+    }
+    if (canvasAt ("wvBend"))
+    {
+        drag = [this] (float, float dy, const juce::MouseEvent&) {
+            bend = wave::clamp (bend - dy / 50, -1, 1);
+            if (onWheel)
+                onWheel (0, bend);
+            repaint();
+        };
+        // It springs back when let go.
+        dragEnd = [this] {
+            bend = 0;
+            if (onWheel)
+                onWheel (0, 0);
+            repaint();
+        };
+        return;
+    }
+    if (canvasAt ("wvModw"))
+    {
+        drag = [this] (float, float dy, const juce::MouseEvent&) {
+            mw = wave::clamp (mw - dy / 90);
+            if (onWheel)
+                onWheel (1, mw);
+            repaint();
+        };
+        return;
+    }
+    if (canvasAt ("wvPuck"))
+    {
+        const auto r = rectOf (chrome.canvases["wvPuck"]["rect"]);
+        auto setPuck = [r, live] (juce::Point<float> p) {
+            const float px = wave::clamp ((p.x - r.getX() - 6) / (r.getWidth() - 12)), py = wave::clamp (1 - (p.y - r.getY() - 6) / (r.getHeight() - 12));
+            live ("osc0.pos", px);
+            live ("filt0.cut", 0.2f + 0.7f * py);
+        };
+        setPuck (at);
+        drag = [setPuck] (float, float, const juce::MouseEvent& ev) { setPuck (ev.position); };
+        return;
+    }
+    if (canvasAt ("wvMaster"))
+    {
+        drag = [this, live] (float dx, float, const juce::MouseEvent&) { live ("master", wave::clamp (model.g ("master", 0.8f) + dx / 110)); };
+        return;
+    }
     if (canvasAt ("wvGlide"))
     {
         drag = [this, live] (float dx, float, const juce::MouseEvent&) { live ("voice.glide", wave::clamp (model.g ("voice.glide") + dx / 150)); };
@@ -592,4 +717,64 @@ void WaveFace::mouseDoubleClick (const juce::MouseEvent& e)
     // The tempo goes back to 120, as the page's does.
     if (auto it = byId.find ("wvTempoRo"); it != byId.end() && it->second.r.contains (e.position))
         set ("tempo", 120);
+}
+
+void WaveFace::note (int n, float vel, bool on)
+{
+    if (on)
+        held.insert (n);
+    else
+        held.erase (n);
+    if (onNote)
+        onNote (n, vel, on);
+    repaint();
+}
+
+namespace
+{
+// The computer's keys, in pitch order: A to K the whites, W to U the blacks,
+// and on past K as far as the row goes. The same letters the page plays.
+const juce::String qwerty ("awsedftgyhujkolp;");
+} // namespace
+
+bool WaveFace::keyPressed (const juce::KeyPress& key)
+{
+    if (key.getModifiers().isCommandDown() || key.getModifiers().isAltDown() || key.getModifiers().isCtrlDown())
+        return false;
+    const auto ch = juce::CharacterFunctions::toLowerCase (key.getTextCharacter());
+    if (ch == 'z' || ch == 'x')
+    {
+        kbLo = juce::jlimit (12, 96, kbLo + (ch == 'z' ? -12 : 12));
+        sync();
+        return true;
+    }
+    const int i = qwerty.indexOfChar (ch);
+    if (i < 0)
+        return false;
+    if (keyNotes.count (ch) == 0)
+    {
+        const int n = kbLo + 12 + i;
+        keyNotes[ch] = n;
+        note (n, 0.8f, true);
+        velText = "vel " + juce::String (juce::roundToInt (0.8f * 127));
+        sync();
+    }
+    return true;
+}
+
+bool WaveFace::keyStateChanged (bool)
+{
+    bool any = false;
+    for (auto it = keyNotes.begin(); it != keyNotes.end();)
+    {
+        if (!juce::KeyPress::isKeyCurrentlyDown ((int) it->first))
+        {
+            note (it->second, 0, false);
+            it = keyNotes.erase (it);
+            any = true;
+        }
+        else
+            ++it;
+    }
+    return any;
 }

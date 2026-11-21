@@ -44,6 +44,7 @@ uint32_t na_wave_patch (NaApp*, uint32_t id, char* buf, uint32_t cap);
 int32_t na_load_wave_patch (NaApp*, uint32_t id, const char* json);
 int32_t na_table_dirs (NaApp*, const char* paths);
 int32_t na_wave_set (NaApp*, uint32_t id, const char* key, const char* json);
+int32_t na_wave_wheel (NaApp*, uint32_t id, uint32_t which, float value);
 uint32_t na_table_frames (const char* name, float* out, uint32_t max);
 uint64_t na_bad_blocks (NaApp*);
 
