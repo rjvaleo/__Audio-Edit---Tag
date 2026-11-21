@@ -34,6 +34,9 @@ public:
     // wheels: `which` 0 the pitch wheel, 1 the mod wheel.
     std::function<void (int note, float velocity, bool on)> onNote;
     std::function<void (int which, float value)> onWheel;
+    // True for a press that belongs to the canvas (Space held, the middle
+    // button): the face lets it pass.
+    std::function<bool (const juce::MouseEvent&)> blocked;
 
     bool keyPressed (const juce::KeyPress&) override;
     bool keyStateChanged (bool isKeyDown) override;

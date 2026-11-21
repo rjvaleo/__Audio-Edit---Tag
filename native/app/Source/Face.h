@@ -38,6 +38,17 @@ juce::Path box (const juce::Rectangle<float>&, const juce::var& radius, float in
 // Fill `shape` (laid on `r`) with one CSS gradient layer.
 void fillLayer (juce::Graphics&, const juce::var& layer, juce::Rectangle<float> r, const juce::Path& shape);
 
+// Paint a captured node's box (shadows, fill, gradients, border) on `r`,
+// whatever size `r` is: a part of a page drawn at another place or size.
+void paintBox (juce::Graphics&, const juce::var& node, juce::Rectangle<float> r);
+// Write `text` in a captured node's first run's font and colour, inside `r`,
+// aligned left, centred or right.
+void paintText (juce::Graphics&, const juce::var& node, juce::Rectangle<float> r, const juce::String& text, juce::Justification = juce::Justification::centredLeft);
+// A captured part by its file name, without ".json" (faces/…).
+const juce::var& part (const juce::String& name);
+// The first node in `tree` whose class list holds `cls` (or whose tag is `cls`).
+const juce::var* find (const juce::var& tree, const juce::String& cls);
+
 class Chrome final : public juce::Component
 {
 public:

@@ -110,13 +110,54 @@ const juce::var& page (const juce::String& name)
     auto it = pages.find (name);
     if (it == pages.end())
     {
-        int size = 0;
-        const auto resource = (name + ".json").replaceCharacter ('.', '_').replaceCharacter ('-', '_');
-        const char* data = BinaryData::getNamedResource (resource.toRawUTF8(), size);
-        juce::var parsed = data != nullptr ? juce::JSON::parse (juce::String::fromUTF8 (data, size)) : juce::var();
+        juce::var parsed;
+        for (int i = 0; i < BinaryData::namedResourceListSize; ++i)
+            if (juce::String (BinaryData::originalFilenames[i]) == name + ".json")
+            {
+                int size = 0;
+                const char* data = BinaryData::getNamedResource (BinaryData::namedResourceList[i], size);
+                parsed = juce::JSON::parse (juce::String::fromUTF8 (data, size));
+            }
         it = pages.emplace (name, parsed).first;
     }
     return it->second;
+}
+
+const juce::var& part (const juce::String& name)
+{
+    return page (name);
+}
+
+const juce::var* find (const juce::var& tree, const juce::String& cls)
+{
+    if (tree["tag"].toString() == cls || juce::StringArray::fromTokens (tree["cls"].toString(), " ", "").contains (cls))
+        return &tree;
+    if (auto* kids = tree["kids"].getArray())
+        for (const auto& k : *kids)
+            if (auto* hit = find (k, cls))
+                return hit;
+    return nullptr;
+}
+
+void paintText (juce::Graphics& g, const juce::var& n, juce::Rectangle<float> r, const juce::String& text, juce::Justification just)
+{
+    auto* runs = n["text"].getArray();
+    if (runs == nullptr || runs->isEmpty())
+        return;
+    const auto& f = runs->getReference (0)["font"];
+    const auto ft = font (f);
+    g.setFont (ft);
+    g.setColour (colour (f["colour"]));
+    const float w = juce::GlyphArrangement::getStringWidth (ft, text);
+    float x = r.getX();
+    if (just.testFlags (juce::Justification::horizontallyCentred))
+        x = r.getCentreX() - w / 2;
+    else if (just.testFlags (juce::Justification::right))
+        x = r.getRight() - w;
+    const float baseline = r.getCentreY() + (ft.getAscent() - ft.getDescent()) / 2;
+    juce::GlyphArrangement glyphs;
+    glyphs.addLineOfText (ft, text, x, baseline);
+    glyphs.draw (g);
 }
 
 juce::Path box (const juce::Rectangle<float>& r, const juce::var& radius, float inset)
@@ -302,6 +343,11 @@ void Chrome::paintLook (juce::Graphics& g)
 }
 
 void Chrome::drawBox (juce::Graphics& g, const juce::var& n, juce::Rectangle<float> r)
+{
+    paintBox (g, n, r);
+}
+
+void paintBox (juce::Graphics& g, const juce::var& n, juce::Rectangle<float> r)
 {
     const auto outline = box (r, n["radius"]);
 

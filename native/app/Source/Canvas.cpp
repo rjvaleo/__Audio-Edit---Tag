@@ -4,106 +4,157 @@
 
 namespace
 {
-juce::Font font (float size, bool bold = false)
+float num (const juce::var& v, float fallback = 0.0f)
 {
-    return juce::Font (juce::FontOptions (size, bold ? juce::Font::bold : juce::Font::plain));
+    return v.isVoid() || v.isUndefined() ? fallback : (float) (double) v;
 }
 
-juce::Colour typeColour (const juce::String& type)
+// The captured parts of idMLab's canvas.
+const juce::var& frameTree() { return face::part ("idmlab-node-audio")["tree"]; }
+const juce::var& canvasStyle() { return face::part ("idmlab-style"); }
+
+const juce::var* frameNode (const char* cls)
 {
-    if (type == "audio")
-        return juce::Colour (0xff4fb3ff);
-    if (type == "notes")
-        return juce::Colour (0xffffb347);
-    return juce::Colour (0xffb0b0b0);
+    return face::find (frameTree(), cls);
 }
 
-const juce::Colour boardColour (0xff16181c), faceColour (0xff262a31), headerColour (0xff32373f), inkColour (0xffe6e6e6),
-    dimColour (0xff9aa0a8);
+// A module's accent, as idMLab's families colour them.
+juce::Colour accentFor (const juce::String& kind)
+{
+    const auto& a = canvasStyle()["accents"];
+    if (kind == "midi-in")
+        return c2d::css (a["m.midi-output"].toString().isEmpty() ? "#9b5de5" : a["m.midi-output"].toString());
+    return c2d::css (a["m.audio-output"].toString().isEmpty() ? "#ef755a" : a["m.audio-output"].toString());
+}
+
+// The jack idMLab draws for a socket of this kind, from its own modules.
+const juce::var* jackPart (const juce::String& type, const juce::var*& label)
+{
+    const bool audio = type == "audio";
+    const auto& tree = face::part (audio ? "idmlab-node-audio" : "idmlab-node-notes")["tree"];
+    const auto* port = face::find (tree, audio ? "mm-port--audio" : "mm-port--note-event");
+    label = port != nullptr ? face::find (*port, "mm-port__label") : nullptr;
+    return port;
+}
+
+juce::Colour cssColour (const juce::var& v, const char* fallback)
+{
+    const auto s = v.toString();
+    return c2d::css (s.isEmpty() ? juce::String (fallback) : s);
+}
+
+// A drop-shadow's colour and blur from a computed `filter` value.
+std::pair<juce::Colour, float> glowOf (const juce::String& filter)
+{
+    // drop-shadow(color(srgb r g b / a) 0px 0px 5px)
+    auto inner = filter.fromFirstOccurrenceOf ("srgb", false, false).upToFirstOccurrenceOf (")", false, false);
+    auto p = juce::StringArray::fromTokens (inner.replace ("/", " "), " ", "");
+    p.removeEmptyStrings();
+    juce::Colour c (154, 154, 162);
+    if (p.size() >= 4)
+        c = juce::Colour::fromFloatRGBA (p[0].getFloatValue(), p[1].getFloatValue(), p[2].getFloatValue(), p[3].getFloatValue());
+    const float blur = filter.trim().dropLastCharacters (1).fromLastOccurrenceOf (" ", false, false).getFloatValue();
+    return { c, blur > 0 ? blur : 5.0f };
+}
 } // namespace
 
-// ─────────────────────────────────────────────────────────────── sockets
+// ───────────────────────────────────────────────────────────────── camera
 
-Socket::Socket (Canvas& c, int m, bool in, int i, const SocketInfo& info)
+namespace camera
+{
+float clampZoom (float z) { return std::isfinite (z) ? juce::jlimit (minZoom, maxZoom, z) : 1.0f; }
+
+juce::Point<float> toCanvas (const Camera& c, juce::Point<float> s) { return { (s.x + c.left) / c.zoom, (s.y + c.top) / c.zoom }; }
+
+Camera zoomAround (const Camera& c, juce::Point<float> p, float factor)
+{
+    const float z = clampZoom (c.zoom * factor);
+    if (std::abs (z - c.zoom) < 1e-7f)
+        return c;
+    const auto at = toCanvas (c, p);
+    return { at.x * z - p.x, at.y * z - p.y, z };
+}
+
+Camera panBy (const Camera& c, float dx, float dy) { return { c.left - dx, c.top - dy, c.zoom }; }
+
+Camera centreOn (juce::Point<float> point, juce::Point<float> view, float zoom) { return { point.x * zoom - view.x / 2, point.y * zoom - view.y / 2, zoom }; }
+
+// The whole patch in view with a margin round it, never magnified past 100%.
+Camera fit (const std::vector<juce::Rectangle<float>>& boxes, juce::Point<float> view, float margin)
+{
+    if (boxes.empty())
+        return {};
+    auto all = boxes.front();
+    for (auto& b : boxes)
+        all = all.getUnion (b);
+    const float zoom = clampZoom (juce::jmin (1.0f, (view.x - margin * 2) / juce::jmax (1.0f, all.getWidth()), (view.y - margin * 2) / juce::jmax (1.0f, all.getHeight())));
+    return centreOn (all.getCentre(), view, zoom);
+}
+} // namespace camera
+
+// ──────────────────────────────────────────────────────────────── sockets
+
+Jack::Jack (Canvas& c, int m, bool in, int i, const SocketInfo& info)
     : module (m), isInput (in), index (i), type (info.type), name (info.name), canvas (c)
 {
-    setSize (14, 14);
-    setTooltip (name + " (" + type + ")");
+    setSize (size, size);
+    setTooltip (name);
+    const juce::var* label = nullptr;
+    if (auto* port = jackPart (type, label))
+        if (auto* svg = face::find (*port, "svg"))
+            art = juce::Drawable::createFromSVGString ((*svg)["svg"].toString());
 }
 
-juce::Point<float> Socket::centreOnBoard() const
+juce::Point<float> Jack::centreOnStage() const
 {
-    auto* face = getParentComponent();
-    return (face->getPosition() + getBounds().getCentre()).toFloat();
+    auto* node = getParentComponent();
+    return (node->getPosition() + getBounds().getCentre()).toFloat();
 }
 
-void Socket::paint (juce::Graphics& g)
+void Jack::paint (juce::Graphics& g)
 {
-    auto r = getLocalBounds().toFloat().reduced (1.5f);
-    g.setColour (typeColour (type));
-    g.fillEllipse (r);
-    g.setColour (boardColour);
-    g.fillEllipse (r.reduced (3.5f));
+    if (art != nullptr)
+        art->drawWithin (g, getLocalBounds().toFloat().expanded (1.0f), juce::RectanglePlacement::centred, 1.0f);
 }
 
-void Socket::mouseDown (const juce::MouseEvent&)
+void Jack::mouseDown (const juce::MouseEvent& e)
 {
+    if (canvas.panGesture (e))
+        return;
     canvas.beginCable (this);
 }
 
-void Socket::mouseDrag (const juce::MouseEvent& e)
+void Jack::mouseDrag (const juce::MouseEvent& e)
 {
-    canvas.dragCable (e.getEventRelativeTo (getParentComponent()->getParentComponent()).position);
+    if (!canvas.isPanning())
+        canvas.dragCable (e.getEventRelativeTo (&canvas.stage).position);
 }
 
-void Socket::mouseUp (const juce::MouseEvent& e)
+void Jack::mouseUp (const juce::MouseEvent& e)
 {
-    canvas.endCable (e.getEventRelativeTo (getParentComponent()->getParentComponent()).position);
+    if (!canvas.isPanning())
+        canvas.endCable (e.getEventRelativeTo (&canvas.stage).position);
 }
 
-// ───────────────────────────────────────────────────────────────── faces
+// ───────────────────────────────────────────────────────────────── modules
 
-ModuleFace::ModuleFace (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
+Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
 {
-    setSize (kind.width, kind.height);
-    build();
-}
-
-ModuleFace::~ModuleFace()
-{
-    keyState.removeListener (this);
-}
-
-void ModuleFace::build()
-{
-    addAndMakeVisible (close);
-    close.setTooltip ("Take this module off the canvas");
-    close.onClick = [this] { juce::MessageManager::callAsync ([c = &canvas, i = id] { c->removeModule (i); }); };
-    if (kind.id == "wave")
-    {
-        addAndMakeVisible (preset);
-        preset.setTooltip ("Open or save a Wave preset (MGL's presets open here)");
-        preset.onClick = [this] { presetMenu(); };
-    }
-    close.setBounds (getWidth() - 26, 4, 22, 20);
-    preset.setBounds (getWidth() - 92, 4, 62, 20);
+    accent = accentFor (kind.id);
+    // A pan moves a finished picture of the module; a change inside it draws
+    // only that part again.
+    setBufferedToImage (true);
 
     for (int s = 0; s < (int) kind.ins.size(); ++s)
     {
-        auto socket = std::make_unique<Socket> (canvas, id, true, s, kind.ins[(size_t) s]);
-        socket->setTopLeftPosition (3, header + 10 + s * 24);
-        addAndMakeVisible (*socket);
-        sockets.push_back (std::move (socket));
+        jacks.push_back (std::make_unique<Jack> (canvas, id, true, s, kind.ins[(size_t) s]));
+        addAndMakeVisible (*jacks.back());
     }
     for (int s = 0; s < (int) kind.outs.size(); ++s)
     {
-        auto socket = std::make_unique<Socket> (canvas, id, false, s, kind.outs[(size_t) s]);
-        socket->setTopLeftPosition (getWidth() - 17, header + 10 + s * 24);
-        addAndMakeVisible (*socket);
-        sockets.push_back (std::move (socket));
+        jacks.push_back (std::make_unique<Jack> (canvas, id, false, s, kind.outs[(size_t) s]));
+        addAndMakeVisible (*jacks.back());
     }
-
-    // Wave is MGL's own page, at its own size, under the header.
     if (kind.id == "wave")
     {
         auto* host = &canvas.host;
@@ -113,7 +164,7 @@ void ModuleFace::build()
                 host->with ([&] (NaApp* a) { return na_wave_set (a, module, key.toRawUTF8(), value.toRawUTF8()); });
             },
             [host, module] {
-                return juce::String (host->with ([&] (NaApp* a) { return naText ([&] (char* b, uint32_t c) { return na_wave_patch (a, module, b, c); }); }));
+                return juce::String (host->with ([&] (NaApp* a) { return naText ([&] (char* b, uint32_t cap) { return na_wave_patch (a, module, b, cap); }); }));
             },
             [] (const juce::String& name) {
                 wave::Table t (na_table_frames (name.toRawUTF8(), nullptr, 0));
@@ -127,309 +178,471 @@ void ModuleFace::build()
         wave->onWheel = [host, module] (int which, float value) {
             host->with ([&] (NaApp* a) { return na_wave_wheel (a, module, (uint32_t) which, value); });
         };
-        wave->setTopLeftPosition (0, header);
+        wave->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
         addAndMakeVisible (*wave);
-        for (auto& s : sockets)
-            s->toFront (false);
-        return;
     }
-
-    // The controls, in a fixed grid between the sockets.
-    const int left = 24, top = header + 6;
-    const int columns = juce::jmax (1, (getWidth() - 2 * left) / cellW);
-    auto* list = kind.controls.getArray();
-    for (int i = 0; list != nullptr && i < list->size(); ++i)
+    else if (kind.id == "midi-in")
     {
-        const auto& c = list->getReference (i);
-        const auto type = c["type"].toString();
-        const auto key = c["key"].toString();
-        const int x = left + (i % columns) * cellW, y = top + (i / columns) * cellH;
-
-        auto label = std::make_unique<juce::Label> (key, key);
-        label->setFont (font (10.0f));
-        label->setColour (juce::Label::textColourId, dimColour);
-        label->setJustificationType (juce::Justification::centred);
-        label->setBounds (x, y, cellW, 14);
-        label->setTooltip (key);
-        label->setInterceptsMouseClicks (false, false);
-        addAndMakeVisible (*label);
-        labels.push_back (std::move (label));
-
-        if (type == "knob")
-        {
-            auto s = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow);
-            const double step = (double) c["step"];
-            s->setRange ((double) c["min"], (double) c["max"], step > 0.0 ? step : 0.0);
-            s->setValue ((double) c["default"], juce::dontSendNotification);
-            s->setDoubleClickReturnValue (true, (double) c["default"]);
-            s->setNumDecimalPlacesToDisplay (step > 0.0 ? 0 : 3);
-            s->setTextBoxStyle (juce::Slider::TextBoxBelow, false, cellW - 8, 14);
-            s->setScrollWheelEnabled (false);
-            s->setTooltip (key);
-            s->setBounds (x + 4, y + 14, cellW - 8, cellH - 18);
-            s->onValueChange = [this, i, knob = s.get()] { canvas.set (id, i, (float) knob->getValue()); };
-            addAndMakeVisible (*s);
-            controls.push_back (std::move (s));
-        }
-        else if (type == "switch")
-        {
-            auto b = std::make_unique<juce::ToggleButton> ("on");
-            b->setToggleState ((double) c["default"] >= 0.5, juce::dontSendNotification);
-            b->setTooltip (key);
-            b->setBounds (x + 12, y + 30, cellW - 16, 24);
-            b->onClick = [this, i, button = b.get()] { canvas.set (id, i, button->getToggleState() ? 1.0f : 0.0f); };
-            addAndMakeVisible (*b);
-            controls.push_back (std::move (b));
-        }
-        else
-        {
-            auto box = std::make_unique<juce::ComboBox> (key);
-            if (auto* options = c["options"].getArray())
-                for (int o = 0; o < options->size(); ++o)
-                    box->addItem (options->getReference (o).toString(), o + 1);
-            box->setSelectedId ((int) c["default"] + 1, juce::dontSendNotification);
-            box->setTooltip (key);
-            box->setBounds (x + 2, y + 30, cellW - 4, 22);
-            box->onChange = [this, i, b = box.get()] {
-                if (b->getSelectedId() > 0)
-                    canvas.set (id, i, (float) (b->getSelectedId() - 1));
-            };
-            addAndMakeVisible (*box);
-            controls.push_back (std::move (box));
-        }
+        channel = std::make_unique<juce::ComboBox>();
+        if (auto* list = kind.controls.getArray())
+            if (list->size() > 0)
+                if (auto* options = list->getReference (0)["options"].getArray())
+                    for (int o = 0; o < options->size(); ++o)
+                        channel->addItem (options->getReference (o).toString(), o + 1);
+        channel->setSelectedId (1, juce::dontSendNotification);
+        // idMLab's select, dark.
+        channel->setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff141415));
+        channel->setColour (juce::ComboBox::textColourId, juce::Colour (0xffe8e8ec));
+        channel->setColour (juce::ComboBox::outlineColourId, juce::Colour (0xff3a3a3f));
+        channel->setColour (juce::ComboBox::arrowColourId, juce::Colour (0xffb0b0b6));
+        channel->onChange = [this] {
+            if (channel->getSelectedId() > 0)
+                canvas.set (id, 0, (float) (channel->getSelectedId() - 1));
+        };
+        addAndMakeVisible (*channel);
     }
-
-    if (kind.keyboard)
-    {
-        keyboard = std::make_unique<juce::MidiKeyboardComponent> (keyState, juce::MidiKeyboardComponent::horizontalKeyboard);
-        keyboard->setAvailableRange (21, 108);
-        const int width = getWidth() - 2 * left;
-        keyboard->setBounds (left, getHeight() - keyboardH - 8, width, keyboardH);
-        keyboard->setKeyWidth ((float) width / 52.0f);
-        keyboard->setLowestVisibleKey (21);
-        keyboard->setVelocity (0.8f, true);
-        addAndMakeVisible (*keyboard);
-        keyState.addListener (this);
-    }
+    layout();
 }
 
-void ModuleFace::setValues (const juce::var& values)
+juce::Rectangle<int> Node::bodyBounds() const
 {
-    auto* list = values.getArray();
-    if (list == nullptr)
-        return;
-    for (size_t i = 0; i < controls.size() && (int) i < list->size(); ++i)
-    {
-        const double v = (double) list->getReference ((int) i);
-        if (auto* s = dynamic_cast<juce::Slider*> (controls[i].get()))
-            s->setValue (v, juce::dontSendNotification);
-        else if (auto* b = dynamic_cast<juce::ToggleButton*> (controls[i].get()))
-            b->setToggleState (v >= 0.5, juce::dontSendNotification);
-        else if (auto* box = dynamic_cast<juce::ComboBox*> (controls[i].get()))
-            box->setSelectedId (v < 0.0 ? 0 : (int) v + 1, juce::dontSendNotification);
-    }
+    return { border, border + header, kind.width, kind.height };
 }
 
-void ModuleFace::setPatchName (const juce::String& name)
+void Node::layout()
+{
+    const int w = kind.width + 2 * border, h = collapsed ? header + 2 * border : kind.height + header + 2 * border;
+    setSize (w, h);
+    int in = 0, out = 0;
+    for (auto& j : jacks)
+    {
+        // idMLab's sockets: half outside the frame, 18 px apart from y 27.
+        const int y = collapsed ? 4 : 27 + 18 * (j->isInput ? in++ : out++);
+        j->setTopLeftPosition (j->isInput ? -8 : w - 4, y);
+    }
+    if (wave != nullptr)
+    {
+        wave->setTopLeftPosition (bodyBounds().getTopLeft());
+        wave->setVisible (!collapsed);
+    }
+    if (channel != nullptr)
+    {
+        channel->setBounds (bodyBounds().reduced (12, 0).withHeight (24).withY (bodyBounds().getY() + 32));
+        channel->setVisible (!collapsed);
+    }
+    // The header's parts, where idMLab puts them.
+    const float hy = (float) border;
+    collapseR = { 8, hy + 4, 15, 11 };
+    powerR = { 28.9f, hy + 4, 12.7f, 11 };
+    menuR = { 47.6f, hy + 3.5f, 17.3f, 12 };
+    handleR = { 70.8f, hy + 3, 6.6f, 13 };
+    closeR = { (float) w - 18.2f, hy + 3.5f, 11.2f, 12 };
+    nameR = { 83.4f, hy + 3, closeR.getX() - 6 - 83.4f, 13 };
+    repaint();
+}
+
+void Node::setValues (const juce::var& values)
+{
+    if (channel != nullptr)
+        if (auto* list = values.getArray(); list != nullptr && !list->isEmpty())
+            channel->setSelectedId ((int) (double) list->getReference (0) + 1, juce::dontSendNotification);
+}
+
+void Node::setPatchName (const juce::String& name)
 {
     patchName = name;
     repaint();
 }
 
-void ModuleFace::paint (juce::Graphics& g)
+void Node::paint (juce::Graphics& g)
 {
-    auto r = getLocalBounds().toFloat();
-    g.setColour (faceColour);
-    g.fillRoundedRectangle (r, 6.0f);
-    g.setColour (headerColour);
-    g.fillRoundedRectangle (r.withHeight ((float) header), 6.0f);
-    g.fillRect (r.withTop ((float) header - 6.0f).withHeight (6.0f));
-    g.setColour (inkColour);
-    g.setFont (font (13.0f, true));
-    juce::String title = kind.title + "  " + juce::String (id);
-    g.drawText (title, 10, 0, 300, header, juce::Justification::centredLeft);
-    if (patchName.isNotEmpty())
+    // The frame, drawn once at 2x and kept: zooming and panning only move it.
+    const auto key = juce::String (getWidth()) + "x" + juce::String (getHeight()) + (collapsed ? "c" : "") + patchName;
+    if (!frame.isValid() || frameKey != key)
     {
-        g.setColour (dimColour);
-        g.setFont (font (11.0f));
-        g.drawText (patchName, 140, 0, 400, header, juce::Justification::centredLeft);
+        frameKey = key;
+        const int pad = 48;
+        frame = juce::Image (juce::Image::ARGB, (getWidth() + 2 * pad) * 2, (getHeight() + 2 * pad) * 2, true);
+        juce::Graphics fg (frame);
+        fg.addTransform (juce::AffineTransform::scale (2.0f).translated ((float) pad * 2, (float) pad * 2));
+        paintFrame (fg);
     }
-    g.setFont (font (9.0f));
-    g.setColour (dimColour);
-    for (auto& s : sockets)
+    g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+    g.drawImageTransformed (frame, juce::AffineTransform::scale (0.5f).translated (-48.0f, -48.0f));
+}
+
+void Node::paintFrame (juce::Graphics& g)
+{
+    const auto all = getLocalBounds().toFloat();
+    if (auto* article = frameNode ("mm-node"))
+        face::paintBox (g, *article, all);
+    auto* head = frameNode ("n4-header");
+    if (head == nullptr)
+        return;
+    face::paintBox (g, *head, { (float) border, (float) border, all.getWidth() - 2 * border, (float) header });
+    const auto* kids = (*head)["kids"].getArray();
+    auto kid = [&] (int i) -> const juce::var* { return kids != nullptr && i < kids->size() ? &kids->getReference (i) : nullptr; };
+    if (auto* n = kid (0))
+        face::paintText (g, *n, collapseR, juce::String::fromUTF8 (collapsed ? "\xe2\x96\xb6" : "\xe2\x96\xbc"), juce::Justification::centred);
     {
-        auto b = s->getBounds();
-        if (s->isInput)
-            g.drawText (s->name, b.getRight() + 2, b.getY(), 60, b.getHeight(), juce::Justification::centredLeft);
-        else
-            g.drawText (s->name, b.getX() - 62, b.getY(), 60, b.getHeight(), juce::Justification::centredRight);
+        // Bypass isn't in the native engine yet: shown, dimmed.
+        juce::Graphics::ScopedSaveState keep (g);
+        g.setOpacity (0.35f);
+        if (auto* n = frameNode ("n4-header__power"))
+            face::paintText (g, *n, powerR, juce::String::fromUTF8 ("\xe2\x8f\xbb"), juce::Justification::centred);
+    }
+    if (auto* menuSpan = frameNode ("n4-header__menu"))
+        if (auto* b = face::find (*menuSpan, "button"))
+        {
+            juce::Graphics::ScopedSaveState keep (g);
+            if (wave == nullptr)
+                g.setOpacity (0.35f);
+            face::paintText (g, *b, menuR, juce::String::fromUTF8 ("\xe2\x9a\x99\xe2\x96\xbe"), juce::Justification::centred);
+        }
+    if (auto* n = kid (3))
+        face::paintText (g, *n, handleR, juce::String::fromUTF8 ("\xe2\x87\x95"), juce::Justification::centred);
+    if (auto* n = frameNode ("n4-header__name"))
+    {
+        auto label = kind.title;
+        if (patchName.isNotEmpty())
+            label << juce::String::fromUTF8 (" \xc2\xb7 ") << patchName;
+        face::paintText (g, *n, nameR, label);
+    }
+    if (auto* n = frameNode ("n4-header__close"))
+        face::paintText (g, *n, closeR, juce::String::fromUTF8 ("\xc3\x97"), juce::Justification::centred);
+
+    // The body of the small modules: idMLab's section with its title.
+    if (!collapsed && wave == nullptr)
+        if (auto* section = frameNode ("mm-node-section"))
+        {
+            const auto body = bodyBounds().toFloat().reduced (4);
+            face::paintBox (g, *section, body);
+            if (auto* h2 = face::find (*section, "h2"))
+                face::paintText (g, *h2, body.reduced (1).withHeight (11), kind.id == "midi-in" ? "CHANNEL" : "OUTPUT");
+            if (kind.id == "output")
+                if (auto* label = face::find (*section, "n4-knob__label"))
+                    face::paintText (g, *label, body.reduced (6).withY (body.getY() + 24).withHeight (10), "TO THE SOUND CARD");
+        }
+
+    // The sockets' names, outside the frame, as idMLab writes them.
+    for (auto& j : jacks)
+    {
+        const juce::var* label = nullptr;
+        jackPart (j->type, label);
+        if (label == nullptr)
+            continue;
+        const auto b = j->getBounds().toFloat();
+        const auto r = j->isInput ? juce::Rectangle<float> (b.getX() - 64, b.getY() - 2, 60, b.getHeight() + 4) : juce::Rectangle<float> (b.getRight() + 4, b.getY() - 2, 60, b.getHeight() + 4);
+        face::paintText (g, *label, r, j->name, j->isInput ? juce::Justification::centredRight : juce::Justification::centredLeft);
     }
 }
 
-// Drag the header to move the module.
-void ModuleFace::mouseDown (const juce::MouseEvent& e)
+void Node::paintOverChildren (juce::Graphics& g)
 {
-    moving = e.y < header;
+    if (!selected)
+        return;
+    // idMLab's selection: a 3 px outline 3 px out, in the module's accent.
+    g.setColour (accent);
+    g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.5f), 6.0f, 3.0f);
+}
+
+void Node::mouseDown (const juce::MouseEvent& e)
+{
+    if (canvas.panGesture (e))
+        return;
+    canvas.select (id);
+    toFront (false);
+    const auto p = e.position;
+    if (p.y > (float) (header + border))
+        return;
+    if (collapseR.expanded (2).contains (p))
+    {
+        collapsed = !collapsed;
+        layout();
+        canvas.cables.update();
+        return;
+    }
+    if (closeR.expanded (2).contains (p))
+    {
+        juce::MessageManager::callAsync ([c = &canvas, i = id] { c->removeModule (i); });
+        return;
+    }
+    if (menuR.expanded (2).contains (p) && wave != nullptr)
+    {
+        juce::PopupMenu m;
+        m.addItem ("Open preset...", [this] { canvas.openWavePreset (id); });
+        m.addItem ("Save preset...", [this] { canvas.saveWavePreset (id); });
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (menuR).toNearestInt()));
+        return;
+    }
+    // The header is the drag handle.
+    moving = true;
     grabbedAt = e.getPosition();
-    if (moving)
-        toFront (false);
 }
 
-void ModuleFace::mouseDrag (const juce::MouseEvent& e)
+void Node::mouseDrag (const juce::MouseEvent& e)
 {
     if (!moving)
         return;
-    auto onBoard = e.getEventRelativeTo (getParentComponent()).getPosition() - grabbedAt;
-    setTopLeftPosition (juce::jlimit (0, Board::size - getWidth(), onBoard.x), juce::jlimit (0, Board::size - getHeight(), onBoard.y));
-    getParentComponent()->repaint();
+    setTopLeftPosition (e.getEventRelativeTo (&canvas.stage).getPosition() - grabbedAt);
+    canvas.cables.update();
 }
 
-void ModuleFace::mouseUp (const juce::MouseEvent&)
+void Node::mouseUp (const juce::MouseEvent&)
 {
     if (moving)
-        canvas.faceMoved (id);
+        canvas.nodeMoved (id);
     moving = false;
 }
 
-void ModuleFace::presetMenu()
+// ───────────────────────────────────────────────────────────────── cables
+
+void Cables::update()
 {
-    juce::PopupMenu m;
-    m.addItem ("Open preset...", [this] { canvas.openWavePreset (id); });
-    m.addItem ("Save preset...", [this] { canvas.saveWavePreset (id); });
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&preset));
+    juce::Rectangle<float> all;
+    bool any = false;
+    auto take = [&] (juce::Rectangle<float> r) {
+        all = any ? all.getUnion (r) : r;
+        any = true;
+    };
+    for (const auto& w : canvas.wires)
+        take (canvas.wirePath (w).getBounds());
+    if (canvas.pendingFrom != nullptr)
+        take (juce::Rectangle<float> (canvas.pendingFrom->centreOnStage(), canvas.pendingEnd).expanded (90, 10));
+    const auto box = any ? all.expanded (24).getSmallestIntegerContainer() : juce::Rectangle<int>();
+    if (box != getBounds())
+        setBounds (box);
+    repaint();
 }
 
-void ModuleFace::handleNoteOn (juce::MidiKeyboardState*, int, int n, float velocity)
+void Cables::paint (juce::Graphics& g)
 {
-    canvas.note (id, true, n, velocity);
-}
-
-void ModuleFace::handleNoteOff (juce::MidiKeyboardState*, int, int n, float)
-{
-    canvas.note (id, false, n, 0.0f);
-}
-
-// ──────────────────────────────────────────────────────────────── cables
-
-void CableLayer::paint (juce::Graphics& g)
-{
+    // The layer sits at its own place on the stage; the cables are drawn on
+    // the stage's coordinates.
+    g.addTransform (juce::AffineTransform::translation ((float) -getX(), (float) -getY()));
+    const auto& st = canvasStyle();
+    // idMLab's cable: its stroke, width and opacity, and a soft glow round it.
+    auto drawCable = [&] (const juce::Path& p, const juce::var& look, bool dashed) {
+        const auto colour = cssColour (look["stroke"], "rgb(154,154,162)");
+        const float width = look["stroke-width"].toString().getFloatValue();
+        const float opacity = look["opacity"].toString().isEmpty() ? 1.0f : look["opacity"].toString().getFloatValue();
+        const auto [glow, blur] = glowOf (look["filter"].toString());
+        juce::Path stroked;
+        juce::PathStrokeType type (width > 0 ? width : 5.0f);
+        if (dashed)
+        {
+            const float dash[] = { 7, 5 };
+            type.createDashedStroke (stroked, p, dash, 2);
+        }
+        else
+            type.createStrokedPath (stroked, p);
+        juce::DropShadow (glow.withMultipliedAlpha (opacity), juce::roundToInt (blur), {}).drawForPath (g, stroked);
+        g.setColour (colour.withMultipliedAlpha (opacity));
+        g.fillPath (stroked);
+    };
     for (size_t i = 0; i < canvas.wires.size(); ++i)
-    {
-        auto* from = canvas.socketOf (canvas.wires[i].from, false, canvas.wires[i].fromSocket);
-        g.setColour (from != nullptr ? typeColour (from->type) : dimColour);
-        g.strokePath (canvas.wirePath (canvas.wires[i]), juce::PathStrokeType ((int) i == canvas.selectedWire ? 5.0f : 3.0f));
-    }
+        drawCable (canvas.wirePath (canvas.wires[i]), (int) i == canvas.selectedWire ? st["selected"] : st["cable"], false);
     if (canvas.pendingFrom != nullptr)
     {
-        const auto a = canvas.pendingFrom->centreOnBoard(), b = canvas.pendingEnd;
+        const auto a = canvas.pendingFrom->centreOnStage(), b = canvas.pendingEnd;
+        const auto from = canvas.pendingFrom->isInput ? b : a, to = canvas.pendingFrom->isInput ? a : b;
+        const float bend = juce::jmax (80.0f, std::abs (to.x - from.x) * 0.5f);
         juce::Path p;
-        p.startNewSubPath (a);
-        const float dx = juce::jmax (40.0f, std::abs (b.x - a.x) * 0.5f) * (canvas.pendingFrom->isInput ? -1.0f : 1.0f);
-        p.cubicTo (a.x + dx, a.y, b.x - dx, b.y, b.x, b.y);
-        g.setColour (typeColour (canvas.pendingFrom->type).withAlpha (0.7f));
-        g.strokePath (p, juce::PathStrokeType (3.0f));
+        p.startNewSubPath (from);
+        p.cubicTo (from.x + bend, from.y, to.x - bend, to.y, to.x, to.y);
+        drawCable (p, st["dragging"], true);
     }
 }
 
-bool CableLayer::hitTest (int x, int y)
+// ─────────────────────────────────────────────────────────── add module
+
+AddMenu::AddMenu (Canvas& c, juce::Point<float> onStage) : at (onStage), canvas (c)
 {
-    const juce::Point<float> at ((float) x, (float) y);
-    for (const auto& w : canvas.wires)
+    const auto& tree = face::part ("idmlab-menu")["tree"];
+    search.setTextToShowWhenEmpty (juce::String::fromUTF8 ("Search modules\xe2\x80\xa6"), juce::Colour (0xff8b8b92));
+    if (auto* input = face::find (tree, "mm-module-menu__search"))
     {
-        juce::Point<float> nearest;
-        canvas.wirePath (w).getNearestPoint (at, nearest);
-        if (nearest.getDistanceFrom (at) < 6.0f)
-            return true;
+        const auto& f = (*input)["font"];
+        search.setFont (face::font (f));
+        search.setColour (juce::TextEditor::textColourId, face::colour (f["colour"]));
+        search.setColour (juce::TextEditor::backgroundColourId, (*input)["bg"].isArray() ? face::colour ((*input)["bg"]) : juce::Colour (0xff141415));
+        auto* border = (*input)["border"].getArray();
+        const auto line = border != nullptr && border->size() > 0 && border->getReference (0).isObject() ? face::colour (border->getReference (0)["colour"]) : juce::Colour (0xff3a3a3f);
+        search.setColour (juce::TextEditor::outlineColourId, line);
+        search.setColour (juce::TextEditor::focusedOutlineColourId, line.brighter (0.4f));
     }
-    return false;
+    search.addListener (this);
+    addAndMakeVisible (search);
+    setSize (211, 300);
+    filter();
 }
 
-void CableLayer::mouseDown (const juce::MouseEvent& e)
+void AddMenu::filter()
 {
-    int best = -1;
-    float bestDistance = 6.0f;
-    for (size_t i = 0; i < canvas.wires.size(); ++i)
+    rows.clear();
+    const auto q = search.getText().trim().toLowerCase();
+    // idMLab groups its modules by family; MGL's sit under their own.
+    const std::vector<std::pair<juce::String, juce::StringArray>> groups {
+        { "MULTIGRAINLIVE", { "wave" } },
+        { "MIDI", { "midi-in" } },
+        { "AUDIO", { "output" } },
+    };
+    float y = 63;
+    for (const auto& [label, ids] : groups)
     {
-        juce::Point<float> nearest;
-        canvas.wirePath (canvas.wires[i]).getNearestPoint (e.position, nearest);
-        const float d = nearest.getDistanceFrom (e.position);
-        if (d < bestDistance)
-            best = (int) i, bestDistance = d;
+        std::vector<Row> items;
+        for (const auto& kid : ids)
+            if (auto* k = canvas.kindById (kid))
+                if (q.isEmpty() || k->title.toLowerCase().contains (q) || label.toLowerCase().contains (q))
+                    items.push_back ({ k->title, k->id, false, {} });
+        if (items.empty())
+            continue;
+        rows.push_back ({ label, {}, true, { 8, y, 195, 20 } });
+        y += 22;
+        for (auto& r : items)
+        {
+            r.r = { 8, y, 195, 26 };
+            y += 27;
+            rows.push_back (r);
+        }
+        y += 6;
     }
-    canvas.selectedWire = best;
+    if (rows.empty())
+    {
+        rows.push_back ({ juce::String::fromUTF8 ("No module matches \xe2\x80\x9c") + search.getText() + juce::String::fromUTF8 ("\xe2\x80\x9d."), {}, true, { 8, y, 195, 20 } });
+        y += 26;
+    }
+    setSize (211, (int) y + 8);
     repaint();
-    canvas.grabKeyboardFocus();
-    if (best >= 0 && e.mods.isPopupMenu())
+}
+
+void AddMenu::resized()
+{
+    search.setBounds (8, 33, 195, 25);
+}
+
+void AddMenu::paint (juce::Graphics& g)
+{
+    const auto& tree = face::part ("idmlab-menu")["tree"];
+    face::paintBox (g, tree, getLocalBounds().toFloat());
+    if (auto* title = face::find (tree, "b"))
+        face::paintText (g, *title, { 8, 8, 195, 22 }, "ADD MODULE");
+    const juce::var* group = face::find (tree, "mm-module-menu__group");
+    const juce::var* groupLabel = group != nullptr ? face::find (*group, "b") : nullptr;
+    const juce::var* item = group != nullptr ? face::find (*group, "button") : nullptr;
+    for (size_t i = 0; i < rows.size(); ++i)
     {
-        juce::PopupMenu m;
-        m.addItem ("Remove cable", [c = &canvas, best] { c->removeWire (best); });
-        m.showMenuAsync ({});
+        const auto& r = rows[i];
+        if (r.group)
+        {
+            if (groupLabel != nullptr)
+                face::paintText (g, *groupLabel, r.r, r.label);
+            continue;
+        }
+        if ((int) i == hover)
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.08f));
+            g.fillRoundedRectangle (r.r, 5.0f);
+        }
+        if (item != nullptr)
+            face::paintText (g, *item, r.r.withTrimmedLeft (6), r.label);
     }
-    else if (best >= 0 && canvas.status)
-        canvas.status ("Cable selected: press Delete to remove it");
 }
 
-// ───────────────────────────────────────────────────────────────── board
-
-void Board::paint (juce::Graphics& g)
+void AddMenu::mouseMove (const juce::MouseEvent& e)
 {
-    g.fillAll (boardColour);
-    g.setColour (juce::Colour (0xff22252b));
-    const auto clip = g.getClipBounds();
-    const int step = 40;
-    for (int x = clip.getX() / step * step; x < clip.getRight(); x += step)
-        for (int y = clip.getY() / step * step; y < clip.getBottom(); y += step)
-            g.fillRect (x, y, 2, 2);
-}
-
-void Board::mouseDown (const juce::MouseEvent& e)
-{
-    canvas.selectedWire = -1;
-    canvas.repaint();
-    canvas.grabKeyboardFocus();
-    if (e.mods.isPopupMenu())
+    int h = -1;
+    for (size_t i = 0; i < rows.size(); ++i)
+        if (!rows[i].group && rows[i].r.contains (e.position))
+            h = (int) i;
+    if (h != hover)
     {
-        juce::PopupMenu m;
-        const auto at = e.position;
-        for (const auto& k : canvas.kinds)
-            m.addItem ("Add " + k.title, [c = &canvas, id = k.id, at] { c->addModule (id, at); });
-        m.showMenuAsync ({});
-        return;
+        hover = h;
+        repaint();
     }
-    panFrom = e.getEventRelativeTo (&canvas).position;
-    offsetFrom = canvas.offset;
 }
 
-void Board::mouseDrag (const juce::MouseEvent& e)
+void AddMenu::mouseExit (const juce::MouseEvent&)
 {
-    if (e.mods.isPopupMenu())
-        return;
-    canvas.offset = offsetFrom + (e.getEventRelativeTo (&canvas).position - panFrom);
-    canvas.panBy ({});
+    hover = -1;
+    repaint();
 }
 
-void Board::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
+void AddMenu::mouseDown (const juce::MouseEvent& e)
 {
-    const auto at = e.getEventRelativeTo (&canvas).position;
-    if (e.mods.isCommandDown())
-        canvas.zoomBy (std::pow (1.15f, wheel.deltaY * 4.0f), at);
-    else
-        canvas.panBy ({ wheel.deltaX * 400.0f, wheel.deltaY * 400.0f });
+    for (const auto& r : rows)
+        if (!r.group && r.r.contains (e.position))
+        {
+            const auto kind = r.kind;
+            const auto where = at;
+            auto* c = &canvas;
+            juce::MessageManager::callAsync ([c, kind, where] { c->addModule (kind, where); });
+            return;
+        }
 }
 
-void Board::mouseMagnify (const juce::MouseEvent& e, float scale)
+// Enter adds the module only when the search means one thing.
+void AddMenu::textEditorReturnKeyPressed (juce::TextEditor&)
 {
-    canvas.zoomBy (scale, e.getEventRelativeTo (&canvas).position);
+    juce::String kind;
+    int count = 0;
+    for (const auto& r : rows)
+        if (!r.group)
+            kind = r.kind, ++count;
+    if (count == 1)
+    {
+        const auto where = at;
+        auto* c = &canvas;
+        juce::MessageManager::callAsync ([c, kind, where] { c->addModule (kind, where); });
+    }
 }
 
-// ──────────────────────────────────────────────────────────────── canvas
+void AddMenu::textEditorEscapeKeyPressed (juce::TextEditor&)
+{
+    auto* c = &canvas;
+    juce::MessageManager::callAsync ([c] { c->closeMenu(); });
+}
+
+// ───────────────────────────────────────────────────────────────── canvas
+
+namespace
+{
+// Pans from anywhere (Space held, the middle button), even over a module.
+struct PanListener final : juce::MouseListener
+{
+    explicit PanListener (Canvas& c) : canvas (c) {}
+    Canvas& canvas;
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (e.eventComponent != &canvas && canvas.panGesture (e))
+            canvas.startPan (e.getEventRelativeTo (&canvas));
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (e.eventComponent != &canvas && canvas.isPanning())
+            canvas.movePan (e.getEventRelativeTo (&canvas));
+    }
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (e.eventComponent != &canvas && canvas.isPanning())
+            canvas.endPan();
+    }
+};
+} // namespace
+
+static std::map<Canvas*, std::unique_ptr<PanListener>>& panListeners()
+{
+    static std::map<Canvas*, std::unique_ptr<PanListener>> listeners;
+    return listeners;
+}
 
 Canvas::Canvas (Host& h) : host (h)
 {
     setWantsKeyboardFocus (true);
+    setOpaque (true);
+    addKeyListener (this);
     const auto kindsJson = juce::JSON::parse (juce::String (naText ([] (char* b, uint32_t c) { return na_kinds (b, c); })));
     if (auto* list = kindsJson.getArray())
-    {
         for (const auto& k : *list)
         {
             KindInfo info;
@@ -446,17 +659,26 @@ Canvas::Canvas (Host& h) : host (h)
             info.controls = juce::JSON::parse (juce::String (naText ([&id] (char* b, uint32_t c) { return na_controls (id.c_str(), b, c); })));
             kinds.push_back (std::move (info));
         }
-    }
-    board.setBounds (0, 0, Board::size, Board::size);
-    cables.setBounds (board.getLocalBounds());
-    board.addAndMakeVisible (cables);
-    addAndMakeVisible (board);
+    stage.setBounds (0, 0, Stage::size, Stage::size);
+    stage.setInterceptsMouseClicks (false, true);
+    cables.setBufferedToImage (true);
+    stage.addAndMakeVisible (cables);
+    addAndMakeVisible (stage);
+    auto& l = panListeners()[this];
+    l = std::make_unique<PanListener> (*this);
+    stage.addMouseListener (l.get(), true);
     host.onRebuilt = [this] { refresh(); };
 }
 
 Canvas::~Canvas()
 {
     host.onRebuilt = nullptr;
+    removeKeyListener (this);
+    if (auto it = panListeners().find (this); it != panListeners().end())
+    {
+        stage.removeMouseListener (it->second.get());
+        panListeners().erase (it);
+    }
 }
 
 const KindInfo* Canvas::kindById (const juce::String& id) const
@@ -473,51 +695,416 @@ void Canvas::report (int code, const juce::String& what)
         status (code < 0 ? what + " didn't work: " + juce::String (host.lastError()) : what);
 }
 
+juce::String Canvas::fileName() const
+{
+    return currentFile == juce::File() ? juce::String ("Untitled") : currentFile.getFileName();
+}
+
+bool Canvas::panGesture (const juce::MouseEvent& e) const
+{
+    return e.mods.isMiddleButtonDown() || (e.mods.isLeftButtonDown() && juce::KeyPress::isKeyCurrentlyDown (juce::KeyPress::spaceKey));
+}
+
+// ─── the camera
+
+void Canvas::applyCamera()
+{
+    stage.setTransform (juce::AffineTransform::scale (cam.zoom).translated (-cam.left, -cam.top));
+    repaint();
+    if (changed)
+        changed();
+}
+
+void Canvas::setZoom (float z)
+{
+    zoomTo (camera::zoomAround (cam, getLocalBounds().getCentre().toFloat(), camera::clampZoom (z) / cam.zoom));
+}
+
+void Canvas::zoomTo (const Camera& next)
+{
+    if (!zooming)
+    {
+        // The picture to move: the canvas as it is, at the screen's density.
+        auto* peer = getPeer();
+        shotDensity = peer != nullptr ? (float) peer->getPlatformScaleFactor() * (float) juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds())->scale : 2.0f;
+        shotDensity = juce::jlimit (1.0f, 2.0f, shotDensity);
+        shot = juce::Image (juce::Image::ARGB, juce::jmax (1, (int) ((float) getWidth() * shotDensity)), juce::jmax (1, (int) ((float) getHeight() * shotDensity)), true);
+        {
+            juce::Graphics g (shot);
+            g.addTransform (juce::AffineTransform::scale (shotDensity));
+            stage.paintEntireComponent (g, true);
+        }
+        shotCam = cam;
+        zooming = true;
+        stage.setVisible (false);
+    }
+    cam = next;
+    repaint();
+    if (changed)
+        changed();
+    startTimer (160);
+}
+
+void Canvas::timerCallback()
+{
+    stopTimer();
+    zooming = false;
+    shot = {};
+    stage.setVisible (true);
+    applyCamera();
+}
+
+void Canvas::fit()
+{
+    std::vector<juce::Rectangle<float>> boxes;
+    if (auto it = nodes.find (selectedNode); it != nodes.end())
+        boxes.push_back (it->second->getBounds().toFloat());
+    else
+        for (const auto& [id, n] : nodes)
+            boxes.push_back (n->getBounds().toFloat());
+    cam = camera::fit (boxes, { (float) getWidth(), (float) getHeight() });
+    applyCamera();
+}
+
+void Canvas::pan (float dx, float dy)
+{
+    cam = camera::panBy (cam, dx, dy);
+    applyCamera();
+}
+
+void Canvas::centrePatch()
+{
+    if (nodes.empty())
+        return;
+    auto all = nodes.begin()->second->getBounds().toFloat();
+    for (const auto& [id, n] : nodes)
+        all = all.getUnion (n->getBounds().toFloat());
+    cam = camera::centreOn (all.getCentre(), { (float) getWidth(), (float) getHeight() }, cam.zoom);
+    applyCamera();
+}
+
+void Canvas::paint (juce::Graphics& g)
+{
+    // The board: its colour, and the dot grid laid out by the camera, so it
+    // runs on forever however far the canvas is panned.
+    g.fillAll (cssColour (canvasStyle()["viewport"]["background-color"], "rgb(28,28,29)"));
+    const float step = 20 * cam.zoom;
+    if (step < 3.0f)
+        return;
+    // One tile with its dot, at the screen's density, laid over the window.
+    const float density = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const int tile = juce::jmax (1, juce::roundToInt (step * density));
+    if (!dotTile.isValid() || dotTile.getWidth() != tile || std::abs (dotStep - step) > 1e-4f)
+    {
+        dotStep = step;
+        dotTile = juce::Image (juce::Image::ARGB, tile, tile, true);
+        juce::Graphics tg (dotTile);
+        tg.setColour (juce::Colour (180, 180, 186).withAlpha (0.2f));
+        const float c = (float) tile / 2, r = density;
+        tg.fillEllipse (c - r, c - r, 2 * r, 2 * r);
+    }
+    const float x0 = std::fmod (-cam.left, step), y0 = std::fmod (-cam.top, step);
+    g.setFillType (juce::FillType (dotTile, juce::AffineTransform::scale ((float) step / (float) tile).translated (x0, y0)));
+    g.fillRect (getLocalBounds());
+    if (zooming && shot.isValid())
+    {
+        // A screen point as the gesture began is a canvas point; that point
+        // is where the camera puts it now.
+        const float k = cam.zoom / shotCam.zoom;
+        g.drawImageTransformed (shot, juce::AffineTransform::scale (1.0f / shotDensity).translated (shotCam.left, shotCam.top).scaled (k).translated (-cam.left, -cam.top));
+    }
+}
+
+void Canvas::resized()
+{
+    applyCamera();
+}
+
+void Canvas::startPan (const juce::MouseEvent& e)
+{
+    if (zooming)
+        timerCallback();
+    panning = true;
+    panFrom = e.position;
+    panCamera = cam;
+    setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+}
+
+void Canvas::movePan (const juce::MouseEvent& e)
+{
+    if (!panning)
+        return;
+    const auto d = e.position - panFrom;
+    cam = camera::panBy (panCamera, d.x, d.y);
+    applyCamera();
+}
+
+void Canvas::endPan()
+{
+    panning = false;
+    setMouseCursor (spaceHeld ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+}
+
+void Canvas::mouseDown (const juce::MouseEvent& e)
+{
+    grabKeyboardFocus();
+    if (e.mods.isPopupMenu())
+        return openMenu (e.position);
+    if (!panGesture (e))
+        if (const int w = wireAt (stagePoint (e.position)); w >= 0)
+        {
+            select (-1);
+            selectedWire = w;
+            cables.update();
+            report (0, "Cable selected: press Delete to remove it");
+            return;
+        }
+    // A press on the empty canvas: nothing selected, the menu closed, and a pan.
+    selectedWire = -1;
+    select (-1);
+    closeMenu();
+    startPan (e);
+}
+
+void Canvas::mouseDrag (const juce::MouseEvent& e)
+{
+    movePan (e);
+}
+
+void Canvas::mouseUp (const juce::MouseEvent&)
+{
+    endPan();
+}
+
+// Double-click the empty canvas to search for a module, as in ComfyUI.
+void Canvas::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    openMenu (e.position);
+}
+
+void Canvas::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
+{
+    const auto at = e.getEventRelativeTo (this);
+    if (menu != nullptr && menu->getBounds().contains (at.getPosition()))
+        return;
+    // A mouse notch is one 1.1x step; a trackpad's small steps are each worth
+    // their share of one, so the zoom glides (camera.ts, wheelZoomFactor).
+    const float notches = wheel.isSmooth ? juce::jlimit (-1.0f, 1.0f, wheel.deltaY * 5.0f) : (wheel.deltaY > 0 ? 1.0f : wheel.deltaY < 0 ? -1.0f : 0.0f);
+    if (std::abs (notches) < 1e-6f)
+        return;
+    zoomTo (camera::zoomAround (cam, at.position, std::pow (camera::notch, notches)));
+}
+
+void Canvas::mouseMagnify (const juce::MouseEvent& e, float scale)
+{
+    // A pinch holds the canvas.
+    zoomTo (camera::zoomAround (cam, e.getEventRelativeTo (this).position, juce::jlimit (0.8f, 1.25f, scale)));
+}
+
+bool Canvas::keyPressed (const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
+    {
+        deleteSelection();
+        return true;
+    }
+    if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'D')
+    {
+        duplicateSelection();
+        return true;
+    }
+    if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'Z')
+    {
+        if (key.getModifiers().isShiftDown())
+            redo();
+        else
+            undo();
+        return true;
+    }
+    if (key.getTextCharacter() == '.' && !key.getModifiers().isCommandDown())
+    {
+        fit();
+        return true;
+    }
+    return false;
+}
+
+bool Canvas::keyPressed (const juce::KeyPress& key, juce::Component*) { return keyPressed (key); }
+
+bool Canvas::keyStateChanged (bool, juce::Component*)
+{
+    const bool space = juce::KeyPress::isKeyCurrentlyDown (juce::KeyPress::spaceKey);
+    if (space != spaceHeld)
+    {
+        spaceHeld = space;
+        setMouseCursor (space ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+    }
+    return false;
+}
+
+// ─── the menu
+
+void Canvas::openMenu (juce::Point<float> onCanvas)
+{
+    closeMenu();
+    menu = std::make_unique<AddMenu> (*this, stagePoint (onCanvas));
+    menu->setTopLeftPosition (onCanvas.toInt());
+    addAndMakeVisible (*menu);
+    juce::Component::SafePointer<juce::Component> field (menu->getChildComponent (0));
+    juce::MessageManager::callAsync ([field] { if (field != nullptr && field->isShowing()) field->grabKeyboardFocus(); });
+}
+
+void Canvas::closeMenu()
+{
+    menu.reset();
+}
+
+void Canvas::addModuleAtCentre()
+{
+    openMenu (getLocalBounds().getCentre().toFloat());
+}
+
+// ─── the patch
+
+juce::String Canvas::snapshot()
+{
+    return host.with ([] (NaApp* a) { return juce::String (naText ([a] (char* b, uint32_t c) { return na_save (a, b, c); })); });
+}
+
+void Canvas::restore (const juce::String& text)
+{
+    const auto t = text.toStdString();
+    host.with ([&] (NaApp* a) { return na_load (a, t.c_str()); });
+    refresh();
+}
+
+void Canvas::remember()
+{
+    undoStack.push_back (snapshot());
+    if (undoStack.size() > 100)
+        undoStack.erase (undoStack.begin());
+    redoStack.clear();
+}
+
+void Canvas::undo()
+{
+    if (undoStack.empty())
+        return report (0, "Nothing to undo");
+    redoStack.push_back (snapshot());
+    const auto s = undoStack.back();
+    undoStack.pop_back();
+    restore (s);
+    report (0, "Undone");
+}
+
+void Canvas::redo()
+{
+    if (redoStack.empty())
+        return report (0, "Nothing to redo");
+    undoStack.push_back (snapshot());
+    const auto s = redoStack.back();
+    redoStack.pop_back();
+    restore (s);
+    report (0, "Redone");
+}
+
 // MIDI in into Wave into Output, so there is something to play at once.
 void Canvas::starter()
 {
     const auto ids = host.with ([] (NaApp* a) {
-        const int midi = na_add (a, "midi-in", 120.0f, 500.0f);
-        const int wave = na_add (a, "wave", 420.0f, 120.0f);
-        const int out = na_add (a, "output", 1960.0f, 450.0f);
+        const int midi = na_add (a, "midi-in", 0.0f, 420.0f);
+        const int wave = na_add (a, "wave", 360.0f, 0.0f);
+        const int out = na_add (a, "output", 2380.0f, 420.0f);
         na_connect (a, (uint32_t) midi, 0, (uint32_t) wave, 0);
         na_connect (a, (uint32_t) wave, 0, (uint32_t) out, 0);
         return std::array<int, 3> { midi, wave, out };
     });
+    undoStack.clear();
+    redoStack.clear();
     refresh();
     fit();
-    if (status)
-        status (ids[1] > 0 ? "A new canvas: MIDI in into Wave into Output. Play the keys on Wave or a MIDI keyboard."
-                           : "Couldn't make the starting canvas: " + juce::String (host.lastError()));
+    report (ids[1] > 0 ? 0 : -1, ids[1] > 0 ? "idMLab graph ready" : "The starting patch");
 }
 
-void Canvas::addModule (const juce::String& kind, juce::Point<float> onBoard)
+void Canvas::addModule (const juce::String& kind, juce::Point<float> onStage)
 {
+    closeMenu();
+    remember();
     const auto k = kind.toStdString();
-    const int id = host.with ([&] (NaApp* a) { return na_add (a, k.c_str(), onBoard.x, onBoard.y); });
+    const int id = host.with ([&] (NaApp* a) { return na_add (a, k.c_str(), onStage.x, onStage.y); });
     if (id < 0)
         return report (id, "Adding " + kind);
     refresh();
+    select (id);
     if (auto* info = kindById (kind))
-        report (0, "Added " + info->title + " " + juce::String (id));
+        report (0, "Added " + info->title);
 }
 
 void Canvas::removeModule (int id)
 {
+    remember();
+    const auto label = nodes.count (id) ? nodes[id]->kind.title : juce::String ("module");
     const int code = host.with ([id] (NaApp* a) { return na_remove (a, (uint32_t) id); });
     if (code < 0)
-        return report (code, "Removing module " + juce::String (id));
+        return report (code, "Removing " + label);
     refresh();
-    report (0, "Removed module " + juce::String (id));
+    report (0, "Deleted " + label);
+}
+
+void Canvas::deleteSelection()
+{
+    if (selectedWire >= 0)
+        return removeWire (selectedWire);
+    if (selectedNode >= 0)
+        removeModule (selectedNode);
+}
+
+void Canvas::duplicateSelection()
+{
+    auto it = nodes.find (selectedNode);
+    if (it == nodes.end())
+        return report (0, "Select a module to duplicate");
+    remember();
+    const auto kind = it->second->kind.id.toStdString();
+    const auto title = it->second->kind.title;
+    const auto at = it->second->getPosition().toFloat() + juce::Point<float> (40, 40);
+    const int src = selectedNode;
+    const int id = host.with ([&] (NaApp* a) {
+        const int made = na_add (a, kind.c_str(), at.x, at.y);
+        if (made > 0 && kind == "wave")
+        {
+            const auto patch = naText ([&] (char* b, uint32_t c) { return na_wave_patch (a, (uint32_t) src, b, c); });
+            na_load_wave_patch (a, (uint32_t) made, patch.c_str());
+        }
+        return made;
+    });
+    if (id < 0)
+        return report (id, "Duplicating");
+    refresh();
+    select (id);
+    report (0, "Duplicated " + title);
 }
 
 void Canvas::newCanvas()
 {
-    host.with ([] (NaApp* a) {
-        return na_load (a, "{\"format\":\"idmlab-patch\",\"version\":1,\"modules\":[],\"cables\":[]}");
-    });
+    remember();
+    host.with ([] (NaApp* a) { return na_load (a, "{\"format\":\"idmlab-patch\",\"version\":1,\"modules\":[],\"cables\":[]}"); });
     currentFile = juce::File();
     starter();
+}
+
+void Canvas::select (int id)
+{
+    selectedNode = id;
+    if (id >= 0)
+        selectedWire = -1;
+    for (auto& [nid, n] : nodes)
+        if (n->selected != (nid == id))
+        {
+            n->selected = nid == id;
+            n->repaint();
+        }
+    cables.update();
 }
 
 void Canvas::refresh()
@@ -525,55 +1112,52 @@ void Canvas::refresh()
     const auto described = juce::JSON::parse (juce::String (host.with ([] (NaApp* a) {
         return naText ([a] (char* b, uint32_t c) { return na_describe (a, b, c); });
     })));
-    faces.clear();
+    nodes.clear();
     wires.clear();
     selectedWire = -1;
     if (auto* modules = described["modules"].getArray())
-    {
         for (const auto& m : *modules)
         {
             const auto* kind = kindById (m["kind"].toString());
             if (kind == nullptr)
                 continue;
             const int id = (int) m["id"];
-            auto face = std::make_unique<ModuleFace> (*this, id, *kind);
-            face->setTopLeftPosition ((int) (double) m["x"], (int) (double) m["y"]);
-            face->setValues (m["values"]);
-            face->setPatchName (m["name"].toString());
-            board.addAndMakeVisible (*face);
-            faces[id] = std::move (face);
+            auto node = std::make_unique<Node> (*this, id, *kind);
+            node->setTopLeftPosition ((int) num (m["x"]), (int) num (m["y"]));
+            node->setValues (m["values"]);
+            node->setPatchName (m["name"].toString());
+            node->selected = id == selectedNode;
+            stage.addAndMakeVisible (*node);
+            nodes[id] = std::move (node);
         }
-    }
+    if (nodes.count (selectedNode) == 0)
+        selectedNode = -1;
     if (auto* list = described["cables"].getArray())
         for (const auto& c : *list)
             wires.push_back ({ (int) c["from"][0], (int) c["from"][1], (int) c["to"][0], (int) c["to"][1] });
-    cables.toFront (false);
+    cables.toBack();
     const auto& view = described["view"];
-    if (view.isObject())
+    if (view.isObject() && view.hasProperty ("zoom"))
     {
-        zoom = juce::jlimit (0.1f, 2.0f, (float) (double) view["zoom"]);
-        offset = { (float) (double) view["x"], (float) (double) view["y"] };
-        applyTransform();
+        cam = { num (view["left"]), num (view["top"]), camera::clampZoom (num (view["zoom"], 1)) };
+        applyCamera();
     }
-    pushMidiIns();
-    board.repaint();
-}
-
-void Canvas::pushMidiIns()
-{
-    std::vector<uint32_t> ids;
-    for (const auto& [id, face] : faces)
-        if (face->kind.id == "midi-in")
-            ids.push_back ((uint32_t) id);
-    host.setMidiIns (std::move (ids));
+    std::vector<uint32_t> midi;
+    for (const auto& [id, n] : nodes)
+        if (n->kind.id == "midi-in")
+            midi.push_back ((uint32_t) id);
+    host.setMidiIns (std::move (midi));
+    cables.update();
+    if (changed)
+        changed();
 }
 
 void Canvas::pushView()
 {
     juce::DynamicObject::Ptr v = new juce::DynamicObject();
-    v->setProperty ("zoom", zoom);
-    v->setProperty ("x", offset.x);
-    v->setProperty ("y", offset.y);
+    v->setProperty ("left", cam.left);
+    v->setProperty ("top", cam.top);
+    v->setProperty ("zoom", cam.zoom);
     const auto text = juce::JSON::toString (juce::var (v.get()), true).toStdString();
     host.with ([&] (NaApp* a) { return na_set_view (a, text.c_str()); });
 }
@@ -581,88 +1165,81 @@ void Canvas::pushView()
 void Canvas::writePatch (const juce::File& file)
 {
     pushView();
-    const auto text = host.with ([] (NaApp* a) { return naText ([a] (char* b, uint32_t c) { return na_save (a, b, c); }); });
-    if (file.replaceWithText (juce::String::fromUTF8 (text.c_str())))
+    if (file.replaceWithText (snapshot()))
     {
         currentFile = file;
-        report (0, "Saved " + file.getFullPathName());
+        report (0, "Saved " + file.getFileName());
+        if (changed)
+            changed();
     }
-    else if (status)
-        status ("Couldn't write " + file.getFullPathName());
+    else
+        report (0, "Couldn't write " + file.getFullPathName());
 }
 
 void Canvas::savePatch (bool askWhere)
 {
     if (!askWhere && currentFile != juce::File())
         return writePatch (currentFile);
-    chooser = std::make_unique<juce::FileChooser> ("Save the canvas", places::patches().getChildFile ("canvas.json"), "*.json");
-    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
-                          [this] (const juce::FileChooser& fc) {
-                              const auto f = fc.getResult();
-                              if (f != juce::File())
-                                  writePatch (f.withFileExtension ("json"));
-                          });
+    chooser = std::make_unique<juce::FileChooser> ("Save the patch", places::patches().getChildFile ("Untitled.json"), "*.json");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting, [this] (const juce::FileChooser& fc) {
+        const auto f = fc.getResult();
+        if (f != juce::File())
+            writePatch (f.withFileExtension ("json"));
+    });
 }
 
 void Canvas::openPatch()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Open a canvas", places::patches(), "*.json");
-    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                          [this] (const juce::FileChooser& fc) {
-                              const auto f = fc.getResult();
-                              if (f == juce::File())
-                                  return;
-                              const auto text = f.loadFileAsString().toStdString();
-                              const int code = host.with ([&] (NaApp* a) { return na_load (a, text.c_str()); });
-                              if (code < 0)
-                                  return report (code, "Opening " + f.getFileName());
-                              currentFile = f;
-                              refresh();
-                              report (0, "Opened " + f.getFullPathName());
-                          });
+    chooser = std::make_unique<juce::FileChooser> ("Open a patch", places::patches(), "*.json");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc) {
+        const auto f = fc.getResult();
+        if (f == juce::File())
+            return;
+        remember();
+        const auto text = f.loadFileAsString().toStdString();
+        const int code = host.with ([&] (NaApp* a) { return na_load (a, text.c_str()); });
+        if (code < 0)
+            return report (code, "Open failed: " + f.getFileName());
+        currentFile = f;
+        refresh();
+        report (0, "Opened " + f.getFileName());
+    });
 }
 
 void Canvas::openWavePreset (int id)
 {
     const auto start = places::mglWavePresets().isDirectory() ? places::mglWavePresets() : places::wavePresets();
     chooser = std::make_unique<juce::FileChooser> ("Open a Wave preset", start, "*.json");
-    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                          [this, id] (const juce::FileChooser& fc) {
-                              const auto f = fc.getResult();
-                              if (f == juce::File())
-                                  return;
-                              const auto text = f.loadFileAsString().toStdString();
-                              const int code = host.with ([&] (NaApp* a) { return na_load_wave_patch (a, (uint32_t) id, text.c_str()); });
-                              if (code < 0)
-                                  return report (code, "Opening " + f.getFileName());
-                              refresh();
-                              report (0, "Wave " + juce::String (id) + " plays " + f.getFileNameWithoutExtension());
-                          });
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [this, id] (const juce::FileChooser& fc) {
+        const auto f = fc.getResult();
+        if (f == juce::File())
+            return;
+        const auto text = f.loadFileAsString().toStdString();
+        const int code = host.with ([&] (NaApp* a) { return na_load_wave_patch (a, (uint32_t) id, text.c_str()); });
+        if (code < 0)
+            return report (code, "Opening " + f.getFileName());
+        refresh();
+        report (0, "Wave plays " + f.getFileNameWithoutExtension());
+    });
 }
 
 void Canvas::saveWavePreset (int id)
 {
     chooser = std::make_unique<juce::FileChooser> ("Save a Wave preset", places::wavePresets().getChildFile ("preset.json"), "*.json");
-    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
-                          [this, id] (const juce::FileChooser& fc) {
-                              auto f = fc.getResult();
-                              if (f == juce::File())
-                                  return;
-                              f = f.withFileExtension ("json");
-                              const auto patch = host.with ([id] (NaApp* a) {
-                                  return naText ([a, id] (char* b, uint32_t c) { return na_wave_patch (a, (uint32_t) id, b, c); });
-                              });
-                              // MGL's preset shape, so its Wave page can open it too.
-                              juce::DynamicObject::Ptr held = new juce::DynamicObject();
-                              held->setProperty ("name", f.getFileNameWithoutExtension());
-                              held->setProperty ("tags", juce::Array<juce::var>());
-                              held->setProperty ("patch", juce::JSON::parse (juce::String::fromUTF8 (patch.c_str())));
-                              held->setProperty ("hidden", false);
-                              if (f.replaceWithText (juce::JSON::toString (juce::var (held.get()))))
-                                  report (0, "Saved the preset " + f.getFullPathName());
-                              else if (status)
-                                  status ("Couldn't write " + f.getFullPathName());
-                          });
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting, [this, id] (const juce::FileChooser& fc) {
+        auto f = fc.getResult();
+        if (f == juce::File())
+            return;
+        f = f.withFileExtension ("json");
+        const auto patch = host.with ([id] (NaApp* a) { return naText ([a, id] (char* b, uint32_t c) { return na_wave_patch (a, (uint32_t) id, b, c); }); });
+        // MGL's preset shape, so its Wave page can open it too.
+        juce::DynamicObject::Ptr held = new juce::DynamicObject();
+        held->setProperty ("name", f.getFileNameWithoutExtension());
+        held->setProperty ("tags", juce::Array<juce::var>());
+        held->setProperty ("patch", juce::JSON::parse (juce::String::fromUTF8 (patch.c_str())));
+        held->setProperty ("hidden", false);
+        report (0, f.replaceWithText (juce::JSON::toString (juce::var (held.get()))) ? "Saved the preset " + f.getFileName() : "Couldn't write " + f.getFullPathName());
+    });
 }
 
 void Canvas::set (int id, int index, float value)
@@ -672,87 +1249,108 @@ void Canvas::set (int id, int index, float value)
         report (code, "That control");
 }
 
-void Canvas::note (int id, bool on, int n, float velocity)
+void Canvas::nodeMoved (int id)
 {
-    host.with ([=] (NaApp* a) { return na_note (a, (uint32_t) id, on ? 1u : 0u, (uint32_t) n, velocity); });
-}
-
-void Canvas::faceMoved (int id)
-{
-    auto it = faces.find (id);
-    if (it == faces.end())
+    auto it = nodes.find (id);
+    if (it == nodes.end())
         return;
     const auto p = it->second->getPosition().toFloat();
     host.with ([=] (NaApp* a) { return na_place (a, (uint32_t) id, p.x, p.y); });
 }
 
-Socket* Canvas::socketOf (int module, bool isInput, int index) const
+// ─── cables
+
+Jack* Canvas::jackOf (int module, bool isInput, int index) const
 {
-    auto it = faces.find (module);
-    if (it == faces.end())
+    auto it = nodes.find (module);
+    if (it == nodes.end())
         return nullptr;
-    for (auto& s : it->second->sockets)
-        if (s->isInput == isInput && s->index == index)
-            return s.get();
+    for (auto& j : it->second->jacks)
+        if (j->isInput == isInput && j->index == index)
+            return j.get();
     return nullptr;
 }
 
+// idMLab's cable: it leaves an output and arrives at an input horizontally;
+// the bend grows with the gap and never collapses (portGeometry.ts, cablePath).
 juce::Path Canvas::wirePath (const Wire& w) const
 {
     juce::Path p;
-    auto* a = socketOf (w.from, false, w.fromSocket);
-    auto* b = socketOf (w.to, true, w.toSocket);
+    auto* a = jackOf (w.from, false, w.fromSocket);
+    auto* b = jackOf (w.to, true, w.toSocket);
     if (a == nullptr || b == nullptr)
         return p;
-    const auto from = a->centreOnBoard(), to = b->centreOnBoard();
-    const float dx = juce::jmax (40.0f, std::abs (to.x - from.x) * 0.5f);
+    const auto from = a->centreOnStage(), to = b->centreOnStage();
+    const float bend = juce::jmax (80.0f, std::abs (to.x - from.x) * 0.5f);
     p.startNewSubPath (from);
-    p.cubicTo (from.x + dx, from.y, to.x - dx, to.y, to.x, to.y);
+    p.cubicTo (from.x + bend, from.y, to.x - bend, to.y, to.x, to.y);
     return p;
 }
 
-void Canvas::beginCable (Socket* s)
+int Canvas::wireAt (juce::Point<float> onStage) const
 {
-    pendingFrom = s;
-    pendingEnd = s->centreOnBoard();
+    int best = -1;
+    float bestDistance = 8.0f / juce::jmax (0.2f, cam.zoom);
+    for (size_t i = 0; i < wires.size(); ++i)
+    {
+        juce::Point<float> nearest;
+        wirePath (wires[i]).getNearestPoint (onStage, nearest);
+        const float d = nearest.getDistanceFrom (onStage);
+        if (d < bestDistance)
+            best = (int) i, bestDistance = d;
+    }
+    return best;
 }
 
-void Canvas::dragCable (juce::Point<float> onBoard)
+void Canvas::beginCable (Jack* j)
 {
-    pendingEnd = onBoard;
-    cables.repaint();
+    pendingFrom = j;
+    pendingEnd = j->centreOnStage();
 }
 
-void Canvas::endCable (juce::Point<float> onBoard)
+void Canvas::dragCable (juce::Point<float> onStage)
+{
+    pendingEnd = onStage;
+    cables.update();
+}
+
+void Canvas::endCable (juce::Point<float> onStage)
 {
     auto* from = pendingFrom;
     pendingFrom = nullptr;
-    cables.repaint();
+    cables.update();
     if (from == nullptr)
         return;
-    Socket* target = nullptr;
-    for (const auto& [id, face] : faces)
-        for (auto& s : face->sockets)
-            if (s.get() != from && s->getBounds().translated (face->getX(), face->getY()).expanded (6).toFloat().contains (onBoard))
-                target = s.get();
+    Jack* target = nullptr;
+    for (const auto& [id, n] : nodes)
+        for (auto& j : n->jacks)
+            if (j.get() != from && j->getBounds().translated (n->getX(), n->getY()).expanded (8).toFloat().contains (onStage))
+                target = j.get();
     if (target == nullptr || target->isInput == from->isInput)
         return;
     auto* out = from->isInput ? target : from;
     auto* in = from->isInput ? from : target;
+    remember();
     const int code = host.with ([=] (NaApp* a) {
         return na_connect (a, (uint32_t) out->module, (uint32_t) out->index, (uint32_t) in->module, (uint32_t) in->index);
     });
     if (code < 0)
+    {
+        undoStack.pop_back();
         return report (code, "That cable");
+    }
     wires.push_back ({ out->module, out->index, in->module, in->index });
-    cables.repaint();
-    report (0, "Cabled " + juce::String (out->module) + " " + out->name + " to " + juce::String (in->module) + " " + in->name);
+    cables.update();
+    report (0, "Connected " + nodes[out->module]->kind.title + " to " + nodes[in->module]->kind.title);
+    if (changed)
+        changed();
 }
 
 void Canvas::removeWire (int index)
 {
     if (index < 0 || index >= (int) wires.size())
         return;
+    remember();
     const auto w = wires[(size_t) index];
     const int code = host.with ([=] (NaApp* a) {
         return na_disconnect (a, (uint32_t) w.from, (uint32_t) w.fromSocket, (uint32_t) w.to, (uint32_t) w.toSocket);
@@ -761,67 +1359,8 @@ void Canvas::removeWire (int index)
         return report (code, "Removing the cable");
     wires.erase (wires.begin() + index);
     selectedWire = -1;
-    cables.repaint();
-    report (0, "Removed the cable");
-}
-
-bool Canvas::keyPressed (const juce::KeyPress& key)
-{
-    if ((key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) && selectedWire >= 0)
-    {
-        removeWire (selectedWire);
-        return true;
-    }
-    return false;
-}
-
-void Canvas::applyTransform()
-{
-    board.setTransform (juce::AffineTransform::scale (zoom).translated (offset));
-}
-
-void Canvas::panBy (juce::Point<float> delta)
-{
-    offset += delta;
-    applyTransform();
-}
-
-juce::Point<float> Canvas::boardPoint (juce::Point<float> onCanvas) const
-{
-    return (onCanvas - offset) / zoom;
-}
-
-void Canvas::zoomBy (float factor, juce::Point<float> around)
-{
-    const auto fixed = boardPoint (around);
-    zoom = juce::jlimit (0.1f, 2.0f, zoom * factor);
-    offset = around - fixed * zoom;
-    applyTransform();
-    if (status)
-        status ("Zoom " + juce::String (juce::roundToInt (zoom * 100.0f)) + "%");
-}
-
-void Canvas::fit()
-{
-    if (faces.empty())
-        return actualSize();
-    juce::Rectangle<int> all = faces.begin()->second->getBounds();
-    for (const auto& [id, face] : faces)
-        all = all.getUnion (face->getBounds());
-    const auto area = getLocalBounds().toFloat().reduced (20.0f);
-    zoom = juce::jlimit (0.1f, 1.0f, juce::jmin (area.getWidth() / (float) all.getWidth(), area.getHeight() / (float) all.getHeight()));
-    offset = area.getCentre() - all.toFloat().getCentre() * zoom;
-    applyTransform();
-    if (status)
-        status ("Fit: zoom " + juce::String (juce::roundToInt (zoom * 100.0f)) + "%");
-}
-
-void Canvas::actualSize()
-{
-    zoomBy (1.0f / zoom, getLocalBounds().getCentre().toFloat());
-}
-
-void Canvas::resized()
-{
-    applyTransform();
+    cables.update();
+    report (0, "Deleted the cable");
+    if (changed)
+        changed();
 }

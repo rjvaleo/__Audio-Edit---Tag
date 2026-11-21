@@ -1,13 +1,22 @@
-// The canvas: idMLab's board of modules, panned and zoomed, with cables.
+// The canvas: idMLab's own (M Clone, src/modular/ui/ModularApp.tsx and
+// camera.ts), the ComfyUI one, ported.
 //
-// Every module is one fixed pixel size (its kind's width and height) and
-// never grows, shrinks or reflows. Zoom scales the whole board; the window
-// shows as much of it as fits. A module's face is built from its kind's list
-// of controls (na_controls): a knob is a rotary slider, a switch a toggle, a
-// choice a combo box, in a fixed grid. Stock JUCE controls: the designed
-// faces come later (phase 8).
+// - The camera is idMLab's (LiteGraph's DragAndScale): one transform, translate
+//   then scale, in a window that never scrolls, so there are no edges. The wheel
+//   zooms about the cursor, 1.1x a notch, from 0.1x to 10x; a trackpad glides;
+//   a pinch holds the canvas.
+// - Pan as ComfyUI does: drag the empty canvas, or hold Space and drag anywhere,
+//   or drag with the middle button anywhere.
+// - Double-click or right-click the empty canvas: Add module, with search.
+//   Delete or Backspace removes what is selected; "." fits the patch (or the
+//   selected module); Cmd+D duplicates; Cmd+Z and Shift+Cmd+Z undo and redo.
+// - Every module wears idMLab's frame and header (collapse, power, its menu,
+//   its name, close) and its sockets, captured from idMLab itself; cables are
+//   idMLab's curve and stroke. MGL's pages are the modules' faces, at their
+//   own fixed size.
 #pragma once
 
+#include "Face.h"
 #include "Host.h"
 #include "WaveFace.h"
 
@@ -18,6 +27,24 @@
 #include <map>
 #include <memory>
 #include <vector>
+
+// idMLab's camera (camera.ts): `left` and `top` are where the window's
+// top-left corner sits on the scaled canvas.
+struct Camera
+{
+    float left = 0, top = 0, zoom = 1;
+};
+
+namespace camera
+{
+constexpr float minZoom = 0.1f, maxZoom = 10.0f, notch = 1.1f;
+float clampZoom (float);
+juce::Point<float> toCanvas (const Camera&, juce::Point<float> screen);
+Camera zoomAround (const Camera&, juce::Point<float> pointer, float factor);
+Camera panBy (const Camera&, float dx, float dy);
+Camera centreOn (juce::Point<float> point, juce::Point<float> view, float zoom);
+Camera fit (const std::vector<juce::Rectangle<float>>& boxes, juce::Point<float> view, float margin = 48);
+} // namespace camera
 
 class Canvas;
 
@@ -35,100 +62,114 @@ struct KindInfo
     juce::var controls;
 };
 
-class Socket final : public juce::Component, public juce::SettableTooltipClient
+// A socket: idMLab's jack, its label outside the module.
+class Jack final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    Socket (Canvas&, int module, bool isInput, int index, const SocketInfo&);
+    Jack (Canvas&, int module, bool isInput, int index, const SocketInfo&);
     const int module;
     const bool isInput;
     const int index;
     const juce::String type, name;
-
-    // The middle of the socket, on the board.
-    juce::Point<float> centreOnBoard() const;
-
+    juce::Point<float> centreOnStage() const;
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
+    static constexpr int size = 12;
 
 private:
     Canvas& canvas;
+    std::unique_ptr<juce::Drawable> art;
 };
 
-class ModuleFace final : public juce::Component, private juce::MidiKeyboardState::Listener
+// A module on the canvas: idMLab's frame and header round its face.
+class Node final : public juce::Component
 {
 public:
-    ModuleFace (Canvas&, int id, const KindInfo&);
-    ~ModuleFace() override;
-
+    Node (Canvas&, int id, const KindInfo&);
     const int id;
     const KindInfo& kind;
-    std::vector<std::unique_ptr<Socket>> sockets;
+    std::vector<std::unique_ptr<Jack>> jacks;
+    std::unique_ptr<WaveFace> wave;
+    bool collapsed = false, selected = false;
+    juce::Colour accent;
 
-    // Show these values (one per control), sending nothing.
     void setValues (const juce::var& values);
-    void setPatchName (const juce::String& name);
-
+    void setPatchName (const juce::String&);
+    void layout();
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
 
-    static constexpr int header = 28;
-    static constexpr int cellW = 70, cellH = 86;
-    static constexpr int keyboardH = 96;
+    static constexpr int header = 20, border = 1;
+    juce::Rectangle<int> bodyBounds() const;
 
 private:
     Canvas& canvas;
     juce::String patchName;
-    std::vector<std::unique_ptr<juce::Component>> controls;
-    std::vector<std::unique_ptr<juce::Label>> labels;
-    juce::MidiKeyboardState keyState;
-    std::unique_ptr<juce::MidiKeyboardComponent> keyboard;
-    std::unique_ptr<WaveFace> wave;
-    juce::TextButton close { "x" }, preset { "Preset" };
+    std::unique_ptr<juce::ComboBox> channel;
     juce::Point<int> grabbedAt;
     bool moving = false;
-
-    void build();
-    void presetMenu();
-    void handleNoteOn (juce::MidiKeyboardState*, int, int note, float velocity) override;
-    void handleNoteOff (juce::MidiKeyboardState*, int, int note, float) override;
+    juce::Rectangle<float> collapseR, powerR, menuR, handleR, nameR, closeR;
+    juce::Image frame;
+    juce::String frameKey;
+    void paintFrame (juce::Graphics&);
 };
 
-// The cables, drawn over the modules. It takes a click only near a cable.
-class CableLayer final : public juce::Component
+// The cables, under the modules.
+class Cables final : public juce::Component
 {
 public:
-    explicit CableLayer (Canvas& c) : canvas (c) {}
+    explicit Cables (Canvas& c) : canvas (c) { setInterceptsMouseClicks (false, false); }
     void paint (juce::Graphics&) override;
-    bool hitTest (int x, int y) override;
-    void mouseDown (const juce::MouseEvent&) override;
+    // Fit the layer to the cables (and the one being dragged), and draw again.
+    void update();
 
 private:
     Canvas& canvas;
 };
 
-// The board the modules sit on: a large fixed area, scaled and moved as one.
-class Board final : public juce::Component
+// The stage: the canvas itself, moved and scaled by the camera.
+class Stage final : public juce::Component
 {
 public:
-    explicit Board (Canvas& c) : canvas (c) {}
-    void paint (juce::Graphics&) override;
-    void mouseDown (const juce::MouseEvent&) override;
-    void mouseDrag (const juce::MouseEvent&) override;
-    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
-    void mouseMagnify (const juce::MouseEvent&, float scale) override;
+    explicit Stage (Canvas&) {}
+    static constexpr int size = 20000;
+};
 
-    static constexpr int size = 12000;
+// idMLab's Add module panel, with its search.
+class AddMenu final : public juce::Component, private juce::TextEditor::Listener
+{
+public:
+    AddMenu (Canvas&, juce::Point<float> onStage);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
+    const juce::Point<float> at;
 
 private:
     Canvas& canvas;
-    juce::Point<float> panFrom, offsetFrom;
+    juce::TextEditor search;
+    struct Row
+    {
+        juce::String label, kind;
+        bool group;
+        juce::Rectangle<float> r;
+    };
+    std::vector<Row> rows;
+    int hover = -1;
+    void filter();
+    void textEditorTextChanged (juce::TextEditor&) override { filter(); }
+    void textEditorReturnKeyPressed (juce::TextEditor&) override;
+    void textEditorEscapeKeyPressed (juce::TextEditor&) override;
 };
 
-class Canvas final : public juce::Component
+class Canvas final : public juce::Component, private juce::KeyListener, private juce::Timer
 {
 public:
     explicit Canvas (Host&);
@@ -138,65 +179,116 @@ public:
     std::vector<KindInfo> kinds;
     const KindInfo* kindById (const juce::String&) const;
 
-    // Says what a button did, or why it couldn't.
+    // Says what a command did, or why it couldn't (the status line).
     std::function<void (const juce::String&)> status;
+    // Asks for the bar and status line to be drawn again (zoom, file, counts).
+    std::function<void()> changed;
 
     struct Wire
     {
         int from, fromSocket, to, toSocket;
     };
     std::vector<Wire> wires;
-    int selectedWire = -1;
-    std::map<int, std::unique_ptr<ModuleFace>> faces;
+    int selectedWire = -1, selectedNode = -1;
+    std::map<int, std::unique_ptr<Node>> nodes;
 
-    // What the toolbar and the menus do.
+    // The menus' and the bar's commands (appMenus.ts).
     void starter();
-    void addModule (const juce::String& kind, juce::Point<float> onBoard);
-    void removeModule (int id);
     void newCanvas();
     void openPatch();
     void savePatch (bool askWhere);
+    void undo();
+    void redo();
+    void duplicateSelection();
+    void deleteSelection();
+    void addModuleAtCentre();
+    void addModule (const juce::String& kind, juce::Point<float> onStage);
+    void centrePatch();
+    void pan (float dx, float dy);
+    // End a zoom gesture now and draw sharp (for the bench).
+    void settleZoom() { if (zooming) timerCallback(); }
     void fit();
-    void actualSize();
-    void zoomBy (float factor, juce::Point<float> aroundOnCanvas);
-    void panBy (juce::Point<float> delta);
-    juce::Point<float> boardPoint (juce::Point<float> onCanvas) const;
+    void setZoom (float);
+    float zoom() const { return cam.zoom; }
+    juce::String fileName() const;
 
-    // From the faces.
+    // From the modules.
+    void removeModule (int id);
+    void select (int id);
+    void nodeMoved (int id);
     void set (int id, int index, float value);
-    void note (int id, bool on, int note, float velocity);
-    void faceMoved (int id);
     void openWavePreset (int id);
     void saveWavePreset (int id);
 
     // A cable being dragged from a socket.
-    void beginCable (Socket*);
-    void dragCable (juce::Point<float> onBoard);
-    void endCable (juce::Point<float> onBoard);
-    Socket* pendingFrom = nullptr;
+    void beginCable (Jack*);
+    void dragCable (juce::Point<float> onStage);
+    void endCable (juce::Point<float> onStage);
+    Jack* pendingFrom = nullptr;
     juce::Point<float> pendingEnd;
-    Socket* socketOf (int module, bool isInput, int index) const;
+    Jack* jackOf (int module, bool isInput, int index) const;
     juce::Path wirePath (const Wire&) const;
     void removeWire (int index);
+    int wireAt (juce::Point<float> onStage) const;
 
-    // Rebuild every face from what the engine holds.
     void refresh();
+    void closeMenu();
 
-    float zoom = 1.0f;
-    juce::Point<float> offset;
+    juce::Point<float> stagePoint (juce::Point<float> onCanvas) const { return camera::toCanvas (cam, onCanvas); }
+    Stage stage { *this };
+    Cables cables { *this };
 
+    void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void mouseMagnify (const juce::MouseEvent&, float scale) override;
     bool keyPressed (const juce::KeyPress&) override;
+    bool keyPressed (const juce::KeyPress&, juce::Component*) override;
+    bool keyStateChanged (bool, juce::Component*) override;
+    using juce::Component::keyStateChanged;
+
+    // Space held, or a middle-button drag: the hand, panning even over a module.
+    bool spaceHeld = false;
+    bool panGesture (const juce::MouseEvent&) const;
+
+    // Pan from wherever the pointer went down (Space, the middle button).
+    void startPan (const juce::MouseEvent&);
+    void movePan (const juce::MouseEvent&);
+    void endPan();
+    bool isPanning() const { return panning; }
 
 private:
-    Board board { *this };
-    CableLayer cables { *this };
+    Camera cam;
     juce::File currentFile;
     std::unique_ptr<juce::FileChooser> chooser;
+    std::unique_ptr<AddMenu> menu;
+    bool panning = false;
+    juce::Point<float> panFrom;
+    Camera panCamera;
+    std::vector<juce::String> undoStack, redoStack;
+    juce::Image dotTile;
+    float dotStep = 0;
 
-    void applyTransform();
-    void pushMidiIns();
+    // While a zoom gesture runs, a picture of the canvas taken as it began is
+    // moved and scaled, which costs nothing; the canvas is drawn again sharp
+    // once the gesture has rested.
+    juce::Image shot;
+    Camera shotCam;
+    float shotDensity = 1;
+    bool zooming = false;
+    void zoomTo (const Camera&);
+    void timerCallback() override;
+
+    void applyCamera();
     void report (int code, const juce::String& what);
     void pushView();
     void writePatch (const juce::File&);
+    void remember();
+    juce::String snapshot();
+    void restore (const juce::String&);
+    void openMenu (juce::Point<float> onCanvas);
 };

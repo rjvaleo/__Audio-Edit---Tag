@@ -489,6 +489,10 @@ void WaveFace::menu (const juce::String& key, const juce::StringArray& options, 
 
 void WaveFace::mouseDown (const juce::MouseEvent& e)
 {
+    drag = nullptr;
+    dragEnd = nullptr;
+    if ((blocked && blocked (e)) || !e.mods.isLeftButtonDown())
+        return;
     grabKeyboardFocus();
     drag = nullptr;
     dragEnd = nullptr;
