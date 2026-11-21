@@ -73,7 +73,8 @@ pub enum GrainThing {
     Params(StreamParams),
     /// The sound, at the engine's rate, two channels.
     Source(Arc<Source>),
-    /// The rack after the engines, or none. Sized for the deck's block.
+    /// The rack after the engines, or none. Sized for the deck's block by
+    /// whoever builds it: `reserve_mix(grid * 2)`, two channels.
     Rack(Option<mgl_fx::Rack>),
     /// The layers' engines.
     Bank(LayerBank),
@@ -236,9 +237,13 @@ impl Grain {
         }
     }
 
-    /// Start with this rack after the engines.
-    pub fn rack(mut self, rack: mgl_fx::Rack) -> Grain {
+    /// Start with this rack after the engines. It is given room here for the
+    /// deck's stereo block (the grid, two channels), off the audio thread:
+    /// since the rack went planar (MGL 66cc8ed) it grows its scratch on the
+    /// first block bigger than it was given, which would be in the callback.
+    pub fn rack(mut self, mut rack: mgl_fx::Rack) -> Grain {
         self.rebuildable = false;
+        rack.reserve_mix(self.grid * 2);
         self.shared.set_rack(Some(rack));
         self
     }
