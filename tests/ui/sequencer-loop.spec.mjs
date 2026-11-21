@@ -206,10 +206,16 @@ test('live, a jump back puts the take back, and a take that ran out comes round 
   await frame.waitForFunction(() => !perfReplay, null, { timeout: 3_000 });
   expect(await frame.evaluate(() => document.getElementById('waveSelect').value)).toBe('square');
   // The loop comes round to the start: the take stands where it began...
+  //
+  // The take's clock is held while that is looked at. It runs on real time,
+  // and its switch is 0.7 s on: a page held up longer than that (GitHub's
+  // runner, 20 Nov) had thrown it again before the test could look.
+  await frame.evaluate(() => { const real = perfNow, t = real(); window.realPerfNow = real; perfNow = () => t; });
   await page.evaluate(() => seqPost({ type: 'seq:clock', playing: true, at: 0.3 }));
   await frame.waitForFunction(() => !!perfReplay, null, { timeout: 3_000 });
   expect(await frame.evaluate(() => document.getElementById('waveSelect').value),
     'the jump back did not put the take back').toBe('sine');
+  await frame.evaluate(() => { perfNow = window.realPerfNow; });
   // ...and throws its switch again when it gets there.
   await frame.waitForFunction(() => document.getElementById('waveSelect').value === 'square', null, { timeout: 3_000 });
   await page.evaluate(() => seqSync(false));

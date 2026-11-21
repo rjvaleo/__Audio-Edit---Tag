@@ -1,9 +1,24 @@
 //! Atmosphere's physically modelled oscillators (ATMOS-PHYS-PLAN.md §5).
 
+mod bench_support;
 mod common;
 use atmos::{models::MODELS, Synth};
 use common::*;
-use std::time::Instant;
+
+/// Seconds of this thread's own work, where the machine keeps that count.
+/// Wall time also counts whatever else the machine is doing — the other tests
+/// in this binary run beside the cost test — and GitHub's runner once made
+/// one second of bow take 0.554 s that way (20 Nov), 0.571 on a MacBook kept
+/// busy. Without a thread clock (Windows) it is wall time, as it was.
+#[cfg(unix)]
+fn work_now() -> f64 {
+    bench_support::cpu_now()
+}
+#[cfg(not(unix))]
+fn work_now() -> f64 {
+    static T0: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    T0.get_or_init(std::time::Instant::now).elapsed().as_secs_f64()
+}
 
 fn idx(id: &str) -> usize {
     atmos::models::model_index(id).unwrap()
@@ -119,11 +134,11 @@ fn sixteen_voices_cost_under_a_third_of_real_time() {
             s.note_on(k, 110.0 * (1.0 + k as f32 * 0.1), 0.8, 0);
         }
         let (mut l, mut r) = (vec![0.0; 128], vec![0.0; 128]);
-        let t = Instant::now();
+        let t = work_now();
         for _ in 0..(SR as usize / 128) {
             s.render(&mut l, &mut r);
         }
-        let took = t.elapsed().as_secs_f32();
+        let took = (work_now() - t) as f32;
         if took > worst.1 {
             worst = (d.0.to_string(), took);
         }

@@ -40,6 +40,14 @@ async function openSurfaces(page) {
     const c = document.getElementById('visRoom3d');
     return c && c.clientWidth > 100;
   }, null, { timeout: 15_000 });
+
+  // **Ready to draw, not only on the page.** The room is attached on the frame
+  // that first wants it, and Babylon marks a new shader ready on a timer a task
+  // later, leaving its mesh out of any frame drawn before then. A frame asked
+  // for in that gap is black: GitHub's runner caught the room there (20 Nov),
+  // and the MacBook does every time a frame is asked for in the attaching task.
+  await expect.poll(() => page.evaluate(`(visLive.room3d ? ${SHOOT}({}).whole : 0)`),
+    { message: 'the room never drew', timeout: 15_000 }).toBeGreaterThan(5);
 }
 
 /// Fill it with sound and draw one frame on a clock we choose, then read the

@@ -103,7 +103,10 @@ test('dragging a module by its title reorders the chain, and the server keeps th
   await page.mouse.move(b.x + 30, b.y + 8, { steps: 6 });
   await page.mouse.up();
   await expect.poll(async () => (await stored(page)).map((s) => s.kind)).toEqual(['comp', 'prism:echo', 'eq']);
-  expect(await tiles(page)).toEqual(['comp', 'prism:echo', 'eq']);
+  // The row is drawn again on the page's next frame (`gsFxTick`), not by the
+  // drop, so on a slow machine the server can answer first: GitHub's runner
+  // read the old row twice, the server already holding the new order.
+  await expect.poll(() => tiles(page)).toEqual(['comp', 'prism:echo', 'eq']);
 });
 
 test('the FX label opens the page and takes you back; an engine tab goes back too', async ({ page }) => {

@@ -90,12 +90,13 @@ test('the panel width is clamped at both ends', async ({ page }) => {
 test('double-clicking the grip restores the default width', async ({ page }) => {
   await ready(page);
   await page.evaluate(() => setLeftPanelWidth(560));
-  await page.waitForTimeout(400);
-  expect(await width(page)).toBeGreaterThan(500);
+  // The width eases (0.18 s), and a slow machine draws its frames late:
+  // GitHub's runner read 393 px 400 ms in, on the way from 330 to 560. So
+  // each width is waited for, not a fixed time.
+  await expect.poll(() => width(page)).toBeGreaterThan(500);
 
   await page.locator('#leftGrip').dblclick();
-  await page.waitForTimeout(500);
-  expect(await width(page), 'double-click did not restore the default').toBe(330);
+  await expect.poll(() => width(page), { message: 'double-click did not restore the default' }).toBe(330);
 });
 
 /// The width outlives the window.
