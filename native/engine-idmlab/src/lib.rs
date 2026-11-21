@@ -124,8 +124,10 @@ impl Wrapped {
     pub fn new(kind: ModuleKind, variant: u32, rate: f32) -> Result<Wrapped, WrapError> {
         let layout = layout(kind).ok_or(WrapError::NotYet(kind))?;
         let mut module = kind.build_variant_at(variant, rate);
-        // As idMLab's engine does when a module is added.
+        // As idMLab's engine does when a module is added. Then the tables a
+        // note would otherwise compute in the callback, here instead.
         module.set_sample_rate(rate);
+        module.build_tables();
         let (in_count, out_count) = (module.input_count(), module.output_count());
         let fits = layout.ins.len() <= MAX_PORTS
             && layout.ins.iter().all(|&(l, r)| l < in_count && r < in_count)
@@ -220,6 +222,7 @@ impl Module for Wrapped {
         if rate != self.rate {
             self.rate = rate;
             self.module.set_sample_rate(rate);
+            self.module.build_tables();
         }
     }
 

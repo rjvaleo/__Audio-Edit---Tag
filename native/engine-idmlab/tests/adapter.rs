@@ -456,6 +456,78 @@ fn the_synth_plays_as_it_does_in_idmlab() {
     assert_same("right", &theirs_r, &r);
 }
 
+/// A note in every octave, each the first to need its tables. The adapter has
+/// them built before the module is heard (`Module::build_tables`); idMLab's
+/// own engine builds each the first time a note asks. The sound is the same.
+#[test]
+fn tables_built_ahead_play_as_idmlab_builds_them() {
+    const FRAMES: usize = 9 * 2400;
+    let notes: Vec<(usize, u8)> = (0..9).map(|i| (i * 2400 + 50, 21 + 12 * i as u8)).collect();
+    let mut lab = Lab::new(RATE);
+    let synth = lab_add(&mut lab, ModuleKind::Synth);
+    lab.set_param(synth, SYNTH_LEVEL, 1.0);
+    let (mut theirs_l, mut theirs_r) = (Vec::new(), Vec::new());
+    for i in 0..FRAMES {
+        for &(at, note) in &notes {
+            if i == at {
+                lab.note_on(synth, note, 0.8, 0.0);
+            }
+            if i == at + 1800 {
+                lab.note_off(synth, note);
+            }
+        }
+        lab.process();
+        theirs_l.push(lab.output_of(synth, 0));
+        theirs_r.push(lab.output_of(synth, 1));
+    }
+    let (mut ctl, mut audio) = engine(RATE, exact());
+    ctl.add(1, Box::new(Keys::new())).unwrap();
+    ctl.add(2, Box::new(wrapped(ModuleKind::Synth))).unwrap();
+    ctl.connect(port(1, 0), port(2, 0)).unwrap();
+    ctl.connect_out(port(2, 0)).unwrap();
+    ctl.commit().unwrap();
+    for &(at, note) in &notes {
+        ctl.send_at(at as u64, 1, EventKind::Note(NoteEvent::on(note, 0.8))).unwrap();
+        ctl.send_at((at + 1800) as u64, 1, EventKind::Note(NoteEvent::off(note))).unwrap();
+    }
+    let (l, r) = render(&mut audio, FRAMES, 64);
+    assert!(peak(&l) > 0.01, "the synth is heard");
+    assert_same("left", &theirs_l, &l);
+    assert_same("right", &theirs_r, &r);
+}
+
+/// What the first note in each octave costs the block it starts in, with the
+/// tables built ahead. A measurement: `--release -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn the_first_note_of_each_octave_costs() {
+    let mut worst = Vec::new();
+    for _ in 0..5 {
+        let (mut ctl, mut audio) = engine(RATE, exact());
+        ctl.add(1, Box::new(Keys::new())).unwrap();
+        ctl.add(2, Box::new(wrapped(ModuleKind::Synth))).unwrap();
+        ctl.connect(port(1, 0), port(2, 0)).unwrap();
+        ctl.connect_out(port(2, 0)).unwrap();
+        ctl.commit().unwrap();
+        for i in 0..9u64 {
+            ctl.send_at(i * 2432 + 64, 1, EventKind::Note(NoteEvent::on(21 + 12 * i as u8, 0.8))).unwrap();
+        }
+        let (mut l, mut r) = (vec![0.0; 64], vec![0.0; 64]);
+        let mut most = 0f64;
+        for block in 0..(9 * 2432 / 64) {
+            let t = std::time::Instant::now();
+            audio.render(&mut l, &mut r);
+            let took = t.elapsed().as_secs_f64() * 1e6;
+            if block % (2432 / 64) == 1 {
+                most = most.max(took);
+            }
+        }
+        worst.push(most);
+    }
+    worst.sort_by(f64::total_cmp);
+    println!("worst block with a note-on, of five runs: median {:.1} us, best {:.1}, worst {:.1}", worst[2], worst[0], worst[4]);
+}
+
 // ---- Every kind carried, and the rules every module here must keep.
 
 #[test]
