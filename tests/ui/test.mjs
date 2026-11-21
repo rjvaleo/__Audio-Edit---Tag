@@ -14,8 +14,60 @@ export { expect };
 
 const MAP = process.env.TEST_MAP_OUT;
 
-export const test = MAP ? base.extend({
+/// **A page's answer that comes back after all.** Three times on GitHub's
+/// runner (20 and 21 Nov) a test's opening `page.evaluate` — read the folder,
+/// `selectFile`, `setMode` — failed with "Resulting promise was garbage
+/// collected": in each trace every request of the work had come back and the
+/// last of them had gone out under a millisecond before, so the page had done
+/// it all and only the browser's hold on the answer was lost. Not seen on the
+/// MacBook, even with the browser collecting every 3,000 allocations.
+///
+/// So a function is run in the page with its promise held there, and its
+/// outcome kept as it settles. When the browser loses the answer, it is read
+/// back from the page; a promise that never settles still fails the test, at
+/// its timeout. Everything else — a string to evaluate, what is passed, what
+/// comes back, what is thrown — is as `page.evaluate` does it.
+function keepAnswers(page) {
+  const evaluate = page.evaluate.bind(page);
+  let runs = 0;
+  page.evaluate = async (fn, arg) => {
+    // A method written short (`f() {}`) is not an expression on its own.
+    if (typeof fn !== 'function' || !/^(async\b|function\b|\(|[\w$]+\s*=>)/.test(fn.toString())) return evaluate(fn, arg);
+    const id = ++runs;
+    try {
+      return await evaluate(([src, a, id]) => {
+        const held = (window.__pwHeld ||= new Map());
+        const done = (window.__pwDone ||= new Map());
+        // An outcome nobody came back for is dropped after ten seconds.
+        for (const [k, d] of done) if (performance.now() - d.at > 10_000) done.delete(k);
+        const p = Promise.resolve().then(() => (0, eval)(`(${src})`)(a));
+        held.set(id, p);
+        const at = () => performance.now();
+        p.then((v) => done.set(id, { v, at: at() }), (e) => done.set(id, { e, at: at() }))
+          .finally(() => held.delete(id));
+        return p;
+      }, [fn.toString(), arg, id]);
+    } catch (e) {
+      if (!/garbage collected/.test(String(e?.message))) throw e;
+      await page.waitForFunction((id) => window.__pwDone?.has(id), id, { timeout: 0 });
+      return evaluate((id) => {
+        const d = window.__pwDone.get(id);
+        window.__pwDone.delete(id);
+        if ('e' in d) throw d.e;
+        return d.v;
+      }, id);
+    }
+  };
+}
+
+export const test = !MAP ? base.extend({
+  page: async ({ page }, use) => {
+    keepAnswers(page);
+    await use(page);
+  },
+}) : base.extend({
   page: async ({ page }, use, info) => {
+    keepAnswers(page);
     // The server routes the test reached, from any page in its context: a
     // change to one route's handler then reruns only the specs that call it.
     const routes = new Set();
@@ -63,4 +115,4 @@ export const test = MAP ? base.extend({
     }
     appendFileSync(MAP, JSON.stringify({ spec: info.file.replace(/.*tests\/ui\//, ''), ran, routes: [...routes] }) + '\n');
   },
-}) : base;
+});

@@ -113,6 +113,10 @@ test('the icons that need a selection are dimmed without one', async ({ page }) 
 
 test('copy then paste at the cursor lengthens the sound by the copy', async ({ page }) => {
   await openEdit(page);
+  // From the sound as it is on disk, as the test below: another spec in the
+  // same job had left part of it stretched on the server (GitHub's runner, 20
+  // Nov), and 2,000 frames copied from there pasted as 11,240.
+  await page.evaluate(() => editOp({ op: 'revert' }));
   const was = await frames(page);
   await select(page, 1000, 3000);
   await cmd(page, 'copy');

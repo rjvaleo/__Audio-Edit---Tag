@@ -25,7 +25,14 @@ async function openMap(page) {
 }
 
 /// A sound's place on screen once the camera has stopped moving.
+///
+/// **Framed first.** The map frames its sounds 1.6 s after placing them, over
+/// 0.9 s. With two sounds the layout is still well before that, so a place read
+/// as steady could be read before the camera moved: GitHub's runner then
+/// pointed at where the sound had been, twice (20 Nov), and nothing was under
+/// the pointer.
 async function node(page, i) {
+  await page.waitForFunction(() => window.LibraryGraph.state.framed, null, { timeout: 15_000 });
   let last = null;
   for (let n = 0; n < 60; n++) {
     const at = await page.evaluate((k) => window.LibraryGraph.screenOf(k), i);

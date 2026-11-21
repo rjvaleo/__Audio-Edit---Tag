@@ -49,7 +49,14 @@ const readEngineRow = () => ({
 
 /// Reset is a gesture on the tabs now, not a sixth button on a row with room
 /// for five. The button it replaces was the thing this file was written about.
+///
+/// **Waited for, not slept through.** It slept a fixed 2.2 s on each of the
+/// six engines, and on GitHub's runner the first page of the file took 8.5 s
+/// to load, so it ran out of its 30 s twice (20 and 21 Nov) with nothing
+/// wrong. Each step now waits for what it is waiting for, and the walk has a
+/// minute.
 test('double-clicking an engine tab resets every control', async ({ page }) => {
+  test.setTimeout(60_000);
   await openStretchPanel(page);
 
   for (const alg of ENGINES) {
@@ -63,13 +70,13 @@ test('double-clicking an engine tab resets every control', async ({ page }) => {
       state.grainDraft.densityHz = 120;
       await commitStretch();
     });
-    await page.waitForTimeout(250);
     const moved = await page.evaluate(() => state.stretchDraft.ratio);
     expect(moved, `${alg}: the ratio never moved, so the reset proves nothing`)
       .toBeCloseTo(7.5, 3);
 
     await page.dblclick(`#stretchEngine .seg-btn[data-alg="${alg}"]`);
-    await page.waitForTimeout(500);
+    await expect.poll(() => page.evaluate(() => state.stretchDraft.ratio),
+      { message: `${alg}: the ratio did not reset` }).toBe(1);
 
     const after = await page.evaluate(() => ({
       ratio: state.stretchDraft.ratio,

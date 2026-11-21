@@ -75,6 +75,9 @@
   let inside = null;
   let nodes = [], links = [], nodeOf = new Map();
   let hover = null, selected = null, hits = null;
+  /// Whether the camera has framed the sounds now shown (`show`), for the
+  /// tests: until then a sound's place on screen is about to move.
+  let framed = false, frameSerial = 0;
   let playing = -1, playStart = 0, wantTimer = 0, startedPlayback = false;
   let trail = [];
   let pollTimer = 0, raf = 0;
@@ -395,7 +398,12 @@
     graph.graphData({ nodes, links });
     hover = null;
     if (selected) selected = nodeOf.get(selected.si) || null;
-    setTimeout(() => graph.zoomToFit(900, 30), g.fixed ? 60 : 1600);
+    framed = false;
+    const k = ++frameSerial;
+    setTimeout(() => {
+      graph.zoomToFit(900, 30);
+      setTimeout(() => { if (k === frameSerial) framed = true; }, 950);
+    }, g.fixed ? 60 : 1600);
     drawKey();
     sayWhere();
   }
@@ -1022,6 +1030,7 @@
         listening: data ? data.listening : null,
         selected: selected ? selected.si : null,
         hovered: hover && hover.kind === 'sound' ? hover.si : null,
+        framed,
         playing,
         found: hits ? hits.size : null,
       };
