@@ -57,6 +57,12 @@ int32_t ne_connect (NeEngine*, uint32_t from_module, uint32_t from_port, uint32_
 int32_t ne_disconnect (NeEngine*, uint32_t from_module, uint32_t from_port, uint32_t to_module, uint32_t to_port);
 int32_t ne_connect_out (NeEngine*, uint32_t module, uint32_t out_port);
 int64_t ne_commit (NeEngine*, uint64_t frame);
+// Timing. A knob or a note lands on the frame it is stamped with, except in
+// the modules that work on a grid of their own: NE_WAVE takes it on the first
+// line of 32 samples at or after that frame (up to 31 samples late, 0.65 ms at
+// 48 kHz), and NE_GRAIN on the first line of its grid (128 here: up to 127
+// samples, 2.6 ms). Either way it is the same however the sound card's blocks
+// fall, so a live run and an offline replay agree to the bit.
 int64_t ne_param (NeEngine*, uint64_t frame, uint32_t module, uint32_t index, float value);
 int64_t ne_note (NeEngine*, uint64_t frame, uint32_t module, uint32_t on, uint32_t note, float velocity);
 int64_t ne_load_sound (NeEngine*, uint64_t frame, uint32_t id, const float* l, const float* r, uint32_t frames, float rate);

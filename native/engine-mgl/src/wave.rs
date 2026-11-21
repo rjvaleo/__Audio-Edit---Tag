@@ -208,6 +208,9 @@ impl Module for Wave {
     fn finished(&mut self) -> Option<Thing> {
         self.cut_short.take().or_else(|| self.synth.take_retired()).map(|board| board as Thing)
     }
+    fn hands_back(&self) -> bool {
+        true
+    }
     fn process(&mut self, io: &mut Io) {
         let notes = io.ins.notes(0);
         let (l, r) = io.outs.audio(0);

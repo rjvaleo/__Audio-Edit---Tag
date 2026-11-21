@@ -37,6 +37,7 @@ pub(crate) struct Info {
     pub latency: usize,
     pub tail: usize,
     pub can_sleep: bool,
+    pub hands_back: bool,
 }
 
 /// A patch as the controller holds it: which modules, which cables, and
@@ -421,6 +422,8 @@ struct Node {
     tail_left: usize,
     asleep: bool,
     can_sleep: bool,
+    /// The module can give things back through `finished` (`Module::hands_back`).
+    hands_back: bool,
     /// Where each input reads from, as a place in the pool.
     inputs: Vec<usize>,
     mixes: Vec<Mix>,
@@ -690,6 +693,7 @@ impl Plan {
                     && !on_loop[node]
                     && !info.inputs.is_empty()
                     && info.inputs.iter().all(|k| *k == Kind::Audio),
+                hands_back: info.hands_back,
                 inputs,
                 mixes,
                 out_start: out_start[node],
@@ -935,6 +939,16 @@ impl Plan {
             let Some(module) = node.module.as_mut() else {
                 continue;
             };
+            if !node.hands_back {
+                // Never asked in a release build. A debug build asks, so a
+                // module that overrides `finished` but not `hands_back` is
+                // caught by the tests rather than leaking what it holds.
+                #[cfg(debug_assertions)]
+                if let Ok(Some(_)) = catch_unwind(AssertUnwindSafe(|| module.finished())) {
+                    panic!("module {} gave something back from finished() but says hands_back() is false", node.id);
+                }
+                continue;
+            }
             match catch_unwind(AssertUnwindSafe(|| module.finished())) {
                 Ok(Some(done)) => return Some(done),
                 Ok(None) => {}

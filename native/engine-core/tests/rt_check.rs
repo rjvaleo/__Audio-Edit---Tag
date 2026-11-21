@@ -273,6 +273,9 @@ impl Module for Fault {
         self.fail(FaultAt::Finished);
         None
     }
+    fn hands_back(&self) -> bool {
+        true
+    }
     fn recover(&mut self) {
         self.fail(FaultAt::Recover);
     }

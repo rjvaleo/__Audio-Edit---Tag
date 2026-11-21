@@ -415,4 +415,7 @@ impl Module for Holder {
     fn finished(&mut self) -> Option<Thing> {
         self.done.take()
     }
+    fn hands_back(&self) -> bool {
+        true
+    }
 }

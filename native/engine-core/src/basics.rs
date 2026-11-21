@@ -625,4 +625,7 @@ impl Module for Record {
     fn finished(&mut self) -> Option<Thing> {
         self.done.take().map(|tape| tape as Thing)
     }
+    fn hands_back(&self) -> bool {
+        true
+    }
 }

@@ -555,4 +555,7 @@ impl Module for Grain {
     fn finished(&mut self) -> Option<Thing> {
         self.done.iter_mut().find_map(|slot| slot.take()).map(|boxed| boxed as Thing)
     }
+    fn hands_back(&self) -> bool {
+        true
+    }
 }

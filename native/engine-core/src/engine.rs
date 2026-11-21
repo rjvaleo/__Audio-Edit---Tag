@@ -271,7 +271,7 @@ impl Controller {
             }
             patch.infos.insert(id, Info { parallel: module.parallel_weight(), inputs: module.inputs(), outputs: module.outputs(),
                 feedback_delay: module.feedback_delay(), latency: module.latency(),
-                tail: module.tail(), can_sleep: module.can_sleep() });
+                tail: module.tail(), can_sleep: module.can_sleep(), hands_back: module.hands_back() });
             staged.insert(id, module);
         }
         let generation = self.generation + 1;
@@ -320,6 +320,7 @@ impl Controller {
                 latency: module.latency(),
                 tail: module.tail(),
                 can_sleep: module.can_sleep(),
+                hands_back: module.hands_back(),
             },
         );
         self.staged.insert(id, module);

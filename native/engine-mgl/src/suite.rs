@@ -178,4 +178,7 @@ impl Module for Suite {
     fn finished(&mut self) -> Option<Thing> {
         self.done.take().map(|boxed| boxed as Thing)
     }
+    fn hands_back(&self) -> bool {
+        true
+    }
 }

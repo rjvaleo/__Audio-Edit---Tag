@@ -244,9 +244,19 @@ pub trait Module: Send + Any {
 
     /// Something more the module has finished with (an effect that has faded
     /// out, say), to be freed on the app's thread. Asked after every piece
-    /// of audio until it answers `None`.
+    /// of audio until it answers `None`, but only if [`Module::hands_back`]
+    /// says it can ever answer anything else.
     fn finished(&mut self) -> Option<Thing> {
         None
+    }
+
+    /// Whether [`Module::finished`] can ever give something back. Read once,
+    /// off the audio thread, when the module joins a patch; a module that
+    /// answers `false` is never asked `finished` again (a debug build still
+    /// asks, and fails if it gives anything). Every module that overrides
+    /// `finished` must answer `true`.
+    fn hands_back(&self) -> bool {
+        false
     }
 
     /// The module gave a sample that was not a number (a NaN or an infinity),

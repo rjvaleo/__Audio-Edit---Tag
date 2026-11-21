@@ -156,6 +156,9 @@ impl Module for Remember {
     fn finished(&mut self) -> Option<Thing> {
         self.inner.finished()
     }
+    fn hands_back(&self) -> bool {
+        self.inner.hands_back()
+    }
     fn recover(&mut self) {
         self.inner.recover();
     }

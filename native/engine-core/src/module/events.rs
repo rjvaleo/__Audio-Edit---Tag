@@ -213,7 +213,7 @@ pub(super) fn split_events<M: Module + ?Sized>(module: &mut M, io: &mut Io) {
             }
         }
         at = end;
-        if at < io.n {
+        if at < io.n && module.hands_back() {
             while io.scratch.retired.len() < io.scratch.retired.capacity() {
                 match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| module.finished())) {
                     Ok(Some(thing)) => io.scratch.retired.push_back(thing),

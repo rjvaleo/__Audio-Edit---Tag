@@ -288,7 +288,7 @@ impl Component {
             }
             for &index in &self.nodes {
                 let node = &mut nodes[index];
-                if node.dead {
+                if node.dead || !node.hands_back {
                     continue;
                 }
                 if let Some(module) = node.module.as_mut() {
