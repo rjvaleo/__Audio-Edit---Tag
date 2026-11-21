@@ -1,5 +1,5 @@
 [workspace]
-members = ["engine-core", "engine-capi", "engine-idmlab", "engine-mgl"]
+members = ["engine-core", "engine-capi", "engine-idmlab", "engine-mgl", "engine-app"]
 resolver = "2"
 
 [workspace.package]

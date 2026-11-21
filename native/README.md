@@ -1,15 +1,17 @@
 # The native app's engine
 
-The engine of the JUCE plan. Since 21 Nov 2026 it lives here, in MultiGrainLive's repository under `native/` (it was a repository of its own in `WORK DIR/idmlab-move/native`, with no copy anywhere else). The plan and its records stay in `WORK DIR/idmlab-move/`: the plan `PLAN.md`; phase 1, the core: `PHASE1.md`; phase 2, MultiGrainLive's instruments as modules: `PHASE2.md`; the audio plan `AUDIO-PLAN.md`.
+The engine of the JUCE plan. Since 21 Nov 2026 it lives here, in MultiGrainLive's repository under `native/` (it was a repository of its own in `WORK DIR/idmlab-move/native`, with no copy anywhere else). The plan and its records stay in `WORK DIR/idmlab-move/`: the plan `PLAN.md`; phase 1, the core: `PHASE1.md`; phase 2, MultiGrainLive's instruments as modules: `PHASE2.md`; the audio plan `AUDIO-PLAN.md`; the app, `APP-PLAN.md`.
 
 | Folder | What it is |
 |---|---|
 | `engine-core/` | The graph, cables, queues, clock, sound bank and plain utility modules. Rust, no dependencies. |
-| `engine-capi/` | The same behind a C interface, built as a static library for the JUCE app. |
+| `engine-capi/` | The same behind a C interface, built as a static library for the JUCE app: `ne_*` the engine, `na_*` the app's canvas (`app/Source/na.h`). |
+| `engine-app/` | The app's side, never on the audio thread: the canvas (modules, places, cables), each module's state (Wave's patch, tables and board, read and written as MGL writes them), MIDI in, save and load. |
 | `engine-idmlab/` | idMLab's Rust modules, run inside the engine (`../IDMLAB-WRAP.md`). |
 | `engine-mgl/` | MultiGrainLive's own, wrapped as they are: every prism-fx effect (with Place, and the suites), the Wave synth, the grain deck (with Poly), the Sound module's document, the master ceiling, and Chop (the slicer: the page's cuts, slice sound, Preview, Ratchet and measures, ported from its JavaScript to the bit), and Atmosphere's browser voice with Character and Sympathy (`atmos_web`: the page's Web Audio graph on `dsp-core`'s port of Chromium's, to the bit). |
 | `probe/` | A JUCE console app that plays the engine on the real sound card and checks it against an offline replay. |
-| `tools/` | `test-on-mbp.sh` and `test-on-pc.sh` run the tests on the MacBook and the PC; `mgl-engine-tests-on-mbp.sh` and `prism-grain-tests-on-mbp.sh` run MGL's own engine tests and prism-grain's there; `probe-on-mbp.sh` builds and runs the probe. |
+| `app/` | The native app (idMLab): one window, the canvas, a face for each module built from its list of controls. Step 1: Wave, MIDI in, Output. |
+| `tools/` | `test-on-mbp.sh` and `test-on-pc.sh` run the tests on the MacBook and the PC; `mgl-engine-tests-on-mbp.sh` and `prism-grain-tests-on-mbp.sh` run MGL's own engine tests and prism-grain's there; `probe-on-mbp.sh` builds and runs the probe; `probe-on-imac.sh` and `app-on-imac.sh` build the probe and the app on the iMac, gently. |
 
 Tests always run with the allocation check on:
 
@@ -17,7 +19,7 @@ Tests always run with the allocation check on:
 cargo test --workspace --features engine-core/rt-check
 ```
 
-The workspace builds from MGL's own crates in `../core/crates` and from two other repositories beside MGL's folder, laid out as in `~/Documents`: `../../GitHub/M Clone` (idMLab) and `../../GitHub/prism-fx`. The test scripts send copies to the other machines in the same layout (`~/idmlab-native/MultiGrainLive/native` on the MacBook, `D:\mgl-test\idmlab-check\MultiGrainLive\native` on the PC). Nothing is built or run on the iMac.
+The workspace builds from MGL's own crates in `../core/crates` and from two other repositories beside MGL's folder, laid out as in `~/Documents`: `../../GitHub/M Clone` (idMLab) and `../../GitHub/prism-fx`. The test scripts send copies to the other machines in the same layout (`~/idmlab-native/MultiGrainLive/native` on the MacBook, `D:\mgl-test\idmlab-check\MultiGrainLive\native` on the PC). Since 21 Nov (the MacBook out) the iMac builds too, at nice 15 with 4 jobs, never while 8737 plays.
 
 **The sound card's buffer is never below 64 frames** (RJ, 21 Nov 2026). Grain works out its sound 128 frames at a time; at 32-frame callbacks Hybrid and PVSOLA with eight voices overrun (143% and 123% of the slot), at 64 the worst takes 74%. The probe raises any smaller `--buffer` to 64, and the app's host must do the same.
 

@@ -60,6 +60,10 @@ pub const NE_INPUT: u32 = 15;
 
 const NO_ENGINE: i32 = -11;
 
+/// The app's canvas and its audio half (`na_*`).
+mod app;
+pub use app::*;
+
 /// The grain deck's own block, in samples.
 const GRAIN_GRID: usize = 128;
 

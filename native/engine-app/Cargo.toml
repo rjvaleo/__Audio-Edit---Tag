@@ -1,0 +1,12 @@
+[package]
+name = "engine-app"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The native app's side of the engine: the canvas, each module's state, save and load. Never on the audio thread."
+
+[dependencies]
+engine-core = { path = "../engine-core" }
+engine-mgl = { path = "../engine-mgl" }
+wave = { path = "../../core/crates/wave" }
+serde_json = { version = "1", features = ["float_roundtrip"] }

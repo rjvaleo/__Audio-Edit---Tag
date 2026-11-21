@@ -27,7 +27,7 @@ quiet() { grep -Ev "$Q" || true; }
 fresh() { ssh pc "(if exist \"$R\\$1\" rmdir /s /q \"$R\\$1\") & mkdir \"$R\\$1\"" 2>&1 | quiet; }
 # The folders of the first layout (copies, replaced by the ones under GitHub\).
 ssh pc "(if exist \"$R\\M Clone\" rmdir /s /q \"$R\\M Clone\") & (if exist $R\\prism-fx rmdir /s /q $R\\prism-fx) & (if not exist $R\\MultiGrainLive\\native mkdir $R\\MultiGrainLive\\native)" 2>&1 | quiet
-for crate in engine-core engine-capi engine-idmlab engine-mgl; do
+for crate in engine-core engine-capi engine-idmlab engine-mgl engine-app app; do
   ssh pc "if exist $R\\MultiGrainLive\\native\\$crate rmdir /s /q $R\\MultiGrainLive\\native\\$crate" 2>&1 | quiet
 done
 COPYFILE_DISABLE=1 tar -C "$HERE" --exclude target --exclude build --exclude .git --exclude results -cf - . \
