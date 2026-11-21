@@ -22,10 +22,10 @@ use engine_core::{EventKind, Io, Kind, Module, NoteEvent, NoteKind, SoundData, T
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WrapError {
-    /// A kind the adapter does not carry yet: the mixer and the DP/4 machine
-    /// (no layout table yet), the Prism effects and the Grain Engine (the
-    /// native app takes those from prism-fx and MultiGrainLive directly), and
-    /// idMLab's own input and output.
+    /// A kind the adapter does not carry: the Prism effects and the Grain
+    /// Engine (the native app takes those from prism-fx and MultiGrainLive
+    /// directly), and idMLab's own input and output (the native engine has
+    /// its own).
     NotYet(ModuleKind),
 }
 
@@ -84,7 +84,25 @@ fn layout(kind: ModuleKind) -> Option<Layout> {
         Looper | Granular => {
             Layout { ins: vec![], outs: vec![(0, 1)], control_outs: vec![], notes: true, level: Some(8) }
         }
-        HostInput | AudioOutput | GrainEngine | Mixer | Dp4Machine | Prism => {
+        // Eight stereo channels and the two sends' returns in; the main mix,
+        // then send A and send B, out (`dsp_core::modules::Mixer`).
+        Mixer => Layout {
+            ins: (0..dsp_core::modules::Mixer::CHANNELS + dsp_core::modules::Mixer::SENDS).map(|c| (2 * c, 2 * c + 1)).collect(),
+            outs: vec![(0, 1), (2, 3), (4, 5)],
+            control_outs: vec![],
+            notes: false,
+            level: Some(dsp_core::modules::Mixer::FADE),
+        },
+        // Its four inputs and outputs as two pairs: AB, then CD. The front
+        // panel's configuration is the build variant (`Dp4Machine::variant`).
+        Dp4Machine => Layout {
+            ins: vec![(0, 1), (2, 3)],
+            outs: vec![(0, 1), (2, 3)],
+            control_outs: vec![],
+            notes: false,
+            level: Some(dsp_core::modules::Dp4Machine::FADE),
+        },
+        HostInput | AudioOutput | GrainEngine | Prism => {
             return None
         }
     })

@@ -641,6 +641,90 @@ fn a_sound_handed_over_while_it_plays_allocates_nothing_and_the_old_one_comes_ba
     assert!(ctl.collect().things >= 2, "what the pad replaced comes back");
 }
 
+// ---- The mixer and the DP/4 machine.
+
+/// idMLab's mixer, two channels from one input: channel 0 and channel 3, at
+/// their own levels and pans, and channel 0 into send A. `read` is the
+/// output port read (0-1 the main mix, 2-3 send A).
+fn lab_mixer(x: &[f32], read: usize) -> Vec<f32> {
+    use dsp_core::modules::Mixer as M;
+    let mut lab = Lab::new(RATE);
+    let host = lab_add(&mut lab, ModuleKind::HostInput);
+    let mixer = lab_add(&mut lab, ModuleKind::Mixer);
+    for (p, v) in [(M::level(0), 0.9), (M::pan(0), -0.5), (M::level(3), 0.4), (M::pan(3), 0.7), (M::send(0, 0), 0.5), (M::FADE, 1.0)] {
+        lab.set_param(mixer, p, v);
+    }
+    for port in [0u8, 1, 6, 7] {
+        assert!(lab.connect(lab_port(host, 0), lab_port(mixer, port)));
+    }
+    lab_run(&mut lab, host, x, (mixer, read))
+}
+
+fn our_mixer(x: &[f32], out: u32) -> (Vec<f32>, Vec<f32>) {
+    use dsp_core::modules::Mixer as M;
+    let mut m = wrapped(ModuleKind::Mixer);
+    for (p, v) in [(M::level(0), 0.9), (M::pan(0), -0.5), (M::level(3), 0.4), (M::pan(3), 0.7), (M::send(0, 0), 0.5)] {
+        m = m.set(p, v);
+    }
+    let (mut ctl, mut audio) = engine(RATE, exact());
+    ctl.add(1, feed(delayed(x, 1))).unwrap();
+    ctl.add(2, Box::new(m)).unwrap();
+    ctl.connect(port(1, 0), port(2, 0)).unwrap();
+    ctl.connect(port(1, 0), port(2, 3)).unwrap();
+    ctl.connect_out(port(2, out)).unwrap();
+    ctl.commit().unwrap();
+    render(&mut audio, x.len(), 256)
+}
+
+#[test]
+fn the_mixer_mixes_and_sends_as_idmlabs_does() {
+    let x = noise(N);
+    let (main_l, main_r) = our_mixer(&x, 0);
+    assert!(peak(&main_l) > 0.05 && peak(&main_r) > 0.05, "the mix is heard");
+    assert_same("main left", &lab_mixer(&x, 0), &main_l);
+    assert_same("main right", &lab_mixer(&x, 1), &main_r);
+    let (send_l, send_r) = our_mixer(&x, 1);
+    assert!(peak(&send_l) > 0.05, "send A is heard");
+    assert_same("send A left", &lab_mixer(&x, 2), &send_l);
+    assert_same("send A right", &lab_mixer(&x, 3), &send_r);
+}
+
+#[test]
+fn the_dp4_machine_runs_its_configurations_as_idmlabs_does() {
+    use dsp_core::modules::Dp4Machine as D;
+    let x = noise(N);
+    // Pairs kept apart, AB serial (config 4); and both pairs fed from input
+    // one, AB and CD serial into each other (config 1).
+    for variant in [D::variant(4, 0, 0, 0, [0; 4]), D::variant(1, 0, 0, 0, [2, 1, 0, 3])] {
+        let controls: Vec<(usize, f32)> = (0..4).flat_map(|u| [(D::param(u, D::MIX), 0.5), (D::param(u, D::VOLUME), 0.8), (D::param(u, D::DECAY), 0.6)]).collect();
+        let mut lab = Lab::new(RATE);
+        let host = lab_add(&mut lab, ModuleKind::HostInput);
+        let machine = lab.add(ModuleKind::Dp4Machine.build_variant_at(variant, RATE));
+        for &(p, v) in &controls {
+            lab.set_param(machine, p, v);
+        }
+        lab.set_param(machine, D::FADE, 1.0);
+        for port in [0u8, 1] {
+            assert!(lab.connect(lab_port(host, 0), lab_port(machine, port)));
+        }
+        let theirs = lab_run(&mut lab, host, &x, (machine, 0));
+
+        let mut m = Wrapped::new(ModuleKind::Dp4Machine, variant, RATE).unwrap();
+        for &(p, v) in &controls {
+            m = m.set(p, v);
+        }
+        let (mut ctl, mut audio) = engine(RATE, exact());
+        ctl.add(1, feed(delayed(&x, 1))).unwrap();
+        ctl.add(2, Box::new(m)).unwrap();
+        ctl.connect(port(1, 0), port(2, 0)).unwrap();
+        ctl.connect_out(port(2, 0)).unwrap();
+        ctl.commit().unwrap();
+        let (l, _) = render(&mut audio, N, 256);
+        assert!(peak(&l) > 0.01, "variant {variant}: the machine is heard");
+        assert_same(&format!("variant {variant}, output one"), &theirs, &l);
+    }
+}
+
 #[test]
 fn kinds_that_need_the_sample_bank_are_refused_for_now() {
     use ModuleKind::*;
