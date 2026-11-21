@@ -12,7 +12,7 @@ set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 FX="${FX:-$HOME/Documents/GitHub/prism-fx}"
 BEFORE="${BEFORE:-main}"
-BACK="${BACK:-$HERE/../wsola-trial}"
+BACK="${BACK:-/Volumes/1 TB Funtime/WORK DIR/idmlab-move/wsola-trial}"
 R='~/idmlab-native'
 T="$R/wsola-trial"
 ssh mbp "mkdir -p $T/songs"

@@ -7,7 +7,7 @@
 # Extra arguments go to `cargo test`.
 set -e
 FX="${FX:-$HOME/Documents/GitHub/prism-fx}"
-MGL="${MGL:-$HOME/Documents/MultiGrainLive}"
+MGL="${MGL:-$(cd "$HERE/.." && pwd)}"
 MGL_REF="${MGL_REF:-main}"
 # MGL_REF=WORKTREE: the folder MGL names as it stands, uncommitted edits to
 # tracked or added files included.
@@ -19,7 +19,7 @@ R='~/idmlab-native'
 git -C "$FX" archive --format=tar HEAD | ssh mbp "rm -rf $R/GitHub/prism-fx && mkdir -p $R/GitHub/prism-fx && tar -x -f - -C $R/GitHub/prism-fx"
 # The whole tree but the sound library: the server crate embeds the interface,
 # the visualiser and a tool at build time.
-git -C "$MGL" archive --format=tar "$MGL_REV" -- . ':(exclude)Audio Library' | ssh mbp "rm -rf $R/MultiGrainLive && mkdir -p $R/MultiGrainLive && tar -x -f - -C $R/MultiGrainLive"
+git -C "$MGL" archive --format=tar "$MGL_REV" -- . ':(exclude)Audio Library' ':(exclude)native' | ssh mbp "mkdir -p $R/MultiGrainLive && find $R/MultiGrainLive -mindepth 1 -maxdepth 1 ! -name native -exec rm -rf {} + && tar -x -f - -C $R/MultiGrainLive"
 # git archive dates every file at its commit; a branch older than the last
 # build in the same build folder would then reuse that build. Touch it all.
 ssh mbp "find ~/idmlab-native/native ~/idmlab-native/GitHub ~/idmlab-native/MultiGrainLive ~/idmlab-native/pg-check ~/idmlab-native/wsola-trial -type f -not -path '*/target/*' -not -path '*/build/*' -exec touch {} + 2>/dev/null; true"

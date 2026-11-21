@@ -11,7 +11,7 @@ set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 LAB="${LAB:-$HOME/Documents/GitHub/M Clone}"
 FX="${FX:-$HOME/Documents/GitHub/prism-fx}"
-MGL="${MGL:-$HOME/Documents/MultiGrainLive}"
+MGL="${MGL:-$(cd "$HERE/.." && pwd)}"
 # Which of MGL's commits to build from: main, or a branch being tried, or
 # WORKTREE for the folder MGL names as it stands (uncommitted edits to
 # tracked or added files included).
@@ -22,11 +22,11 @@ case "$MGL_REF" in
 esac
 R='~/idmlab-native'
 # The folders of the first layout (copies, replaced by the ones under GitHub/).
-ssh mbp "rm -rf $R/M\\ Clone $R/prism-fx; mkdir -p $R/native"
-tar -C "$HERE" --exclude target --exclude build --exclude .git -cf - . | ssh mbp "cd $R/native && rm -rf engine-core engine-capi engine-idmlab engine-mgl && tar -x -f - -C ."
+ssh mbp "rm -rf $R/M\\ Clone $R/prism-fx"
+tar -C "$HERE" --exclude target --exclude build --exclude .git -cf - . | ssh mbp "mkdir -p $R/MultiGrainLive/native && cd $R/MultiGrainLive/native && rm -rf engine-core engine-capi engine-idmlab engine-mgl && tar -x -f - -C ."
 tar -C "$LAB/rust" --exclude target -cf - . | ssh mbp "rm -rf $R/GitHub/M\\ Clone/rust && mkdir -p $R/GitHub/M\\ Clone/rust && tar -x -f - -C $R/GitHub/M\\ Clone/rust"
 git -C "$FX" archive --format=tar HEAD | ssh mbp "rm -rf $R/GitHub/prism-fx && mkdir -p $R/GitHub/prism-fx && tar -x -f - -C $R/GitHub/prism-fx"
-git -C "$MGL" archive --format=tar "$MGL_REV" core | ssh mbp "rm -rf $R/MultiGrainLive && mkdir -p $R/MultiGrainLive && tar -x -f - -C $R/MultiGrainLive"
+git -C "$MGL" archive --format=tar "$MGL_REV" core | ssh mbp "rm -rf $R/MultiGrainLive/core && mkdir -p $R/MultiGrainLive && tar -x -f - -C $R/MultiGrainLive"
 # git archive dates every file at its commit; a branch older than the last
 # build in the same build folder would then reuse that build. Touch it all.
 ssh mbp "find ~/idmlab-native/native ~/idmlab-native/GitHub ~/idmlab-native/MultiGrainLive ~/idmlab-native/pg-check ~/idmlab-native/wsola-trial -type f -not -path '*/target/*' -not -path '*/build/*' -exec touch {} + 2>/dev/null; true"
@@ -37,4 +37,4 @@ ssh mbp "echo 'idmlab-native tests (coordinator)' > ~/mgl-test/.lock/who"
 # lock is held, but one already running carries on: wait for those to end, so
 # nothing builds beside a timing run.
 ssh mbp 'until [ -z "$(for d in ~/mgl-test/.slots/*; do [ -f "$d/pid" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null && echo x; done)" ]; do sleep 10; done'
-ssh mbp "export PATH=\$HOME/.cargo/bin:\$PATH; cd $R/native && cargo test --workspace --features engine-core/rt-check $* 2>&1"
+ssh mbp "export PATH=\$HOME/.cargo/bin:\$PATH; cd $R/MultiGrainLive/native && cargo test --workspace --features engine-core/rt-check $* 2>&1"

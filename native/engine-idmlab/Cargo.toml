@@ -12,4 +12,4 @@ engine-core = { path = "../engine-core" }
 # are links to the real folders, and the test scripts send copies to the same
 # places on the other machines. dsp-core finds prism-fx three folders up from
 # itself, in `GitHub/prism-fx`, which is also where MGL's crates look for it.
-dsp-core = { path = "../../GitHub/M Clone/rust/dsp-core" }
+dsp-core = { path = "../../../GitHub/M Clone/rust/dsp-core" }

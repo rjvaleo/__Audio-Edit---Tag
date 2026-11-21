@@ -19,7 +19,7 @@ use mgl_fx::stretch::Algorithm;
 use std::sync::Arc;
 
 const RECORDED: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../../MultiGrainLive/core/crates/engine/tests/grain_hashes.rs");
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../../core/crates/engine/tests/grain_hashes.rs");
 
 const SR: u32 = 48_000;
 const BLOCK: usize = 512;

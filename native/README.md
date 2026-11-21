@@ -1,6 +1,6 @@
 # The native app's engine
 
-The engine of the JUCE plan (`../PLAN.md`). Phase 1, the core: `../PHASE1.md`. Phase 2, MultiGrainLive's instruments as modules: `../PHASE2.md`.
+The engine of the JUCE plan. Since 21 Nov 2026 it lives here, in MultiGrainLive's repository under `native/` (it was a repository of its own in `WORK DIR/idmlab-move/native`, with no copy anywhere else). The plan and its records stay in `WORK DIR/idmlab-move/`: the plan `PLAN.md`; phase 1, the core: `PHASE1.md`; phase 2, MultiGrainLive's instruments as modules: `PHASE2.md`; the audio plan `AUDIO-PLAN.md`.
 
 | Folder | What it is |
 |---|---|
@@ -17,7 +17,9 @@ Tests always run with the allocation check on:
 cargo test --workspace --features engine-core/rt-check
 ```
 
-The workspace builds from three other repositories, which it expects beside this folder laid out as in `~/Documents`: `../GitHub/M Clone`, `../GitHub/prism-fx` and `../MultiGrainLive`. On the iMac those are links; the test scripts send copies of the committed code to the other machines. Nothing is built or run on the iMac.
+The workspace builds from MGL's own crates in `../core/crates` and from two other repositories beside MGL's folder, laid out as in `~/Documents`: `../../GitHub/M Clone` (idMLab) and `../../GitHub/prism-fx`. The test scripts send copies to the other machines in the same layout (`~/idmlab-native/MultiGrainLive/native` on the MacBook, `D:\mgl-test\idmlab-check\MultiGrainLive\native` on the PC). Nothing is built or run on the iMac.
+
+**The sound card's buffer is never below 64 frames** (RJ, 21 Nov 2026). Grain works out its sound 128 frames at a time; at 32-frame callbacks Hybrid and PVSOLA with eight voices overrun (143% and 123% of the slot), at 64 the worst takes 74%. The probe raises any smaller `--buffer` to 64, and the app's host must do the same.
 
 ### Changing the output rate
 

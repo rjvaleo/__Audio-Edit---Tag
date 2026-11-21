@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 const GOLDEN: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../../GitHub/prism-fx/crates/prism-fx/tests/golden/par.tsv");
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../../../GitHub/prism-fx/crates/prism-fx/tests/golden/par.tsv");
 
 const SOURCE: ModuleId = 1;
 const PLAYER: ModuleId = 2;

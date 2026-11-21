@@ -10,16 +10,16 @@ engine-core = { path = "../engine-core" }
 # The shared effects and MGL's own crates, as they are (see engine-idmlab's
 # Cargo.toml for how the folders beside this one are laid out). MGL's crates
 # find prism-fx in `GitHub/prism-fx`, so this must name the same folder.
-prism-fx = { path = "../../GitHub/prism-fx/crates/prism-fx" }
-wave = { path = "../../MultiGrainLive/core/crates/wave" }
+prism-fx = { path = "../../../GitHub/prism-fx/crates/prism-fx" }
+wave = { path = "../../core/crates/wave" }
 # MGL's grain deck, without its sound card code, and its effects rack. Both
 # are renamed here: this workspace has an `engine` function and an `fx` module
 # of its own.
-mgl-engine = { package = "engine", path = "../../MultiGrainLive/core/crates/engine", default-features = false }
-mgl-fx = { package = "fx", path = "../../MultiGrainLive/core/crates/fx" }
-mgl-edit = { package = "edit", path = "../../MultiGrainLive/core/crates/edit" }
-audio-core = { path = "../../MultiGrainLive/core/crates/audio-core" }
-prism-grain = { path = "../../GitHub/prism-fx/crates/prism-grain" }
+mgl-engine = { package = "engine", path = "../../core/crates/engine", default-features = false }
+mgl-fx = { package = "fx", path = "../../core/crates/fx" }
+mgl-edit = { package = "edit", path = "../../core/crates/edit" }
+audio-core = { path = "../../core/crates/audio-core" }
+prism-grain = { path = "../../../GitHub/prism-fx/crates/prism-grain" }
 
 [dev-dependencies]
 libc = "0.2"

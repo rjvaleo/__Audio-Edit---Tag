@@ -13,7 +13,7 @@ set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 LAB="${LAB:-$HOME/Documents/GitHub/M Clone}"
 FX="${FX:-$HOME/Documents/GitHub/prism-fx}"
-MGL="${MGL:-$HOME/Documents/MultiGrainLive}"
+MGL="${MGL:-$(cd "$HERE/.." && pwd)}"
 MGL_REF="${MGL_REF:-main}"
 Q='post-quantum|store now|be upgraded'
 R='D:\\mgl-test\\idmlab-check'
@@ -29,23 +29,23 @@ if ! ssh pc "if exist D:\\tools\\JUCE-9.0.5\\CMakeLists.txt (exit 0) else (exit 
   ssh mbp "tar -C ~/idmlab-native/JUCE --exclude .git -cf - ." | ssh pc "tar -x -f - -C $JUCE" 2>&1 | quiet
 fi
 
-ssh pc "if not exist $R\\native mkdir $R\\native" 2>&1 | quiet
+ssh pc "if not exist $R\\MultiGrainLive\\native mkdir $R\\MultiGrainLive\\native" 2>&1 | quiet
 for part in engine-core engine-capi engine-idmlab engine-mgl probe\\Source; do
-  ssh pc "if exist $R\\native\\$part rmdir /s /q $R\\native\\$part" 2>&1 | quiet
+  ssh pc "if exist $R\\MultiGrainLive\\native\\$part rmdir /s /q $R\\MultiGrainLive\\native\\$part" 2>&1 | quiet
 done
 COPYFILE_DISABLE=1 tar -C "$HERE" --exclude target --exclude build --exclude .git --exclude results -cf - . \
-  | ssh pc "tar -x -f - -C $U/native" 2>&1 | quiet
+  | ssh pc "tar -x -f - -C $U/MultiGrainLive/native" 2>&1 | quiet
 fresh 'GitHub\\M Clone\\rust'
 COPYFILE_DISABLE=1 tar -C "$LAB/rust" --exclude target -cf - . \
   | ssh pc "tar -x -f - -C \"$U/GitHub/M Clone/rust\"" 2>&1 | quiet
 fresh 'GitHub\\prism-fx'
 git -C "$FX" archive --format=tar HEAD | ssh pc "tar -x -f - -C $U/GitHub/prism-fx" 2>&1 | quiet
-fresh 'MultiGrainLive'
+fresh 'MultiGrainLive\\core'
 git -C "$MGL" archive --format=tar "$MGL_REF" core | ssh pc "tar -x -f - -C $U/MultiGrainLive" 2>&1 | quiet
 
-ssh pc "cd /d $R\\native\\probe && (if not exist build\\CMakeCache.txt $CMAKE -S . -B build -G \"Visual Studio 17 2022\" -A x64 -DJUCE_DIR=$JUCE > configure.log 2>&1) && $CMAKE --build build --config Release -- /m /v:minimal > build.log 2>&1 & echo build exit %errorlevel% & findstr /i /c:\" error \" build.log configure.log" 2>&1 | quiet
-EXE=$(ssh pc "cd /d $R\\native\\probe && dir /s /b build\\probe.exe" 2>&1 | quiet | grep -i 'probe.exe' | grep -i release | head -1 | tr -d '\r')
-[ -n "$EXE" ] || { echo "no probe.exe was built; see $R\\native\\probe\\build.log"; exit 1; }
+ssh pc "cd /d $R\\MultiGrainLive\\native\\probe && (if not exist build\\CMakeCache.txt $CMAKE -S . -B build -G \"Visual Studio 17 2022\" -A x64 -DJUCE_DIR=$JUCE > configure.log 2>&1) && $CMAKE --build build --config Release -- /m /v:minimal > build.log 2>&1 & echo build exit %errorlevel% & findstr /i /c:\" error \" build.log configure.log" 2>&1 | quiet
+EXE=$(ssh pc "cd /d $R\\MultiGrainLive\\native\\probe && dir /s /b build\\probe.exe" 2>&1 | quiet | grep -i 'probe.exe' | grep -i release | head -1 | tr -d '\r')
+[ -n "$EXE" ] || { echo "no probe.exe was built; see $R\\MultiGrainLive\\native\\probe\\build.log"; exit 1; }
 mkdir -p "$HERE/probe/results"
 for BUFFER in ${BUFFERS:-128}; do
   ssh pc "\"$EXE\" --buffer $BUFFER $*" 2>&1 | quiet | tee -a "$HERE/probe/results/pc-$(date +%Y%m%d).jsonl"
