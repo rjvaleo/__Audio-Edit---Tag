@@ -22,6 +22,11 @@ mgl-fx = { package = "fx", path = "../../core/crates/fx" }
 mgl-edit = { package = "edit", path = "../../core/crates/edit" }
 audio-core = { path = "../../core/crates/audio-core" }
 prism-grain = { path = "../../../GitHub/prism-fx/crates/prism-grain" }
+# fdlibm, as V8's `Math` has it, the same on every machine: Chop's port
+# gives the page's numbers to the bit.
+libm = "0.2"
 
 [dev-dependencies]
 libc = "0.2"
+# Reads the recording of the Chop page (`tests/reference/chop`).
+serde_json = { version = "1", features = ["float_roundtrip"] }

@@ -4,6 +4,7 @@
 
 mod ceiling;
 pub mod atmos;
+pub mod chop;
 pub mod demo;
 pub mod rack;
 mod fx;
@@ -14,6 +15,7 @@ mod wave;
 
 pub use crate::atmos::{Atmos, AtmosState};
 pub use crate::ceiling::Ceiling;
+pub use crate::chop::{Chop, ChopThing};
 pub use crate::rack::{Board, BoardThing, Rack, RackThing};
 pub use crate::fx::{Fx,FxState};
 pub use crate::grain::{Grain, GrainThing, GrainState, Handle};
