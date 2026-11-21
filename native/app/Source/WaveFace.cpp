@@ -43,6 +43,10 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
     if (auto* list = juce::JSON::parse (juce::String (naText ([] (char* b, uint32_t c) { return na_controls ("wave", b, c); }))).getArray())
         controls = *list;
     index (captured["tree"], -1);
+    for (int i = 0; i < 3; ++i)
+        if (auto it = byId.find ("wvOfr" + juce::String (i)); it != byId.end())
+            chrome.skipText.insert (it->second.i);
+    buildLayers();
     reload();
 }
 
@@ -97,6 +101,21 @@ void WaveFace::set (const juce::String& key, const juce::var& value)
     if (send)
         send (key, json (value));
     sync();
+    repaintFor (key);
+}
+
+void WaveFace::repaintFor (const juce::String& key)
+{
+    for (auto& l : layers)
+    {
+        if (l.get() == textLayer)
+            continue;
+        bool wants = l->also && l->also (key);
+        for (const auto& d : l->deps)
+            wants = wants || key.startsWith (d) || d == "*";
+        if (wants)
+            l->repaint();
+    }
 }
 
 // The readings and the lit switches, from the patch, as the page writes them.
@@ -169,9 +188,18 @@ void WaveFace::sync()
         if (r.b >= 0)
             texts[r.b] = t;
     }
+    for (int i = 0; i < 3; ++i)
+        if (auto it = byId.find ("wvOfr" + juce::String (i)); it != byId.end())
+            texts[it->second.i] = wave::ofxText (model, i);
+    const auto before = chrome.styleFrom;
     restyleChoices();
-    chrome.repaint();
-    repaint();
+    // Draw again only the switches whose light changed.
+    for (const auto& [node, look] : chrome.styleFrom)
+        if (auto it = before.find (node); it == before.end() || it->second != look)
+            if (auto nt = chrome.nodes.find (node); nt != chrome.nodes.end())
+                chrome.redraw (rectOf (nt->second["rect"]));
+    if (textLayer != nullptr)
+        textLayer->repaint();
 }
 
 // Each switch lit as the patch says: the page's own lit button's look on the
@@ -229,94 +257,147 @@ void WaveFace::drawText (juce::Graphics& g, int node, const juce::String& text)
     glyphs.draw (g);
 }
 
-void WaveFace::paintOverChildren (juce::Graphics& g)
+WaveFace::Layer* WaveFace::addLayer (juce::Rectangle<float> r, juce::StringArray deps, std::function<void (juce::Graphics&)> draw)
 {
-    auto canvas = [&] (const juce::String& id, auto&& paint) {
-        auto it = chrome.canvases.find (id);
-        if (it == chrome.canvases.end())
-            return;
-        const auto r = rectOf (it->second["rect"]);
-        juce::Graphics::ScopedSaveState keep (g);
-        g.addTransform (juce::AffineTransform::translation (r.getX(), r.getY()));
+    auto l = std::make_unique<Layer>();
+    l->draw = std::move (draw);
+    l->deps = std::move (deps);
+    l->setBounds (r.getSmallestIntegerContainer());
+    l->setInterceptsMouseClicks (false, false);
+    l->setBufferedToImage (true);
+    addAndMakeVisible (*l);
+    layers.push_back (std::move (l));
+    return layers.back().get();
+}
+
+void WaveFace::addCanvas (const juce::String& id, juce::StringArray deps, std::function<void (c2d::Context&, float, float)> draw)
+{
+    auto it = chrome.canvases.find (id);
+    if (it == chrome.canvases.end())
+        return;
+    const auto r = rectOf (it->second["rect"]);
+    const auto box = r.getSmallestIntegerContainer();
+    const juce::Point<float> off (r.getX() - (float) box.getX(), r.getY() - (float) box.getY());
+    auto* made = canvasLayers[id] = addLayer (r, std::move (deps), [draw, r, off] (juce::Graphics& g) {
+        g.addTransform (juce::AffineTransform::translation (off.x, off.y));
+        // A canvas draws nothing outside itself.
+        g.reduceClipRegion (juce::Rectangle<float> (r.getWidth(), r.getHeight()).getSmallestIntegerContainer());
         c2d::Context c (g, r.getWidth(), r.getHeight());
-        paint (c, r.getWidth(), r.getHeight());
-    };
+        draw (c, r.getWidth(), r.getHeight());
+    });
+    made->name = id;
+}
+
+std::vector<std::pair<juce::String, double>> WaveFace::profile (float scale)
+{
+    std::vector<std::pair<juce::String, double>> out;
+    for (auto& l : layers)
+    {
+        juce::Image img (juce::Image::ARGB, juce::jmax (1, (int) ((float) l->getWidth() * scale)), juce::jmax (1, (int) ((float) l->getHeight() * scale)), true);
+        juce::Graphics g (img);
+        g.addTransform (juce::AffineTransform::scale (scale));
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        l->draw (g);
+        out.push_back ({ l->name.isEmpty() ? juce::String ("text/bars") : l->name, juce::Time::getMillisecondCounterHiRes() - t0 });
+    }
+    std::sort (out.begin(), out.end(), [] (auto& a, auto& b) { return a.second > b.second; });
+    return out;
+}
+
+// Every canvas the page draws, each with the keys it shows.
+void WaveFace::buildLayers()
+{
     const float t = 0.0f;
-    std::vector<wave::Frame> curs;
     for (int i = 0; i < 3; ++i)
     {
-        const auto si = juce::String (i), k = "osc" + si + ".";
-        const auto& T = model.table (model.s (k + "table"));
-        const float p = wave::clamp (model.g (k + "pos"));
-        const auto cur = wave::waveFor (model, i, false);
-        curs.push_back (cur);
-        const auto wm = model.s (k + "warp0.mode");
-        const float wa = wave::clamp (model.g (k + "warp0.amt")), tilt = model.tilt[i];
-        canvas ("wvW3d" + si, [&] (c2d::Context& c, float w, float h) {
+        const auto si = juce::String (i), k = "osc" + si + ".", o = "osc" + juce::String (i == 1 ? 0 : 1) + ".";
+        const juce::StringArray osc { k };
+        auto fm = [this, k, o] (const juce::String& key) {
+            return key.startsWith (o) && (model.s (k + "warp0.mode") == "fm" || model.s (k + "warp1.mode") == "fm");
+        };
+        const size_t first = layers.size();
+        addCanvas ("wvW3d" + si, osc, [this, i, k] (c2d::Context& c, float w, float h) {
+            const auto& T = model.table (model.s (k + "table"));
+            const float p = wave::clamp (model.g (k + "pos")), tilt = model.tilt[i];
+            const auto wm = model.s (k + "warp0.mode");
+            const float wa = wave::clamp (model.g (k + "warp0.amt"));
             if (model.face[i] == 's')
                 wave::drawSpec3D (c, w, h, cl, T, p, wm, wa, 0.3f + 0.38f * tilt, 0.18f + 0.14f * tilt);
             else
                 wave::draw3D (c, w, h, cl, T, p, wm, wa, 0.3f + 0.38f * tilt, 0.18f + 0.14f * tilt, true);
         });
-        canvas ("wvSt" + si, [&] (c2d::Context& c, float w, float h) { wave::drawStrip (c, w, h, cl, T, p); });
-        const int o = i == 1 ? 0 : 1;
-        const auto B = wave::frameAt (model.table (model.s ("osc" + juce::String (o) + ".table")), wave::clamp (model.g ("osc" + juce::String (o) + ".pos")));
+        addCanvas ("wvSt" + si, { k + "table", k + "pos" }, [this, k] (c2d::Context& c, float w, float h) {
+            wave::drawStrip (c, w, h, cl, model.table (model.s (k + "table")), wave::clamp (model.g (k + "pos")));
+        });
         for (int j : { 0, 1 })
-        {
-            const auto key = k + "warp" + juce::String (j) + ".amt", mode = model.s (k + "warp" + juce::String (j) + ".mode");
-            const auto f = wave::frameAt (T, p);
-            canvas ("wvWp" + si + juce::String (j), [&] (c2d::Context& c, float w, float h) {
+            addCanvas ("wvWp" + si + juce::String (j), osc, [this, i, j, k] (c2d::Context& c, float w, float h) {
+                const auto key = k + "warp" + juce::String (j) + ".amt", mode = model.s (k + "warp" + juce::String (j) + ".mode");
+                const auto o2 = "osc" + juce::String (i == 1 ? 0 : 1) + ".";
+                const auto B = wave::frameAt (model.table (model.s (o2 + "table")), wave::clamp (model.g (o2 + "pos")));
+                const auto f = wave::frameAt (model.table (model.s (k + "table")), wave::clamp (model.g (k + "pos")));
                 wave::drawFace (c, w, h, cl, model.g (key), wave::warp (f, mode, wave::clamp (model.g (key)), &B), &f, mode == "off");
             });
-        }
-        canvas ("wvUn" + si, [&] (c2d::Context& c, float w, float h) { wave::drawUniFace (c, w, h, cl, cur, (int) model.g (k + "uni.n", 1), model.g (k + "uni.det"), model.g (k + "uni.spr")); });
-        canvas ("wvOfx" + si, [&] (c2d::Context& c, float w, float h) { texts[byId["wvOfr" + si].i] = wave::drawOfx (c, w, h, cl, model, i, t); });
-        if (byId.count ("wvOfr" + si) > 0)
-            chrome.skipText.insert (byId["wvOfr" + si].i);
-        const int semi = juce::roundToInt ((model.g (k + "pitch", 0.5f) - 0.5f) * 48), cents = juce::roundToInt ((model.g (k + "fine", 0.5f) - 0.5f) * 200);
-        canvas ("wvPt" + si, [&] (c2d::Context& c, float w, float h) { wave::drawRuler (c, w, h, cl, semi, cents); });
-        canvas ("wvPh" + si, [&] (c2d::Context& c, float w, float h) { wave::drawPhase (c, w, h, cl, model.g (k + "phase"), cur); });
-        canvas ("wvPn" + si, [&] (c2d::Context& c, float w, float h) { wave::drawKnob (c, w, h, cl, model.g (k + "pan", 0.5f), k + "pan", true); });
-        canvas ("wvPk" + si, [&] (c2d::Context& c, float w, float h) { wave::drawPick (c, w, h, cl, T); });
+        addCanvas ("wvUn" + si, osc, [this, i, k] (c2d::Context& c, float w, float h) {
+            wave::drawUniFace (c, w, h, cl, wave::waveFor (model, i, false), (int) model.g (k + "uni.n", 1), model.g (k + "uni.det"), model.g (k + "uni.spr"));
+        });
+        addCanvas ("wvOfx" + si, osc, [this, i, t] (c2d::Context& c, float w, float h) { wave::drawOfx (c, w, h, cl, model, i, t); });
+        addCanvas ("wvPt" + si, { k + "pitch", k + "fine" }, [this, k] (c2d::Context& c, float w, float h) {
+            const int semi = juce::roundToInt ((model.g (k + "pitch", 0.5f) - 0.5f) * 48), cents = juce::roundToInt ((model.g (k + "fine", 0.5f) - 0.5f) * 200);
+            wave::drawRuler (c, w, h, cl, semi, cents);
+        });
+        addCanvas ("wvPh" + si, osc, [this, i, k] (c2d::Context& c, float w, float h) { wave::drawPhase (c, w, h, cl, model.g (k + "phase"), wave::waveFor (model, i, false)); });
+        addCanvas ("wvPn" + si, { k + "pan" }, [this, k] (c2d::Context& c, float w, float h) { wave::drawKnob (c, w, h, cl, model.g (k + "pan", 0.5f), k + "pan", true); });
+        addCanvas ("wvPk" + si, { k + "table" }, [this, k] (c2d::Context& c, float w, float h) { wave::drawPick (c, w, h, cl, model.table (model.s (k + "table"))); });
+        for (size_t n = first; n < layers.size(); ++n)
+            layers[n]->also = fm;
     }
-    canvas ("wvGlide", [&] (c2d::Context& c, float w, float h) { wave::drawHBar (c, w, h, cl, model.g ("voice.glide")); });
+    addCanvas ("wvGlide", { "voice.glide" }, [this] (c2d::Context& c, float w, float h) { wave::drawHBar (c, w, h, cl, model.g ("voice.glide")); });
     for (int i : { 0, 1 })
     {
         const auto si = juce::String (i), f = "filt" + si + ".";
-        canvas ("wvLens" + si, [&] (c2d::Context& c, float w, float h) { wave::drawLens (c, w, h, cl, model, curs[0], i); });
+        addCanvas ("wvLens" + si, { f, "osc0." }, [this, i] (c2d::Context& c, float w, float h) { wave::drawLens (c, w, h, cl, model, wave::waveFor (model, 0, false), i); });
         for (const auto& knob : { std::pair { "wvCu", "cut" }, { "wvRs", "res" }, { "wvDr", "drive" }, { "wvKy", "key" } })
         {
             const juce::String key = f + knob.second;
-            canvas (juce::String (knob.first) + si, [&] (c2d::Context& c, float w, float h) { wave::drawKnob (c, w, h, cl, model.g (key), key, false); });
+            addCanvas (juce::String (knob.first) + si, { key }, [this, key] (c2d::Context& c, float w, float h) { wave::drawKnob (c, w, h, cl, model.g (key), key, false); });
         }
     }
     for (int c = 0; c < 5; ++c)
-        canvas ("wvMixL" + juce::String (c), [&] (c2d::Context& x, float w, float h) { wave::drawMix (x, w, h, cl, model, c, c < 3 ? &curs[(size_t) c] : nullptr, t); });
-    canvas ("wvKeys", [&] (c2d::Context& c, float, float) {
+    {
+        const juce::StringArray deps = c < 3 ? juce::StringArray { "osc" + juce::String (c) + "." } : c == 3 ? juce::StringArray { "sub." } : juce::StringArray { "noise." };
+        addCanvas ("wvMixL" + juce::String (c), deps, [this, c, t] (c2d::Context& x, float w, float h) {
+            const auto cur = c < 3 ? wave::waveFor (model, c, false) : wave::Frame {};
+            wave::drawMix (x, w, h, cl, model, c, c < 3 ? &cur : nullptr, t);
+        });
+    }
+    addCanvas ("wvKeys", { "osc0.pos" }, [this] (c2d::Context& c, float, float) {
         wave::drawKeys (c, cl, kbLo, [this] (int n) { return held.count (n) > 0; }, 205 - 175 * wave::clamp (model.g ("osc0.pos")));
     });
-    canvas ("wvBend", [&] (c2d::Context& c, float w, float h) { wave::drawWheel (c, w, h, cl, bend, true); });
-    canvas ("wvModw", [&] (c2d::Context& c, float w, float h) { wave::drawWheel (c, w, h, cl, mw, false); });
-    canvas ("wvPuck", [&] (c2d::Context& c, float w, float h) { wave::drawPuck (c, w, h, cl, model); });
-    canvas ("wvOutWave", [&] (c2d::Context& c, float w, float h) { wave::drawOut (c, w, h, cl); });
-    canvas ("wvMaster", [&] (c2d::Context& c, float w, float h) { wave::drawMaster (c, w, h, cl, model.g ("master", 0.8f), 0.0f); });
+    addCanvas ("wvBend", {}, [this] (c2d::Context& c, float w, float h) { wave::drawWheel (c, w, h, cl, bend, true); });
+    addCanvas ("wvModw", {}, [this] (c2d::Context& c, float w, float h) { wave::drawWheel (c, w, h, cl, mw, false); });
+    addCanvas ("wvPuck", { "osc0.", "filt0.cut" }, [this] (c2d::Context& c, float w, float h) { wave::drawPuck (c, w, h, cl, model); });
+    addCanvas ("wvOutWave", {}, [this] (c2d::Context& c, float w, float h) { wave::drawOut (c, w, h, cl); });
+    addCanvas ("wvMaster", { "master" }, [this] (c2d::Context& c, float w, float h) { wave::drawMaster (c, w, h, cl, model.g ("master", 0.8f), 0.0f); });
     for (int i = 0; i < 8; ++i)
-        canvas ("wvMac" + juce::String (i), [&] (c2d::Context& c, float w, float h) { wave::drawMacro (c, w, h, cl, model, i); });
+        addCanvas ("wvMac" + juce::String (i), { "macro" + juce::String (i), "osc0.table" }, [this, i] (c2d::Context& c, float w, float h) { wave::drawMacro (c, w, h, cl, model, i); });
     for (const auto& src : { "vel", "note", "mw", "at", "rand", "macro0", "macro1", "macro2", "macro3", "macro4", "macro5", "macro6", "macro7" })
-        canvas ("wvSc" + juce::String (src), [&] (c2d::Context& c, float w, float h) { wave::drawTilePic (c, w, h, cl, model, src); });
-
-    // The tiles: the envelopes and LFOs, each in its own colour.
+    {
+        const juce::String s (src);
+        addCanvas ("wvSc" + s, { s }, [this, s] (c2d::Context& c, float w, float h) { wave::drawTilePic (c, w, h, cl, model, s); });
+    }
     for (const auto& src : { "amp", "env1", "env2", "env3" })
     {
         const juce::String s (src);
         const auto C = s == "amp" ? cl : wave::sourceCl (cl, s);
-        canvas ("wvpev" + s, [&] (c2d::Context& c, float w, float h) { wave::drawEnv (c, w, h, C, model.g (s + ".a"), model.g (s + ".d"), model.g (s + ".s"), model.g (s + ".r")); });
+        addCanvas ("wvpev" + s, { s + "." }, [this, s, C] (c2d::Context& c, float w, float h) {
+            wave::drawEnv (c, w, h, C, model.g (s + ".a"), model.g (s + ".d"), model.g (s + ".s"), model.g (s + ".r"));
+        });
     }
     for (int L = 0; L < 4; ++L)
     {
         const auto s = "lfo" + juce::String (L);
         const auto C = wave::sourceCl (cl, s);
-        canvas ("wvplv" + s, [&] (c2d::Context& c, float w, float h) {
+        addCanvas ("wvplv" + s, { s + ".", "tempo" }, [this, s, C, L] (c2d::Context& c, float w, float h) {
             wave::drawLfo (c, w, h, C, model, L);
             const float rise = model.g (s + ".rise");
             if (rise > 0.005f)
@@ -342,12 +423,24 @@ void WaveFace::paintOverChildren (juce::Graphics& g)
     {
         if (r.bar < 0)
             continue;
-        const auto col = c2d::css (wave::sourceColour (r.src));
-        const auto bar = r.barR.withWidth (r.r.getWidth() * wave::clamp (model.g (r.key)));
-        juce::DropShadow (col, 6, {}).drawForRectangle (g, bar.toNearestInt());
-        g.setColour (col.withAlpha (0.85f));
-        g.fillRect (bar);
+        const auto box = r.barR.withWidth (r.r.getWidth()).expanded (8);
+        const auto key = r.key, src = r.src;
+        const auto bar = r.barR.withWidth (r.r.getWidth());
+        const auto origin = box.getTopLeft();
+        addLayer (box, { key }, [this, key, src, bar, origin] (juce::Graphics& g) {
+            const auto col = c2d::css (wave::sourceColour (src));
+            const auto b = bar.withWidth (bar.getWidth() * wave::clamp (model.g (key))) - origin;
+            juce::DropShadow (col, 6, {}).drawForRectangle (g, b.toNearestInt());
+            g.setColour (col.withAlpha (0.85f));
+            g.fillRect (b);
+        });
     }
+    // The readings, over everything.
+    textLayer = addLayer (getLocalBounds().toFloat(), { "*" }, [this] (juce::Graphics& g) { drawTexts (g); });
+}
+
+void WaveFace::drawTexts (juce::Graphics& g)
+{
     for (const auto& [node, text] : texts)
         drawText (g, node, text);
 }
@@ -427,6 +520,7 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
         {
             kbLo = juce::jlimit (12, 96, kbLo + oct.getIntValue() * 12);
             sync();
+            repaintCanvas ("wvKeys");
             return;
         }
         if (auto led = dataOf (n, "oscled"); led.isNotEmpty())
@@ -485,6 +579,7 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
             drag = [this, k, i, live] (float dx, float dy, const juce::MouseEvent&) {
                 live (k + "pos", wave::clamp (model.g (k + "pos") + dx / 260));
                 model.tilt[i] = wave::clamp (model.tilt[i] - dy / 110);
+                repaintCanvas ("wvW3d" + juce::String (i));
             };
             return;
         }
@@ -592,14 +687,14 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
             bend = wave::clamp (bend - dy / 50, -1, 1);
             if (onWheel)
                 onWheel (0, bend);
-            repaint();
+            repaintCanvas ("wvBend");
         };
         // It springs back when let go.
         dragEnd = [this] {
             bend = 0;
             if (onWheel)
                 onWheel (0, 0);
-            repaint();
+            repaintCanvas ("wvBend");
         };
         return;
     }
@@ -609,7 +704,7 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
             mw = wave::clamp (mw - dy / 90);
             if (onWheel)
                 onWheel (1, mw);
-            repaint();
+            repaintCanvas ("wvModw");
         };
         return;
     }
@@ -727,7 +822,7 @@ void WaveFace::note (int n, float vel, bool on)
         held.erase (n);
     if (onNote)
         onNote (n, vel, on);
-    repaint();
+    repaintCanvas ("wvKeys");
 }
 
 namespace
@@ -746,6 +841,7 @@ bool WaveFace::keyPressed (const juce::KeyPress& key)
     {
         kbLo = juce::jlimit (12, 96, kbLo + (ch == 'z' ? -12 : 12));
         sync();
+        repaintCanvas ("wvKeys");
         return true;
     }
     const int i = qwerty.indexOfChar (ch);

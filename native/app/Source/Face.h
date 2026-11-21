@@ -44,6 +44,12 @@ public:
     explicit Chrome (const juce::var& captured);
     void paint (juce::Graphics&) override;
 
+    // Draw again what lies in `area` (the page's pixels): after a switch has
+    // changed how it is lit. The rest of the picture is kept.
+    void redraw (juce::Rectangle<float> area);
+    // Draw the look itself, unscaled, into `g` (what the cached picture holds).
+    void paintLook (juce::Graphics&);
+
     // Every node with a canvas, by its id, and every node by its index.
     std::map<juce::String, juce::var> canvases;
     std::map<int, juce::var> nodes;
@@ -58,6 +64,10 @@ public:
 
 private:
     juce::var captured;
+    // The look, drawn once at `cachedScale` (1 or 2, the screen's density),
+    // and kept: the canvas zooms and moves it without drawing it again.
+    juce::Image cached;
+    float cachedScale = 0;
     std::map<int, std::unique_ptr<juce::Drawable>> svgs;
     void index (const juce::var& n);
     std::map<std::pair<int, int>, std::unique_ptr<juce::Drawable>> recoloured;

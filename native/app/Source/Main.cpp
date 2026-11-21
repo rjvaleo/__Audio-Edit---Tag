@@ -159,6 +159,59 @@ public:
         auto args = juce::StringArray::fromTokens (commandLine, true);
         args.trim();
         args.removeEmptyStrings();
+        // --bench: how long the Wave face takes to draw whole, and to draw
+        // again after one knob moves, as a drag does on every step.
+        if (args.size() >= 1 && args[0] == "--bench")
+        {
+            NaApp* a = na_new (48000.0f, 4096);
+            const auto id = (uint32_t) na_add (a, "wave", 0, 0);
+            WaveFace w (
+                [a, id] (const juce::String& key, const juce::String& value) { na_wave_set (a, id, key.toRawUTF8(), value.toRawUTF8()); },
+                [a, id] { return juce::String (naText ([&] (char* b, uint32_t c) { return na_wave_patch (a, id, b, c); })); },
+                [] (const juce::String& name) {
+                    wave::Table t (na_table_frames (name.toRawUTF8(), nullptr, 0));
+                    if (!t.empty())
+                        na_table_frames (name.toRawUTF8(), t.front().data(), (uint32_t) t.size());
+                    return t;
+                });
+            juce::Image frame (juce::Image::ARGB, w.getWidth() * 2, w.getHeight() * 2, true);
+            auto draw = [&] {
+                juce::Graphics g (frame);
+                g.addTransform (juce::AffineTransform::scale (2.0f));
+                w.paintEntireComponent (g, true);
+            };
+            auto ms = [] (auto&& f) {
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                f();
+                return juce::Time::getMillisecondCounterHiRes() - t0;
+            };
+            const double whole = ms (draw);
+            const double again = ms (draw);
+            double move = 0;
+            const int moves = 10;
+            for (int i = 0; i < moves; ++i)
+                move += ms ([&] { w.setKey ("osc0.pos", 0.3 + 0.02 * i); draw(); });
+            double lens = 0;
+            for (int i = 0; i < moves; ++i)
+                lens += ms ([&] { w.setKey ("filt0.cut", 0.4 + 0.02 * i); draw(); });
+            double click = 0;
+            for (int i = 0; i < moves; ++i)
+                click += ms ([&] { w.setKey ("filt0.type", i % 2 ? "hp" : "lp"); draw(); });
+            // A zoom step on the canvas: everything drawn at a new size.
+            juce::Image half (juce::Image::ARGB, w.getWidth(), w.getHeight(), true);
+            const double zoom = ms ([&] {
+                juce::Graphics g (half);
+                g.addTransform (juce::AffineTransform::scale (0.5f));
+                w.paintEntireComponent (g, true);
+            });
+            std::printf ("{\"switch_click_ms\":%.1f,\"zoom_step_ms\":%.1f}\n", click / moves, zoom);
+            for (auto& [name, t] : w.profile (2.0f))
+                if (t > 1.0)
+                    std::printf ("  %-12s %.1f ms\n", name.toRawUTF8(), t);
+            std::printf ("{\"whole_ms\":%.1f,\"again_ms\":%.1f,\"knob_move_ms\":%.1f,\"filter_move_ms\":%.1f}\n", whole, again, move / moves, lens / moves);
+            na_free (a);
+            return quit();
+        }
         if (args.size() >= 3 && args[0] == "--snapshot")
         {
             const auto page = args[1].unquoted();

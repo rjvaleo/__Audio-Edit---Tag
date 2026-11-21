@@ -41,13 +41,44 @@ public:
     // Read the patch again (after a preset, a load, or a change elsewhere).
     void reload();
 
-    void paintOverChildren (juce::Graphics&) override;
+    // Set a key as a control does (for the bench).
+    void setKey (const juce::String& key, const juce::var& value) { set (key, value); }
+    // How long each layer takes to draw at `scale`, slowest first (for the bench).
+    std::vector<std::pair<juce::String, double>> profile (float scale);
+
+
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 
 private:
+    // One of the page's canvases, drawn into a cache of its own and drawn
+    // again only when a key it shows changes (`deps`, key prefixes).
+    struct Layer final : public juce::Component
+    {
+        std::function<void (juce::Graphics&)> draw;
+        juce::String name;
+        juce::StringArray deps;
+        // Keys it shows only sometimes: another oscillator's, while a warp
+        // here is FM from it.
+        std::function<bool (const juce::String&)> also;
+        void paint (juce::Graphics& g) override { draw (g); }
+    };
+    std::vector<std::unique_ptr<Layer>> layers;
+    Layer* textLayer = nullptr;
+    Layer* addLayer (juce::Rectangle<float> r, juce::StringArray deps, std::function<void (juce::Graphics&)> draw);
+    void addCanvas (const juce::String& id, juce::StringArray deps, std::function<void (c2d::Context&, float w, float h)> draw);
+    void buildLayers();
+    std::map<juce::String, Layer*> canvasLayers;
+    void repaintCanvas (const juce::String& id)
+    {
+        if (auto it = canvasLayers.find (id); it != canvasLayers.end())
+            it->second->repaint();
+    }
+    void repaintFor (const juce::String& key);
+    void drawTexts (juce::Graphics&);
+
     Send send;
     Patch readPatch;
     face::Chrome chrome;

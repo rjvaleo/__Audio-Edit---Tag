@@ -1019,6 +1019,32 @@ juce::String drawOfx (c2d::Context& c, float w, float h, const Cl& cl, Model& m,
     return rdText;
 }
 
+juce::String ofxText (const Model& m, int i)
+{
+    const auto k = "osc" + juce::String (i) + ".";
+    juce::String K = m.s (k + "fx.mode");
+    if (ofxTable().count (K) == 0)
+        K = "off";
+    const float a = clamp (m.g (k + "fx.a")), b = m.g (k + "fx.b");
+    const auto pct = juce::String (juce::roundToInt (a * 100)) + " %";
+    const auto dotSep = juce::String::fromUTF8 (" \xc2\xb7 ");
+    if (K == "chorus")
+        return juce::String (0.1f + b * 4, 1) + " Hz" + dotSep + pct;
+    if (K == "delay")
+        return juce::String (juce::roundToInt (60 + b * 440)) + " ms" + dotSep + juce::String (juce::roundToInt ((0.25f + a * 0.6f) * 100)) + " %";
+    if (K == "phaser")
+        return juce::String (0.1f + b * 2, 1) + " Hz" + dotSep + pct;
+    if (K == "off")
+        return juce::String::fromUTF8 ("\xe2\x80\x94");
+    if (K == "crush")
+        return juce::String (juce::roundToInt (2 + (1 - b) * 6)) + " bit" + dotSep + pct;
+    if (K == "drive")
+        return juce::String::fromUTF8 ("\xc3\x97") + juce::String (1 + b * 10, 1) + dotSep + pct;
+    if (K == "ring")
+        return juce::String::fromUTF8 ("\xc3\x97") + juce::String (1 + juce::roundToInt (b * 7)) + dotSep + pct;
+    return juce::String (2 + b * 10, 1) + dotSep + pct;
+}
+
 EnvPts envPts (float w, float h, float A, float D, float S, float R)
 {
     const float x0 = 8, W = w - 16, top = 8, bot = h - 8;

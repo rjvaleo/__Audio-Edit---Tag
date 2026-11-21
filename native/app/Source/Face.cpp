@@ -241,7 +241,7 @@ Chrome::Chrome (const juce::var& c) : captured (c)
     setSize ((int) c["size"][0], (int) c["size"][1]);
     setInterceptsMouseClicks (false, false);
     index (captured["tree"]);
-    setBufferedToImage (true);
+    setOpaque (true);
 }
 
 void Chrome::index (const juce::var& n)
@@ -257,6 +257,37 @@ void Chrome::index (const juce::var& n)
 }
 
 void Chrome::paint (juce::Graphics& g)
+{
+    // Sharp on a 2x screen at 100% and below; drawn once, then only moved.
+    const float want = g.getInternalContext().getPhysicalPixelScaleFactor() > 1.01f ? 2.0f : 1.0f;
+    if (!cached.isValid() || want > cachedScale)
+    {
+        cachedScale = want;
+        cached = juce::Image (juce::Image::ARGB, (int) std::ceil ((float) getWidth() * want), (int) std::ceil ((float) getHeight() * want), true);
+        juce::Graphics cg (cached);
+        cg.addTransform (juce::AffineTransform::scale (want));
+        paintLook (cg);
+    }
+    g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+    g.drawImageTransformed (cached, juce::AffineTransform::scale (1.0f / cachedScale));
+}
+
+void Chrome::redraw (juce::Rectangle<float> area)
+{
+    if (cached.isValid())
+    {
+        const auto px = (area * cachedScale).getSmallestIntegerContainer().expanded (2);
+        juce::Graphics cg (cached);
+        cg.reduceClipRegion (px);
+        cg.setColour (juce::Colours::transparentBlack);
+        cg.getInternalContext().fillRect (px, true);
+        cg.addTransform (juce::AffineTransform::scale (cachedScale));
+        paintLook (cg);
+    }
+    repaint (area.getSmallestIntegerContainer().expanded (1));
+}
+
+void Chrome::paintLook (juce::Graphics& g)
 {
     const auto& back = captured["backdrop"];
     const auto all = getLocalBounds().toFloat();
@@ -430,6 +461,9 @@ void Chrome::drawNode (juce::Graphics& g, const juce::var& n, const juce::var* l
                 look = &jt->second;
     const auto& style = look != nullptr ? *look : n;
     const auto r = rectOf (n["rect"]);
+    // Nothing of this node (its shadows reach about 40 px) is being drawn.
+    if (!g.getClipBounds().toFloat().intersects (r.expanded (48.0f)) && !(bool) n["clip"] && n["kids"].isVoid())
+        return;
     const float opacity = num (style["opacity"], 1.0f);
     if (opacity <= 0.001f)
         return;

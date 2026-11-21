@@ -90,6 +90,8 @@ void drawPhase (c2d::Context&, float w, float h, const Cl&, float ph, const Fram
 void drawPick (c2d::Context&, float w, float h, const Cl&, const Table&);
 void drawLens (c2d::Context&, float w, float h, const Cl&, const Model&, const Frame& cur, int i);
 juce::String drawOfx (c2d::Context&, float w, float h, const Cl&, Model&, int i, float t);
+// The effect screen's reading, without drawing it.
+juce::String ofxText (const Model&, int i);
 
 // The Mix row's bar for channel `c` (0 to 2 the oscillators, 3 the sub, 4 the
 // noise): its sound drawn as far as its level, the level's handle, its dB.

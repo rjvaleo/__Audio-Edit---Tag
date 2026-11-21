@@ -10,6 +10,22 @@ Host::Host()
     tableDirs();
 
     devices.initialiseWithDefaultDevices (0, 2);
+    // The plan's block: 128 frames (2.7 ms at 48 kHz), not the card's default.
+    // The card's nearest size at or above 128 if it has no 128.
+    if (auto* device = devices.getCurrentAudioDevice())
+    {
+        auto sizes = device->getAvailableBufferSizes();
+        int pick = 0;
+        for (int b : sizes)
+            if (b >= 128 && (pick == 0 || b < pick))
+                pick = b;
+        auto setup = devices.getAudioDeviceSetup();
+        if (pick > 0 && setup.bufferSize != pick)
+        {
+            setup.bufferSize = pick;
+            devices.setAudioDeviceSetup (setup, true);
+        }
+    }
     keepBlockAtLeast64();
     devices.addChangeListener (this);
     devices.addAudioCallback (this);
