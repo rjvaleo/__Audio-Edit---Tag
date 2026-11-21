@@ -1,0 +1,34 @@
+[workspace]
+members = ["engine-core", "engine-capi", "engine-idmlab", "engine-mgl"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+# Tests run the audio path a sample at a time, so keep them quick, and keep
+# the overflow checks a debug build carries.
+[profile.dev]
+opt-level = 1
+
+# idMLab's modules run a sample at a time; unoptimised they make the tests crawl.
+[profile.dev.package.dsp-core]
+opt-level = 3
+[profile.dev.package.prism-fx]
+opt-level = 3
+[profile.dev.package.prism-grain]
+opt-level = 3
+# MultiGrainLive's own crates: the same level MGL builds them at.
+[profile.dev.package.wave]
+opt-level = 3
+[profile.dev.package.audio-core]
+opt-level = 3
+[profile.dev.package.fx]
+opt-level = 3
+[profile.dev.package.engine]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+# Module failures are caught before they reach the host’s C boundary.
+panic = "unwind"

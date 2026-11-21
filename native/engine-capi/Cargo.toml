@@ -1,0 +1,15 @@
+[package]
+name = "engine-capi"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The engine core behind a C interface, for the JUCE app to link."
+
+[lib]
+name = "engine_capi"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+engine-core = { path = "../engine-core" }
+# MultiGrainLive's instruments and effects, for the kinds past the plain ones.
+engine-mgl = { path = "../engine-mgl" }

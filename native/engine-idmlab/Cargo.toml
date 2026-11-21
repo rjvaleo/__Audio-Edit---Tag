@@ -1,0 +1,15 @@
+[package]
+name = "engine-idmlab"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "idMLab's Rust modules, run inside the native engine."
+
+[dependencies]
+engine-core = { path = "../engine-core" }
+# idMLab's own engine crate, as it is. Beside this folder, `GitHub` and
+# `MultiGrainLive` are laid out as they are in ~/Documents: on this Mac they
+# are links to the real folders, and the test scripts send copies to the same
+# places on the other machines. dsp-core finds prism-fx three folders up from
+# itself, in `GitHub/prism-fx`, which is also where MGL's crates look for it.
+dsp-core = { path = "../../GitHub/M Clone/rust/dsp-core" }
