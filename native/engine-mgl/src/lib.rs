@@ -3,6 +3,7 @@
 //! here, and each is checked against what that code plays on its own.
 
 mod ceiling;
+pub mod atmos;
 pub mod demo;
 mod fx;
 pub mod grain;
@@ -10,6 +11,7 @@ pub mod sound;
 mod suite;
 mod wave;
 
+pub use crate::atmos::{Atmos, AtmosState};
 pub use crate::ceiling::Ceiling;
 pub use crate::fx::{Fx,FxState};
 pub use crate::grain::{Grain, GrainThing, GrainState, Handle};
