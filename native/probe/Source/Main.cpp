@@ -2,6 +2,8 @@
 //
 //   probe --buffer 128 --seconds 8 [--monitor 0.2] [--skew 1] [--patch real [--engine 0..3]]
 //
+// --buffer below 64 is raised to 64: the app never runs smaller blocks.
+//
 // Plays a patch with every kind of cable through JUCE while this thread sends
 // it knob moves, notes and patch changes "now", as an app would. What the
 // engine made is kept. Then a second engine is given the same messages,
@@ -289,8 +291,15 @@ int main (int argc, char* argv[])
         std::printf ("{\"error\":\"%s\"}\n", opened.replace ("\"", "'").toRawUTF8());
         return 1;
     }
+    // Never ask the sound card for fewer than 64 frames (RJ, 21 Nov 2026).
+    // Grain works out its sound 128 frames at a time, so at 32 one callback
+    // in four carries four callbacks' work: Hybrid and PVSOLA with eight
+    // voices then need 143% and 123% of the time they have, and the card
+    // runs dry. At 64 the worst callback takes 74%. 64 frames is 1.3 ms at
+    // 48 kHz; Grain's sound stays bit for bit what it is.
+    constexpr int smallestBuffer = 64;
     auto setup = manager.getAudioDeviceSetup();
-    setup.bufferSize = wantBuffer;
+    setup.bufferSize = juce::jmax (smallestBuffer, wantBuffer);
     setup.sampleRate = wantRate;
     const auto err = manager.setAudioDeviceSetup (setup, true);
     auto* device = manager.getCurrentAudioDevice();
