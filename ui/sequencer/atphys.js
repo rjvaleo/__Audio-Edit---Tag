@@ -113,6 +113,8 @@ function atphysSend(full = false) {
 function atphysOn(id, hz, vel) {
   if (!atphysUp()) return null;
   atphysSend();
+  // Sympathy's strings follow the scale, which Seq may have changed ("Same as Seq").
+  if (typeof atmosRetuneSympathy === "function" && typeof atSymIn !== "undefined" && atSymIn) atmosRetuneSympathy();
   const n = ATPHYS.node;
   n.port.postMessage({ t: "on", id, hz, vel, at: audioCtx.currentTime });
   return { release(at) { n.port.postMessage({ t: "off", id, at }); } };

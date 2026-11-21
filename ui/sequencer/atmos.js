@@ -608,7 +608,12 @@ function atmosApplyGlobal() {
   }
   smooth(atSymIn.gain, ((AT.atSym ?? 30) / 100) * 0.9);
   atSpaceApply();
-  atSymKey = ""; // ring, material or tuning may have changed: retune on the next note
+  // Its strings, tuned now: ring, material or tuning may have changed. Until
+  // 21 Nov 2026 they were built only by the old browser voice's first note, so
+  // with the physical voice (atphys.js) Sympathy never rang (RJ: "keep it
+  // ringing, and fix MGL's page too"). Built again only when what tunes them
+  // changes, so a knob elsewhere does not cut them off.
+  atmosRetuneSympathy();
 }
 
 const AT_FREEZE_FB = 0.96;
