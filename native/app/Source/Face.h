@@ -44,8 +44,35 @@ void paintBox (juce::Graphics&, const juce::var& node, juce::Rectangle<float> r)
 // Write `text` in a captured node's first run's font and colour, inside `r`,
 // aligned left, centred or right.
 void paintText (juce::Graphics&, const juce::var& node, juce::Rectangle<float> r, const juce::String& text, juce::Justification = juce::Justification::centredLeft);
-// A captured part by its file name, without ".json" (faces/…).
+// A captured part by its file name, without ".json" (faces/…). idMLab's
+// canvas parts ("idmlab-bar", "-status", "-node-audio", "-menu", "-style")
+// come in the theme being worn; "wave" (via page) in its MGL twin.
 const juce::var& part (const juce::String& name);
+
+// ── themes and kits ───────────────────────────────────────────────────────
+// One entry in the theme picker: the theme idMLab's canvas wears, and the
+// one MGL's pages wear with it.
+struct ThemeChoice
+{
+    juce::String group, label, blurb;
+    juce::Array<juce::Colour> swatch;
+    int idmlab = 1;       // idMLab's theme, by its place in its own list (1 is Dark)
+    juce::String mgl;     // MGL's theme id ("default" is its own default)
+};
+const std::vector<ThemeChoice>& themeChoices();
+// The kits, as idMLab's Kit picker lists them: its value and its label.
+const std::vector<std::pair<juce::String, juce::String>>& kits();
+
+// What is worn now. Choosing loads its captures; `stamp` counts the changes,
+// so whatever drew with the old one knows to draw again.
+void wear (int choice, const juce::String& kit);
+int worn();
+const juce::String& wornKit();
+int stamp();
+
+// The jack the worn kit draws for a socket of this type ("audio" or "notes"),
+// as a captured tree, or null.
+const juce::var* jack (const juce::String& type, bool isInput);
 // The first node in `tree` whose class list holds `cls` (or whose tag is `cls`).
 const juce::var* find (const juce::var& tree, const juce::String& cls);
 

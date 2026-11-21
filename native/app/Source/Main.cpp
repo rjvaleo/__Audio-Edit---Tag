@@ -2,6 +2,7 @@
 // board, its status line), MultiGrainLive's and idMLab's modules on it,
 // played by the native engine (APP-PLAN.md).
 
+#include "BinaryData.h"
 #include "Canvas.h"
 #include "Face.h"
 #include "WaveFace.h"
@@ -24,73 +25,128 @@ juce::Rectangle<float> rectOf (const juce::var& r)
 }
 
 // idMLab's project bar (`.mm-project-bar`), captured at 1600 wide: its name
-// and file on the left, its menus between, Audio and Zoom on the right. The
-// Dark switch and the Kit picker are idMLab's themes, which the native app
-// doesn't have yet, so they are left off rather than shown doing nothing.
+// and file on the left, its menus between, and on the right Audio, Zoom, the
+// theme button (its swatch and name) and the Kit picker, laid out from the
+// window's right edge with idMLab's gaps, the theme button as wide as its name.
 class Bar final : public juce::Component
 {
 public:
     explicit Bar (Canvas& c) : canvas (c) {}
     std::function<void()> onAudio;
+    std::function<void (juce::Rectangle<int>)> onTheme;
+    std::function<void (const juce::String&)> onKit;
 
     void paint (juce::Graphics& g) override
     {
         const auto& tree = face::part ("idmlab-bar")["tree"];
-        const float W = (float) getWidth(), shift = rightShift();
+        const auto L = layout();
         face::paintBox (g, tree, getLocalBounds().toFloat());
         if (auto* title = face::find (tree, "strong"))
             face::paintText (g, *title, rectOf ((*title)["rect"]), "idMLab");
         if (auto* file = find (tree, "span", 0))
             face::paintText (g, *file, rectOf ((*file)["rect"]).withWidth (400), canvas.fileName());
         // The menus, centred between the two ends, as idMLab's flex row puts them.
-        const float mid = middleShift();
         for (int i = 0; i < 4; ++i)
             if (auto* b = menuButton (i))
             {
-                const auto r = rectOf ((*b)["rect"]).translated (mid, 0);
+                const auto r = rectOf ((*b)["rect"]).translated (L.menus, 0);
                 face::paintBox (g, *b, r);
                 face::paintText (g, *b, r, menuTitles[i], juce::Justification::centred);
             }
         if (auto* audio = audioButton())
         {
-            const auto r = rectOf ((*audio)["rect"]).translated (shift, 0);
+            const auto r = rectOf ((*audio)["rect"]).translated (L.audio, 0);
             face::paintBox (g, *audio, r);
             face::paintText (g, *audio, r, "Audio", juce::Justification::centred);
         }
         if (auto* zoom = zoomLabel())
         {
-            const auto r = rectOf ((*zoom)["rect"]).translated (shift, 0);
+            const auto r = rectOf ((*zoom)["rect"]).translated (L.zoom, 0);
             face::paintBox (g, *zoom, r);
             face::paintText (g, *zoom, r.withTrimmedLeft (10).withWidth (40), "Zoom");
             // The slider, on a log scale: 100% in its middle.
             const auto track = sliderRect();
             const float u = std::log (canvas.zoom() / camera::minZoom) / std::log (camera::maxZoom / camera::minZoom);
-            g.setColour (juce::Colour (0xff5a5a60));
+            const auto ink = face::colour ((*zoom)["text"][0]["font"]["colour"]);
+            g.setColour (ink.withAlpha (0.25f));
             g.fillRoundedRectangle (track.withSizeKeepingCentre (track.getWidth(), 4), 2);
-            g.setColour (juce::Colour (0xffd8d8dc));
-            g.fillRoundedRectangle (track.withWidth (track.getWidth() * u).withSizeKeepingCentre (track.getWidth() * u, 4).withX (track.getX()), 2);
-            g.setColour (juce::Colours::white);
+            g.setColour (ink.withAlpha (0.8f));
+            g.fillRoundedRectangle (juce::Rectangle<float> (track.getX(), track.getCentreY() - 2, track.getWidth() * u, 4), 2);
+            g.setColour (ink);
             g.fillEllipse (juce::Rectangle<float> (14, 14).withCentre ({ track.getX() + track.getWidth() * u, track.getCentreY() }));
             if (auto* out = face::find (*zoom, "output"))
-                face::paintText (g, *out, rectOf ((*out)["rect"]).translated (shift, 0).withWidth (48), juce::String (juce::roundToInt (canvas.zoom() * 100)) + " %");
+                face::paintText (g, *out, rectOf ((*out)["rect"]).translated (L.zoom, 0).withWidth (48), juce::String (juce::roundToInt (canvas.zoom() * 100)) + " %");
         }
-        (void) W;
+        // The theme button: the worn theme's swatch and its name.
+        if (auto* theme = face::find (tree, "mm-theme"))
+            if (auto* button = face::find (*theme, "button"))
+            {
+                const auto& choice = worn();
+                const auto r = themeRect();
+                face::paintBox (g, *button, r);
+                auto sw = juce::Rectangle<float> (r.getX() + 10, r.getY() + 6, 2.0f + 9.0f * (float) juce::jmax (1, choice.swatch.size()), 16);
+                if (auto* swatch = face::find (*button, "mm-theme-swatch"))
+                    face::paintBox (g, *swatch, sw);
+                for (int k = 0; k < choice.swatch.size(); ++k)
+                {
+                    g.setColour (choice.swatch[k]);
+                    g.fillRect (juce::Rectangle<float> (sw.getX() + 1 + 9.0f * (float) k, sw.getY() + 1, 9, 14));
+                }
+                if (auto* label = find (*button, "span", 1))
+                    face::paintText (g, *label, { sw.getRight() + 8, r.getY(), 400, r.getHeight() }, choice.label);
+            }
+        // The Kit picker: its label and its select, showing the worn kit.
+        if (auto* picker = face::find (tree, "mm-kit-picker"))
+        {
+            const auto r = kitRect();
+            face::paintBox (g, *picker, r);
+            face::paintText (g, *picker, r.withTrimmedLeft (9).withWidth (24), "Kit");
+            if (auto* select = face::find (*picker, "select"))
+            {
+                const auto sr = rectOf ((*select)["rect"]).translated (r.getX() - rectOf ((*picker)["rect"]).getX(), 0);
+                face::paintBox (g, *select, sr);
+                juce::String label;
+                for (const auto& [id, name] : face::kits())
+                    if (id == face::wornKit())
+                        label = name;
+                g.setFont (face::font ((*select)["font"]));
+                g.setColour (face::colour ((*select)["font"]["colour"]));
+                g.drawText (label, sr.reduced (5, 0), juce::Justification::centredLeft, false);
+                juce::Path chevron;
+                chevron.addTriangle (sr.getRight() - 13, sr.getCentreY() - 2, sr.getRight() - 5, sr.getCentreY() - 2, sr.getRight() - 9, sr.getCentreY() + 3);
+                g.fillPath (chevron);
+            }
+        }
     }
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        const float mid = middleShift(), shift = rightShift();
+        const auto L = layout();
         for (int i = 0; i < 4; ++i)
             if (auto* b = menuButton (i))
-                if (rectOf ((*b)["rect"]).translated (mid, 0).contains (e.position))
-                    return showMenu (i, rectOf ((*b)["rect"]).translated (mid, 0));
+                if (rectOf ((*b)["rect"]).translated (L.menus, 0).contains (e.position))
+                    return showMenu (i, rectOf ((*b)["rect"]).translated (L.menus, 0));
         if (auto* audio = audioButton())
-            if (rectOf ((*audio)["rect"]).translated (shift, 0).contains (e.position))
+            if (rectOf ((*audio)["rect"]).translated (L.audio, 0).contains (e.position))
             {
                 if (onAudio)
                     onAudio();
                 return;
             }
+        if (themeRect().contains (e.position))
+        {
+            if (onTheme)
+                onTheme (themeRect().toNearestInt());
+            return;
+        }
+        if (kitRect().contains (e.position))
+        {
+            juce::PopupMenu m;
+            for (const auto& [id, name] : face::kits())
+                m.addItem (name, true, id == face::wornKit(), [this, kitId = id] { if (onKit) onKit (kitId); });
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (kitRect()).toNearestInt()));
+            return;
+        }
         if (sliderRect().expanded (4, 8).contains (e.position))
         {
             sliding = true;
@@ -111,6 +167,12 @@ private:
     bool sliding = false;
     const char* menuTitles[4] = { "File", "Edit", "Patch", "View" };
 
+    static const face::ThemeChoice& worn()
+    {
+        const auto& list = face::themeChoices();
+        return list[(size_t) juce::jlimit (0, (int) list.size() - 1, face::worn())];
+    }
+
     static const juce::var* find (const juce::var& tree, const juce::String& tag, int nth)
     {
         int seen = 0;
@@ -125,34 +187,57 @@ private:
         };
         return walk (tree);
     }
-    const juce::var* menuButton (int i) const { return find (face::part ("idmlab-bar")["tree"], "button", i); }
-    const juce::var* audioButton() const { return find (face::part ("idmlab-bar")["tree"], "button", 4); }
-    const juce::var* zoomLabel() const { return find (face::part ("idmlab-bar")["tree"], "label", 0); }
+    const juce::var& tree() const { return face::part ("idmlab-bar")["tree"]; }
+    const juce::var* menuButton (int i) const { return find (tree(), "button", i); }
+    const juce::var* audioButton() const { return find (tree(), "button", 4); }
+    const juce::var* zoomLabel() const { return find (tree(), "label", 0); }
 
-    // The right-hand group keeps its distance from the window's right edge,
-    // where idMLab's Kit picker ended.
-    float rightShift() const
+    // Where each group sits: how far it moves from where idMLab drew it.
+    struct Layout
     {
-        auto* zoom = zoomLabel();
-        const float right = zoom != nullptr ? rectOf ((*zoom)["rect"]).getRight() : 1336;
-        return (float) getWidth() - 14 - right;
+        float menus = 0, audio = 0, zoom = 0;
+    };
+    juce::Rectangle<float> kitRect() const
+    {
+        auto* picker = face::find (tree(), "mm-kit-picker");
+        const auto r = picker != nullptr ? rectOf ((*picker)["rect"]) : juce::Rectangle<float> (1435.8f, 9, 150.2f, 31);
+        return r.withX ((float) getWidth() - 14 - r.getWidth());
     }
-    float middleShift() const
+    juce::Rectangle<float> themeRect() const
     {
+        const auto& choice = worn();
+        juce::Font f (juce::FontOptions (13.0f));
+        if (auto* theme = face::find (tree(), "mm-theme"))
+            if (auto* label = find (*theme, "span", 1))
+                f = face::font ((*label)["text"][0]["font"]);
+        const float w = 10 + 2 + 9.0f * (float) juce::jmax (1, choice.swatch.size()) + 8 + juce::GlyphArrangement::getStringWidth (f, choice.label) + 10;
+        return { kitRect().getX() - 8 - w, 10.5f, w, 28 };
+    }
+    Layout layout() const
+    {
+        Layout L;
+        auto* zoom = zoomLabel();
+        auto* audio = audioButton();
+        if (zoom == nullptr || audio == nullptr)
+            return L;
+        const auto zr = rectOf ((*zoom)["rect"]), ar = rectOf ((*audio)["rect"]);
+        L.zoom = themeRect().getX() - 8 - zr.getRight();
+        L.audio = zr.getX() + L.zoom - 8 - ar.getRight();
         auto* first = menuButton (0);
         auto* last = menuButton (3);
-        auto* audio = audioButton();
-        if (first == nullptr || last == nullptr || audio == nullptr)
-            return 0;
-        const float left = 180, right = rectOf ((*audio)["rect"]).getX() + rightShift();
-        const float width = rectOf ((*last)["rect"]).getRight() - rectOf ((*first)["rect"]).getX();
-        return (left + right) / 2 - width / 2 - rectOf ((*first)["rect"]).getX();
+        if (first != nullptr && last != nullptr)
+        {
+            const float left = 180, right = ar.getX() + L.audio;
+            const float width = rectOf ((*last)["rect"]).getRight() - rectOf ((*first)["rect"]).getX();
+            L.menus = (left + right) / 2 - width / 2 - rectOf ((*first)["rect"]).getX();
+        }
+        return L;
     }
     juce::Rectangle<float> sliderRect() const
     {
         auto* zoom = zoomLabel();
         auto* input = zoom != nullptr ? face::find (*zoom, "input") : nullptr;
-        return input != nullptr ? rectOf ((*input)["rect"]).translated (rightShift(), 0) : juce::Rectangle<float>();
+        return input != nullptr ? rectOf ((*input)["rect"]).translated (layout().zoom, 0) : juce::Rectangle<float>();
     }
     void slide (float x)
     {
@@ -199,6 +284,200 @@ private:
     }
 };
 
+// idMLab's theme menu: a search, then the themes grouped (built in, MGL's
+// own looks, the palettes), each row its swatch, its name and a line on it.
+class ThemeMenu final : public juce::Component, private juce::TextEditor::Listener
+{
+public:
+    std::function<void (int)> onPick;
+    std::function<void()> onClose;
+
+    ThemeMenu()
+    {
+        const auto& tree = menuTree();
+        if (auto* input = face::find (tree, "input"))
+        {
+            search.setFont (face::font ((*input)["font"]));
+            search.setColour (juce::TextEditor::backgroundColourId, (*input)["bg"].isArray() ? face::colour ((*input)["bg"]) : juce::Colour (0xff2f2f31));
+            search.setColour (juce::TextEditor::textColourId, face::colour ((*input)["font"]["colour"]));
+            search.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff3a3a3f));
+        }
+        search.setTextToShowWhenEmpty ("Search " + juce::String ((int) face::themeChoices().size()) + " themes", juce::Colour (0xff8b8b92));
+        search.addListener (this);
+        addAndMakeVisible (search);
+        list.setViewedComponent (&rows, false);
+        list.setScrollBarsShown (true, false);
+        addAndMakeVisible (list);
+        rows.menu = this;
+        filter();
+    }
+
+    static const juce::var& menuTree()
+    {
+        static const juce::var tree = [] {
+            for (int i = 0; i < BinaryData::namedResourceListSize; ++i)
+                if (juce::String (BinaryData::originalFilenames[i]) == "idmlab-theme-menu.json.gz")
+                {
+                    int size = 0;
+                    const char* data = BinaryData::getNamedResource (BinaryData::namedResourceList[i], size);
+                    juce::MemoryInputStream raw (data, (size_t) size, false);
+                    juce::GZIPDecompressorInputStream unzip (&raw, false, juce::GZIPDecompressorInputStream::gzipFormat);
+                    return juce::JSON::parse (unzip.readEntireStreamAsString())["tree"];
+                }
+            return juce::var();
+        }();
+        return tree;
+    }
+
+    void paint (juce::Graphics& g) override { face::paintBox (g, menuTree(), getLocalBounds().toFloat()); }
+
+    void resized() override
+    {
+        search.setBounds (9, 9, getWidth() - 18, 28);
+        list.setBounds (9, 43, getWidth() - 18, getHeight() - 52);
+        rows.setSize (list.getWidth() - (list.getVerticalScrollBar().isVisible() ? 8 : 0), rows.getHeight());
+    }
+
+    void inputAttemptWhenModal() override { if (onClose) onClose(); }
+
+private:
+    struct Rows final : public juce::Component
+    {
+        ThemeMenu* menu = nullptr;
+        struct Row
+        {
+            int choice = -1;
+            juce::String group;
+            juce::Rectangle<float> r;
+        };
+        std::vector<Row> items;
+        int hover = -1;
+
+        void paint (juce::Graphics& g) override
+        {
+            const auto& tree = menuTree();
+            const auto* listNode = face::find (tree, "mm-theme-menu__list");
+            const juce::var* groupLabel = listNode != nullptr ? face::find (*listNode, "b") : nullptr;
+            const juce::var* active = listNode != nullptr ? face::find (*listNode, "is-active") : nullptr;
+            const juce::var* plain = listNode != nullptr ? face::find (*listNode, "button") : nullptr;
+            const juce::var* swatch = plain != nullptr ? face::find (*plain, "mm-theme-swatch") : nullptr;
+            const juce::var* name = plain != nullptr ? find (*plain, "span", 1) : nullptr;
+            const juce::var* small = plain != nullptr ? face::find (*plain, "small") : nullptr;
+            const auto& choices = face::themeChoices();
+            for (size_t i = 0; i < items.size(); ++i)
+            {
+                const auto& it = items[i];
+                if (it.choice < 0)
+                {
+                    if (groupLabel != nullptr)
+                        face::paintText (g, *groupLabel, it.r, it.group.toUpperCase());
+                    continue;
+                }
+                const auto& c = choices[(size_t) it.choice];
+                const bool on = it.choice == face::worn();
+                if (on && active != nullptr)
+                    face::paintBox (g, *active, it.r);
+                else if ((int) i == hover)
+                {
+                    g.setColour (juce::Colours::white.withAlpha (0.06f));
+                    g.fillRoundedRectangle (it.r, 6);
+                }
+                auto sw = juce::Rectangle<float> (it.r.getX() + 7, it.r.getY() + 13, 2.0f + 9.0f * (float) juce::jmax (1, c.swatch.size()), 16);
+                if (swatch != nullptr)
+                    face::paintBox (g, *swatch, sw);
+                for (int k = 0; k < c.swatch.size(); ++k)
+                {
+                    g.setColour (c.swatch[k]);
+                    g.fillRect (juce::Rectangle<float> (sw.getX() + 1 + 9.0f * (float) k, sw.getY() + 1, 9, 14));
+                }
+                const float x = sw.getRight() + 9;
+                if (name != nullptr)
+                    face::paintText (g, *name, { x, it.r.getY() + 7, it.r.getRight() - x - 4, 15 }, c.label);
+                if (small != nullptr)
+                    face::paintText (g, *small, { x, it.r.getY() + 23, it.r.getRight() - x - 4, 12 }, c.blurb);
+            }
+        }
+
+        static const juce::var* find (const juce::var& tree, const juce::String& tag, int nth)
+        {
+            int seen = 0;
+            std::function<const juce::var* (const juce::var&)> walk = [&] (const juce::var& n) -> const juce::var* {
+                if (n["tag"].toString() == tag && seen++ == nth)
+                    return &n;
+                if (auto* kids = n["kids"].getArray())
+                    for (const auto& k : *kids)
+                        if (auto* hit = walk (k))
+                            return hit;
+                return nullptr;
+            };
+            return walk (tree);
+        }
+
+        void mouseMove (const juce::MouseEvent& e) override
+        {
+            int h = -1;
+            for (size_t i = 0; i < items.size(); ++i)
+                if (items[i].choice >= 0 && items[i].r.contains (e.position))
+                    h = (int) i;
+            if (h != hover)
+            {
+                hover = h;
+                repaint();
+            }
+        }
+        void mouseExit (const juce::MouseEvent&) override
+        {
+            hover = -1;
+            repaint();
+        }
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            for (const auto& it : items)
+                if (it.choice >= 0 && it.r.contains (e.position) && menu->onPick)
+                {
+                    const int c = it.choice;
+                    auto pick = menu->onPick;
+                    juce::MessageManager::callAsync ([pick, c] { pick (c); });
+                    return;
+                }
+        }
+    };
+
+    juce::TextEditor search;
+    juce::Viewport list;
+    Rows rows;
+
+    void filter()
+    {
+        rows.items.clear();
+        const auto q = search.getText().trim().toLowerCase();
+        const auto& choices = face::themeChoices();
+        float y = 0;
+        juce::String group;
+        for (int i = 0; i < (int) choices.size(); ++i)
+        {
+            const auto& c = choices[(size_t) i];
+            if (q.isNotEmpty() && !c.label.toLowerCase().contains (q))
+                continue;
+            if (c.group != group)
+            {
+                if (group.isNotEmpty())
+                    y += 4;
+                group = c.group;
+                rows.items.push_back ({ -1, group, { 0, y, 290, 23 } });
+                y += 23;
+            }
+            rows.items.push_back ({ i, group, { 0, y, 290, 42 } });
+            y += 42;
+        }
+        rows.setSize (302, juce::jmax (1, (int) y + 4));
+        rows.repaint();
+        resized();
+    }
+    void textEditorTextChanged (juce::TextEditor&) override { filter(); }
+    void textEditorEscapeKeyPressed (juce::TextEditor&) override { if (onClose) onClose(); }
+};
+
 // idMLab's status line: what the last command did, and how many modules and cables.
 class StatusLine final : public juce::Component
 {
@@ -227,6 +506,37 @@ private:
     Canvas& canvas;
 };
 
+// The theme and kit last worn, kept between runs (places::home()/settings.json).
+juce::var readSettings()
+{
+    return juce::JSON::parse (places::home().getChildFile ("settings.json").loadFileAsString());
+}
+
+void writeSettings (const juce::String& theme, const juce::String& kit)
+{
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    o->setProperty ("theme", theme);
+    o->setProperty ("kit", kit);
+    places::home().createDirectory();
+    places::home().getChildFile ("settings.json").replaceWithText (juce::JSON::toString (juce::var (o.get())));
+}
+
+// What to wear before anything is drawn: what was worn last, or idMLab's Dark.
+int wearSaved()
+{
+    const auto saved = readSettings();
+    const auto& list = face::themeChoices();
+    int choice = 0;
+    for (int i = 0; i < (int) list.size(); ++i)
+        if (list[(size_t) i].label == (saved["theme"].isString() ? saved["theme"].toString() : juce::String ("Dark")))
+        {
+            choice = i;
+            break;
+        }
+    face::wear (choice, saved["kit"].isString() ? saved["kit"].toString() : juce::String ("thinRing"));
+    return choice;
+}
+
 class MainComponent final : public juce::Component, private juce::Timer
 {
 public:
@@ -244,6 +554,8 @@ public:
             statusLine.repaint();
         };
         bar.onAudio = [this] { soundSettings(); };
+        bar.onTheme = [this] (juce::Rectangle<int> near) { openThemes (near); };
+        bar.onKit = [this] (const juce::String& kit) { wearTheme (face::worn(), kit); };
         setSize (1600, 1000);
         canvas.starter();
         startTimerHz (1);
@@ -263,11 +575,61 @@ public:
     Canvas& canvasForBench() { return canvas; }
 
 private:
+    int savedTheme = wearSaved();
     Host host;
     Canvas canvas { host };
     Bar bar { canvas };
     StatusLine statusLine { canvas };
     juce::TooltipWindow tooltips { this, 600 };
+    std::unique_ptr<ThemeMenu> themes;
+
+    void openThemes (juce::Rectangle<int> near)
+    {
+        if (themes != nullptr)
+        {
+            themes.reset();
+            return;
+        }
+        themes = std::make_unique<ThemeMenu>();
+        themes->onPick = [this] (int c) {
+            themes.reset();
+            wearTheme (c, face::wornKit());
+        };
+        themes->onClose = [this] { juce::MessageManager::callAsync ([this] { themes.reset(); }); };
+        const int h = juce::jmin (652, getHeight() - near.getBottom() - 40);
+        themes->setBounds (juce::jlimit (8, getWidth() - 328, near.getRight() - 320), near.getBottom() + 6, 320, h);
+        addAndMakeVisible (*themes);
+    }
+
+public:
+    // Wear a theme by its name, not kept (for snapshots).
+    void wearForSnapshot (const juce::String& label, const juce::String& kit)
+    {
+        const auto& list = face::themeChoices();
+        for (int i = 0; i < (int) list.size(); ++i)
+            if (list[(size_t) i].label == label)
+                return wearTheme (i, kit, false);
+    }
+
+private:
+    // Put a theme and kit on: everything drawn again in them, and kept.
+    void wearTheme (int choice, const juce::String& kit, bool keep = true)
+    {
+        face::wear (choice, kit);
+        canvas.retheme();
+        bar.repaint();
+        statusLine.repaint();
+        if (keep)
+            writeSettings (face::themeChoices()[(size_t) choice].label, kit);
+        juce::String kitName;
+        for (const auto& [id, name] : face::kits())
+            if (id == kit)
+                kitName = name;
+        statusLine.message = "Theme " + face::themeChoices()[(size_t) choice].label + juce::String::fromUTF8 (" \xc2\xb7 kit ") + kitName;
+        statusLine.repaint();
+    }
+
+    void mouseDown (const juce::MouseEvent&) override { themes.reset(); }
 
     // The sound card's state belongs in the status line now and then.
     void timerCallback() override
@@ -415,9 +777,18 @@ public:
             const auto page = args[1].unquoted();
             const float scale = args.size() > 3 ? args[3].getFloatValue() : 1.0f;
             juce::Image image;
-            if (page == "canvas")
+            if (page == "theme-menu")
+            {
+                wearSaved();
+                ThemeMenu m;
+                m.setSize (320, 652);
+                image = m.createComponentSnapshot (m.getLocalBounds(), true, scale);
+            }
+            else if (page == "canvas")
             {
                 MainComponent main;
+                if (args.size() > 4)
+                    main.wearForSnapshot (args[4].unquoted().replace ("_", " "), args.size() > 5 ? args[5] : juce::String ("thinRing"));
                 image = main.createComponentSnapshot (main.getLocalBounds(), true, scale);
             }
             else if (page == "wave-face")

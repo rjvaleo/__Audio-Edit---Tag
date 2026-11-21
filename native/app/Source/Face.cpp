@@ -104,8 +104,56 @@ juce::Colour colour (const juce::var& c)
     return juce::Colour ((juce::uint8) (int) c[0], (juce::uint8) (int) c[1], (juce::uint8) (int) c[2], (float) (double) c[3]);
 }
 
+namespace
+{
+// A file embedded in the app, read whole; gzipped ones unpacked.
+juce::String embedded (const juce::String& file)
+{
+    for (int i = 0; i < BinaryData::namedResourceListSize; ++i)
+        if (juce::String (BinaryData::originalFilenames[i]) == file)
+        {
+            int size = 0;
+            const char* data = BinaryData::getNamedResource (BinaryData::namedResourceList[i], size);
+            if (file.endsWith (".gz"))
+            {
+                juce::MemoryInputStream raw (data, (size_t) size, false);
+                juce::GZIPDecompressorInputStream unzip (&raw, false, juce::GZIPDecompressorInputStream::gzipFormat);
+                return unzip.readEntireStreamAsString();
+            }
+            return juce::String::fromUTF8 (data, size);
+        }
+    return {};
+}
+
+struct Worn
+{
+    int choice = -1;
+    juce::String kit = "thinRing";
+    juce::var idmlab;        // the idMLab theme's parts
+    juce::var mgl;           // Wave's face in the MGL theme
+    int stamp = 0;
+};
+Worn& wornState()
+{
+    static Worn w;
+    return w;
+}
+
+juce::Colour cssToColour (const juce::String& s)
+{
+    // "rgb(r, g, b)" as computed styles give them.
+    auto p = juce::StringArray::fromTokens (s.fromFirstOccurrenceOf ("(", false, false).upToFirstOccurrenceOf (")", false, false), ",", "");
+    if (p.size() < 3)
+        return juce::Colours::transparentBlack;
+    return juce::Colour ((juce::uint8) p[0].trim().getIntValue(), (juce::uint8) p[1].trim().getIntValue(), (juce::uint8) p[2].trim().getIntValue(),
+                         p.size() > 3 ? p[3].trim().getFloatValue() : 1.0f);
+}
+} // namespace
+
 const juce::var& page (const juce::String& name)
 {
+    if (name == "wave" && wornState().mgl.isObject())
+        return wornState().mgl;
     static std::map<juce::String, juce::var> pages;
     auto it = pages.find (name);
     if (it == pages.end())
@@ -123,9 +171,136 @@ const juce::var& page (const juce::String& name)
     return it->second;
 }
 
+
+const std::vector<ThemeChoice>& themeChoices()
+{
+    static const std::vector<ThemeChoice> list = [] {
+        std::vector<ThemeChoice> out;
+        const auto idm = juce::JSON::parse (embedded ("idmlab-themes.json"));
+        const auto mgl = juce::JSON::parse (embedded ("mgl-themes.json"));
+        auto mglFor = [&] (const juce::String& label) -> juce::String {
+            if (auto* a = mgl.getArray())
+                for (const auto& t : *a)
+                    if (t["name"].toString().equalsIgnoreCase (label) && t["id"].toString() != "default")
+                        return t["id"].toString();
+            return {};
+        };
+        auto swatchOf = [] (const juce::var& colours) {
+            juce::Array<juce::Colour> sw;
+            if (auto* a = colours.getArray())
+                for (const auto& c : *a)
+                    sw.add (c.toString().startsWith ("rgb") ? cssToColour (c.toString()) : juce::Colour::fromString ("ff" + c.toString().removeCharacters ("#")));
+            return sw;
+        };
+        int lightIndex = 0, darkIndex = 1;
+        if (auto* a = idm.getArray())
+            for (int i = 0; i < a->size(); ++i)
+            {
+                const auto& t = a->getReference (i);
+                if (t["label"].toString() == "Light")
+                    lightIndex = i;
+                if (t["label"].toString() == "Dark")
+                    darkIndex = i;
+            }
+        // idMLab's built-ins first, as its picker has them.
+        if (auto* a = idm.getArray())
+            for (int i = 0; i < a->size(); ++i)
+            {
+                const auto& t = a->getReference (i);
+                if (t["group"].toString() != "Built in")
+                    continue;
+                const auto label = t["label"].toString();
+                out.push_back ({ "Built in", label, t["blurb"].toString(), swatchOf (t["swatch"]), i, label == "Light" ? juce::String ("studio-light") : juce::String ("default") });
+            }
+        // MGL's own looks: its pages' themes, on idMLab's Dark (Light for Studio light).
+        if (auto* a = mgl.getArray())
+            for (const auto& t : *a)
+            {
+                const auto id = t["id"].toString();
+                const bool look = t["look"].isString() || id == "default" || id == "studio-light" || id == "mid-grey" || id == "layered-dark" || id == "conifer" || id == "facets";
+                if (!look || (id.startsWith ("look-") && id == "look-ad"))
+                    continue;
+                // The default lists no colours; its Look twin does.
+                juce::var colours = t["colors"];
+                if (!colours.isArray())
+                    if (auto* all = mgl.getArray())
+                        for (const auto& twin : *all)
+                            if (twin["look"].toString() == t["look"].toString() && twin["colors"].isArray())
+                                colours = twin["colors"];
+                out.push_back ({ "MultiGrainLive", t["name"].toString(), "MGL's own look", swatchOf (colours), id == "studio-light" ? lightIndex : darkIndex, id });
+            }
+        // Then idMLab's palettes, each with its MGL twin where MGL has one.
+        if (auto* a = idm.getArray())
+            for (int i = 0; i < a->size(); ++i)
+            {
+                const auto& t = a->getReference (i);
+                if (t["group"].toString() == "Built in")
+                    continue;
+                const auto twin = mglFor (t["label"].toString());
+                out.push_back ({ t["group"].toString(), t["label"].toString(), t["blurb"].toString(), swatchOf (t["swatch"]), i, twin.isEmpty() ? juce::String ("default") : twin });
+            }
+        return out;
+    }();
+    return list;
+}
+
+const std::vector<std::pair<juce::String, juce::String>>& kits()
+{
+    static const std::vector<std::pair<juce::String, juce::String>> list {
+        { "vintage", "Vintage Wood" }, { "eurorack", "Eurorack White" }, { "thinRing", "Thin Ring" },
+        { "flatModern", "Flat Modern" }, { "lineArt", "Line Art" }, { "lcd", "Hardware LCD" },
+    };
+    return list;
+}
+
+void wear (int choice, const juce::String& kit)
+{
+    auto& w = wornState();
+    const auto& list = themeChoices();
+    if (choice < 0 || choice >= (int) list.size())
+        return;
+    if (choice != w.choice)
+    {
+        const auto& c = list[(size_t) choice];
+        w.idmlab = juce::JSON::parse (embedded ("idmlab-theme-" + juce::String (c.idmlab) + ".json.gz"));
+        w.mgl = juce::JSON::parse (embedded ("mgl-theme-" + c.mgl + ".json.gz"));
+        w.choice = choice;
+    }
+    w.kit = kit.isEmpty() ? juce::String ("thinRing") : kit;
+    ++w.stamp;
+}
+
+int worn() { return wornState().choice; }
+const juce::String& wornKit() { return wornState().kit; }
+int stamp() { return wornState().stamp; }
+
 const juce::var& part (const juce::String& name)
 {
+    auto& w = wornState();
+    if (w.idmlab.isObject())
+    {
+        static const std::map<juce::String, juce::String> field {
+            { "idmlab-bar", "bar" }, { "idmlab-status", "status" }, { "idmlab-node-audio", "nodeAudio" },
+            { "idmlab-menu", "menu" }, { "idmlab-style", "style" },
+        };
+        if (auto it = field.find (name); it != field.end())
+        {
+            const auto& v = w.idmlab[juce::Identifier (it->second)];
+            if (!v.isVoid())
+                return v;
+        }
+    }
     return page (name);
+}
+
+const juce::var* jack (const juce::String& type, bool isInput)
+{
+    auto& w = wornState();
+    if (!w.idmlab.isObject())
+        return nullptr;
+    const auto& set = w.idmlab["jacks"][juce::Identifier (w.kit)];
+    const auto& one = set[type == "audio" ? "audioIn" : isInput ? "noteIn" : "noteOut"];
+    return one.isObject() ? &one["tree"] : nullptr;
 }
 
 const juce::var* find (const juce::var& tree, const juce::String& cls)

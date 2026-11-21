@@ -27,12 +27,16 @@ juce::Colour accentFor (const juce::String& kind)
     return c2d::css (a["m.audio-output"].toString().isEmpty() ? "#ef755a" : a["m.audio-output"].toString());
 }
 
-// The jack idMLab draws for a socket of this kind, from its own modules.
-const juce::var* jackPart (const juce::String& type, const juce::var*& label)
+// The jack the worn kit draws for a socket of this kind, and its label.
+const juce::var* jackPart (const juce::String& type, bool isInput, const juce::var*& label)
 {
-    const bool audio = type == "audio";
-    const auto& tree = face::part (audio ? "idmlab-node-audio" : "idmlab-node-notes")["tree"];
-    const auto* port = face::find (tree, audio ? "mm-port--audio" : "mm-port--note-event");
+    const juce::var* port = face::jack (type, isInput);
+    if (port == nullptr)
+    {
+        const bool audio = type == "audio";
+        const auto& tree = face::part (audio ? "idmlab-node-audio" : "idmlab-node-notes")["tree"];
+        port = face::find (tree, audio ? "mm-port--audio" : "mm-port--note-event");
+    }
     label = port != nullptr ? face::find (*port, "mm-port__label") : nullptr;
     return port;
 }
@@ -100,7 +104,7 @@ Jack::Jack (Canvas& c, int m, bool in, int i, const SocketInfo& info)
     setSize (size, size);
     setTooltip (name);
     const juce::var* label = nullptr;
-    if (auto* port = jackPart (type, label))
+    if (auto* port = jackPart (type, isInput, label))
         if (auto* svg = face::find (*port, "svg"))
             art = juce::Drawable::createFromSVGString ((*svg)["svg"].toString());
 }
@@ -257,7 +261,7 @@ void Node::setPatchName (const juce::String& name)
 void Node::paint (juce::Graphics& g)
 {
     // The frame, drawn once at 2x and kept: zooming and panning only move it.
-    const auto key = juce::String (getWidth()) + "x" + juce::String (getHeight()) + (collapsed ? "c" : "") + patchName;
+    const auto key = juce::String (getWidth()) + "x" + juce::String (getHeight()) + (collapsed ? "c" : "") + patchName + "/" + juce::String (face::stamp());
     if (!frame.isValid() || frameKey != key)
     {
         frameKey = key;
@@ -328,7 +332,7 @@ void Node::paintFrame (juce::Graphics& g)
     for (auto& j : jacks)
     {
         const juce::var* label = nullptr;
-        jackPart (j->type, label);
+        jackPart (j->type, j->isInput, label);
         if (label == nullptr)
             continue;
         const auto b = j->getBounds().toFloat();
@@ -766,6 +770,14 @@ void Canvas::fit()
     applyCamera();
 }
 
+void Canvas::retheme()
+{
+    dotTile = {};
+    refresh();
+    cables.update();
+    repaint();
+}
+
 void Canvas::pan (float dx, float dy)
 {
     cam = camera::panBy (cam, dx, dy);
@@ -794,12 +806,16 @@ void Canvas::paint (juce::Graphics& g)
     // One tile with its dot, at the screen's density, laid over the window.
     const float density = g.getInternalContext().getPhysicalPixelScaleFactor();
     const int tile = juce::jmax (1, juce::roundToInt (step * density));
-    if (!dotTile.isValid() || dotTile.getWidth() != tile || std::abs (dotStep - step) > 1e-4f)
+    if (!dotTile.isValid() || dotTile.getWidth() != tile || std::abs (dotStep - step) > 1e-4f || dotStamp != face::stamp())
     {
         dotStep = step;
+        dotStamp = face::stamp();
         dotTile = juce::Image (juce::Image::ARGB, tile, tile, true);
         juce::Graphics tg (dotTile);
-        tg.setColour (juce::Colour (180, 180, 186).withAlpha (0.2f));
+        // The theme's dot: the first colour of the board's radial gradient.
+        const auto image = canvasStyle()["viewport"]["background-image"].toString();
+        const auto dot = image.fromFirstOccurrenceOf ("circle,", false, false).upToFirstOccurrenceOf (")", true, false).trim();
+        tg.setColour (dot.isNotEmpty() ? c2d::css (dot) : juce::Colour (180, 180, 186).withAlpha (0.2f));
         const float c = (float) tile / 2, r = density;
         tg.fillEllipse (c - r, c - r, 2 * r, 2 * r);
     }

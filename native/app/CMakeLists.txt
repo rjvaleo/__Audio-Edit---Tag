@@ -36,7 +36,9 @@ juce_add_gui_app(idMLab
   VERSION 0.1.0)
 add_dependencies(idMLab engine_build)
 # Each page's look, captured from MGL's own page (tools/face-capture).
-juce_add_binary_data(idmlab_faces SOURCES faces/wave.json
+# Every theme and kit, captured from idMLab and MGL (tools/face-capture/capture-themes.mjs).
+file(GLOB THEME_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/themes/*")
+juce_add_binary_data(idmlab_faces SOURCES faces/wave.json ${THEME_FILES}
   faces/idmlab/idmlab-bar.json faces/idmlab/idmlab-status.json faces/idmlab/idmlab-node-audio.json
   faces/idmlab/idmlab-node-notes.json faces/idmlab/idmlab-menu.json faces/idmlab/idmlab-style.json)
 target_sources(idMLab PRIVATE Source/Main.cpp Source/Host.cpp Source/Canvas.cpp Source/Face.cpp

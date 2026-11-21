@@ -1,0 +1,577 @@
+[
+ {
+  "group": "Built in",
+  "label": "Light",
+  "blurb": "Cool slate, the original canvas",
+  "swatch": [
+   "rgb(255, 255, 255)",
+   "rgb(46, 84, 150)",
+   "rgb(21, 32, 43)"
+  ]
+ },
+ {
+  "group": "Built in",
+  "label": "Dark",
+  "blurb": "Neutral grey, no colour cast",
+  "swatch": [
+   "rgb(38, 38, 40)",
+   "rgb(220, 220, 224)",
+   "rgb(240, 240, 242)"
+  ]
+ },
+ {
+  "group": "Built in",
+  "label": "Teal",
+  "blurb": "Saturated mid-dark, not dimmed",
+  "swatch": [
+   "rgb(19, 80, 83)",
+   "rgb(155, 234, 228)",
+   "rgb(234, 250, 249)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Sharp edge",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(137, 137, 137)",
+   "rgb(217, 217, 217)",
+   "rgb(255, 77, 77)",
+   "rgb(77, 255, 188)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Sapphire ash morning",
+  "blurb": "Light · 6 colours",
+  "swatch": [
+   "rgb(53, 98, 122)",
+   "rgb(229, 174, 169)",
+   "rgb(180, 98, 88)",
+   "rgb(166, 169, 208)",
+   "rgb(245, 245, 245)",
+   "rgb(142, 154, 152)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Yacht club",
+  "blurb": "Dark · 4 colours",
+  "swatch": [
+   "rgb(242, 240, 239)",
+   "rgb(187, 189, 188)",
+   "rgb(36, 95, 115)",
+   "rgb(115, 62, 36)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Urban slate",
+  "blurb": "Dark · 5 colours",
+  "swatch": [
+   "rgb(233, 230, 231)",
+   "rgb(94, 86, 83)",
+   "rgb(123, 127, 138)",
+   "rgb(171, 151, 140)",
+   "rgb(107, 124, 152)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Ink wash",
+  "blurb": "Dark · 4 colours",
+  "swatch": [
+   "rgb(37, 37, 37)",
+   "rgb(207, 207, 207)",
+   "rgb(125, 125, 125)",
+   "rgb(84, 84, 84)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Turquoise amber autumn",
+  "blurb": "Dark · 5 colours",
+  "swatch": [
+   "rgb(48, 76, 100)",
+   "rgb(38, 120, 142)",
+   "rgb(164, 204, 212)",
+   "rgb(226, 72, 12)",
+   "rgb(99, 27, 8)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Fruits Basket",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(233, 132, 162)",
+   "rgb(185, 204, 149)",
+   "rgb(248, 212, 155)",
+   "rgb(248, 230, 203)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Graphite",
+  "blurb": "Light · 5 colours",
+  "swatch": [
+   "rgb(193, 192, 194)",
+   "rgb(245, 233, 231)",
+   "rgb(131, 125, 104)",
+   "rgb(138, 157, 177)",
+   "rgb(236, 197, 198)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Pearl",
+  "blurb": "Light · 5 colours",
+  "swatch": [
+   "rgb(233, 227, 222)",
+   "rgb(165, 147, 123)",
+   "rgb(227, 196, 155)",
+   "rgb(102, 97, 97)",
+   "rgb(175, 154, 201)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Strawberry",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(241, 70, 102)",
+   "rgb(238, 137, 128)",
+   "rgb(255, 205, 170)",
+   "rgb(156, 184, 152)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Calcite",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(221, 220, 219)",
+   "rgb(253, 123, 65)",
+   "rgb(237, 191, 155)",
+   "rgb(60, 64, 68)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Marina",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(255, 241, 231)",
+   "rgb(181, 210, 230)",
+   "rgb(50, 96, 128)",
+   "rgb(128, 82, 50)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Neutral elegance",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(255, 219, 187)",
+   "rgb(204, 190, 177)",
+   "rgb(153, 126, 103)",
+   "rgb(102, 73, 48)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Amber walnut morning",
+  "blurb": "Light · 5 colours",
+  "swatch": [
+   "rgb(235, 239, 238)",
+   "rgb(204, 180, 153)",
+   "rgb(200, 144, 109)",
+   "rgb(187, 108, 67)",
+   "rgb(74, 65, 60)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Driftwood pearl morning",
+  "blurb": "Dark · 5 colours",
+  "swatch": [
+   "rgb(188, 123, 111)",
+   "rgb(90, 50, 42)",
+   "rgb(228, 164, 153)",
+   "rgb(113, 138, 158)",
+   "rgb(204, 205, 199)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Copper aquamarine dream",
+  "blurb": "Dark · 6 colours",
+  "swatch": [
+   "rgb(220, 170, 137)",
+   "rgb(48, 82, 92)",
+   "rgb(195, 86, 39)",
+   "rgb(214, 121, 77)",
+   "rgb(76, 132, 141)",
+   "rgb(191, 185, 181)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Sunrise",
+  "blurb": "Dark · 4 colours",
+  "swatch": [
+   "rgb(95, 35, 107)",
+   "rgb(190, 55, 95)",
+   "rgb(237, 133, 84)",
+   "rgb(245, 235, 109)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Sandstone aquamarine serinity",
+  "blurb": "Dark · 5 colours",
+  "swatch": [
+   "rgb(188, 108, 80)",
+   "rgb(48, 76, 83)",
+   "rgb(221, 173, 156)",
+   "rgb(90, 47, 37)",
+   "rgb(175, 224, 231)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Cocoa topaz noonday",
+  "blurb": "Dark · 5 colours",
+  "swatch": [
+   "rgb(116, 47, 20)",
+   "rgb(90, 132, 172)",
+   "rgb(199, 172, 159)",
+   "rgb(252, 156, 68)",
+   "rgb(92, 60, 44)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Fireside",
+  "blurb": "Dark · 6 colours",
+  "swatch": [
+   "rgb(231, 104, 20)",
+   "rgb(216, 212, 188)",
+   "rgb(137, 26, 16)",
+   "rgb(220, 130, 54)",
+   "rgb(184, 33, 15)",
+   "rgb(113, 66, 54)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Sorbet",
+  "blurb": "Light · 6 colours",
+  "swatch": [
+   "rgb(204, 204, 204)",
+   "rgb(237, 236, 236)",
+   "rgb(183, 195, 150)",
+   "rgb(254, 254, 254)",
+   "rgb(224, 231, 215)",
+   "rgb(186, 154, 145)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Frozen mist",
+  "blurb": "Light · 5 colours",
+  "swatch": [
+   "rgb(124, 125, 117)",
+   "rgb(173, 172, 167)",
+   "rgb(252, 248, 216)",
+   "rgb(217, 218, 223)",
+   "rgb(221, 112, 11)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Tropical heat",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(0, 206, 200)",
+   "rgb(252, 239, 195)",
+   "rgb(255, 156, 95)",
+   "rgb(235, 66, 3)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Honey opal sunset",
+  "blurb": "Light · 5 colours",
+  "swatch": [
+   "rgb(236, 185, 20)",
+   "rgb(246, 213, 121)",
+   "rgb(157, 129, 8)",
+   "rgb(203, 184, 160)",
+   "rgb(79, 61, 53)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Terrazzo",
+  "blurb": "Light · 5 colours",
+  "swatch": [
+   "rgb(237, 189, 149)",
+   "rgb(55, 79, 78)",
+   "rgb(209, 128, 30)",
+   "rgb(218, 204, 196)",
+   "rgb(170, 133, 82)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Woodland",
+  "blurb": "Dark · 5 colours",
+  "swatch": [
+   "rgb(159, 117, 96)",
+   "rgb(158, 158, 158)",
+   "rgb(170, 211, 30)",
+   "rgb(212, 175, 159)",
+   "rgb(82, 80, 52)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Cove",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(0, 107, 187)",
+   "rgb(48, 160, 224)",
+   "rgb(255, 200, 114)",
+   "rgb(255, 227, 179)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Tropical jade sunrise",
+  "blurb": "Light · 5 colours",
+  "swatch": [
+   "rgb(252, 164, 124)",
+   "rgb(35, 206, 217)",
+   "rgb(249, 215, 121)",
+   "rgb(161, 204, 166)",
+   "rgb(9, 124, 135)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Jade pebble morning",
+  "blurb": "Light · 5 colours",
+  "swatch": [
+   "rgb(123, 150, 105)",
+   "rgb(230, 230, 230)",
+   "rgb(108, 132, 128)",
+   "rgb(186, 200, 177)",
+   "rgb(64, 78, 59)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Turtle",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(229, 239, 193)",
+   "rgb(162, 213, 171)",
+   "rgb(57, 174, 169)",
+   "rgb(85, 123, 131)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Sage peridot morning",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(52, 92, 50)",
+   "rgb(156, 172, 84)",
+   "rgb(167, 240, 221)",
+   "rgb(151, 205, 151)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Vichy",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(187, 191, 191)",
+   "rgb(135, 135, 135)",
+   "rgb(5, 173, 152)",
+   "rgb(255, 255, 255)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Sea Side",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(38, 100, 142)",
+   "rgb(79, 143, 192)",
+   "rgb(83, 210, 220)",
+   "rgb(255, 227, 179)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Emerald lavender lake",
+  "blurb": "Dark · 3 colours",
+  "swatch": [
+   "rgb(36, 140, 84)",
+   "rgb(137, 97, 142)",
+   "rgb(149, 220, 228)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Periwinkle",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(154, 156, 234)",
+   "rgb(162, 185, 238)",
+   "rgb(162, 220, 238)",
+   "rgb(173, 238, 226)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Frosted aura",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(92, 126, 143)",
+   "rgb(162, 162, 162)",
+   "rgb(212, 221, 226)",
+   "rgb(255, 255, 255)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Seashell garnet afternoon",
+  "blurb": "Light · 6 colours",
+  "swatch": [
+   "rgb(246, 201, 146)",
+   "rgb(48, 82, 92)",
+   "rgb(172, 192, 211)",
+   "rgb(211, 150, 166)",
+   "rgb(9, 161, 161)",
+   "rgb(84, 132, 164)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Sapphire nightfall whisper",
+  "blurb": "Dark · 6 colours",
+  "swatch": [
+   "rgb(4, 116, 196)",
+   "rgb(83, 121, 174)",
+   "rgb(44, 68, 76)",
+   "rgb(168, 196, 236)",
+   "rgb(6, 69, 127)",
+   "rgb(38, 43, 64)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Moon dust",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(211, 211, 255)",
+   "rgb(206, 181, 255)",
+   "rgb(142, 193, 222)",
+   "rgb(128, 168, 255)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Neptune",
+  "blurb": "Light · 4 colours",
+  "swatch": [
+   "rgb(143, 217, 251)",
+   "rgb(74, 181, 181)",
+   "rgb(109, 139, 192)",
+   "rgb(82, 90, 255)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Lapis velvet evening",
+  "blurb": "Dark · 6 colours",
+  "swatch": [
+   "rgb(33, 56, 133)",
+   "rgb(236, 223, 210)",
+   "rgb(95, 52, 117)",
+   "rgb(8, 24, 73)",
+   "rgb(204, 202, 204)",
+   "rgb(137, 49, 114)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Festive eve",
+  "blurb": "Dark · 4 colours",
+  "swatch": [
+   "rgb(35, 35, 255)",
+   "rgb(36, 174, 255)",
+   "rgb(192, 74, 255)",
+   "rgb(126, 61, 255)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Amethyst dawn haze",
+  "blurb": "Dark · 5 colours",
+  "swatch": [
+   "rgb(52, 28, 103)",
+   "rgb(71, 47, 91)",
+   "rgb(196, 174, 244)",
+   "rgb(204, 164, 180)",
+   "rgb(220, 206, 64)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Pink LA",
+  "blurb": "Dark · 4 colours",
+  "swatch": [
+   "rgb(120, 39, 230)",
+   "rgb(141, 57, 236)",
+   "rgb(170, 79, 246)",
+   "rgb(234, 128, 252)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Velvet",
+  "blurb": "Dark · 4 colours",
+  "swatch": [
+   "rgb(49, 56, 102)",
+   "rgb(80, 64, 154)",
+   "rgb(150, 78, 194)",
+   "rgb(255, 123, 191)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Rose",
+  "blurb": "Dark · 4 colours",
+  "swatch": [
+   "rgb(204, 24, 78)",
+   "rgb(232, 69, 117)",
+   "rgb(247, 108, 174)",
+   "rgb(255, 227, 179)"
+  ]
+ },
+ {
+  "group": "Palettes",
+  "label": "Rose quartz evening",
+  "blurb": "Dark · 4 colours",
+  "swatch": [
+   "rgb(100, 36, 47)",
+   "rgb(180, 68, 70)",
+   "rgb(252, 143, 143)",
+   "rgb(223, 217, 216)"
+  ]
+ }
+]

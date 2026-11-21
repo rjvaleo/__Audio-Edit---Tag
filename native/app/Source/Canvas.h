@@ -205,6 +205,8 @@ public:
     void addModule (const juce::String& kind, juce::Point<float> onStage);
     void centrePatch();
     void pan (float dx, float dy);
+    // A new theme or kit was put on: everything drawn again in it.
+    void retheme();
     // End a zoom gesture now and draw sharp (for the bench).
     void settleZoom() { if (zooming) timerCallback(); }
     void fit();
@@ -272,6 +274,7 @@ private:
     std::vector<juce::String> undoStack, redoStack;
     juce::Image dotTile;
     float dotStep = 0;
+    int dotStamp = -1;
 
     // While a zoom gesture runs, a picture of the canvas taken as it began is
     // moved and scaled, which costs nothing; the canvas is drawn again sharp
