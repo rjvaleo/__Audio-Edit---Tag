@@ -230,6 +230,7 @@ pub struct Synth {
     /// was, over a few milliseconds, under the new note's own fade in.
     carry: [f32; 2],
     carry_k: f32,
+    controls: Vec<(Mods, f32, f32, bool)>,
     voice_output: Vec<[[f32; 2]; CHECK_BLOCK]>,
     block_voices: u16,
     block_carry: [[f32; 2]; CHECK_BLOCK],
@@ -241,6 +242,7 @@ pub struct Synth {
 impl Synth {
     pub fn new(sr: f32) -> Self {
         Synth {
+            controls: vec![(Mods::default(), 0.0, 0.0, false); CHECK_BLOCK],
             voice_output: vec![[[0.0; 2]; CHECK_BLOCK]; VOICES],
             block_voices: 0,
             block_carry: [[0.0; 2]; CHECK_BLOCK],
@@ -433,7 +435,8 @@ impl Synth {
         l[..n].iter_mut().for_each(|x| *x = 0.0);
         r[..n].iter_mut().for_each(|x| *x = 0.0);
         let sr = self.sr;
-        for i in 0..n {
+        let mut i = 0;
+        while i < n {
             let local = i % CHECK_BLOCK;
             if local == 0 {
                 self.block_voices = self.voices.iter().enumerate().fold(0, |mask, (v, voice)| {
@@ -460,6 +463,11 @@ impl Synth {
                     k += 1;
                 }
             }
+            let end = self.events.iter().map(|event| match event {
+                Event::On { at, .. } | Event::Off { at, .. } => *at as usize,
+            }).filter(|at| *at > i).min().unwrap_or(n)
+                .min(n).min(i - local + CHECK_BLOCK);
+            for frame in i..end {
             // The LFOs.
             let mut m = Mods::default();
             for lf in self.params.lfo.iter_mut() {
@@ -476,9 +484,20 @@ impl Synth {
                     _ => {}
                 }
             }
-            self.voice_sum(&m, i);
-            if local + 1 == CHECK_BLOCK || i + 1 == n {
-                self.check_block(&mut l[i - local..=i], &mut r[i - local..=i]);
+            let p = &self.params;
+            let blend = (p.blend + m.blend).clamp(0.0, 1.0);
+            let ga = (blend * std::f32::consts::FRAC_PI_2).cos();
+            let gb = (blend * std::f32::consts::FRAC_PI_2).sin();
+            let filter_on = p.flt_type != 0 || p.flt_cut < 19990.0 || p.flt_amt != 0.0 || m.cutoff != 0.0;
+            self.controls[frame % CHECK_BLOCK] = (m, ga, gb, filter_on);
+            }
+            // Each voice advances independently between note events.
+            for voice in 0..VOICES { self.render_voice(voice, i, end); }
+            for frame in i..end { self.advance_carry(frame); }
+            i = end;
+            if i % CHECK_BLOCK == 0 || i == n {
+                let begin = (i - 1) / CHECK_BLOCK * CHECK_BLOCK;
+                self.check_block(&mut l[begin..i], &mut r[begin..i]);
             }
         }
         for e in &mut self.events {
@@ -529,19 +548,16 @@ impl Synth {
     }
 
     #[inline]
-    fn voice_sum(&mut self, m: &Mods, i: usize) {
+    fn render_voice(&mut self, voice: usize, begin: usize, end: usize) {
         let p = &self.params;
         let sr = self.sr;
-        let blend = (p.blend + m.blend).clamp(0.0, 1.0);
-        let ga = (blend * std::f32::consts::FRAC_PI_2).cos();
-        let gb = (blend * std::f32::consts::FRAC_PI_2).sin();
+        let v = &mut self.voices[voice];
+        if v.amp.idle() { return; }
+        for i in begin..end {
+        let (m, ga, gb, filter_on) = &self.controls[i % CHECK_BLOCK];
         let uni = p.unison.clamp(1, UNISON);
-        let filter_on = p.flt_type != 0 || p.flt_cut < 19990.0 || p.flt_amt != 0.0 || m.cutoff != 0.0;
         let vowel_shift = m.vowel;
-        for (voice, v) in self.voices.iter_mut().enumerate() {
-            if v.amp.idle() {
-                continue;
-            }
+            if v.amp.idle() { break; }
             v.age += 1;
             // Glide, then drift: a slow wander of its own.
             if p.glide > 0.0 {
@@ -557,7 +573,7 @@ impl Synth {
             let fe = v.fenv.tick(p.flt_atk, p.flt_dec, p.flt_sus, p.flt_rel, sr);
             let (mut vl, mut vr) = (0.0, 0.0);
             for o in 0..2 {
-                let g = if o == 0 { ga } else { gb };
+                let g = if o == 0 { *ga } else { *gb };
                 if g < 1e-4 {
                     continue;
                 }
@@ -610,7 +626,7 @@ impl Synth {
                 vr += hp * air * 0.12;
             }
             // Its own filter, one per voice.
-            if filter_on {
+            if *filter_on {
                 let key = 2f32.powf(p.flt_key * (12.0 * (v.hz / 261.63).log2()) / 12.0);
                 let hz = p.flt_cut * key * 2f32.powf(4.0 * p.flt_amt * fe + m.cutoff / 1200.0);
                 // Envelopes, cutoff LFOs and a gliding key-tracked cutoff move each sample.
@@ -630,6 +646,9 @@ impl Synth {
                 v.last = [0.0; 2];
             }
         }
+    }
+
+    fn advance_carry(&mut self, i: usize) {
         self.block_carry[i % CHECK_BLOCK] = self.carry;
         if self.carry != [0.0; 2] {
             self.carry[0] *= self.carry_k;
