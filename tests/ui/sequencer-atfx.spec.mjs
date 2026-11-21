@@ -267,6 +267,29 @@ test('its own tuning: its scale and root, or Seq\'s when it says Same as Seq', a
   expect(got.seqRoot).toBeCloseTo(440, 3);
 });
 
+test('every key plays a note of its own, up the whole run, in any scale', async ({ page }) => {
+  await openAtmos(page);
+  const got = await page.evaluate(() => {
+    const set = (id, v) => { document.getElementById(id).value = v; };
+    const runs = {};
+    for (const name of [/Ionian/, /Ptolemy/, /Pentatonic/]) {
+      const i = SCALES.findIndex((s) => name.test(s.name));
+      if (i < 0) continue;
+      set('atTuneScaleSelect', String(i)); set('atTuneRootSelect', '0'); set('atTuneOctSelect', '4');
+      atmosRead();
+      runs[SCALES[i].name] = Array.from({ length: 25 }, (_, n) => atKeyHz(48 + n));
+    }
+    return runs;
+  });
+  expect(Object.keys(got).length).toBeGreaterThan(1);
+  for (const [name, hz] of Object.entries(got)) {
+    for (let n = 1; n < hz.length; n++) expect(hz[n], `${name}: key ${48 + n} above key ${47 + n}`).toBeGreaterThan(hz[n - 1] * 1.03);
+  }
+  // In an equal-tempered scale each key is exactly its own semitone, as Wave's are.
+  const ionian = Object.entries(got).find(([name]) => /Ionian/.test(name))[1];
+  ionian.forEach((hz, n) => expect(hz).toBeCloseTo(440 * Math.pow(2, (48 + n - 69) / 12), 2));
+});
+
 test('on its page, in the order its sound goes: Amp, Filter, then its effects; no delay or Space of Seq\'s', async ({ page }) => {
   await openAtmos(page);
   const got = await page.evaluate(() => {

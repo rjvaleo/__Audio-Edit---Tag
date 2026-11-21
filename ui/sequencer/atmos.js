@@ -1235,11 +1235,15 @@ function atRootMidi() {
   return (r === "seq" ? rootMidi : +r) + ((o === "seq" ? rootOctave : +o) + 1) * 12;
 }
 function atRootHz() { return 440 * Math.pow(2, (atRootMidi() - 69) / 12); }
-/// The true pitch of MIDI key `k` in its own tuning: the nearest degree of its
-/// scale, from its root, as the 88 keys find it for Seq.
+/// The pitch of MIDI key `k` in Atmosphere's own tuning. Every key plays a
+/// note of its own, as Wave's do: its own semitone, tuned to a degree of the
+/// scale where one lies within a quarter tone of it. (Until 21 Nov 2026 every
+/// key was snapped to the nearest degree, so with a seven-note scale the black
+/// keys played their neighbours' notes and a run up the keys repeated; RJ:
+/// "Atmosphere is not playing all the keys correctly".)
 function atKeyHz(k) {
   const cents = atScale().cents, diff = (k - atRootMidi()) * 100, oct = Math.floor(diff / 1200);
-  let best = cents[0], dist = Infinity;
+  let best = diff, dist = 50;
   for (const o of [oct - 1, oct, oct + 1]) for (const c of cents) { const s = c + o * 1200, d = Math.abs(diff - s); if (d < dist) { dist = d; best = s; } }
   return atRootHz() * Math.pow(2, best / 1200);
 }
