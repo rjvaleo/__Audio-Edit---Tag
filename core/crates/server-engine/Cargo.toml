@@ -1,0 +1,15 @@
+[package]
+name = "server-engine"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The engine and grain control: the engine, grains, the FX rack, the pad, Prism, the edit view."
+
+[dependencies]
+server-core = { path = "../server-core" }
+server-library = { path = "../server-library" }
+server-compose = { path = "../server-compose" }
+audio-core = { path = "../audio-core" }
+edit = { path = "../edit" }
+fx = { path = "../fx" }
+engine = { path = "../engine" }

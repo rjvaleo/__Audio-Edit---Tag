@@ -1,7 +1,7 @@
 // The interface script, as the browser gets it.
 //
 // `ui/app.js` is written as parts in `ui/app/`, one per area of the interface,
-// and the server's build (`core/crates/server/build.rs`) joins them in name
+// and the server's build (`core/crates/server-ui/build.rs`) joins them in name
 // order into the one classic script it serves. One script, not many: the parts
 // call functions declared further down, which only hoisting within a single
 // script allows. Anything that reads the interface's source reads it through
@@ -35,7 +35,7 @@ export function appSource() {
 }
 
 /// The other files under `ui/` written as parts, and the folder each is joined
-/// from, in name order, as `core/crates/server/build.rs` joins them.
+/// from, in name order, as `core/crates/server-ui/build.rs` joins them.
 export const JOINED = {
   'app.css': 'app-css',
   'room-paint.js': 'room-paint',

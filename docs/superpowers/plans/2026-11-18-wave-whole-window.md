@@ -6,7 +6,7 @@
 
 **Architecture:** `.wv-app` stops being a fixed 1460 × 862 box and becomes a grid that fills `#waveView`. The middle holds the tab views at fixed sizes, a page-level dock holds either the inspector (FX) or the chain of effects (every other tab), and one scale factor is applied to the whole frame only below its smallest size. A pure function lays the board's graph out as a chain with splits, and the dock and Play's effects row both draw from it.
 
-**Tech Stack:** The app's own browser JavaScript (`ui/app/*.js`, joined in name order by `core/crates/server/build.rs`; a new file there is picked up by its name) and CSS (`ui/wave.css`, `ui/app-css/*.css`); Playwright browser tests (`tests/ui/*.spec.mjs`, `import { test, expect } from './test.mjs'`).
+**Tech Stack:** The app's own browser JavaScript (`ui/app/*.js`, joined in name order by `core/crates/server-ui/build.rs`; a new file there is picked up by its name) and CSS (`ui/wave.css`, `ui/app-css/*.css`); Playwright browser tests (`tests/ui/*.spec.mjs`, `import { test, expect } from './test.mjs'`).
 
 **Spec:** `docs/WAVE-WHOLE-WINDOW.md` (read it first). The agreed look is `page-mockups/wave-window-a6.html`: open it beside the real page at every task.
 

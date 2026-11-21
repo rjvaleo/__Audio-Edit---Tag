@@ -2,7 +2,7 @@
 //
 // AMP and LFO 1–4, all open, one row each, between the trace and the engine's
 // own controls. AMP is live: drag its points. The LFOs run on the server
-// (`core/crates/server/src/grain_lfos.rs`), which carries their phases and is
+// (`core/crates/server-core/src/grain_lfos.rs`), which carries their phases and is
 // heard; this part edits their settings and draws where they are. The values
 // are kept in `GS.amp` and `GS.lfo`, travel with A and B, and are kept per sound
 // (`gsVoiceKeep`).

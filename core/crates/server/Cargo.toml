@@ -6,12 +6,18 @@ license.workspace = true
 description = "Local HTTP server: serves the UI, streams audio, runs scans."
 
 [features]
-# The interface read from `ui/` on disk instead of compiled in: for test and
-# development builds, so an interface change rebuilds no Rust. The live build
-# leaves it off. See `src/routes/assets.rs`.
-ui-from-disk = []
+# See `server-ui`: the interface read from disk, for test builds.
+ui-from-disk = ["server-ui/ui-from-disk"]
 
 [dependencies]
+server-core = { path = "../server-core" }
+server-ui = { path = "../server-ui" }
+server-library = { path = "../server-library" }
+server-compose = { path = "../server-compose" }
+server-engine = { path = "../server-engine" }
+server-export = { path = "../server-export" }
+server-stems = { path = "../server-stems" }
+server-analytics = { path = "../server-analytics" }
 audio-core = { path = "../audio-core" }
 edit = { path = "../edit" }
 fx = { path = "../fx" }

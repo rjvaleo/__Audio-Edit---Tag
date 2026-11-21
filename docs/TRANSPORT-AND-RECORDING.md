@@ -148,7 +148,7 @@ today.
 
 ### The fallback that exists now, and what becomes of it
 
-[record.rs](../core/crates/server/src/record.rs) currently writes to
+[record.rs](../core/crates/server-export/src/record.rs) currently writes to
 `<library>/Recordings/`, hard-coded, or to `data_dir/Recordings` when no library
 is set — and its own header defends that choice well:
 

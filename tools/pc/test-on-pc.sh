@@ -17,6 +17,11 @@ BUSY=$(ssh pc "if exist D:\\mgl-test\\MultiGrainLive\\tools\\pc\\run-log.mjs nod
 case "$BUSY" in busy:*) echo "$BUSY"; exit 1;; esac
 REV=$(git stash create)
 [ -n "$REV" ] || REV=HEAD
+# The Rust tree unpacked fresh, not over the last one: a moved or deleted file
+# stays behind otherwise, and a `build.rs` left in a crate's folder is still that
+# crate's build script (the server split, 20 Nov 2026). The build itself is in
+# D:\mgl-test\target and is kept.
+ssh pc "if exist D:\\mgl-test\\MultiGrainLive\\core rmdir /s /q D:\\mgl-test\\MultiGrainLive\\core" 2>&1 | grep -Ev "$Q" || true
 git archive --format=tar "$REV" -- . ':(exclude)Audio Library' \
   | ssh pc "(if not exist D:\\mgl-test\\MultiGrainLive mkdir D:\\mgl-test\\MultiGrainLive) & tar -x -f - -C D:/mgl-test/MultiGrainLive" 2>&1 | grep -Ev "$Q" || true
 # The effects library the app builds against, a sibling as on this Mac

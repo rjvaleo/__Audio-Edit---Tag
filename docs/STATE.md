@@ -967,7 +967,7 @@ the gate's −40 dB threshold into −4000%.
 ## 7f. Automation
 
 Ported onto `main` on 12 Aug 2026 from the discarded `codex/breakpoint-automation`
-branch, rewritten rather than copied. `core/crates/server/src/automation.rs`.
+branch, rewritten rather than copied. `core/crates/server-core/src/automation.rs`.
 
 **6 Sep 2026 — every engine control records.** The eight stretch targets
 became one table, `STRETCH_TARGETS`, of forty-eight (fifty-four now): the grain section whole,

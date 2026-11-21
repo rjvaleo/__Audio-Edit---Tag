@@ -324,7 +324,7 @@ A patch with no `board` (every patch before v8) is given one as it is read. Its 
 - **The patch carries its board.** `GET /api/wave/patch` includes `board`, and a patch posted without one gets
   the migrated chain. Wave presets carry their board the same way.
 - **Data.** Board presets are `<data>/wave/boards/<name>.json`. The factory boards are built into the server
-  (`core/crates/server/src/wave_board/factory.json`).
+  (`core/crates/server-core/src/wave_board/factory.json`).
 
 ## v8b (RJ, 10 Nov 2026): what v8 left out
 

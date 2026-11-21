@@ -35,7 +35,7 @@ columns. Tiles are 228 × 100 px, three across.
 | The page | `ui/app/430-library-page.js`, `ui/app-css/058-library.css` |
 | The rail item and icon | `ui/rail.js` (`pclib`) |
 | The page switch | `ui/app/030-centre.js` (`pclib`, `body.pclibpage`) |
-| The routes | `core/crates/server/src/routes/stems.rs` |
+| The routes | `core/crates/server-stems/src/routes/stems.rs` |
 | Tests | `tests/ui/library-page.spec.mjs`; `pc_library_tests` in `stems.rs` |
 
 ## The routes

@@ -30,7 +30,7 @@ node %APP%\tools\pc\run-log.mjs phase tests
 if "%1"=="rust" (
   echo [%time%] rust tests
   rem Into the run's own folder, then where it has always been: two runs once shared results\rust.log.
-  cargo test --release --no-fail-fast -p fx -p fx-wasm -p atmos -p songprint -p server > !MGL_RUN_DIR!\rust.log 2>&1
+  cargo test --release --no-fail-fast -p fx -p fx-wasm -p atmos -p songprint -p server-core -p server-ui -p server-library -p server-compose -p server-engine -p server-export -p server-stems -p server-analytics -p server > !MGL_RUN_DIR!\rust.log 2>&1
   set CODE=!errorlevel!
   copy /y !MGL_RUN_DIR!\rust.log %ROOT%\results\rust.log > nul
   findstr /c:"test result" /c:"FAILED" /c:"panicked" %ROOT%\results\rust.log

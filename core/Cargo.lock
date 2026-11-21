@@ -1456,9 +1456,119 @@ dependencies = [
  "libc",
  "midir",
  "search",
+ "server-analytics",
+ "server-compose",
+ "server-core",
+ "server-engine",
+ "server-export",
+ "server-library",
+ "server-stems",
+ "server-ui",
  "songprint",
  "wave",
  "yamnet",
+]
+
+[[package]]
+name = "server-analytics"
+version = "0.1.0"
+dependencies = [
+ "audio-core",
+ "edit",
+ "engine",
+ "fx",
+ "libc",
+ "server-core",
+]
+
+[[package]]
+name = "server-compose"
+version = "0.1.0"
+dependencies = [
+ "audio-core",
+ "edit",
+ "engine",
+ "fx",
+ "server-core",
+]
+
+[[package]]
+name = "server-core"
+version = "0.1.0"
+dependencies = [
+ "audio-core",
+ "catalog",
+ "edit",
+ "engine",
+ "fx",
+ "indexer",
+ "libc",
+ "midir",
+ "search",
+ "wave",
+ "yamnet",
+]
+
+[[package]]
+name = "server-engine"
+version = "0.1.0"
+dependencies = [
+ "audio-core",
+ "edit",
+ "engine",
+ "fx",
+ "server-compose",
+ "server-core",
+ "server-library",
+]
+
+[[package]]
+name = "server-export"
+version = "0.1.0"
+dependencies = [
+ "audio-core",
+ "edit",
+ "engine",
+ "fx",
+ "server-compose",
+ "server-core",
+ "server-engine",
+ "server-library",
+]
+
+[[package]]
+name = "server-library"
+version = "0.1.0"
+dependencies = [
+ "audio-core",
+ "edit",
+ "engine",
+ "fx",
+ "indexer",
+ "search",
+ "server-core",
+ "server-ui",
+ "yamnet",
+]
+
+[[package]]
+name = "server-stems"
+version = "0.1.0"
+dependencies = [
+ "audio-core",
+ "edit",
+ "engine",
+ "fx",
+ "server-core",
+ "server-library",
+ "songprint",
+]
+
+[[package]]
+name = "server-ui"
+version = "0.1.0"
+dependencies = [
+ "server-core",
 ]
 
 [[package]]

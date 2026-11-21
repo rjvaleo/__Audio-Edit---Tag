@@ -187,7 +187,7 @@ first.
 
 ## The parts
 
-- **`core/crates/server/src/video.rs`** — the reel. `meter::spectrum` and
+- **`core/crates/server-core/src/video.rs`** — the reel. `meter::spectrum` and
   `meter::lissajous` run over the rendered samples at the room's own rate, with
   the outro appended as silence. Five tests.
 - **`POST /api/video`** — renders through *the very same `run_export`* the audio

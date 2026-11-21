@@ -1,0 +1,15 @@
+[package]
+name = "server-stems"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Stems: splitting a song, its kits, its notes, and Make."
+
+[dependencies]
+server-core = { path = "../server-core" }
+server-library = { path = "../server-library" }
+audio-core = { path = "../audio-core" }
+edit = { path = "../edit" }
+fx = { path = "../fx" }
+engine = { path = "../engine" }
+songprint = { path = "../songprint" }

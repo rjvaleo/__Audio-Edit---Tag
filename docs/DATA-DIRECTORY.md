@@ -15,7 +15,7 @@ index, presets, sessions and tags.
 ## What moves
 
 Sixteen things, all joined off one `data_dir` in
-[state.rs](../core/crates/server/src/state.rs) — `PAD-PRESETS.json` in
+[state.rs](../core/crates/server-core/src/state.rs) — `PAD-PRESETS.json` in
 `padpresets.rs` — plus `Captures` from `capture.rs` and `record.rs`. `exports/`
 is legacy: nothing writes it now, since exports go beside the original. The code surface is genuinely small — the risk is
 entirely in the data, not the plumbing.

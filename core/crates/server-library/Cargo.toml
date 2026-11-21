@@ -1,0 +1,17 @@
+[package]
+name = "server-library"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The library and search: browsing, tags, the sound map, the audio views."
+
+[dependencies]
+server-core = { path = "../server-core" }
+server-ui = { path = "../server-ui" }
+audio-core = { path = "../audio-core" }
+edit = { path = "../edit" }
+fx = { path = "../fx" }
+engine = { path = "../engine" }
+search = { path = "../search" }
+yamnet = { path = "../yamnet" }
+indexer = { path = "../indexer" }

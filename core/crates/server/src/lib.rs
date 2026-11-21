@@ -1,42 +1,13 @@
 //! The local server behind the browser UI.
+//!
+//! Since task 007 it is split by area into crates (`docs/SERVER-CRATES.md`):
+//! this one keeps the route table, `serve`, and every old `server::…` path.
 
-pub mod analytics;
-pub mod annot;
-pub mod automation;
-pub mod capture;
-pub mod compose;
-pub mod docs;
-pub mod grain_export;
-pub mod grain_lfos;
-pub mod grain_notes;
-pub mod http;
-pub mod live;
-pub mod log;
-pub mod make;
-/// MIDI in for the Wave synth. See `docs/WAVE-SYNTH.md`.
-pub mod midi;
-pub mod offline;
-pub mod pad;
-pub mod perf;
-pub mod padpresets;
-pub mod json;
+pub use server_core::*;
+pub use server_compose::compose;
+pub use server_engine::padpresets;
+pub use server_export::{grain_export, record};
+pub use server_stems::make;
+pub use server_analytics::{analytics, perf, retention};
 pub mod routes;
-pub mod persist;
-pub mod rack;
-pub mod record;
-pub mod rendercache;
-pub mod retention;
-pub mod safety;
 pub mod serve;
-pub mod state;
-pub mod stems;
-pub mod gpu;
-pub mod flac;
-pub mod usertags;
-/// The Wave page's synth: `/api/wave/*`. See `docs/WAVE-SYNTH.md`.
-pub mod wave_synth;
-/// The Wave page's FX board (v8): `/api/wave/board*`, `/api/wave/boards`,
-/// `/api/wave/fx`. See `docs/WAVE-SYNTH.md`.
-pub mod wave_board;
-/// The picture for a video export. See `docs/VIDEO-EXPORT.md`.
-pub mod video;

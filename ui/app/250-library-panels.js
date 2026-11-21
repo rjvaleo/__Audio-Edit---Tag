@@ -180,7 +180,7 @@ function fillFileTags(file, suggest, saved) {
 /// and the audio descriptors in the second (the character: "repetitive",
 /// "bright"). For a folder they are the two levels of the library tree: the
 /// family ("Drum", "Sample") and the kind within it ("Machine", "Loops") — see
-/// `levels` in `core/crates/server/src/state.rs`. The stored names are
+/// `levels` in `core/crates/server-core/src/state.rs`. The stored names are
 /// unchanged; only what the fields are called.
 function tagLabels(kind) {
   const file = kind === 'file';

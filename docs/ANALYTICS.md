@@ -29,7 +29,7 @@ running and keeps playing.
 | `ui/app/370-analytics.js` | Recorder |
 | `ui/app/372-analytics-summary.js` | Turns events into the figures. Pure, with no page or server |
 | `ui/app/375-analytics-tab.js` | The tab, and the View menu item |
-| `core/crates/server/src/analytics.rs` | Storage |
+| `core/crates/server-analytics/src/analytics.rs` | Storage |
 | `tests/ui/analytics.spec.mjs` | Playwright tests |
 
 ## Storage

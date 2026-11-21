@@ -13,7 +13,7 @@ C:\\Users\\rjval\\agent-net\\acestep\\ACE-Step-1.5; this script sits beside it a
 acestep\\make.py.
 
 Speaks the same protocol as make.py (Stable Audio Open), so the server's bridge
-(`core/crates/server/src/gpu.rs`) can drive it: with --serve, one JSON request a
+(`core/crates/server-core/src/gpu.rs`) can drive it: with --serve, one JSON request a
 line on stdin, {"id", "prompt", "seconds", "n", "seed", "out", and optionally
 "lyrics", "bpm", "key"}; one line per piece, {"id", "path", ...}; then
 {"id", "done": true} or {"id", "error"}. Without lyrics it is instrumental.

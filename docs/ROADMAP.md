@@ -565,7 +565,7 @@ On the new foundation, in roughly this order:
 **The Edit section.** The engines are further along than the interface suggests:
 [edit](../core/crates/edit/src/lib.rs) is 2,561 lines — clips, fade shapes,
 ranges, snapping, zero-crossing, undo/redo/revert — and
-[automation.rs](../core/crates/server/src/automation.rs) is 1,871 lines of
+[automation.rs](../core/crates/server-core/src/automation.rs) is 1,871 lines of
 curves, modulators, lanes, a runner and Touch/Latch record modes. Both are
 missing interface, not engine.
 
@@ -581,7 +581,7 @@ offline rendering needs. Frame 40,000 at any quality, matching what was heard.
 That fell out of a decision made for a completely different reason.
 
 **Plugin hosting in the rack.** `SlotSpec` at
-[rack.rs:43](../core/crates/server/src/rack.rs:43) is already the right shape,
+[rack.rs:43](../core/crates/server-core/src/rack.rs:43) is already the right shape,
 and `slot_ids` already gives automation stable addressing across reorders.
 Hosting is a subsystem — out-of-process scanning, parameter bridging, delay
 compensation, crash isolation — and a hosted plugin's editor is a native window.

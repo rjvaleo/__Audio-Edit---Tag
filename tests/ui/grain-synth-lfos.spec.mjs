@@ -3,7 +3,7 @@
 // What moves is read back from the server's `/api/engine/lfos`, and the runner
 // answers that with no sound card, as here. Keys are stood in for, as in the
 // keys spec: a test must not open a device. What the numbers do to the sound is
-// `core/crates/server/src/grain_lfos.rs` and its tests.
+// `core/crates/server-core/src/grain_lfos.rs` and its tests.
 
 import { test, expect } from './test.mjs';
 

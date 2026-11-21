@@ -1,64 +1,21 @@
 //! Request routing.
 
-use crate::http::{parse_range, Request, Response};
-use crate::json::{self, Value};
-use crate::safety::{resolve_for_write, resolve_within};
-use crate::state::{App, Index};
-use audio_core::{probe, wav, FileSource, RandomAccessSource};
-use std::path::{Path, PathBuf};
+// What the handlers share (`parse_range`, the safety checks, `Index`, the audio
+// sources) went with them to their crates' `routes.rs`.
+use crate::http::{Request, Response};
+use crate::json::Value;
+use crate::state::App;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-mod assets;
-pub use assets::*;
-mod library;
-use library::*;
-mod audio_view;
-use audio_view::*;
-mod compose;
-use compose::*;
-mod fx_rack;
-use fx_rack::*;
-mod pad_automation;
-use pad_automation::*;
-mod grains;
-use grains::*;
-mod presets;
-use presets::*;
-mod edit_view;
-use edit_view::*;
-mod export;
-pub use export::*;
-mod video;
-use video::*;
-mod engine_api;
-use engine_api::*;
-mod record;
-use record::*;
-mod listen_tags;
-use listen_tags::*;
-mod map;
-use map::*;
-mod analytics;
-use analytics::*;
-mod prism;
-use prism::*;
-mod stems;
-use stems::*;
-mod stem_kits;
-use stem_kits::*;
-
-/// How many files one measuring pass takes on before answering.
-///
-/// The number is a compromise between a request that returns and a queue that
-/// drains. Thirty-two files is a second or two of work on a normal library, and
-/// ordinary use of the interface produces requests often enough that a few
-/// hundred unmeasured files are worked through in the background of a session
-/// rather than in front of one stalled click.
-const PASS_BATCH: usize = 32;
-
-/// How often the classifier's answers reach disk within a pass.
-const LABEL_FLUSH: usize = 8;
+// The handlers, from the area crates (task 007, `docs/SERVER-CRATES.md`).
+pub use server_ui::*;
+use server_library::routes::*;
+use server_compose::routes::*;
+use server_engine::routes::*;
+pub use server_export::routes::*;
+use server_stems::routes::*;
+use server_analytics::routes::*;
 
 pub fn route(app: &Arc<App>, req: &Request) -> Response {
     // Working on the interface: its files from a folder instead (`ui_from_disk`).

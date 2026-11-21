@@ -1,7 +1,7 @@
 """The notes in a sound, many at once, by Basic Pitch (Spotify, Apache 2.0).
 
 Run on the PC by MultiGrainLive's Stems page for a song's "other" stem
-(core/crates/server/src/routes/stems.rs sends this file with the stem):
+(core/crates/server-stems/src/routes/stems.rs sends this file with the stem):
 
     D:\\models\\basic-pitch\\venv\\Scripts\\python.exe notes_basic_pitch.py stem.flac
 

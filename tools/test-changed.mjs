@@ -84,13 +84,18 @@ function reach(url, lines, why) {
 /// when it touches anything else (or there is no route record in the map).
 ///
 /// The table is `core/crates/server/src/routes.rs`: `("GET", "/api/x") => handler(…)`
-/// or `=> crate::module::handler(…)`. A changed line belongs to the top-level
+/// or `=> crate::module::handler(…)`. The handlers live in the server's crates
+/// (`core/crates/server-*/src/routes/*.rs`, `docs/SERVER-CRATES.md`; the core's
+/// own handlers in `server-core/src/`). A changed line belongs to the top-level
 /// `fn` it falls in, in the file as it was at the map's commit; every one must
 /// be a handler the table names.
 function serverRoutes(f) {
   if (!map?.routes || !f.endsWith('.rs') || !existsSync(join(root, f))) return null;
-  const rel = f.replace('core/crates/server/src/', '');
-  if (['routes.rs', 'routes/assets.rs', 'http.rs', 'serve.rs', 'lib.rs', 'state.rs', 'json.rs'].includes(rel)) return null;
+  const rel = f.replace(/^core\/crates\//, '');
+  // The table, the interface, the plumbing every route goes through, and each
+  // crate's own root and route kit.
+  if (['server/src/routes.rs', 'server/src/serve.rs', 'server-ui/src/lib.rs', 'server-core/src/http.rs',
+    'server-core/src/state.rs', 'server-core/src/json.rs'].includes(rel) || /^server[-\w]*\/src\/(lib|routes)\.rs$/.test(rel)) return null;
   const table = readFileSync(join(root, 'core/crates/server/src/routes.rs'), 'utf8');
   const handlers = new Map(); // handler name → its paths
   for (const m of table.matchAll(/\("[A-Z|" ]+",\s*"(\/[^"]*)"\)\s*=>\s*(?:crate::(?:\w+::)*)?(\w+)\(/g)) {
@@ -124,7 +129,7 @@ for (const f of changed) {
   const crate = f.match(/^core\/crates\/([^/]+)\//);
   if (crate) {
     crates.add(crate[1]);
-    if (crate[1] === 'server') {
+    if (/^server(-|$)/.test(crate[1])) {
       // A change inside route handlers reruns the specs that call those routes;
       // anything else in the server (its core, a helper, the table) reruns them all.
       const paths = serverRoutes(f);

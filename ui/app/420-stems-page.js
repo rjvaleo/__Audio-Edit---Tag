@@ -5,7 +5,7 @@
 //
 // - **Split a song.** Pick a sound in the library, split it into drums, bass,
 //   vocals and other with HT-Demucs (a helper program the server starts, see
-//   `core/crates/server/src/stems.rs`), hear the stems alone or together, open
+//   `core/crates/server-core/src/stems.rs`), hear the stems alone or together, open
 //   one on another page, and read what is in it: tempo, key, the drum bars, the
 //   bass, the sections. **Teach the Band** hands the song to the Seq page.
 // - **Make a sound.** Drum hits and bass notes cut from a song's stems, then a

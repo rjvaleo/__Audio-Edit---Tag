@@ -13,7 +13,7 @@ be rebuilding the entire effect rack.*
 > | 4. Tails were cut dead on stop | `return` before `process_rack` | the paused branch runs the chain on silence, with a four-second countdown |
 >
 > The guard in 1 became a value rather than a flag — `Rebuilds::decide` in
-> [`live.rs:359`](../core/crates/server/src/live.rs:359) returns what must be
+> [`live.rs:359`](../core/crates/server-core/src/live.rs:359) returns what must be
 > rebuilt given the parameters that moved, which is testable in a way three
 > booleans scattered through a function were not.
 >
@@ -57,7 +57,7 @@ Anything on this list is expensive to lose, and losing it is audible:
 
 ### 1. Every stretch or grain parameter rebuilds the whole rack — **confirmed**
 
-[`live.rs:383`](../core/crates/server/src/live.rs:383), the last line of
+[`live.rs:383`](../core/crates/server-core/src/live.rs:383), the last line of
 `push_params`, which runs on **every** parameter change:
 
 ```rust

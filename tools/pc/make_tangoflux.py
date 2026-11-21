@@ -11,7 +11,7 @@ Stability AI Community Licence it is built under. Personal use, as RJ asked
 (14 Nov 2026); not for anything sold. See WORK DIR/page-mockups/MODELS.md.
 
 Speaks the same protocol as make.py (Stable Audio Open), so the server's bridge
-(`core/crates/server/src/gpu.rs`) can drive either: with --serve, one JSON
+(`core/crates/server-core/src/gpu.rs`) can drive either: with --serve, one JSON
 request a line on stdin, {"id", "prompt", "seconds", "n", "seed", "out"}; one
 line per sound, {"id", "path", ...}; then {"id", "done": true} or {"id", "error"}.
 Deployed to C:\\Users\\rjval\\agent-net\\tangoflux\\make.py.

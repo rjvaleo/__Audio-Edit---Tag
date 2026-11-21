@@ -115,7 +115,7 @@ different face.
 
 ## Where it lives
 
-- `core/crates/server/src/automation.rs` — `Range`, `STRETCH_TARGETS`,
+- `core/crates/server-core/src/automation.rs` — `Range`, `STRETCH_TARGETS`,
   `stretch_value`, `stretch_unit`, `stretch_field`, `apply_stretch`;
   `switches_and_counts_are_steps_not_sweeps` and the extended
   `every_offered_target_actually_resolves`.

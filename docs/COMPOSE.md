@@ -278,7 +278,7 @@ grain's. `docs.rs` — the store round-trips and drops an empty record.
 
 Everything the view shows, kept under a name and put back as one thing; and
 one export that writes the sound and the film of it into one folder.
-`ui/compose.js` on the page, `core/crates/server/src/compose.rs` on the server.
+`ui/compose.js` on the page, `core/crates/server-compose/src/compose.rs` on the server.
 
 **What a composition keeps** (`compositionSnapshot`): the sound's path; the
 engine's settings as the server holds them — the stretch with its grain cloud,
