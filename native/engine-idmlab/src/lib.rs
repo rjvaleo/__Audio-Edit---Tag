@@ -17,16 +17,15 @@
 
 use dsp_core::engine::{Frame, Module as LabModule, Ports, ProcessContext};
 use dsp_core::modules::ModuleKind;
-use dsp_core::samples::SampleBank;
-use engine_core::{EventKind, Io, Kind, Module, NoteEvent, NoteKind};
+use dsp_core::samples::{Sample, SampleBank};
+use engine_core::{EventKind, Io, Kind, Module, NoteEvent, NoteKind, SoundData, Thing};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WrapError {
-    /// A kind the adapter does not carry yet: the samplers (they need the
-    /// sound bank bridged), the mixer and the DP/4 machine (no layout table
-    /// yet), the Prism effects and the Grain Engine (the native app takes
-    /// those from prism-fx and MultiGrainLive directly), and idMLab's own
-    /// input and output.
+    /// A kind the adapter does not carry yet: the mixer and the DP/4 machine
+    /// (no layout table yet), the Prism effects and the Grain Engine (the
+    /// native app takes those from prism-fx and MultiGrainLive directly), and
+    /// idMLab's own input and output.
     NotYet(ModuleKind),
 }
 
@@ -79,11 +78,53 @@ fn layout(kind: ModuleKind) -> Option<Layout> {
             Layout { ins: vec![(0, 1)], outs: vec![], control_outs: vec![0], notes: false, level: None }
         }
         GateAdsr => Layout { ins: vec![], outs: vec![], control_outs: vec![0], notes: true, level: None },
-        HostInput | AudioOutput | Percussion | Looper | Granular | GrainEngine | Mixer | Dp4Machine | Prism => {
+        // The samplers: played by notes, reading the sounds handed to them
+        // ([`LabSound`]) from the bank the adapter lends them.
+        Percussion => Layout { ins: vec![], outs: vec![(0, 1)], control_outs: vec![], notes: true, level: Some(3) },
+        Looper | Granular => {
+            Layout { ins: vec![], outs: vec![(0, 1)], control_outs: vec![], notes: true, level: Some(8) }
+        }
+        HostInput | AudioOutput | GrainEngine | Mixer | Dp4Machine | Prism => {
             return None
         }
     })
 }
+
+/// A sound for one of a sampler's slots, handed to the module with
+/// `Controller::give(module, 0, thing)`. Built on the app's thread; the
+/// module keeps the sound in its own bank under the slot's number, points the
+/// slot at it, and sends this box back holding the sound it replaced (or the
+/// new one, if the slot is past the bank's room), to be freed there. Slots
+/// run from 0 to `dsp_core::sampler::SLOT_COUNT`; the kit and the looper play
+/// the slot of a note's number, the grain cloud the slot it was last given.
+pub struct LabSound {
+    pub slot: u32,
+    pub sample: Option<Sample>,
+}
+
+impl LabSound {
+    pub fn new(slot: u32, sample: Sample) -> Box<LabSound> {
+        Box::new(LabSound { slot, sample: Some(sample) })
+    }
+
+    /// One of the native engine's sounds, copied into idMLab's layout.
+    pub fn from_sound(slot: u32, sound: &SoundData) -> Option<Box<LabSound>> {
+        let frames = sound.frames();
+        Sample::from_channels(sound.rate, &[&sound.l[..frames], &sound.r[..frames]]).map(|sample| Self::new(slot, sample))
+    }
+}
+
+/// A kit pad's gain, pan and choke group (`set_slot_shape`), handed over as
+/// [`LabSound`] is and sent straight back.
+pub struct LabPad {
+    pub slot: u32,
+    pub gain: f32,
+    pub pan: f32,
+    pub choke: i32,
+}
+
+/// How many sounds a wrapped module's bank holds: one per sampler slot.
+const SOUND_SLOTS: usize = dsp_core::sampler::SLOT_COUNT;
 
 /// A control cable turning a knob: `knob + cable × scale`, held inside
 /// `min..=max`. idMLab calls this a route.
@@ -152,7 +193,9 @@ impl Wrapped {
             modulated: params.clone(),
             params,
             routes: Vec::new(),
-            bank: SampleBank::new(),
+            // Room for every slot now, so a sound handed over while it plays
+            // never makes the bank grow.
+            bank: SampleBank::with_slots(SOUND_SLOTS),
             rate,
         })
     }
@@ -247,7 +290,30 @@ impl Module for Wrapped {
             self.preset.restore(controls);
             return Some(old as engine_core::Thing);
         }
-        Some(thing)
+        // Nothing here allocates or frees: the sound moves into the bank, and
+        // the box goes back with whatever it replaced.
+        let thing = match thing.downcast::<LabSound>() {
+            Ok(mut sound) => {
+                if let Some(sample) = sound.sample.take() {
+                    match self.bank.put(sound.slot, sample) {
+                        Ok(old) => {
+                            self.module.set_sample_slot(sound.slot, sound.slot);
+                            sound.sample = old;
+                        }
+                        Err(back) => sound.sample = Some(back),
+                    }
+                }
+                return Some(sound as Thing);
+            }
+            Err(other) => other,
+        };
+        match thing.downcast::<LabPad>() {
+            Ok(pad) => {
+                self.module.set_slot_shape(pad.slot, pad.gain, pad.pan, pad.choke);
+                Some(pad as Thing)
+            }
+            Err(other) => Some(other),
+        }
     }
     fn process(&mut self, io: &mut Io) {
         let audio_ins = self.layout.ins.len();

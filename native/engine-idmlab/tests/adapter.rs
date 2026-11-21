@@ -8,7 +8,8 @@ use dsp_core::engine::{Engine as Lab, PortRef as LabPort};
 use dsp_core::modules::ModuleKind;
 use engine_core::basics::{Delay, Keys};
 use engine_core::*;
-use engine_idmlab::{WrapError, Wrapped};
+use dsp_core::samples::Sample;
+use engine_idmlab::{LabPad, LabSound, WrapError, Wrapped};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::sync::Arc;
@@ -546,10 +547,104 @@ fn every_effect_carried_passes_sound() {
     }
 }
 
+// ---- The samplers, with sounds handed to them.
+
+/// A short stereo sound, left and right unlike each other.
+fn kit_sound(frames: usize) -> (Vec<f32>, Vec<f32>) {
+    let l = (0..frames).map(|i| { let t = i as f32 / RATE; (std::f32::consts::TAU * 330.0 * t).sin() * (-3.0 * t).exp() * 0.6 }).collect();
+    let r = (0..frames).map(|i| { let t = i as f32 / RATE; (std::f32::consts::TAU * 495.0 * t).sin() * 0.4 }).collect();
+    (l, r)
+}
+
+/// The level knob each sampler is raised by (idMLab's modules.rs).
+fn sampler_level(kind: ModuleKind) -> usize {
+    if kind == ModuleKind::Percussion { 3 } else { 8 }
+}
+
+/// idMLab's own engine playing `kind` with the sound in `slot`, a note on at
+/// 100 and off at 9,000.
+fn lab_sampler(kind: ModuleKind, slot: u32, note: u8, frames: usize) -> (Vec<f32>, Vec<f32>) {
+    let (sl, sr) = kit_sound(14_400);
+    let mut lab = Lab::new(RATE);
+    let m = lab_add(&mut lab, kind);
+    lab.set_param(m, sampler_level(kind), 1.0);
+    assert!(lab.samples_mut().allocate(slot, 2, sl.len(), RATE));
+    let data = lab.samples_mut().get_mut(slot).unwrap().data_mut();
+    data[..sl.len()].copy_from_slice(&sl);
+    data[sl.len()..].copy_from_slice(&sr);
+    lab.set_sample_slot(m, slot, slot);
+    let (mut l, mut r) = (Vec::new(), Vec::new());
+    for i in 0..frames {
+        if i == 100 { lab.note_on(m, note, 0.9, 0.0); }
+        if i == 9_000 { lab.note_off(m, note); }
+        lab.process();
+        l.push(lab.output_of(m, 0));
+        r.push(lab.output_of(m, 1));
+    }
+    (l, r)
+}
+
+/// The same in the native engine, the sound handed over as a `LabSound`.
+fn our_sampler(kind: ModuleKind, slot: u32, note: u8, frames: usize, block: usize) -> (Vec<f32>, Vec<f32>) {
+    let (sl, sr) = kit_sound(14_400);
+    let (mut ctl, mut audio) = engine(RATE, exact());
+    ctl.add(1, Box::new(Keys::new())).unwrap();
+    ctl.add(2, Box::new(wrapped(kind))).unwrap();
+    ctl.connect(port(1, 0), port(2, 0)).unwrap();
+    ctl.connect_out(port(2, 0)).unwrap();
+    ctl.commit().unwrap();
+    ctl.give(2, 0, LabSound::new(slot, Sample::from_channels(RATE, &[&sl, &sr]).unwrap())).unwrap();
+    ctl.send_at(100, 1, EventKind::Note(NoteEvent::on(note, 0.9))).unwrap();
+    ctl.send_at(9_000, 1, EventKind::Note(NoteEvent::off(note))).unwrap();
+    render(&mut audio, frames, block)
+}
+
+#[test]
+fn each_sampler_plays_a_sound_handed_to_it_as_idmlab_plays_it() {
+    use ModuleKind::*;
+    // The kit and the looper find a note's sound in the slot of its number;
+    // the grain cloud plays whichever slot it was last given.
+    for (kind, slot, note) in [(Percussion, 60u32, 60u8), (Looper, 60, 60), (Granular, 0, 60)] {
+        let (theirs_l, theirs_r) = lab_sampler(kind, slot, note, 12_000);
+        assert!(peak(&theirs_l) > 0.01, "{kind:?} is heard in idMLab");
+        for block in [256, 7] {
+            let (l, r) = our_sampler(kind, slot, note, 12_000, block);
+            assert_same(&format!("{kind:?} left, blocks of {block}"), &theirs_l, &l);
+            assert_same(&format!("{kind:?} right, blocks of {block}"), &theirs_r, &r);
+        }
+    }
+}
+
+#[test]
+fn a_sound_handed_over_while_it_plays_allocates_nothing_and_the_old_one_comes_back() {
+    let (sl, sr) = kit_sound(14_400);
+    let (mut ctl, mut audio) = engine(RATE, exact());
+    ctl.add(1, Box::new(Keys::new())).unwrap();
+    ctl.add(2, Box::new(wrapped(ModuleKind::Percussion))).unwrap();
+    ctl.connect(port(1, 0), port(2, 0)).unwrap();
+    ctl.connect_out(port(2, 0)).unwrap();
+    ctl.commit().unwrap();
+    ctl.give(2, 0, LabSound::new(60, Sample::from_channels(RATE, &[&sl, &sr]).unwrap())).unwrap();
+    ctl.give(2, 0, Box::new(LabPad { slot: 60, gain: 0.5, pan: -0.5, choke: -1 })).unwrap();
+    for i in 0..6u64 {
+        ctl.send_at(500 + 4_000 * i, 1, EventKind::Note(NoteEvent::on(60, 0.9))).unwrap();
+    }
+    render(&mut audio, 2_048, 128);
+    // A second sound for the same pad, built here, taken there.
+    let (nl, nr) = kit_sound(9_600);
+    ctl.give(2, 0, LabSound::new(60, Sample::from_channels(RATE, &[&nr, &nl]).unwrap())).unwrap();
+    let before = counted();
+    let (l, _) = render(&mut audio, 22_000, 128);
+    assert_eq!(counted() - before, 0, "allocations or frees inside a render");
+    assert!(peak(&l) > 1.0e-3, "the kit is heard");
+    // The first sound, and the pad's box, come back to be freed here.
+    assert!(ctl.collect().things >= 2, "what the pad replaced comes back");
+}
+
 #[test]
 fn kinds_that_need_the_sample_bank_are_refused_for_now() {
     use ModuleKind::*;
-    for kind in [Percussion, Looper, Granular, GrainEngine, HostInput, AudioOutput] {
+    for kind in [GrainEngine, HostInput, AudioOutput] {
         assert_eq!(Wrapped::new(kind, 0, RATE).err(), Some(WrapError::NotYet(kind)));
     }
 }
