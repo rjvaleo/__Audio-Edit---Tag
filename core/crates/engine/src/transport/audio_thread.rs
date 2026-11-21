@@ -692,14 +692,18 @@ impl Core {
         // behind the playhead takes effect immediately.
         if let (Some((a, b)), false) = (bounds, gated) {
             if self.renderer.position() >= b || self.renderer.position() < a {
-                self.renderer.seek(a, &self.params);
+                // Round to the loop's start, as at the end of a lap: moving a
+                // loop's end past the playhead while it plays is a lap, not a
+                // restart (RJ, 21 Nov 2026).
+                self.renderer.wrap(a, &self.params);
             }
         }
 
         // The seam fade, sized to this loop. Both sides of the wrap use it, so
         // it is resolved once rather than per chunk — and so the ramp down and
         // the ramp up are always the same length.
-        let seam = bounds.map_or(LOOP_FADE_FRAMES, |(a, b)| loop_fade(a, b));
+        let seeks = Stretcher::lap_seeks(&self.params);
+        let seam = bounds.map_or(LOOP_FADE_FRAMES, |(a, b)| loop_fade(a, b, seeks));
 
         if (post || gated) && !poly {
             out.fill(0.0);
@@ -762,7 +766,11 @@ impl Core {
                 let chunk = match bounds.filter(|_| !gated) {
                     Some((_, b)) => {
                         let room = b.saturating_sub(self.renderer.position()) as usize;
-                        want.min(room.max(1))
+                        // A loop shorter than a lap goes round once a lap: the
+                        // engines read windows far longer than that, so it is
+                        // the same sound, a grain held at the loop's start,
+                        // without a render call per sample.
+                        want.min(room.max(self.renderer.shortest_lap(&self.params)))
                     }
                     None => want,
                 };
@@ -797,11 +805,11 @@ impl Core {
 
                 if let Some((a, b)) = bounds.filter(|_| !gated) {
                     if self.renderer.position() >= b {
-                        // Fade the tail of what we just wrote, then jump. One
-                        // source, so this is a fade across the seam rather than an
-                        // overlap of two copies.
+                        // Round again from the loop's start. The engines carry
+                        // on from what they hold (`Stretcher::wrap`), so there
+                        // is no seek to fade over (`loop_fade`).
                         fade_out(slice, ch, seam);
-                        self.renderer.seek(a, &self.params);
+                        self.renderer.wrap(a, &self.params);
                         wrapped_at = Some(base + filled + chunk);
                     }
                 }

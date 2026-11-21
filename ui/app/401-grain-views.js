@@ -475,8 +475,8 @@ function gsWireDetail() {
     const s = toS(wvLocal(el, e)[0]), { a, b } = ends;
     moved += Math.abs(dx);
     if (sm === 'scrub') scrub(s);
-    else if (sm === 'a') gsSetLoop(Math.min(s, b - 0.05), b);
-    else if (sm === 'b') gsSetLoop(a, Math.max(s, a + 0.05));
+    else if (sm === 'a') gsSetLoop(Math.min(s, b - 1 / gsFile().sr), b);
+    else if (sm === 'b') gsSetLoop(a, Math.max(s, a + 1 / gsFile().sr));
     else if (sm === 'cue') gsMoveCue(s);
     else if (sm === 'sel' && moved > 3) { gsSetLoop(Math.min(s0, s), Math.max(s0, s)); gsMoveCue(Math.min(s0, s)); }
   };

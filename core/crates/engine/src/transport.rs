@@ -38,30 +38,29 @@ mod pitch_time;
 pub use pitch_time::*;
 mod audio_thread;
 
-/// The shortest loop the wrap-and-crossfade path will accept.
+/// The shortest loop: anything longer than nothing (RJ, 21 Nov 2026: "It
+/// should be down to like a sample").
 ///
-/// Not a musical limit. It is where *wrapping* stops being the right mechanism:
-/// 64 frames is 750 Hz at 48 kHz, so the seam rate is already inside the audio
-/// band, and every wrap calls [`Stretcher::seek`], which re-primes the engine —
-/// FFT state for the vocoder. The cost per second of audio climbs without
-/// bound as the loop shortens. Loops below this want a phase accumulator over
-/// the loop region rather than a smaller number here.
-pub(crate) const MIN_LOOP_FRAMES: u64 = 64;
+/// It was 64 frames while every lap called [`Stretcher::seek`], which re-primes
+/// the engine, so the cost climbed without bound as the loop shortened. A lap
+/// is now [`Stretcher::wrap`], which moves each engine's read and keeps the
+/// rest, so the floor went. See `WORK DIR/idmlab-move/LOOPS.md`.
+pub(crate) const MIN_LOOP_FRAMES: u64 = 0;
 
-/// How much fade the seam of a loop this long can afford.
+/// How much fade the seam of a loop gets: none where a lap reads on unbroken,
+/// a quarter of the loop (at most [`LOOP_FADE_FRAMES`]) where it seeks.
 ///
-/// A quarter of the loop, capped at the usual [`LOOP_FADE_FRAMES`]. Ordinary
-/// loops are far longer than 2 kframes and get the full fade; the quarter is
-/// what keeps a short loop from being eaten by its own seam, since a 600-frame
-/// loop given 512 frames of fade either side is almost entirely ramp.
-///
-/// This replaces a guard that refused to loop at all below `LOOP_FADE_FRAMES *
-/// 2`. Refusing was the wrong failure: `loop_bounds` returning `None` means
-/// "not looping" to the caller, which then plays to the end of the document and
-/// pauses. A short loop stopped playback instead of degrading it, and did so
-/// silently. Degrading is the whole point — the fade shrinks, the seam gets
-/// harder, and at the bottom of the range the fade *is* the waveform.
-pub(crate) fn loop_fade(a: u64, b: u64) -> usize {
+/// Until 21 Nov 2026 every lap sought, so the tail before the jump was faded
+/// out and the start after it faded in. A lap is now [`Stretcher::wrap`]: most
+/// engines read on from what they hold, with no jump to fade over, and a fade
+/// down and up at each lap was itself heard, as a buzz at the lap rate in a
+/// short loop. The engines whose lap is still a seek
+/// ([`Stretcher::lap_seeks`]: PVSOLA, and WSOLA through a transient map) keep
+/// the fade: a quarter, so a short loop is not eaten by its own seam.
+pub(crate) fn loop_fade(a: u64, b: u64, seeks: bool) -> usize {
+    if !seeks {
+        return 0;
+    }
     let quarter = (b.saturating_sub(a) / 4) as usize;
     LOOP_FADE_FRAMES.min(quarter)
 }

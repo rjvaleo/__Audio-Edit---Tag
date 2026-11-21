@@ -461,8 +461,8 @@ function poWire() {
     moved += Math.abs(dx);
     // Option runs over the file to hear it, and leaves the loop and Start alone.
     if (sm === 'scrub' || (sm && sm !== 'pan' && e.altKey)) scrub(s);
-    else if (sm === 'a') gsSetLoop(Math.min(s, b - 0.05), b);
-    else if (sm === 'b') gsSetLoop(a, Math.max(s, a + 0.05));
+    else if (sm === 'a') gsSetLoop(Math.min(s, b - 1 / gsFile().sr), b);
+    else if (sm === 'b') gsSetLoop(a, Math.max(s, a + 1 / gsFile().sr));
     else if (sm === 'cue') gsMoveCue(s);
     else if (sm === 'sel' && moved > 3) { gsSetLoop(Math.min(s0, s), Math.max(s0, s)); gsMoveCue(Math.min(s0, s)); }
     else if (sm === 'pan' && moved > 3) poBoxTo(box.kind, box.a + at(x) - s0);

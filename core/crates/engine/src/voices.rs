@@ -795,7 +795,7 @@ impl Poly {
             doc,
             channels: ch,
             bounds,
-            seam: bounds.map_or(512, |(a, e)| loop_fade(a, e) as u32),
+            seam: bounds.map_or(512, |(a, e)| loop_fade(a, e, Stretcher::lap_seeks(doc)) as u32),
             dk: per(decay / 3.0 + 0.001),
             sustain,
             sample_rate: sr,
@@ -956,7 +956,9 @@ fn render_voice(
         let pos = v.engine.position();
         let mut chunk = (frames - done).min(max_block);
         if let Some((_, end)) = b.bounds {
-            chunk = chunk.min(end.saturating_sub(pos).max(1) as usize);
+            // Never less than a lap: a loop shorter than one goes round once a
+            // lap (`Stretcher::shortest_lap`), as the deck's does.
+            chunk = chunk.min((end.saturating_sub(pos) as usize).max(v.engine.shortest_lap(&vp)));
         }
         let out = &mut scratch[..chunk * ch];
         let n = v.engine.render(out, ch, b.src, &vp, events);
@@ -997,14 +999,12 @@ fn render_voice(
         done += chunk;
         if wrapped {
             let (a, _) = b.bounds.unwrap_or((0, 0));
-            if spliced {
-                v.engine.seek(a, &vp);
-                v.seam_in = b.seam;
-                v.seam_len = b.seam;
-            } else {
-                // Sounding grains carry over the wrap: a seek would drop them.
-                v.engine.rescale(a, &vp);
-            }
+            // Round again, every engine reading on from what it holds
+            // (`Stretcher::wrap`): the grain cloud's grains carry over, and the
+            // splice and spectral engines move their read rather than seek.
+            v.engine.wrap(a, &vp);
+            v.seam_in = b.seam;
+            v.seam_len = b.seam;
         }
     }
 }

@@ -396,7 +396,10 @@ function gsSetLoop(a, b) {
   const f = gsFile();
   if (!f) return;
   const lo = wvClamp(Math.min(a, b), 0, f.len), hi = wvClamp(Math.max(a, b), 0, f.len);
-  state.sel = { start: Math.round(lo * f.sr), end: Math.round(Math.max(hi, Math.min(f.len, lo + 0.05)) * f.sr) };
+  // As short as one sample (RJ, 21 Nov 2026: "It should be down to like a
+  // sample"); the engine goes round without a seek (`Stretcher::wrap`).
+  const start = Math.round(lo * f.sr);
+  state.sel = { start, end: Math.max(start + 1, Math.round(hi * f.sr)) };
   if ((state.cue || 0) < state.sel.start || (state.cue || 0) >= state.sel.end) setCue(state.sel.start);
   drawSelection();
   applyLoop();

@@ -50,15 +50,16 @@ fn a_loop_of_a_few_hundred_frames_is_honoured() {
     assert_eq!(s.loop_bounds(100_000), Some((4_000, 4_300)));
 }
 
-/// Still refused below the point where wrapping is the wrong mechanism —
-/// see `MIN_LOOP_FRAMES`. This is the boundary, not a musical judgement.
+/// A loop as short as one frame is a loop (RJ, 21 Nov 2026: "It should be
+/// down to like a sample"); an empty one is not. A lap no longer seeks
+/// (`Stretcher::wrap`), so the old floor of 64 frames went.
 #[test]
-fn a_loop_at_or_under_the_floor_is_still_refused() {
+fn a_loop_of_one_frame_is_a_loop_and_an_empty_one_is_not() {
     let s = shared();
-    s.set_loop(true, 0, MIN_LOOP_FRAMES);
+    s.set_loop(true, 1_000, 1_000);
     assert_eq!(s.loop_bounds(100_000), None);
-    s.set_loop(true, 0, MIN_LOOP_FRAMES + 1);
-    assert!(s.loop_bounds(100_000).is_some());
+    s.set_loop(true, 1_000, 1_001);
+    assert_eq!(s.loop_bounds(100_000), Some((1_000, 1_001)));
 }
 
 /// A loud, obviously non-silent source, so "did the ring get the audio"
@@ -425,12 +426,14 @@ fn loop_off_means_no_bounds_however_long_the_region() {
     assert_eq!(s.loop_bounds(100_000), None);
 }
 
-/// An ordinary loop is far longer than 2 kframes and is unaffected by any
-/// of this — it gets exactly the fade it always got.
+/// Where a lap seeks (PVSOLA), an ordinary loop gets exactly the fade it
+/// always got; where it reads on unbroken, none.
 #[test]
-fn an_ordinary_loop_keeps_the_full_fade() {
-    assert_eq!(loop_fade(0, 48_000), LOOP_FADE_FRAMES);
-    assert_eq!(loop_fade(10_000, 12_048), LOOP_FADE_FRAMES);
+fn an_ordinary_loop_keeps_the_full_fade_where_a_lap_seeks_and_none_elsewhere() {
+    assert_eq!(loop_fade(0, 48_000, true), LOOP_FADE_FRAMES);
+    assert_eq!(loop_fade(10_000, 12_048, true), LOOP_FADE_FRAMES);
+    assert_eq!(loop_fade(0, 48_000, false), 0);
+    assert_eq!(loop_fade(0, 100, false), 0);
 }
 
 /// The seam can never eat more than half the loop, because both sides get
@@ -439,7 +442,7 @@ fn an_ordinary_loop_keeps_the_full_fade() {
 #[test]
 fn the_two_fades_never_cover_more_than_half_a_loop() {
     for len in [65u64, 100, 256, 512, 1000, 2048, 4096, 48_000] {
-        let fade = loop_fade(0, len) as u64;
+        let fade = loop_fade(0, len, true) as u64;
         assert!(
             fade * 2 <= len,
             "a {len}-frame loop got {fade} frames of fade on each side"
@@ -449,9 +452,9 @@ fn the_two_fades_never_cover_more_than_half_a_loop() {
 
 #[test]
 fn a_short_loop_gets_a_short_fade_rather_than_none() {
-    assert_eq!(loop_fade(0, 400), 100);
-    assert_eq!(loop_fade(0, 100), 25);
-    assert!(loop_fade(0, 65) >= 1, "a loop above the floor must still fade");
+    assert_eq!(loop_fade(0, 400, true), 100);
+    assert_eq!(loop_fade(0, 100, true), 25);
+    assert!(loop_fade(0, 65, true) >= 1, "a seeking loop must still fade");
 }
 
 
