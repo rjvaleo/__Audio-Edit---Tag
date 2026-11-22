@@ -573,6 +573,11 @@ public:
     {
         canvas.addModule ("atmos", { 360.0f, 1150.0f });
         canvas.fit();
+        // Wave (2) and Atmosphere (4) sounding all through, as when played.
+        if (std::getenv ("IDMLAB_TEST_QUIET") == nullptr)
+            juce::Timer::callAfterDelay (3000, [this] {
+                host.with ([] (NaApp* a) { na_note (a, 2, 1, 57, 0.8f); na_note (a, 2, 1, 64, 0.8f); return na_note (a, 4, 1, 60, 0.8f); });
+            });
         juce::Timer::callAfterDelay (5000, [this, path] {
             frames.clear();
             t0 = juce::Time::getMillisecondCounterHiRes();

@@ -76,13 +76,17 @@ class SteppedCache final : public juce::CachedComponentImage
 public:
     explicit SteppedCache (juce::Component& c) : owner (c) {}
 
-    // The sharpness for a screen scale: the scale itself (to a 32nd), no
-    // larger than keeps the picture under about 16 million pixels.
+    // The sharpness for a screen scale: a whole number, so the pictures the
+    // faces keep inside (their layers, their frames, at the screen's density)
+    // are copied into it pixel for pixel, never resampled: 2 on a 2x screen
+    // from well zoomed out to 100%, 3 or 4 past it, 1 far out; no larger than
+    // keeps it under about 16 million pixels.
     static float stepFor (float scale, juce::Rectangle<int> bounds)
     {
         const float area = (float) juce::jmax (1, bounds.getWidth() * bounds.getHeight());
-        const float most = std::sqrt (16.0e6f / area);
-        return juce::jlimit (0.125f, juce::jmax (0.125f, most), std::ceil (scale * 32.0f) / 32.0f);
+        const float most = juce::jmax (1.0f, std::floor (std::sqrt (16.0e6f / area)));
+        const float want = scale <= 0.75f ? 1.0f : scale <= 2.0f ? 2.0f : std::ceil (scale - 0.05f);
+        return juce::jlimit (1.0f, juce::jmin (4.0f, most), want);
     }
 
     void paint (juce::Graphics& g) override
@@ -197,7 +201,7 @@ private:
         owner.paintEntireComponent (ig, true);
         const double took = juce::Time::getMillisecondCounterHiRes() - t0;
         static const bool logging = std::getenv ("IDMLAB_WHEEL_TEST") != nullptr;
-        if (logging && took > 12.0)
+        if (logging && took > (std::getenv ("IDMLAB_RENDER_ALL") ? -1.0 : 12.0))
             std::fprintf (stderr, "%.0f render %s %dx%d step %.2f within %dx%d+%d: %.1f ms (%s)\n", t0, typeid (owner).name(), bounds.getWidth(), bounds.getHeight(), st, within.getWidth(), within.getHeight(), within.getY(), took, &im == &next ? "next" : "shown");
     }
 
