@@ -91,6 +91,23 @@ fn it_plays_from_its_keys_and_from_midi() {
     assert_eq!(controller_bad(&mut s), 0);
 }
 
+/// A note cabled in (MIDI In, not the face's keys) tells the face its
+/// pitch, so the Output scope sizes its window by it and the pictures move.
+#[test]
+fn the_face_hears_the_pitch_of_a_note_cabled_in() {
+    let (mut s, mut audio) = session();
+    let (midi, at) = canvas(&mut s);
+    assert_eq!(s.atmos_hz(at).unwrap(), 0.0, "no note yet");
+    s.midi(midi, &[0x90, 69, 100]).unwrap();
+    render(&mut audio, BLOCK * 4, BLOCK);
+    s.collect();
+    let hz = s.atmos_hz(at).unwrap();
+    let mut v = [0.0; 32];
+    assert!(s.atmos_view(at, 0, &mut v).unwrap().is_some(), "oscillator A is sounding");
+    // A 4 in the default tuning ("Same as Seq": Ionian on A 4).
+    assert!((hz - 440.0).abs() < 0.01, "the last note's pitch: {hz}");
+}
+
 fn controller_bad(s: &mut Session) -> u64 {
     s.controller().bad_blocks()
 }

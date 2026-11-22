@@ -224,7 +224,8 @@ public:
     // A new theme or kit was put on: everything drawn again in it.
     void retheme();
     // End a zoom gesture now and draw sharp (for the bench).
-    void settleZoom() { if (zooming) timerCallback(); }
+    // The zoom at rest now, every module drawn sharp (for the bench).
+    void settleZoom() { if (zooming) timerCallback(); while (!sharpen.empty()) timerCallback(); }
     // A wheel's notches at a point (the bench drives it), and one screen frame of its glide.
     void wheelZoom (juce::Point<float> at, float notches);
     void glideFrame() { glide(); }
@@ -303,9 +304,6 @@ private:
     float dotStep = 0;
     int dotStamp = -1;
 
-    // While a zoom gesture runs, a picture of the canvas taken as it began is
-    // moved and scaled, which costs nothing; the canvas is drawn again sharp
-    // once the gesture has rested.
     // A wheel's zoom, eased toward where it is going, one step a screen frame.
     bool gliding = false;
     float targetZoom = 1;
@@ -314,10 +312,12 @@ private:
     void glide();
     juce::VBlankAttachment vblank { this, [this] { glide(); } };
 
-    juce::Image shot;
-    Camera shotCam;
-    float shotDensity = 1;
+    // While a zoom runs, every module's kept picture is only moved and scaled
+    // (it is held at the sharpness it has); once the zoom has rested, the
+    // modules on screen are drawn sharp again one a frame, so nothing waits.
     bool zooming = false;
+    std::vector<int> sharpen;   // the modules still to draw sharp, by id
+    void holdPictures (bool);
     void zoomTo (const Camera&);
     void timerCallback() override;
 

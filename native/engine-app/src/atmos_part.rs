@@ -564,6 +564,11 @@ impl AtmosPart {
         self.view.read(which, out)
     }
 
+    /// The pitch of the last note to start (0 before any).
+    pub fn last_hz(&self) -> f32 {
+        self.view.hz()
+    }
+
     /// The FX line's meters, by the chain's slots: each slot's output peak
     /// since the last reading and how hard its effect is working
     /// (`fx_telemetry`); and the line's output peak.

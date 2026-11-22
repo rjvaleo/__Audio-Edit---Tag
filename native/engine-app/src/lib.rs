@@ -883,6 +883,12 @@ impl Session {
         Ok(self.atmos(id)?.view(which, out))
     }
 
+    /// The pitch of the last note Atmosphere module `id` started, however it
+    /// came (its keys, a cable, a sequencer); 0 before any.
+    pub fn atmos_hz(&self, id: u32) -> Result<f32, AppError> {
+        Ok(self.atmos(id)?.last_hz())
+    }
+
     /// The last `out.len()` frames (at most [`engine_mgl::SCOPE_LEN`]) of
     /// Atmosphere module `id`'s output, mono, oldest first. How many.
     pub fn atmos_scope(&self, id: u32, out: &mut [f32]) -> Result<usize, AppError> {

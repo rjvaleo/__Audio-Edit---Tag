@@ -65,76 +65,154 @@ std::pair<juce::Colour, float> glowOf (const juce::String& filter)
 
 // ───────────────────────────────────────────────────────────────── camera
 
-// A module's picture, kept at a few fixed sharpnesses (a power of two of the
-// screen's pixels, as many as it takes to stay sharp) rather than at exactly
-// the zoom: between steps the canvas only scales the picture, so zooming never
-// waits for every module to be drawn again; it is drawn again only when the
-// zoom crosses into another step. Otherwise as JUCE's own cache
-// (StandardCachedComponentImage).
+// A module's picture, kept at the sharpness the screen wants and moved and
+// scaled as the canvas zooms, rather than drawn again on every step of it:
+// while a zoom runs the picture it has is held; once the zoom rests, the
+// picture at the new sharpness is made a band at a time in what each frame
+// has to spare, and shown when whole. At rest it is copied to the screen
+// about one to one. Otherwise as JUCE's own cache (StandardCachedComponentImage).
 class SteppedCache final : public juce::CachedComponentImage
 {
 public:
     explicit SteppedCache (juce::Component& c) : owner (c) {}
 
-    // The step for a screen scale: the next power of two up, no larger than
-    // keeps the picture under about 24 million pixels.
+    // The sharpness for a screen scale: the scale itself (to a 32nd), no
+    // larger than keeps the picture under about 16 million pixels.
     static float stepFor (float scale, juce::Rectangle<int> bounds)
     {
-        float step = 0.25f;
-        while (step < scale && step < 8.0f)
-            step *= 2.0f;
         const float area = (float) juce::jmax (1, bounds.getWidth() * bounds.getHeight());
-        const float most = std::sqrt (24.0e6f / area);
-        return juce::jmax (0.25f, juce::jmin (step, most));
+        const float most = std::sqrt (16.0e6f / area);
+        return juce::jlimit (0.125f, juce::jmax (0.125f, most), std::ceil (scale * 32.0f) / 32.0f);
     }
 
     void paint (juce::Graphics& g) override
     {
         const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
         const auto bounds = owner.getLocalBounds();
-        // The step it has, kept while it is near enough (a little soft above
-        // it, down to well below it), so a zoom back and forth across a step
-        // does not draw the module again each time.
-        if (step <= 0 || scale > step * 1.15f || scale < step / 2.5f)
-            step = stepFor (scale, bounds);
-        const auto imageBounds = (bounds.toFloat() * step).getSmallestIntegerContainer();
-        if (image.isNull() || image.getBounds() != imageBounds.withZeroOrigin())
+        const bool first = step <= 0 || image.isNull();
+        // The sharpness it should have: the one it has while held (a zoom is
+        // running), else the screen's.
+        float want = step;
+        if (first || (!held && std::abs (stepFor (scale, bounds) - step) > 0.01f))
+            want = stepFor (scale, bounds);
+        auto sizeAt = [&] (float st) { return (bounds.toFloat() * st).getSmallestIntegerContainer().withZeroOrigin(); };
+        if (first || image.getBounds() != sizeAt (step))
         {
-            image = juce::Image (juce::Image::ARGB, juce::jmax (1, imageBounds.getWidth()), juce::jmax (1, imageBounds.getHeight()), true,
-                                 *g.getInternalContext().getPreferredImageTypeForTemporaryImages());
-            image.setBackupEnabled (false);
+            // Nothing to show yet (or the module changed size): drawn whole now.
+            step = want;
+            image = make (g, sizeAt (step));
             valid.clear();
+            next = {};
         }
         if (auto ptr = image.getPixelData())
             if (auto* ext = ptr->getBackupExtensions())
                 if (ext->needsBackup() && !ext->canBackup())
                     valid.clear();
         if (!valid.containsRectangle (bounds))
-        {
-            juce::Graphics ig (image);
-            auto& lg = ig.getInternalContext();
-            lg.addTransform (juce::AffineTransform::scale (step));
-            for (auto& r : valid)
-                lg.excludeClipRectangle (r);
-            lg.setFill (juce::Colours::transparentBlack);
-            lg.fillRect (bounds, true);
-            lg.setFill (juce::Colours::black);
-            owner.paintEntireComponent (ig, true);
-        }
+            render (image, step, valid, bounds, bounds);
         valid = bounds;
+
+        // A sharper (or lighter) picture, made a band at a time in the time
+        // each frame has to spare; the one it has is shown until it is whole.
+        const bool moved = ! juce::approximatelyEqual (want, step);
+        if (moved && !held)
+        {
+            if (next.isNull() || ! juce::approximatelyEqual (nextStep, want))
+            {
+                nextStep = want;
+                next = make (g, sizeAt (want));
+                nextValid.clear();
+            }
+            // About half a million pixels a band.
+            const int band = juce::jmax (8, (int) (5.0e5f / ((float) juce::jmax (1, bounds.getWidth()) * want * want)));
+            for (int y = 0; y < bounds.getHeight() && budgetLeft(); y += band)
+            {
+                const auto r = juce::Rectangle<int> (0, y, bounds.getWidth(), band).getIntersection (bounds);
+                if (!nextValid.containsRectangle (r))
+                {
+                    const double t0 = juce::Time::getMillisecondCounterHiRes();
+                    render (next, nextStep, nextValid, bounds, r);
+                    nextValid.add (r);
+                    spent += juce::Time::getMillisecondCounterHiRes() - t0;
+                }
+            }
+            if (nextValid.containsRectangle (bounds))
+            {
+                image = next;
+                step = nextStep;
+                valid = bounds;
+                next = {};
+            }
+            else if (auto* parent = owner.getParentComponent())
+            {
+                // Again next frame.
+                juce::MessageManager::callAsync ([p = juce::Component::SafePointer<juce::Component> (parent), b = owner.getBounds()] {
+                    if (p != nullptr)
+                        p->repaint (b);
+                });
+            }
+        }
+        else if (!moved)
+            next = {};
         g.setColour (juce::Colours::black.withAlpha (owner.getAlpha()));
-        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+        // Near one to one at rest; while a zoom runs, the plain filter keeps
+        // every frame quick.
+        g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
         g.drawImageTransformed (image, juce::AffineTransform::scale ((float) bounds.getWidth() / (float) image.getWidth(), (float) bounds.getHeight() / (float) image.getHeight()), false);
     }
-    bool invalidateAll() override { valid.clear(); return true; }
-    bool invalidate (const juce::Rectangle<int>& area) override { valid.subtract (area); return true; }
-    void releaseResources() override { image = {}; }
+    bool invalidateAll() override { valid.clear(); nextValid.clear(); return true; }
+    bool invalidate (const juce::Rectangle<int>& area) override { valid.subtract (area); nextValid.subtract (area); return true; }
+    void releaseResources() override { image = {}; next = {}; }
+
+    // Set by the canvas while a zoom runs.
+    bool held = false;
 
 private:
     juce::Component& owner;
-    juce::Image image;
-    juce::RectangleList<int> valid;
-    float step = 0;
+    juce::Image image, next;
+    juce::RectangleList<int> valid, nextValid;
+    float step = 0, nextStep = 0;
+
+    static juce::Image make (juce::Graphics& g, juce::Rectangle<int> size)
+    {
+        juce::Image im (juce::Image::ARGB, juce::jmax (1, size.getWidth()), juce::jmax (1, size.getHeight()), true,
+                        *g.getInternalContext().getPreferredImageTypeForTemporaryImages());
+        im.setBackupEnabled (false);
+        return im;
+    }
+
+    // Draw what `within` of the module is not yet in `done` into `im`.
+    void render (juce::Image& im, float st, const juce::RectangleList<int>& done, juce::Rectangle<int> bounds, juce::Rectangle<int> within)
+    {
+        juce::Graphics ig (im);
+        auto& lg = ig.getInternalContext();
+        lg.addTransform (juce::AffineTransform::scale (st));
+        lg.clipToRectangle (within);
+        for (auto& r : done)
+            lg.excludeClipRectangle (r);
+        lg.setFill (juce::Colours::transparentBlack);
+        lg.fillRect (bounds, true);
+        lg.setFill (juce::Colours::black);
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        owner.paintEntireComponent (ig, true);
+        const double took = juce::Time::getMillisecondCounterHiRes() - t0;
+        static const bool logging = std::getenv ("IDMLAB_WHEEL_TEST") != nullptr;
+        if (logging && took > 12.0)
+            std::fprintf (stderr, "%.0f render %s %dx%d step %.2f within %dx%d+%d: %.1f ms (%s)\n", t0, typeid (owner).name(), bounds.getWidth(), bounds.getHeight(), st, within.getWidth(), within.getHeight(), within.getY(), took, &im == &next ? "next" : "shown");
+    }
+
+    // The time every module's sharpening shares in one screen frame.
+    static inline double frameAt = 0, spent = 0;
+    static bool budgetLeft()
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes();
+        if (now - frameAt > 12.0)
+        {
+            frameAt = now;
+            spent = 0;
+        }
+        return spent < 6.0;
+    }
 };
 
 namespace camera
@@ -281,6 +359,7 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         atmos->meter = [host, module] (float* peak, float* peaks, float* work, int n) {
             return (int) host->with ([&] (NaApp* a) { return na_atmos_fx_meter (a, module, peak, peaks, work, (uint32_t) n); });
         };
+        atmos->heardHz = [host, module] { return (float) host->with ([&] (NaApp* a) { return na_atmos_hz (a, module); }); };
         atmos->onNote = [host, module] (int n, float vel, bool on) {
             host->with ([&] (NaApp* a) { return na_note (a, module, on ? 1u : 0u, (uint32_t) n, vel); });
         };
@@ -812,7 +891,7 @@ Canvas::Canvas (Host& h) : host (h)
         }
     stage.setBounds (0, 0, Stage::size, Stage::size);
     stage.setInterceptsMouseClicks (false, true);
-    cables.setBufferedToImage (true);
+    cables.setCachedComponentImage (new SteppedCache (cables));
     stage.addAndMakeVisible (cables);
     addAndMakeVisible (stage);
     auto& l = panListeners()[this];
@@ -871,40 +950,74 @@ void Canvas::setZoom (float z)
     zoomTo (camera::zoomAround (cam, getLocalBounds().getCentre().toFloat(), camera::clampZoom (z) / cam.zoom));
 }
 
+void Canvas::holdPictures (bool hold)
+{
+    auto set = [hold] (juce::Component& c) {
+        if (auto* cache = dynamic_cast<SteppedCache*> (c.getCachedComponentImage()))
+            cache->held = hold;
+    };
+    set (cables);
+    for (auto& [id, n] : nodes)
+        set (*n);
+}
+
 void Canvas::zoomTo (const Camera& next)
 {
     if (!zooming)
     {
-        // The picture to move: the canvas as it is, at the screen's density.
-        auto* peer = getPeer();
-        shotDensity = peer != nullptr ? (float) peer->getPlatformScaleFactor() * (float) juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds())->scale : 2.0f;
-        shotDensity = juce::jlimit (1.0f, 2.0f, shotDensity);
-        shot = juce::Image (juce::Image::ARGB, juce::jmax (1, (int) ((float) getWidth() * shotDensity)), juce::jmax (1, (int) ((float) getHeight() * shotDensity)), true);
-        {
-            juce::Graphics g (shot);
-            g.addTransform (juce::AffineTransform::scale (shotDensity));
-            stage.paintEntireComponent (g, true);
-        }
-        shotCam = cam;
         zooming = true;
-        // Out of sight, not hidden: hiding a component throws away every
-        // picture cached inside it (JUCE releases them), so the gesture's end
-        // would draw every module again from nothing.
-        stage.setTransform (juce::AffineTransform::translation (-1.0e7f, -1.0e7f));
+        sharpen.clear();
+        holdPictures (true);
     }
     cam = next;
-    repaint();
-    if (changed)
-        changed();
+    applyCamera();
     startTimer (160);
 }
 
 void Canvas::timerCallback()
 {
-    stopTimer();
-    zooming = false;
-    shot = {};
-    applyCamera();
+    if (zooming)
+    {
+        // The zoom has rested: the modules on screen, nearest the middle
+        // first, are drawn sharp one a frame; the ones off it at once (they
+        // are drawn when they come into view).
+        zooming = false;
+        if (auto* c = dynamic_cast<SteppedCache*> (cables.getCachedComponentImage()))
+            c->held = false;
+        stage.repaint (cables.getBounds());
+        const auto view = getLocalBounds().toFloat();
+        const auto middle = view.getCentre();
+        std::vector<std::pair<float, int>> on;
+        for (auto& [id, n] : nodes)
+        {
+            const auto box = n->getBounds().toFloat().transformedBy (stage.getTransform());
+            if (box.intersects (view))
+                on.push_back ({ box.getCentre().getDistanceFrom (middle), id });
+            else if (auto* c = dynamic_cast<SteppedCache*> (n->getCachedComponentImage()))
+                c->held = false;
+        }
+        std::sort (on.begin(), on.end(), [] (auto& a, auto& b) { return a.first > b.first; });
+        for (auto& [d, n] : on)
+            sharpen.push_back (n);
+        startTimer (16);
+    }
+    if (sharpen.empty())
+    {
+        stopTimer();
+        return;
+    }
+    const int id = sharpen.back();
+    sharpen.pop_back();
+    if (auto it = nodes.find (id); it != nodes.end())
+    {
+        if (auto* c = dynamic_cast<SteppedCache*> (it->second->getCachedComponentImage()))
+            c->held = false;
+        // The stage over it, not the module: a module's own repaint would
+        // throw its picture away even where its sharpness is still right.
+        stage.repaint (it->second->getBounds());
+    }
+    if (sharpen.empty())
+        stopTimer();
 }
 
 void Canvas::fit()
@@ -971,13 +1084,6 @@ void Canvas::paint (juce::Graphics& g)
     const float x0 = std::fmod (-cam.left, step), y0 = std::fmod (-cam.top, step);
     g.setFillType (juce::FillType (dotTile, juce::AffineTransform::scale ((float) step / (float) tile).translated (x0, y0)));
     g.fillRect (getLocalBounds());
-    if (zooming && shot.isValid())
-    {
-        // A screen point as the gesture began is a canvas point; that point
-        // is where the camera puts it now.
-        const float k = cam.zoom / shotCam.zoom;
-        g.drawImageTransformed (shot, juce::AffineTransform::scale (1.0f / shotDensity).translated (shotCam.left, shotCam.top).scaled (k).translated (-cam.left, -cam.top));
-    }
 }
 
 void Canvas::resized()

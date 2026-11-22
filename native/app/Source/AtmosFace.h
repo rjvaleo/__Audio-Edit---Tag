@@ -38,6 +38,8 @@ public:
     std::function<int (float* peak, float* peaks, float* work, int n)> meter;
     ~AtmosFace() override;
 
+    // The pitch of the last note the module started, however it came (0: none).
+    std::function<float()> heardHz;
     // A note from the face's keys (on screen or the computer's).
     std::function<void (int note, float velocity, bool on)> onNote;
     // True for a press that belongs to the canvas (Space held, the middle button).

@@ -562,7 +562,51 @@ public:
         setSize (1600, 1000);
         canvas.starter();
         startTimerHz (1);
+        if (auto* path = std::getenv ("IDMLAB_WHEEL_TEST"))
+            wheelTest (path);
     }
+
+    // IDMLAB_WHEEL_TEST=<file.json>: in the real window, turn the wheel as a
+    // hand does (notches in, a pause, notches out, then a trackpad's small
+    // steps) and write how long each screen frame took, then quit.
+    void wheelTest (juce::String path)
+    {
+        canvas.addModule ("atmos", { 360.0f, 1150.0f });
+        canvas.fit();
+        juce::Timer::callAfterDelay (5000, [this, path] {
+            frames.clear();
+            t0 = juce::Time::getMillisecondCounterHiRes();
+            last = t0;
+            std::fprintf (stderr, "%.0f test starts\n", t0);
+            testFrames = std::make_unique<juce::VBlankAttachment> (this, [this] {
+                const double now = juce::Time::getMillisecondCounterHiRes();
+                frames.push_back ({ now - t0, now - last });
+                last = now;
+            });
+            const auto at = canvas.getLocalBounds().getCentre().toFloat();
+            int t = 1000;   // a second of nothing first
+            for (int i = 0; i < 8; ++i, t += 130)
+                juce::Timer::callAfterDelay (t, [this, at] { canvas.wheelZoom (at, 1); });
+            t += 1500;
+            for (int i = 0; i < 8; ++i, t += 130)
+                juce::Timer::callAfterDelay (t, [this, at] { canvas.wheelZoom (at, -1); });
+            t += 1500;
+            for (int i = 0; i < 60; ++i, t += 16)
+                juce::Timer::callAfterDelay (t, [this, at, i] { canvas.wheelZoom (at, i < 30 ? 0.12f : -0.12f); });
+            juce::Timer::callAfterDelay (t + 1500, [this, path] {
+                testFrames.reset();
+                juce::String out ("{\"frames\":[");
+                for (size_t k = 0; k < frames.size(); ++k)
+                    out << (k ? "," : "") << "[" << juce::String (frames[k].first, 1) << "," << juce::String (frames[k].second, 1) << "]";
+                out << "]}";
+                juce::File (path).replaceWithText (out);
+                juce::JUCEApplication::getInstance()->quit();
+            });
+        });
+    }
+    std::unique_ptr<juce::VBlankAttachment> testFrames;
+    std::vector<std::pair<double, double>> frames;
+    double t0 = 0, last = 0;
 
     void paint (juce::Graphics& g) override { g.fillAll (juce::Colour (28, 28, 29)); }
 

@@ -86,6 +86,8 @@ impl Default for Tuning {
 pub struct AtmosView {
     model: [AtomicI32; 2],
     v: [[AtomicU32; 32]; 2],
+    // The pitch of the last note to start, however it came (0: none yet).
+    hz: AtomicU32,
 }
 
 impl AtmosView {
@@ -93,7 +95,14 @@ impl AtmosView {
         Arc::new(AtmosView {
             model: [AtomicI32::new(-1), AtomicI32::new(-1)],
             v: std::array::from_fn(|_| std::array::from_fn(|_| AtomicU32::new(0))),
+            hz: AtomicU32::new(0),
         })
+    }
+
+    /// The pitch of the last note to start, in Hz, or 0 before any has: what
+    /// the page's Output scope sizes its window by (the last note's).
+    pub fn hz(&self) -> f32 {
+        f32::from_bits(self.hz.load(Ordering::Relaxed))
     }
 
     /// Oscillator `which` (0 A, 1 B): its model's number (`AT_MODELS` order)
@@ -210,6 +219,13 @@ impl Atmos {
         }
     }
 
+    /// Tell the face the pitch of the note that just started.
+    fn heard(&self, hz: f32) {
+        if let Some(view) = &self.view {
+            view.hz.store(hz.to_bits(), Ordering::Relaxed);
+        }
+    }
+
     /// A note's pitch: where the tuning puts its key (equal tempered from
     /// A 440 with none), moved by its fine detune.
     fn hz(&self, note: &NoteEvent) -> f32 {
@@ -288,6 +304,7 @@ impl Module for Atmos {
             EventKind::Note(note) => match note.kind {
                 NoteKind::On => {
                     let hz = self.hz(&note);
+                    self.heard(hz);
                     self.synth.note_on(note.note as i32, hz, note.velocity, 0)
                 }
                 NoteKind::Off => self.synth.note_off(note.note as i32, 0),
@@ -328,6 +345,7 @@ impl Module for Atmos {
             match note.kind {
                 NoteKind::On => {
                     let hz = self.hz(note);
+                    self.heard(hz);
                     self.synth.note_on(note.note as i32, hz, note.velocity, at)
                 }
                 NoteKind::Off => self.synth.note_off(note.note as i32, at),

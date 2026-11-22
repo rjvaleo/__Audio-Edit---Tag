@@ -515,7 +515,12 @@ void Chrome::index (const juce::var& n)
 void Chrome::paint (juce::Graphics& g)
 {
     // Sharp on a 2x screen at 100% and below; drawn once, then only moved.
-    const float want = g.getInternalContext().getPhysicalPixelScaleFactor() > 1.01f ? 2.0f : 1.0f;
+    // On a 2x screen at 2x from the start, even zoomed out: drawn then, it
+    // would be drawn again whole the first time a zoom came past halfway
+    // (half a second for a big page, in the middle of the zoom).
+    const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+    const bool dense = g.getInternalContext().getPhysicalPixelScaleFactor() > 1.01f || (display != nullptr && display->scale > 1.01);
+    const float want = dense ? 2.0f : 1.0f;
     if (!cached.isValid() || want > cachedScale)
     {
         cachedScale = want;

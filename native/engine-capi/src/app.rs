@@ -552,6 +552,19 @@ pub unsafe extern "C" fn na_atmos_view(a: *mut NaApp, id: u32, which: u32, out32
     })
 }
 
+/// The pitch of the last note Atmosphere module `id` started, in Hz (0
+/// before any, or with no such module).
+///
+/// # Safety
+/// `a` came from `na_new`.
+#[no_mangle]
+pub unsafe extern "C" fn na_atmos_hz(a: *mut NaApp, id: u32) -> f32 {
+    guarded(0.0, || {
+        let Some(s) = session(a) else { return 0.0 };
+        s.atmos_hz(id).unwrap_or(0.0)
+    })
+}
+
 /// The last `n` frames (at most 2048) of Atmosphere module `id`'s output,
 /// mono, oldest first, into `out`. How many were written.
 ///

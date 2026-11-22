@@ -71,6 +71,7 @@ uint32_t na_atmos_preset (NaApp*, uint32_t id, const char* name, char* buf, uint
 int32_t na_load_atmos_preset (NaApp*, uint32_t id, const char* json);
 // Oscillator which (0 A, 1 B): 32 floats; returns the model's number or -1.
 int32_t na_atmos_view (NaApp*, uint32_t id, uint32_t which, float* out32);
+float na_atmos_hz (NaApp*, uint32_t id);
 // The last n frames (at most 2048) of its output, mono, oldest first; how many.
 uint32_t na_atmos_scope (NaApp*, uint32_t id, float* out, uint32_t n);
 // The FX line since the last call: output peak, and per chain slot its peak

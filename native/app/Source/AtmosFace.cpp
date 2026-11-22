@@ -96,6 +96,10 @@ AtmosFace::AtmosFace (Send s, State st, View vw, Scope sc, Kinds kd)
         kindsList = juce::JSON::parse (readKinds());
     buildLayers();
     reload();
+    // The pictures and the scope read the engine all the time, as the page's
+    // requestAnimationFrame does: a note may come from anywhere (a cable, a
+    // sequencer, MIDI), not only from these keys.
+    startTimerHz (30);
 }
 
 AtmosFace::~AtmosFace()
@@ -1442,6 +1446,10 @@ void AtmosFace::timerCallback()
     {
         // scopeWindow: three periods of the last note's pitch, from a rising
         // zero crossing, scaled to its peak; quiet below 0.0015.
+        // The last note's pitch, however it came (the engine's, tuned).
+        if (heardHz)
+            if (const float hz = heardHz(); hz > 1.0f)
+                lastHz = hz;
         std::vector<float> buf (2048);
         const int got = readScope (buf.data(), (int) buf.size());
         buf.resize ((size_t) juce::jmax (0, got));
@@ -1491,8 +1499,6 @@ void AtmosFace::timerCallback()
         repaintNamed ("fx");
     }
     quiet = sounding || !held.empty() ? 0 : quiet + 1;
-    if (quiet > 30)
-        stopTimer();
 }
 
 // ── the mouse ──────────────────────────────────────────────────────────────
