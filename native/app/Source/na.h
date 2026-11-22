@@ -74,6 +74,8 @@ uint32_t na_atmos_page (char* buf, uint32_t cap);
 // /api/edit answer, its origin, its markers). Its info into buf, or an error.
 int32_t na_sound_open (NaApp*, uint32_t id, const char* path, const char* origin, uint32_t keep, char* buf, uint32_t cap);
 int32_t na_sound_info (NaApp*, uint32_t id, char* buf, uint32_t cap);
+// Its whole timeline in up to cols columns: channel 1's mins then maxes; the columns.
+int32_t na_sound_peaks (NaApp*, uint32_t id, uint32_t cols, float* out);
 // The Sound module cabled into Edit module id, or -2.
 int32_t na_sound_of (NaApp*, uint32_t edit);
 

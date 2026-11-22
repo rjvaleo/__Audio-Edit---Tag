@@ -27,6 +27,13 @@ pub struct Document<S: RandomAccessSource> {
     rate: u32,
 }
 
+/// The edited timeline at the engine's rate, in two channels: MGL's order
+/// (`server/src/live.rs`), the rate, then the channels.
+fn at_rate(samples: &[f32], channels: usize, from: u32, to: u32) -> Vec<f32> {
+    let samples = resample(samples, channels, from, to);
+    conform_channels(&samples, channels, 2)
+}
+
 impl<S: RandomAccessSource> Document<S> {
     /// Open a file (WAV or AIFF) for an engine running at `rate`.
     pub fn open(mut file: S, rate: u32) -> Result<Document<S>, ProbeError> {
@@ -85,8 +92,18 @@ impl<S: RandomAccessSource> Document<S> {
         let list = self.session.list();
         let channels = (list.channels as usize).max(1);
         let samples = mgl_edit::render::render(list, &mut self.reader, 0, list.base_frames())?;
-        let samples = resample(&samples, channels, list.sample_rate, self.rate);
-        Ok(conform_channels(&samples, channels, 2))
+        Ok(at_rate(&samples, channels, list.sample_rate, self.rate))
+    }
+
+    /// The bank's sound from the edited timeline already rendered at the
+    /// file's rate (`timeline`, interleaved in the list's channels): the same
+    /// as [`Document::sound`], without rendering it again.
+    pub fn sound_from(&self, timeline: &[f32]) -> SoundData {
+        let list = self.session.list();
+        let samples = at_rate(timeline, (list.channels as usize).max(1), list.sample_rate, self.rate);
+        let l = samples.iter().step_by(2).copied().collect();
+        let r = samples.iter().skip(1).step_by(2).copied().collect();
+        SoundData { rate: self.rate as f32, l, r }
     }
 
     /// The edited sound for a grain deck: at the engine's rate, two channels,

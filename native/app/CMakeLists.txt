@@ -39,12 +39,14 @@ add_dependencies(idMLab engine_build)
 # Every theme and kit, captured from idMLab and MGL (tools/face-capture/capture-themes.mjs).
 file(GLOB THEME_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/themes/*")
 file(GLOB ATMOS_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/atmos/*.json.gz")
-juce_add_binary_data(idmlab_faces SOURCES faces/wave.json ${THEME_FILES} ${ATMOS_FILES}
+file(GLOB EDIT_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/edit/*.json.gz" "${CMAKE_CURRENT_SOURCE_DIR}/faces/edit/edit-page.json")
+juce_add_binary_data(idmlab_faces SOURCES faces/wave.json ${THEME_FILES} ${ATMOS_FILES} ${EDIT_FILES}
   ../engine-app/data/atmos-page.json
   faces/idmlab/idmlab-bar.json faces/idmlab/idmlab-status.json faces/idmlab/idmlab-node-audio.json
   faces/idmlab/idmlab-node-notes.json faces/idmlab/idmlab-menu.json faces/idmlab/idmlab-style.json)
 target_sources(idMLab PRIVATE Source/Main.cpp Source/Host.cpp Source/Canvas.cpp Source/Face.cpp
-  Source/Canvas2D.cpp Source/WaveDraw.cpp Source/WaveFace.cpp Source/AtmosFace.cpp)
+  Source/Canvas2D.cpp Source/WaveDraw.cpp Source/WaveFace.cpp Source/AtmosFace.cpp
+  Source/EditFace.cpp Source/SoundFace.cpp Source/EditBench.cpp)
 target_compile_definitions(idMLab PRIVATE
   JUCE_WEB_BROWSER=0
   JUCE_USE_CURL=0

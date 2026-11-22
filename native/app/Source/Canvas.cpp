@@ -281,6 +281,42 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         atmos->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
         addAndMakeVisible (*atmos);
     }
+    else if (kind.id == "edit" || kind.id == "sound")
+    {
+        // MGL's Edit page, and the sound it works on (EditFace, SoundFace).
+        auto* host = &canvas.host;
+        auto call = [host] (const std::function<int64_t (NaApp*)>& f) { return host->with ([&] (NaApp* a) { return f (a); }); };
+        auto say = [cv = &canvas] (const juce::String& m) { if (cv->status) cv->status (m); };
+        auto pan = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
+        if (kind.id == "edit")
+        {
+            edit = std::make_unique<EditFace> (call, (uint32_t) id);
+            edit->onMessage = say;
+            edit->blocked = pan;
+            // ＋ with no sound cabled in: a Sound module beside it, cabled.
+            edit->wantSound = [cv = &canvas, mine = id] {
+                juce::MessageManager::callAsync ([cv, mine] {
+                    const int has = cv->host.with ([&] (NaApp* a) { return na_sound_of (a, (uint32_t) mine); });
+                    if (has >= 0)
+                        return cv->status ? cv->status ("Open a sound in the Sound module cabled into Edit") : (void) 0;
+                    auto it = cv->nodes.find (mine);
+                    const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) it->second->getX() - 380, (float) it->second->getY()) : juce::Point<float>();
+                    const int s = cv->host.with ([&] (NaApp* a) { const int n = na_add (a, "sound", at.x, at.y); if (n > 0) na_connect (a, (uint32_t) n, 0, (uint32_t) mine, 0); return n; });
+                    cv->refresh();
+                    if (cv->status)
+                        cv->status (s > 0 ? "Added a Sound module: open a file or one from the library in it" : "Adding a Sound module didn't work");
+                });
+            };
+            addAndMakeVisible (*edit);
+        }
+        else
+        {
+            sound = std::make_unique<SoundFace> (call, (uint32_t) id);
+            sound->onMessage = say;
+            sound->blocked = pan;
+            addAndMakeVisible (*sound);
+        }
+    }
     else if (kind.id == "midi-in")
     {
         channel = std::make_unique<juce::ComboBox>();
@@ -592,7 +628,7 @@ void AddMenu::filter()
     const auto q = search.getText().trim().toLowerCase();
     // idMLab groups its modules by family; MGL's sit under their own.
     const std::vector<std::pair<juce::String, juce::StringArray>> groups {
-        { "MULTIGRAINLIVE", { "wave", "atmos" } },
+        { "MULTIGRAINLIVE", { "wave", "atmos", "sound", "edit" } },
         { "MIDI", { "midi-in" } },
         { "AUDIO", { "output" } },
     };

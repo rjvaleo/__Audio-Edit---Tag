@@ -617,7 +617,9 @@ impl SoundPart {
             ctl.send(source, EventKind::Sound { slot: 0, sound: self.sound })?;
             return Ok(());
         };
-        let data = doc.sound().map_err(|_| engine_core::PatchError::BadSoundId(bank))?;
+        // The timeline rendered for the page's samples is the one the bank
+        // plays, at the engine's rate: rendered once, not twice.
+        let data = doc.sound_from(&self.dry);
         self.sound = ctl.load_sound(bank, data)?;
         ctl.send(source, EventKind::Sound { slot: 0, sound: self.sound })?;
         Ok(())

@@ -126,6 +126,19 @@ impl Session {
         Ok(v)
     }
 
+    /// Sound module `id`'s own edited timeline in `columns` columns, its first
+    /// channel's min and max (its face's strip). How many columns.
+    pub fn sound_peaks(&self, id: u32, columns: usize, out: &mut Vec<f32>) -> Result<usize, AppError> {
+        let s = self.sound_ref(id)?;
+        let mut all = Vec::new();
+        let (c, ch, _, _) = s.peaks(0, 0, columns, &mut all);
+        out.clear();
+        if ch > 0 {
+            out.extend_from_slice(&all[..2 * c]);
+        }
+        Ok(c)
+    }
+
     /// The Sound module cabled into Edit module `id`, if any.
     pub fn sound_of(&self, edit: u32) -> Option<u32> {
         self.wires.iter().find(|w| w.to == (edit, 0)).map(|w| w.from.0).filter(|s| matches!(self.modules.get(s).map(|m| &m.part), Some(Part::Sound(_))))

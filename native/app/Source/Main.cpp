@@ -7,6 +7,7 @@
 #include "Face.h"
 #include "AtmosFace.h"
 #include "WaveFace.h"
+#include "EditBench.h"
 #include "Host.h"
 #include "Places.h"
 
@@ -754,6 +755,11 @@ public:
             std::printf ("{\"window_ms\":%.1f,\"pan_step_ms\":%.1f,\"zoom_step_ms\":%.1f}\n", whole, panStep / 10, zoomStep / 10);
             return quit();
         }
+        if (args.size() >= 2 && args[0] == "--bench" && args[1] == "edit")
+        {
+            setApplicationReturnValue (editBench (args));
+            return quit();
+        }
         if (args.size() >= 2 && args[0] == "--bench" && args[1] == "atmos")
         {
             // Atmosphere's face: drawn whole, again, and after a knob, a model and the big knob.
@@ -918,6 +924,8 @@ public:
                 image = w.createComponentSnapshot (w.getLocalBounds(), true, scale);
                 na_free (a);
             }
+            else if (page == "edit-face" || page == "sound-face")
+                image = editSnapshot (args, scale);
             else if (page == "atmos-face")
             {
                 // The live face, a real Atmosphere behind it (no sound card):

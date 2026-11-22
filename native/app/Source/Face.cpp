@@ -132,6 +132,7 @@ struct Worn
     juce::var idmlab;        // the idMLab theme's parts
     juce::var mgl;           // Wave's face in the MGL theme
     juce::var atmos;         // Atmosphere's face in the MGL theme
+    juce::var edit;          // the Edit page in the MGL theme
     int stamp = 0;
 };
 Worn& wornState()
@@ -168,6 +169,15 @@ const juce::var& page (const juce::String& name)
         if (!w.atmos.isObject())
             w.atmos = juce::JSON::parse (embedded ("mgl-atmos-default.json.gz"));
         return w.atmos;
+    }
+    if (name == "edit")
+    {
+        auto& w = wornState();
+        if (!w.edit.isObject())
+            w.edit = juce::JSON::parse (embedded ("mgl-edit-" + (w.choice >= 0 ? themeChoices()[(size_t) w.choice].mgl : juce::String ("default")) + ".json.gz"));
+        if (!w.edit.isObject())
+            w.edit = juce::JSON::parse (embedded ("mgl-edit-default.json.gz"));
+        return w.edit;
     }
     static std::map<juce::String, juce::var> pages;
     auto it = pages.find (name);
@@ -280,6 +290,7 @@ void wear (int choice, const juce::String& kit)
         w.idmlab = juce::JSON::parse (embedded ("idmlab-theme-" + juce::String (c.idmlab) + ".json.gz"));
         w.mgl = juce::JSON::parse (embedded ("mgl-theme-" + c.mgl + ".json.gz"));
         w.atmos = juce::var();
+        w.edit = juce::var();
         w.choice = choice;
     }
     w.kit = kit.isEmpty() ? juce::String ("thinRing") : kit;

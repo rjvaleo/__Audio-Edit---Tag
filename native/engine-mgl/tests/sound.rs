@@ -173,3 +173,20 @@ fn the_document_feeds_a_grain_deck() {
     let got: Vec<f32> = l.iter().zip(&r).flat_map(|(a, b)| [*a, *b]).collect();
     assert_same("the deck fed by the document", &got, &want);
 }
+
+#[test]
+fn the_bank_from_a_timeline_rendered_once_is_the_bank_rendered_again() {
+    // The Sound module renders the edited timeline once, for the Edit page's
+    // samples, and hands that to the bank; it must be what `sound` renders.
+    for channels in [1, 2] {
+        let mut doc = open(channels);
+        doc.edit(edits);
+        let list = doc.list().clone();
+        let mut reader = Reader::new(SliceSource::new(wav(channels)), audio_core::probe(&mut SliceSource::new(wav(channels))).unwrap());
+        let timeline = mgl_edit::render::render(&list, &mut reader, 0, list.base_frames()).unwrap();
+        let once = doc.sound_from(&timeline);
+        let again = doc.sound().unwrap();
+        assert_same("left", &once.l, &again.l);
+        assert_same("right", &once.r, &again.r);
+    }
+}

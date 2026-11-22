@@ -19,6 +19,8 @@
 #include "Face.h"
 #include "Host.h"
 #include "AtmosFace.h"
+#include "EditFace.h"
+#include "SoundFace.h"
 #include "WaveFace.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -94,8 +96,17 @@ public:
     std::vector<std::unique_ptr<Jack>> jacks;
     std::unique_ptr<WaveFace> wave;
     std::unique_ptr<AtmosFace> atmos;
+    std::unique_ptr<EditFace> edit;
+    std::unique_ptr<SoundFace> sound;
     // The page that is this module's face, if it has one.
-    juce::Component* body() const { return wave != nullptr ? (juce::Component*) wave.get() : (juce::Component*) atmos.get(); }
+    juce::Component* body() const
+    {
+        if (edit != nullptr)
+            return edit.get();
+        if (sound != nullptr)
+            return sound.get();
+        return wave != nullptr ? (juce::Component*) wave.get() : (juce::Component*) atmos.get();
+    }
     bool collapsed = false, selected = false;
     juce::Colour accent;
 
