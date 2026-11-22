@@ -117,6 +117,17 @@ int64_t na_edit_export (NaApp*, uint32_t id, const char* path, uint32_t bits);
 int32_t na_edit_set_ui (NaApp*, uint32_t id, const char* json);
 int32_t na_edit_ui (NaApp*, uint32_t id, char* buf, uint32_t cap);
 
+// Grain, on the sound cabled into it (or its own start sound). `what` names
+// the route it stands for: "edit" (an /api/edit op on its document), "keys"
+// (/api/engine/voice), "transport", "lfos", "lfos-state", "rack", "presets",
+// "info", "read" (/api/engine/grains), "ui". JSON in and out.
+int32_t na_grain_call (NaApp*, uint32_t id, const char* what, const char* json, char* buf, uint32_t cap);
+// Every Grain's LFOs on by `seconds` (MGL ticks them every 8 ms).
+void na_grain_tick (NaApp*, double seconds);
+int32_t na_grain_peaks (NaApp*, uint32_t id, uint64_t from, uint64_t to, uint32_t cols, float* out, uint32_t cap, uint64_t* info3);
+int64_t na_grain_mono (NaApp*, uint32_t id, uint64_t from, float* out, uint32_t n);
+int32_t na_grain_scope (NaApp*, uint32_t id, float* l, float* r, uint32_t n);
+
 #ifdef __cplusplus
 }
 #endif

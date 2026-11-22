@@ -106,6 +106,14 @@ impl<S: RandomAccessSource> Document<S> {
         SoundData { rate: self.rate as f32, l, r }
     }
 
+    /// The grain deck's sound from the edited timeline already rendered at
+    /// the file's rate: the same as [`Document::source`], without rendering
+    /// it again.
+    pub fn source_from(&self, timeline: &[f32]) -> Arc<Source> {
+        let list = self.session.list();
+        Arc::new(Source { samples: at_rate(timeline, (list.channels as usize).max(1), list.sample_rate, self.rate), channels: 2 })
+    }
+
     /// The edited sound for a grain deck: at the engine's rate, two channels,
     /// before any stretch (the deck does the stretching).
     pub fn source(&mut self) -> io::Result<Arc<Source>> {

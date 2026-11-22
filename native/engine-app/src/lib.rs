@@ -23,6 +23,7 @@
 pub mod annot;
 pub mod atmos_part;
 pub mod edit_part;
+pub mod grain;
 mod mgl_rack;
 pub mod sound_part;
 mod sound_link;
@@ -104,6 +105,16 @@ pub static KINDS: &[KindInfo] = &[
         ins: &[("Sound", Kind::Sound)],
         outs: &[("Audio", Kind::Audio)],
         keyboard: false,
+    },
+    // MGL's Grain page at its own size, on the sound cabled into it.
+    KindInfo {
+        id: "grain",
+        title: "Grain",
+        width: grain::GRAIN_W,
+        height: grain::GRAIN_H,
+        ins: &[("Sound", Kind::Sound), ("Notes", Kind::Notes)],
+        outs: &[("Audio", Kind::Audio)],
+        keyboard: true,
     },
     KindInfo { id: "midi-in", title: "MIDI In", width: 246, height: 73, ins: &[], outs: &[("Notes", Kind::Notes)], keyboard: false },
     KindInfo {
@@ -276,6 +287,7 @@ enum Part {
     Output,
     Sound(Box<SoundPart>),
     Edit(Box<EditPart>),
+    Grain(Box<grain::GrainPart>),
 }
 
 struct Placed {
@@ -387,6 +399,7 @@ impl Session {
                 self.ctl.add(engine_id(id, 0), Box::new(engine_mgl::EditPlayer::new(part.transport.clone())))?;
                 Part::Edit(Box::new(part))
             }
+            "grain" => self.add_grain(id, saved)?,
             "midi-in" => {
                 let channel = saved.and_then(|s| s.get("channel")).and_then(Value::as_u64).unwrap_or(0).min(16) as u8;
                 self.ctl.add(engine_id(id, 0), Box::new(engine_core::basics::Keys::new()))?;
@@ -412,6 +425,7 @@ impl Session {
         }
         self.next = self.next.max(id + 1);
         self.sync_tables();
+        self.grain_sync();
         Ok(())
     }
 
@@ -428,6 +442,7 @@ impl Session {
         }
         self.wires.retain(|w| w.from.0 != id && w.to.0 != id);
         self.ctl.commit()?;
+        self.grain_sync();
         Ok(())
     }
 
@@ -457,11 +472,16 @@ impl Session {
     fn engine_in(&self, (id, socket): (u32, u32)) -> Result<(engine_core::PortRef, Kind), AppError> {
         let m = self.modules.get(&id).ok_or(AppError::NoSuchModule(id))?;
         let (_, kind) = m.kind.ins.get(socket as usize).ok_or(AppError::NoSuchSocket)?;
+        // Grain's Sound socket is the app's (grain/link.rs); its Notes are the deck's first input.
+        let socket = if matches!(m.part, Part::Grain(_)) { socket.saturating_sub(1) } else { socket };
         Ok((port(engine_id(id, 0), socket), *kind))
     }
 
     /// Cable an output socket to an input socket.
     pub fn connect(&mut self, from: (u32, u32), to: (u32, u32)) -> Result<(), AppError> {
+        if let Some(r) = self.grain_connect(from, to, true) {
+            return r;
+        }
         let (out, a) = self.engine_out(from)?;
         let (inp, b) = self.engine_in(to)?;
         if a != b {
@@ -484,6 +504,9 @@ impl Session {
     }
 
     pub fn disconnect(&mut self, from: (u32, u32), to: (u32, u32)) -> Result<(), AppError> {
+        if let Some(r) = self.grain_connect(from, to, false) {
+            return r;
+        }
         let wire = Wire { from, to };
         let Some(at) = self.wires.iter().position(|w| *w == wire) else { return Err(AppError::NoSuchSocket) };
         let (out, _) = self.engine_out(from)?;
@@ -519,7 +542,7 @@ impl Session {
                 *channel = (value.max(0.0) as u8).min(16);
                 Ok(())
             }
-            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) => Err(AppError::NoSuchControl(index)),
+            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) => Err(AppError::NoSuchControl(index)),
         }
     }
 
@@ -530,7 +553,7 @@ impl Session {
         Ok(match &m.part {
             Part::Wave(w) => w.values(),
             Part::MidiIn { channel } => vec![*channel as f32],
-            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) => Vec::new(),
+            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) => Vec::new(),
         })
     }
 
@@ -565,6 +588,8 @@ impl Session {
             for w in s.wires.clone().iter().filter(|w| w.from.0 == id) {
                 if matches!(s.modules.get(&w.to.0).map(|m| &m.part), Some(Part::Wave(_))) {
                     s.ctl.send(engine_id(w.to.0, 0), EventKind::Param { index, value })?;
+                } else if index == engine_mgl::Wave::BEND {
+                    s.grain_wheel(w.to.0, value);
                 }
             }
             Ok(())
@@ -606,6 +631,7 @@ impl Session {
     pub fn collect(&mut self) {
         self.ctl.collect();
         self.sound_collect();
+        self.grain_collect();
         if self.tables.take_built() {
             self.sync_tables();
         }
@@ -668,6 +694,9 @@ impl Session {
                     }
                     Part::Edit(e) => {
                         o.insert("edit".into(), e.ui.clone());
+                    }
+                    Part::Grain(g) => {
+                        o.insert("grain".into(), g.state());
                     }
                 }
                 Value::Object(o)

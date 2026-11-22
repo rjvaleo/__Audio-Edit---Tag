@@ -105,10 +105,30 @@ pub enum GrainThing {
 /// change the deck: every change goes through the engine, stamped.
 pub struct Handle {
     shared: Arc<Shared>,
+    keys: Arc<GrainKeys>,
     grid: usize,
 }
 
 impl Handle {
+    /// The deck's shared state, as MGL's server holds it (`live.rs`): the
+    /// Grain module's app side writes the deck's settings, sound, rack and
+    /// transport here from the app's thread, as MGL's server does from its
+    /// own, and the deck takes them at its next block.
+    pub fn shared(&self) -> &Arc<Shared> {
+        &self.shared
+    }
+
+    /// The deck's keys (Mono, Legato, Poly; the envelope, glide, bend, run,
+    /// the tuning table), as MGL's `/api/engine/voice` sets them: atomics.
+    pub fn keys(&self) -> &Arc<GrainKeys> {
+        &self.keys
+    }
+
+    /// The deck's own block, in frames.
+    pub fn grid(&self) -> usize {
+        self.grid
+    }
+
     /// Free what the deck has finished with: racks it has faded out of, and
     /// replaced sounds, banks and maps.
     pub fn collect(&self) {
@@ -426,7 +446,7 @@ impl Grain {
     /// The app's side of this deck. Take it before the module goes into the
     /// patch.
     pub fn handle(&self) -> Handle {
-        Handle { shared: Arc::clone(&self.shared), grid: self.grid }
+        Handle { shared: Arc::clone(&self.shared), keys: Arc::clone(&self.keys), grid: self.grid }
     }
 
     fn play(&mut self, note: &NoteEvent) {

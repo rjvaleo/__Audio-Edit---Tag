@@ -65,6 +65,8 @@ pub struct SoundPart {
     measuring: Option<mpsc::Receiver<Measured>>,
     /// Bumped whenever the sound changes, so a face knows to read it again.
     pub serial: u64,
+    /// Bumped whenever the document's stretch (Grain's settings) changes.
+    pub stretch_serial: u64,
     sound: SoundRef,
 }
 
@@ -118,6 +120,7 @@ impl SoundPart {
             measured: None,
             measuring: None,
             serial: 0,
+            stretch_serial: 0,
             sound: SoundRef::default(),
         }
     }
@@ -211,7 +214,9 @@ impl SoundPart {
             "sampleRate": l.sample_rate,
             "channels": l.channels,
             "edited": !l.is_identity(),
-            "stretch": { "ratio": l.stretch.ratio, "semitones": l.stretch.semitones, "active": l.is_stretched() },
+            // MGL's own shape (`docs::edit_json`): the stretch as saved, with
+            // `active` and `granular`. The Grain page reads all of it.
+            "stretch": crate::grain::stretch::answer_json(&l.stretch, l.is_stretched()),
             "clips": clips,
             "canUndo": s.can_undo(),
             "canRedo": s.can_redo(),
@@ -377,6 +382,17 @@ impl SoundPart {
                     s.apply(|l| l.repair_click(cut, taper));
                 }
             }
+            // Grain's controls (`edit_view.rs`'s "stretch" arm): the
+            // document's stretch, one undo step, as every other edit.
+            "stretch" => {
+                let next = crate::grain::stretch::apply(&s.list().stretch, v);
+                s.apply(|l| l.stretch = next);
+            }
+            // A preset's stretch, whole (MGL's `/api/presets/apply`: one edit).
+            "setStretch" => {
+                let next = crate::grain::stretch::from_json(v.get("stretch").unwrap_or(&Value::Null));
+                s.apply(|l| l.stretch = next);
+            }
             "undo" => {
                 s.undo();
             }
@@ -390,7 +406,13 @@ impl SoundPart {
             self.clipboard = Some(clips);
         }
         self.ops.push(v.clone());
-        let changed = *self.doc.as_ref().map(|d| d.list()).unwrap() != before;
+        // Whether the sound itself is now different: the stretch is played by
+        // a deck as it goes (MGL's `push_params`), not rendered into it.
+        let after = self.doc.as_ref().map(|d| d.list()).unwrap();
+        self.stretch_serial += (after.stretch != before.stretch) as u64;
+        let mut timeline = after.clone();
+        timeline.stretch = before.stretch;
+        let changed = timeline != before;
         if changed {
             self.rebuild();
         }
@@ -607,6 +629,12 @@ impl SoundPart {
                 self.serial += 1;
             }
         }
+    }
+
+    /// The edited sound as a grain deck plays it (MGL's `live::load`): at the
+    /// engine's rate, two channels, before any stretch.
+    pub fn grain_source(&self) -> Option<Arc<mgl_engine::Source>> {
+        self.doc.as_ref().map(|d| d.source_from(&self.dry))
     }
 
     /// Put the edited sound in the engine's bank under `bank`, and point the

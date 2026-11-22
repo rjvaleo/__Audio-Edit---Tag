@@ -15,6 +15,9 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 mgl-edit = { package = "edit", path = "../../core/crates/edit" }
 mgl-fx = { package = "fx", path = "../../core/crates/fx" }
 audio-core = { path = "../../core/crates/audio-core" }
+# The Grain module: MGL's grain deck's own types (its sound, its keys, the
+# layer bank, the Pitch Time Changer), as MGL's server hands them over.
+mgl-engine = { package = "engine", path = "../../core/crates/engine", default-features = false }
 
 [dev-dependencies]
 # Atmosphere's synth driven by hand, to check the canvas module against it.
