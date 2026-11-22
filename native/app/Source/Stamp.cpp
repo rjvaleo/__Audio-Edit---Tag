@@ -138,9 +138,24 @@ void Stamp::node (juce::Graphics& g, const juce::var& n, const juce::var* lookIn
     const juce::var* worn = lookIn;
     if (worn == nullptr && look)
         worn = look (n);
-    const auto& style = worn != nullptr ? *worn : n;
+    juce::var styled = worn != nullptr ? *worn : n;
+    juce::Colour fillColour;
+    if (fill && fill (n, fillColour))
+    {
+        styled = styled.clone();
+        if (auto* o = styled.getDynamicObject())
+        {
+            juce::Array<juce::var> c { (int) fillColour.getRed(), (int) fillColour.getGreen(), (int) fillColour.getBlue(), (double) fillColour.getFloatAlpha() };
+            o->setProperty ("bg", c);
+            if (auto* sh = o->getProperty ("shadows").getArray())
+                for (auto& one : *sh)
+                    if (auto* so = one.getDynamicObject())
+                        so->setProperty ("colour", c);
+        }
+    }
+    const auto& style = styled;
     const auto r = rectOf (n);
-    const float opacity = num (style["opacity"], 1.0f);
+    const float opacity = num (style["opacity"], 1.0f) * (alpha ? alpha (n) : 1.0f);
     if (opacity <= 0.001f)
         return;
     juce::Graphics::ScopedSaveState keep (g);
@@ -179,7 +194,7 @@ void Stamp::node (juce::Graphics& g, const juce::var& n, const juce::var* lookIn
     words (g, n, worn);
     if (auto* kids = n["kids"].getArray())
     {
-        auto* lookKids = worn != nullptr ? (*worn)["kids"].getArray() : nullptr;
+        auto* lookKids = worn != nullptr && !shallowLook ? (*worn)["kids"].getArray() : nullptr;
         for (int k = 0; k < kids->size(); ++k)
             node (g, kids->getReference (k), lookKids != nullptr && k < lookKids->size() ? &lookKids->getReference (k) : nullptr);
     }
@@ -196,7 +211,8 @@ void Stamp::words (juce::Graphics& g, const juce::var& n, const juce::var* worn)
         return;
     auto* lookRuns = worn != nullptr ? (*worn)["text"].getArray() : nullptr;
     juce::String own;
-    const bool replaced = text && text (n, own);
+    // Words the same as captured are drawn as captured (fitted to the browser's width).
+    const bool replaced = text && text (n, own) && !(runs->size() == 1 && own == runs->getReference (0)["text"].toString());
     for (int k = 0; k < runs->size(); ++k)
     {
         if (replaced && k > 0)

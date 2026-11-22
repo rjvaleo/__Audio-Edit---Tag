@@ -806,7 +806,16 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
 {
     drag = nullptr;
     dragEnd = nullptr;
-    if ((blocked && blocked (e)) || !e.mods.isLeftButtonDown())
+    if (blocked && blocked (e))
+        return;
+    // A right-click in a view is its own (the board's menus).
+    if (e.mods.isPopupMenu() && ctx.view != "play" && !sharedArea ({ e.position.x, e.position.y, 0, 0 }))
+    {
+        if (auto* v = viewFor (ctx.view))
+            v->rightClick (e);
+        return;
+    }
+    if (!e.mods.isLeftButtonDown())
         return;
     grabKeyboardFocus();
     drag = nullptr;
@@ -1146,6 +1155,13 @@ void WaveFace::modsChanged()
         if (l.get() != textLayer)
             l->repaint();
     sync();
+}
+
+void WaveFace::mouseMove (const juce::MouseEvent& e)
+{
+    if (ctx.view == "fx")
+        if (auto* v = viewFor ("fx"))
+            boardMoved (*v, e);
 }
 
 void WaveFace::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)

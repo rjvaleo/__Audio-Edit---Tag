@@ -111,6 +111,18 @@ const MX_ROWS = [
   ...MX_SOURCES.map((src, i) => ({ src, dst: MX_TARGETS[20 + i], amt: -0.3, curve: 'exp', via: null, on: false })),
   { src: 'lfo1', dst: 'board:n1:wet', amt: 0.3, curve: 'lin', via: null, on: true },
 ];
+// The test board, every kind of node, laid out on the grid.
+const BOARD = `window.wvSetPortsQuiet = (n, k) => { n.params[n.kind === 'split' ? 'outs' : 'ins'] = k; }; WV.board = wvInitBoard(); wvBoardSeq = 0; { const add = (k, x, y) => wvAddNode(k, [x, y], true);
+  const e = add('fx:echo', 300, 40), sp = add('split', 520, 40), mx = add('mix', 740, 40), dw = add('drywet', 300, 260), gn = add('gain', 520, 260),
+    pn = add('pan', 740, 260), cv = add('fx:convolution', 300, 440), d2 = add('fx:sh-decimate', 520, 440), d4 = add('fx:sh-phasor', 740, 440);
+  d2.on = false;
+  const s3 = add('split', 960, 40), m3 = add('mix', 960, 260), m4 = add('mix', 960, 440), iv = add('fx:invert', 1180, 40);
+  wvSetPortsQuiet(s3, 3); wvSetPortsQuiet(m3, 3); wvSetPortsQuiet(m4, 4);
+  WV.board.cables = [{ from: ['invoice', 'o'], to: [e.id, 'i'] }, { from: [e.id, 'o'], to: [sp.id, 'i'] }, { from: [sp.id, 'o0'], to: [mx.id, 'i0'] },
+    { from: [sp.id, 'o1'], to: [mx.id, 'i1'] }, { from: [mx.id, 'o'], to: ['out', 'i'] }]; wvBoardGood = wvClone(WV.board); }`;
+const wvSetPortsQuietDef = '';
+const NO_RACK = 'window.__suites = state.suites; state.suites = []';
+const RACK = 'state.suites = window.__suites || state.suites';
 const SHOW_MENUS = () => document.querySelectorAll('.wv-menu, .wv-pmenu, .wv-cmenu').forEach((e) => { e.style.visibility = ''; });
 const PARTS = [
   // The page's tile menu, open on osc A's tables (`wvTableMenu`).
@@ -125,6 +137,32 @@ const PARTS = [
   // The pickers: the sources (with × none), and the targets.
   { name: 'pickSrc', view: 'matrix', sel: '#wvPmenu', setup: `(${SHOW_MENUS})(); WV.mx = 'rows'; wvRenderMatrix(); wvOpenPicker(document.querySelector('#wvMxRows [data-pk="v"]'))`, after: 'wvCloseMenus(); WV.mx = "pins"; wvRenderMatrix()' },
   { name: 'pickTgt', view: 'matrix', sel: '#wvPmenu', setup: `(${SHOW_MENUS})(); WV.mx = 'rows'; wvRenderMatrix(); wvOpenPicker(document.querySelector('#wvMxRows [data-pk="t"]'))`, after: 'wvCloseMenus(); WV.mx = "pins"; wvRenderMatrix()' },
+  // The FX board with a node of every kind (and one bypassed), patched:
+  // Voice → Echo → Split → Mix → Out. Everything the board view draws is
+  // walked from it: the world (nodes and cables), a selected node, a
+  // selected cable, the main path, and every inspector (the page's own,
+  // without the rack's faces, which come with the FX page).
+  { name: 'world', view: 'fx', sel: '#wvWorld', setup: `${BOARD}; wvBoardSelect(null); wvRenderBoard()` },
+  { name: 'worldSel', view: 'fx', sel: '#wvWorld', setup: `${BOARD}; WV_BOARD_VIEW.sel = { t: 'node', id: 'n1' }; wvRenderBoard(); document.querySelectorAll('#wvCables g[data-cab]')[0].classList.add('sel')` },
+  { name: 'chain', view: 'fx', sel: '#wvFchain', setup: `${BOARD}; wvRenderBoard()` },
+  { name: 'barCount', view: 'fx', sel: '#wvBcount', setup: `${BOARD}; wvRenderBoard()` },
+  { name: 'inspBoard', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; WV.mods = [{ src: 'lfo1', dst: 'board:n1:wet', amt: 0.3, curve: 'lin', via: null, off: false }]; WV_BOARD_VIEW.sel = null; wvRenderBoard()`, after: 'WV.mods = []' },
+  { name: 'inspFx', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; ${NO_RACK}; WV.mods = [{ src: 'lfo1', dst: 'board:n1:wet', amt: 0.3, curve: 'lin', via: null, off: false }]; wvBoardSelect({ t: 'node', id: 'n1' }); wvRenderInspector()`, after: `WV.mods = []; ${RACK}` },
+  { name: 'inspFxOff', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; ${NO_RACK}; wvBoardSelect({ t: 'node', id: 'n8' }); wvRenderInspector()`, after: RACK },
+  { name: 'inspSound', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; ${NO_RACK}; wvBoardSelect({ t: 'node', id: 'n7' }); wvRenderInspector()`, after: RACK },
+  { name: 'inspIn', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; wvBoardSelect({ t: 'node', id: 'invoice' }); wvRenderInspector()` },
+  { name: 'inspSend', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; wvBoardSelect({ t: 'node', id: 'inA' }); wvRenderInspector()` },
+  { name: 'inspOut', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; wvBoardSelect({ t: 'node', id: 'out' }); wvRenderInspector()` },
+  { name: 'inspSplit', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; wvBoardSelect({ t: 'node', id: 'n2' }); wvRenderInspector()` },
+  { name: 'inspMix', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; wvBoardSelect({ t: 'node', id: 'n3' }); wvRenderInspector()` },
+  { name: 'inspDrywet', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; wvBoardSelect({ t: 'node', id: 'n4' }); wvRenderInspector()` },
+  { name: 'inspGain', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; wvBoardSelect({ t: 'node', id: 'n5' }); wvRenderInspector()` },
+  { name: 'inspCable', view: 'fx', sel: '#wvFinsp', setup: `${BOARD}; wvBoardSelect({ t: 'cab', i: 0 }); wvRenderInspector()` },
+  // The right-click menu: its first column, and a second open beside it.
+  { name: 'cmenu', view: 'fx', sel: '#wvCmenu', setup: `(${SHOW_MENUS})(); ${BOARD}; wvRenderBoard(); { const r = document.querySelector('#wvFwell').getBoundingClientRect(); wvOpenCmenu({ clientX: r.left + 400, clientY: r.top + 200 }, 'ADD HERE', wvAddItems(() => {})); const it = document.querySelector('#wvCmenu .cm-it'); it.dispatchEvent(new MouseEvent('mouseenter')); }`, after: 'wvCloseMenus()' },
+  { name: 'cmenuNode', view: 'fx', sel: '#wvCmenu', setup: `(${SHOW_MENUS})(); ${BOARD}; wvRenderBoard(); { const r = document.querySelector('[data-node="n1"]').getBoundingClientRect(); wvBoardMenu({ preventDefault() {}, target: document.querySelector('[data-node="n1"] .fh'), clientX: r.left + 20, clientY: r.top + 20 }); }`, after: 'wvCloseMenus()' },
+  { name: 'note', view: 'fx', sel: '#wvFwell .wv-fstat', setup: `${BOARD}; wvRenderBoard(); wvBoardNote('Patched Voice → Echo'); document.querySelector('#wvFnote').style.transition = 'none'`, after: `document.querySelector('#wvFnote').classList.remove('on'); document.querySelector('#wvFhint').style.display = ''` },
+  { name: 'noteBad', view: 'fx', sel: '#wvFwell .wv-fstat', setup: `${BOARD}; wvRenderBoard(); wvBoardNote('Refused: that would loop Echo back into itself', true); document.querySelector('#wvFnote').style.transition = 'none'`, after: `document.querySelector('#wvFnote').classList.remove('on'); document.querySelector('#wvFhint').style.display = ''` },
 ];
 
 const browser = await chromium.launch();
@@ -191,6 +229,11 @@ try {
           if (p.after) await tab.evaluate(p.after);
         }
         face = { views, parts, theme: t.id, captured: new Date().toISOString() };
+        // The page's own tables for the board (theme-free), once.
+        if (t.id === 'default') {
+          const board = await tab.evaluate(() => ({ face: WV_FX_FACE, routing: WV_ROUTING, kindParams: WV_KIND_PARAMS, inputs: WV_INPUTS, abbr: WV_ABBR, catHue: WV_CAT_HUE, catOrder: WV_CAT_ORDER, grid: WV_GRID }));
+          write(path.join(faces, 'wave-board-data.json.gz'), board);
+        }
       }
       await ctx.close();
     }

@@ -212,3 +212,6 @@ std::unique_ptr<WaveView> makeWaveFx (WaveCtx&, const juce::var& captured);
 void setCreateTableMenu (WaveView&, std::function<void (juce::Rectangle<float> near, int osc)>);
 // Let the Matrix's row heads start a source's drag onto a control.
 void setMatrixMapping (WaveView&, std::function<void (const juce::String& src, const juce::MouseEvent&)>);
+// The FX view's sources strip starts a source's drag onto a control; its menus follow the pointer.
+void setBoardMapping (WaveView&, std::function<void (const juce::String& src, const juce::MouseEvent&)>);
+void boardMoved (WaveView&, const juce::MouseEvent&);

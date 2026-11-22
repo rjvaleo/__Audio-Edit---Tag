@@ -49,7 +49,7 @@ target_sources(idMLab PRIVATE Source/Main.cpp Source/Host.cpp Source/Canvas.cpp 
   Source/Canvas2D.cpp Source/WaveDraw.cpp Source/WaveFace.cpp Source/AtmosFace.cpp
   Source/EditFace.cpp Source/SoundFace.cpp Source/EditBench.cpp
   Source/Stamp.cpp Source/WaveMenus.cpp Source/WaveCreate.cpp Source/WaveMatrix.cpp Source/WaveBoard.cpp
-  Source/WaveKit.cpp Source/WaveTiles.cpp)
+  Source/WaveKit.cpp Source/WaveTiles.cpp Source/WaveBoardKit.cpp Source/WaveBoardPics.cpp)
 target_compile_definitions(idMLab PRIVATE
   JUCE_WEB_BROWSER=0
   JUCE_USE_CURL=0

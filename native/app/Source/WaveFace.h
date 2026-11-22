@@ -70,6 +70,7 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void mouseMove (const juce::MouseEvent&) override;
 
 private:
     // One of the page's canvases, drawn into a cache of its own and drawn

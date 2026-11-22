@@ -26,6 +26,12 @@ struct Stamp
     std::function<bool (const juce::var& node)> skip;
     // Draw a node with another node's look (lit or not), by index.
     std::function<const juce::var* (const juce::var& node)> look;
+    // A node's fill colour instead of its captured one (its background and glow).
+    std::function<bool (const juce::var& node, juce::Colour& fill)> fill;
+    // A node drawn fainter (its opacity times this).
+    std::function<float (const juce::var& node)> alpha;
+    // A look given by `look` applies to that node alone, not what is inside it.
+    bool shallowLook = false;
     // Called after a node is drawn, in its own place (for what the face
     // draws inside it: a canvas, a knob).
     std::function<void (juce::Graphics&, const juce::var& node, juce::Rectangle<float> r)> after;
