@@ -118,3 +118,72 @@ fn atmosphere_through_the_c_interface() {
         na_free(a);
     }
 }
+
+/// MGL's `/api/wave` routes through `na_wave_api`, as the Wave face asks them.
+#[test]
+fn wave_answers_mgls_routes_through_the_c_interface() {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("capi-wave-api");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("tables")).unwrap();
+    let call = |a: *mut NaApp, id: u32, method: &str, path: &str, body: Option<&str>| -> (i32, serde_json::Value) {
+        let (m, p) = (CString::new(method).unwrap(), CString::new(path).unwrap());
+        let b = body.map(|b| CString::new(b).unwrap());
+        let bp = b.as_ref().map_or(std::ptr::null(), |b| b.as_ptr());
+        let mut status = 0;
+        let mut buf = vec![0u8; 1 << 20];
+        let n = unsafe { na_wave_api(a, id, m.as_ptr(), p.as_ptr(), bp, buf.as_mut_ptr() as *mut std::ffi::c_char, buf.len() as u32, &mut status) };
+        assert!((n as usize) < buf.len());
+        let text = CStr::from_bytes_until_nul(&buf).unwrap().to_str().unwrap();
+        assert_eq!(text.len(), n as usize);
+        (status, serde_json::from_str(text).unwrap())
+    };
+    unsafe {
+        let a = na_new(48_000.0, 4096);
+        let home = CString::new(dir.to_str().unwrap()).unwrap();
+        let none = CString::new("").unwrap();
+        assert_eq!(na_set_wave_home(a, home.as_ptr(), none.as_ptr()), 0);
+        let tables = CString::new(dir.join("tables").to_str().unwrap()).unwrap();
+        assert_eq!(na_table_dirs(a, tables.as_ptr()), 0);
+        let (wa, ou) = (CString::new("wave").unwrap(), CString::new("output").unwrap());
+        let wave = na_add(a, wa.as_ptr(), 0.0, 0.0) as u32;
+        let out = na_add(a, ou.as_ptr(), 1900.0, 0.0) as u32;
+        assert_eq!(na_connect(a, wave, 0, out, 0), 0);
+        na_settle(a);
+
+        let (st, patch) = call(a, wave, "GET", "/api/wave/patch", None);
+        assert_eq!(st, 200);
+        assert_eq!(patch["board"]["name"], "Master chain");
+        let (st, got) = call(a, wave, "POST", "/api/wave/param", Some(r#"{"key":"filt0.cut","value":0.5}"#));
+        assert_eq!((st, &got["ok"], &got["key"]), (200, &serde_json::json!(true), &serde_json::json!("filt0.cut")));
+        assert_eq!(call(a, wave, "POST", "/api/wave/param", Some("{}")), (400, serde_json::json!({"error": "no key given"})));
+        assert_eq!(call(a, wave, "POST", "/api/wave/param", None).0, 400, "no body");
+        assert_eq!(call(a, wave, "GET", "/api/wave/nope", None).0, 404);
+
+        assert_eq!(call(a, wave, "POST", "/api/wave/note", Some(r#"{"note":60,"vel":0.8}"#)).0, 200);
+        render(a, 8_192);
+        let (st, state) = call(a, wave, "GET", "/api/wave/state", None);
+        assert_eq!(st, 200);
+        assert_eq!(state["device"], true);
+        assert_eq!(state["voices"][0]["note"], 60);
+        assert!(state["peak"][0].as_f64().unwrap() > 0.01);
+
+        // A preset saved into the app's home.
+        let (st, _) = call(a, wave, "POST", "/api/wave/presets", Some(r#"{"name":"Capi","tags":["T"]}"#));
+        assert_eq!(st, 200);
+        assert!(dir.join("presets/wave/Capi.json").is_file());
+        assert_eq!(call(a, wave, "GET", "/api/wave/presets", None).1[0]["name"], "Capi");
+
+        // A reply too long for the room given is kept whole.
+        let (m, p) = (CString::new("GET").unwrap(), CString::new("/api/wave/fx").unwrap());
+        let mut small = [0u8; 16];
+        let mut status = 0;
+        let need = na_wave_api(a, wave, m.as_ptr(), p.as_ptr(), std::ptr::null(), small.as_mut_ptr() as *mut std::ffi::c_char, 16, &mut status);
+        assert_eq!(status, 200);
+        assert!(need > 16);
+        assert_eq!(small[15], 0, "cut short, and ended");
+        let whole = text(|b, c| na_wave_reply(a, b, c));
+        assert_eq!(whole.len(), need as usize);
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&whole).unwrap().as_array().unwrap().len(), 97);
+        na_free(a);
+    }
+}

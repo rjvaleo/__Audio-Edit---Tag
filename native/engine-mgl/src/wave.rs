@@ -2,7 +2,8 @@
 
 use engine_core::{EventKind, Io, Kind, Module, NoteEvent, NoteKind, Thing};
 use std::sync::Arc;
-use wave::{BoardPlan, ParamId, PatchState, Synth, Wavetable};
+use wave::{BoardPlan, ParamId, PatchState, Synth, Telemetry, Wavetable};
+use crate::wave_view::{WaveView, WAVE_POINTS};
 
 /// What the synth is handed while it plays, built on the app's thread
 /// (`Controller::give`, slot 0). Like a note or a knob, each takes effect on
@@ -44,6 +45,28 @@ pub struct Wave {
     used: usize,
     /// A board cut short by the one after it, on its way back to the app.
     cut_short: Option<Box<BoardPlan>>,
+    /// Where what it shows is written, if it was given one.
+    view: Option<Arc<WaveView>>,
+    shown: Shown,
+}
+
+/// The view's side on the audio thread: the telemetry filled in place, the
+/// last samples out (a ring, the oldest at `at`), and samples since the last
+/// snapshot. Made off the audio thread; nothing in it grows.
+struct Shown {
+    tele: Box<Telemetry>,
+    ring: [f32; WAVE_POINTS],
+    at: usize,
+    since: usize,
+    every: usize,
+}
+
+impl Shown {
+    fn new(rate: f32) -> Shown {
+        // A snapshot every 5 ms of audio.
+        let every = ((rate / 200.0) as usize).max(Wave::GRID);
+        Shown { tele: Box::default(), ring: [0.0; WAVE_POINTS], at: 0, since: every, every }
+    }
 }
 
 impl Wave {
@@ -77,6 +100,31 @@ impl Wave {
             r: [0.0; Self::GRID],
             used: Self::GRID,
             cut_short: None,
+            view: None,
+            shown: Shown::new(rate),
+        }
+    }
+
+    /// Write what it shows (the synth's telemetry and its last samples out)
+    /// into `view` every 5 ms of audio, for the face to read
+    /// ([`WaveView::read`]).
+    pub fn with_view(mut self, view: Arc<WaveView>) -> Wave {
+        self.view = Some(view);
+        self
+    }
+
+    fn show(&mut self, l: &[f32], r: &[f32]) {
+        let Some(view) = &self.view else { return };
+        let s = &mut self.shown;
+        for (a, b) in l.iter().zip(r) {
+            s.ring[s.at] = 0.5 * (a + b);
+            s.at = (s.at + 1) % WAVE_POINTS;
+        }
+        s.since += l.len();
+        if s.since >= s.every {
+            s.since = 0;
+            self.synth.telemetry(&mut s.tele);
+            view.write(&s.tele, &s.ring, s.at);
         }
     }
 
@@ -119,8 +167,10 @@ impl Module for Wave {
         let seed = self.seed;
         let tables: [Option<Arc<Wavetable>>; 3] = std::array::from_fn(|i| self.synth.table(i).cloned());
         let bank: [Option<Arc<Wavetable>>; wave::choice::BANK] = std::array::from_fn(|i| self.synth.bank_table(i).cloned());
+        let view = self.view.clone();
         Some(Box::new(move |rate, _| {
             let mut module = Wave::new(rate).patch(state);
+            module.view = view.clone();
             if let Some(seed) = seed { module = module.seed(seed); }
             for (i, table) in tables.iter().enumerate() {
                 if let Some(table) = table { module.synth.set_table(i, Arc::clone(table)); }
@@ -135,6 +185,9 @@ impl Module for Wave {
         if let Some(from) = (from as &dyn std::any::Any).downcast_ref::<Wave>() {
             self.preset.inherit(&from.preset);
             self.synth.adopt(from.synth.state());
+            if self.view.is_none() {
+                self.view = from.view.clone();
+            }
         }
     }
     fn inputs(&self) -> Vec<Kind> {
@@ -233,6 +286,7 @@ impl Module for Wave {
             self.used += run;
             at += run;
         }
+        self.show(l, r);
         // Notes after this piece's last line are first heard from the next.
         while next < notes.len() {
             self.play(&notes[next]);

@@ -19,14 +19,25 @@ pub fn num(v: f32) -> Value {
     serde_json::Number::from_f64(x).map_or(Value::from(0), Value::Number)
 }
 
-fn num_of(v: Option<&Value>) -> Option<f64> {
+/// A number as MGL's Wave routes take one (`wave_synth.rs` `num_of`): true
+/// and false are 1 and 0.
+pub fn num_of(v: Option<&Value>) -> Option<f64> {
     match v? {
         Value::Number(n) => n.as_f64().filter(|x| x.is_finite()),
+        Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
         _ => None,
     }
 }
 
-fn mod_json(m: &Mod) -> Value {
+/// A number and nothing else, as MGL's board reader takes one.
+fn number(v: Option<&Value>) -> Option<f64> {
+    match v? {
+        Value::Number(n) => n.as_f64(),
+        _ => None,
+    }
+}
+
+pub fn mod_json(m: &Mod) -> Value {
     let mut o = Map::new();
     o.insert("src".into(), m.src.as_str().into());
     o.insert("dst".into(), m.dst.as_str().into());
@@ -38,7 +49,7 @@ fn mod_json(m: &Mod) -> Value {
 }
 
 /// One key's value as the patch holds it.
-fn param_json(p: &Patch, key: &str) -> Value {
+pub fn param_json(p: &Patch, key: &str) -> Value {
     if let Some(x) = p.get_num(key) {
         return num(x);
     }
@@ -84,7 +95,7 @@ pub fn apply_param(p: &mut Patch, key: &str, v: &Value) -> Result<(), String> {
             .ok_or_else(|| format!("{key} takes [[x, y], …]"))?
             .iter()
             .map(|pt| match pt.as_array().map(Vec::as_slice) {
-                Some([x, y]) => Some((num_of(Some(x))? as f32, num_of(Some(y))? as f32)),
+                Some([x, y]) => Some((number(Some(x))? as f32, number(Some(y))? as f32)),
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()
@@ -127,7 +138,7 @@ pub fn parse_mods(v: &Value) -> Result<Vec<Mod>, String> {
         .collect()
 }
 
-fn parse_tags(v: Option<&Value>) -> Vec<String> {
+pub fn parse_tags(v: Option<&Value>) -> Vec<String> {
     match v {
         Some(Value::Array(a)) => a.iter().filter_map(Value::as_str).map(str::trim).filter(|t| !t.is_empty()).map(String::from).collect(),
         Some(Value::String(s)) => s.split(['·', ',']).map(str::trim).filter(|t| !t.is_empty()).map(String::from).collect(),
@@ -232,7 +243,7 @@ pub fn board_from_json(v: &Value) -> Result<Board, BoardError> {
     let mut nodes = Vec::new();
     for (i, n) in v.get("nodes").and_then(Value::as_array).ok_or_else(|| bad("nodes must be a list".into()))?.iter().enumerate() {
         let s = |k: &str| n.get(k).and_then(Value::as_str);
-        let f = |k: &str| num_of(n.get(k)).unwrap_or(0.0) as f32;
+        let f = |k: &str| number(n.get(k)).unwrap_or(0.0) as f32;
         let (Some(id), Some(kind)) = (s("id"), s("kind")) else {
             return Err(bad(format!("node {i}: needs an id and a kind")));
         };
@@ -246,7 +257,7 @@ pub fn board_from_json(v: &Value) -> Result<Board, BoardError> {
         if let Some(params) = n.get("params") {
             let params = params.as_object().ok_or_else(|| bad(format!("node {id:?}: params must be an object")))?;
             for (k, x) in params {
-                let Some(x) = num_of(Some(x)) else { return Err(bad(format!("node {id:?}: {k} must be a number"))) };
+                let Some(x) = number(Some(x)) else { return Err(bad(format!("node {id:?}: {k} must be a number"))) };
                 node.params.push((k.clone(), x as f32));
             }
         }

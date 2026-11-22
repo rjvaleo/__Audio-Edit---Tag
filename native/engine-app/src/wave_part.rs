@@ -17,7 +17,7 @@
 
 use crate::{AppError, Control};
 use engine_core::{Controller, EventKind, ModuleId};
-use engine_mgl::{Wave, WaveThing};
+use engine_mgl::{Wave, WaveThing, WaveView};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 use wave::choice::{choice_id, C_OSC_STRIDE, C_TABLE};
 use wave::patch::Kind as KeyKind;
 use wave::{
-    builtin_frames, BoardPlan, FilterRoute, FilterType, FxMode, LfoMode, LfoWave, Patch, PatchState, Route, VoiceMode, WarpMode,
+    builtin_frames, Board, BoardPlan, FilterRoute, FilterType, FxMode, LfoMode, LfoWave, Patch, PatchState, Route, VoiceMode, WarpMode,
     Wavetable, BUILTIN_NAMES, FRAME_LEN, KEYS, MAX_FRAMES, NUM_PARAMS, STR_KEYS,
 };
 
@@ -40,12 +40,12 @@ pub fn set_table_dirs(dirs: Vec<PathBuf>) {
     }
 }
 
-fn table_dirs() -> Vec<PathBuf> {
+pub(crate) fn table_dirs() -> Vec<PathBuf> {
     TABLE_DIRS.lock().map(|d| d.clone()).unwrap_or_default()
 }
 
 /// A name as MGL makes it into a file name (`capture::safe`).
-fn safe(name: &str) -> String {
+pub(crate) fn safe(name: &str) -> String {
     name.chars()
         .map(|c| match c {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
@@ -103,7 +103,7 @@ pub fn read_table_wav(b: &[u8]) -> Option<Vec<Vec<f32>>> {
     Some(samples.chunks_exact(len).take(MAX_FRAMES).map(<[f32]>::to_vec).collect())
 }
 
-fn saved_table(dir: &Path, name: &str) -> Option<Vec<Vec<f32>>> {
+pub(crate) fn saved_table(dir: &Path, name: &str) -> Option<Vec<Vec<f32>>> {
     let file = safe(name);
     if file.is_empty() || file.starts_with('.') {
         return None;
@@ -183,23 +183,31 @@ pub fn controls() -> Vec<Control> {
 }
 
 /// Whether a row (switched on) steps a table, so the bank is wanted.
-fn wants_bank(p: &Patch) -> bool {
+pub(crate) fn wants_bank(p: &Patch) -> bool {
     p.mods.iter().any(|m| m.on && choice_id(&m.dst).is_some_and(|c| c.index() % C_OSC_STRIDE == C_TABLE && c.index() < 3 * C_OSC_STRIDE))
 }
 
 /// Tables built for every Wave on the canvas, by name.
+/// A finished build: its name, the number of the build, and the table (None
+/// for a name found nowhere).
+type Built = (String, u64, Option<Arc<Wavetable>>);
+
 pub(crate) struct Tables {
     built: HashMap<String, Arc<Wavetable>>,
-    building: HashSet<String>,
+    /// Builds in flight, by name, with the number of each. A build finishing
+    /// after a newer one of the same name started is thrown away, as MGL's
+    /// is (a table stored again while its old frames were being built).
+    building: HashMap<String, u64>,
+    serial: u64,
     missing: HashSet<String>,
-    tx: Sender<(String, Option<Arc<Wavetable>>)>,
-    rx: Receiver<(String, Option<Arc<Wavetable>>)>,
+    tx: Sender<Built>,
+    rx: Receiver<Built>,
 }
 
 impl Tables {
     pub(crate) fn new() -> Tables {
         let (tx, rx) = channel();
-        Tables { built: HashMap::new(), building: HashSet::new(), missing: HashSet::new(), tx, rx }
+        Tables { built: HashMap::new(), building: HashMap::new(), serial: 0, missing: HashSet::new(), tx, rx }
     }
 
     /// The table called `name`, if it is built; if not, its build is started.
@@ -207,21 +215,40 @@ impl Tables {
         if let Some(t) = self.built.get(name) {
             return Some(Arc::clone(t));
         }
-        if !self.building.contains(name) && !self.missing.contains(name) {
-            self.building.insert(name.to_string());
-            let (tx, wanted) = (self.tx.clone(), name.to_string());
-            let job = move || {
-                let table = frames_for(&wanted).map(|f| Arc::new(Wavetable::from_frames(&f)));
-                let _ = tx.send((wanted, table));
-            };
-            if std::thread::Builder::new().name("wave-table".into()).spawn(job).is_err() {
-                self.building.remove(name);
-            }
+        if !self.building.contains_key(name) && !self.missing.contains(name) {
+            self.build(name, None);
         }
         None
     }
 
-    fn arrived(&mut self, (name, table): (String, Option<Arc<Wavetable>>)) {
+    /// Build `name` on a thread of its own, from `frames` or from wherever
+    /// that name's frames are.
+    fn build(&mut self, name: &str, frames: Option<Vec<Vec<f32>>>) {
+        self.serial += 1;
+        let serial = self.serial;
+        self.building.insert(name.to_string(), serial);
+        let (tx, wanted) = (self.tx.clone(), name.to_string());
+        let job = move || {
+            let table = frames.or_else(|| frames_for(&wanted)).map(|f| Arc::new(Wavetable::from_frames(&f)));
+            let _ = tx.send((wanted, serial, table));
+        };
+        if std::thread::Builder::new().name("wave-table".into()).spawn(job).is_err() {
+            self.building.remove(name);
+        }
+    }
+
+    /// `name` has new frames (a table stored again): the old build is let
+    /// go of and the new one built, to be handed to every Wave playing it.
+    pub(crate) fn rebuild(&mut self, name: &str, frames: Vec<Vec<f32>>) {
+        self.built.remove(name);
+        self.missing.remove(name);
+        self.build(name, Some(frames));
+    }
+
+    fn arrived(&mut self, (name, serial, table): Built) {
+        if self.building.get(&name) != Some(&serial) {
+            return;
+        }
         self.building.remove(&name);
         match table {
             Some(t) => {
@@ -271,6 +298,15 @@ pub struct WavePart {
     /// What each oscillator, and each place in the bank, was last given.
     given: [Option<Arc<Wavetable>>; 3],
     bank: [Option<Arc<Wavetable>>; BUILTIN_NAMES.len()],
+    /// What the synth shows, written by it as it plays.
+    pub(crate) view: Arc<WaveView>,
+    /// The board last handed to the synth, so a change of controls alone
+    /// goes as live writes that keep the effects' tails (MGL's `set_board`).
+    pub(crate) running: Option<Board>,
+    /// The tables a live choice plays, not stored (MGL's `playing`).
+    pub(crate) live_tables: Option<[String; 3]>,
+    /// The view's count as last read, and when it last moved.
+    pub(crate) seen: (u32, Option<std::time::Instant>),
 }
 
 fn same(a: &Option<Arc<Wavetable>>, b: &Arc<Wavetable>) -> bool {
@@ -279,7 +315,15 @@ fn same(a: &Option<Arc<Wavetable>>, b: &Arc<Wavetable>) -> bool {
 
 impl WavePart {
     pub fn new(patch: Patch) -> WavePart {
-        WavePart { patch, given: Default::default(), bank: Default::default() }
+        WavePart {
+            patch,
+            given: Default::default(),
+            bank: Default::default(),
+            view: WaveView::new(),
+            running: None,
+            live_tables: None,
+            seen: (0, None),
+        }
     }
 
     pub fn patch(&self) -> &Patch {
@@ -288,17 +332,57 @@ impl WavePart {
 
     /// The engine module, playing this patch (its tables and board follow).
     pub fn module(&self, rate: f32) -> Wave {
-        Wave::new(rate).patch(PatchState::new(&self.patch))
+        Wave::new(rate).patch(PatchState::new(&self.patch)).with_view(Arc::clone(&self.view))
     }
 
     /// Compile the patch's board for `rate` and hand it to the synth. A board
     /// that can't be compiled leaves the synth's as it was.
-    pub(crate) fn hand_over_board(&self, ctl: &mut Controller, module: ModuleId, rate: f32) {
-        if let Some(board) = &self.patch.board {
-            if let Ok(plan) = BoardPlan::compile(board, rate) {
+    pub(crate) fn hand_over_board(&mut self, ctl: &mut Controller, module: ModuleId, rate: f32) {
+        if let Some(board) = self.patch.board.clone() {
+            let _ = self.give_board(ctl, module, &board, rate);
+        }
+    }
+
+    /// Hand `board` to the synth as MGL's `WaveShared::set_board` does: the
+    /// same nodes and cables as the running one, and only what changed goes,
+    /// as live writes (the effects keep their tails); anything else is
+    /// compiled (with the sounds its nodes name, decoded first) and swapped
+    /// in. A board that can't be compiled is refused and the running one
+    /// kept.
+    pub(crate) fn give_board(&mut self, ctl: &mut Controller, module: ModuleId, board: &Board, rate: f32) -> Result<(), wave::BoardError> {
+        match self.running.as_ref().filter(|r| r.same_structure(board)) {
+            Some(old) => {
+                for (i, (a, b)) in old.nodes.iter().zip(&board.nodes).enumerate() {
+                    if a.on != b.on {
+                        let _ = ctl.send(module, EventKind::Param { index: Wave::board_switch(i), value: if b.on { 1.0 } else { 0.0 } });
+                    }
+                    let Some(kind) = wave::board::Kind::parse(&b.kind) else { continue };
+                    for (j, spec) in kind.params().iter().enumerate() {
+                        let v = b.param(spec.key).unwrap_or(spec.default);
+                        if a.param(spec.key).unwrap_or(spec.default) != v && kind.structural() != Some(j) {
+                            let _ = ctl.send(module, EventKind::Param { index: Wave::board_knob(i, j), value: v });
+                        }
+                    }
+                }
+            }
+            None => {
+                crate::wave_api::load_sounds(board);
+                let plan = BoardPlan::compile_with(board, rate, &crate::wave_api::board_sound)?;
                 let _ = ctl.give(module, 0, Box::new(WaveThing::Board(Box::new(plan))));
             }
         }
+        self.running = Some(board.clone());
+        Ok(())
+    }
+
+    /// The tables the oscillators play: the patch's, or a live choice's.
+    pub(crate) fn playing(&self) -> &[String; 3] {
+        self.live_tables.as_ref().unwrap_or(&self.patch.tables)
+    }
+
+    pub(crate) fn patch_mut(&mut self) -> &mut Patch {
+        self.live_tables = None;
+        &mut self.patch
     }
 
     /// Control `index`: a number key's value, or a string key's option.
@@ -318,6 +402,7 @@ impl WavePart {
         if !self.patch.set_str(key, pick) {
             return Err(AppError::NoSuchControl(index));
         }
+        self.live_tables = None;
         ctl.give(module, 0, Box::new(WaveThing::Patch(PatchState::new(&self.patch))))?;
         Ok(())
     }
@@ -328,6 +413,7 @@ impl WavePart {
         let mut next = self.patch.clone();
         crate::wave_patch::apply_param(&mut next, key, value).map_err(AppError::BadFile)?;
         self.patch = next;
+        self.live_tables = None;
         if let Some(id) = wave::param_id(key) {
             ctl.send(module, EventKind::Param { index: id.0 as u32, value: self.patch.values[id.index()] })?;
         } else {
@@ -339,8 +425,11 @@ impl WavePart {
     /// A whole new patch: compiled and handed over, its board too.
     pub(crate) fn adopt(&mut self, ctl: &mut Controller, module: ModuleId, patch: Patch, rate: f32) {
         self.patch = patch;
-        let _ = ctl.give(module, 0, Box::new(WaveThing::Patch(PatchState::new(&self.patch))));
+        self.live_tables = None;
+        // The board first, as MGL hands them over: the patch's board rows
+        // are compiled against its nodes.
         self.hand_over_board(ctl, module, rate);
+        let _ = ctl.give(module, 0, Box::new(WaveThing::Patch(PatchState::new(&self.patch))));
     }
 
     /// The face's values: every number key, then each string key's option
@@ -356,7 +445,7 @@ impl WavePart {
 
     /// Every table this Wave plays or wants.
     pub(crate) fn wanted(&self) -> Vec<String> {
-        let mut names = self.patch.tables.to_vec();
+        let mut names = self.playing().to_vec();
         if wants_bank(&self.patch) {
             names.extend(BUILTIN_NAMES.iter().map(|n| n.to_string()));
         }
@@ -367,7 +456,7 @@ impl WavePart {
     /// building what isn't.
     pub(crate) fn sync(&mut self, ctl: &mut Controller, module: ModuleId, tables: &mut Tables) {
         for osc in 0..3 {
-            if let Some(t) = tables.get(&self.patch.tables[osc]) {
+            if let Some(t) = tables.get(&self.playing()[osc].clone()) {
                 if !same(&self.given[osc], &t) && ctl.give(module, 0, Box::new(WaveThing::Table(osc, Arc::clone(&t)))).is_ok() {
                     self.given[osc] = Some(t);
                 }

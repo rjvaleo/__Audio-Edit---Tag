@@ -46,6 +46,18 @@ int32_t na_table_dirs (NaApp*, const char* paths);
 int32_t na_wave_set (NaApp*, uint32_t id, const char* key, const char* json);
 int32_t na_wave_wheel (NaApp*, uint32_t id, uint32_t which, float value);
 uint32_t na_table_frames (const char* name, float* out, uint32_t max);
+// Wave module id's side of MGL's /api/wave routes, as its server answers
+// them: method "GET"/"POST"/"DELETE", path with any query, body the JSON or
+// null. The JSON reply into buf; *status the HTTP status MGL would answer.
+// A reply too long for buf is kept whole: na_wave_reply gives it (asking
+// again would do a POST twice).
+uint32_t na_wave_api (NaApp*, uint32_t id, const char* method, const char* path, const char* body, char* buf, uint32_t cap, int32_t* status);
+uint32_t na_wave_reply (NaApp*, char* buf, uint32_t cap);
+// Wave's own folders: presets in <home>/presets/wave, board presets in
+// <home>/presets/wave-boards; mgl is MGL's data/wave, read only (null for
+// MGL's own on this machine, "" for none). Tables go in the first
+// na_table_dirs folder.
+int32_t na_set_wave_home (NaApp*, const char* home, const char* mgl);
 uint64_t na_bad_blocks (NaApp*);
 
 // Atmosphere: its state by the page's own keys (knob ids at raw values,

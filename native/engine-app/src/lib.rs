@@ -28,6 +28,8 @@ pub mod sound_part;
 mod sound_link;
 pub mod wave_patch;
 mod wave_part;
+// MGL's /api/wave routes, answered for a Wave on the canvas.
+pub mod wave_api;
 
 use engine_core::{engine, port, AudioEngine, Config, Controller, EventKind, Kind, ModuleId, NoteEvent, NoteKind, PatchError};
 use serde_json::{Map, Value};
@@ -301,6 +303,8 @@ pub struct Session {
     view: Value,
     tables: Tables,
     max_block: usize,
+    /// Where Wave's presets go and MGL's are read (`wave_api`).
+    wave_dirs: wave_api::WaveDirs,
 }
 
 /// Canvas module `id`'s `k`th engine module.
@@ -326,6 +330,7 @@ impl Session {
             view: Value::Null,
             tables: Tables::new(),
             max_block,
+            wave_dirs: wave_api::WaveDirs::default(),
         };
         (session, audio)
     }
@@ -347,7 +352,7 @@ impl Session {
 
     fn add_as(&mut self, id: u32, kind_id: &str, x: f32, y: f32, saved: Option<&Value>) -> Result<(), AppError> {
         let info = kind(kind_id).ok_or_else(|| AppError::NoSuchKind(kind_id.into()))?;
-        let part = match info.id {
+        let mut part = match info.id {
             "wave" => {
                 let mut patch = match saved.and_then(|s| s.get("wave")) {
                     Some(p) => wave_patch::patch_from_json(p, wave::Patch::default()).map_err(AppError::BadFile)?,
@@ -397,7 +402,7 @@ impl Session {
             _ => return Err(AppError::NoSuchKind(kind_id.into())),
         };
         self.ctl.commit()?;
-        if let Part::Wave(w) = &part {
+        if let Part::Wave(w) = &mut part {
             w.hand_over_board(&mut self.ctl, engine_id(id, 0), self.rate);
         }
         let hand = matches!(&part, Part::Sound(s) if s.is_open());

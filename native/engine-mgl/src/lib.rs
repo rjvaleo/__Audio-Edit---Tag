@@ -15,6 +15,7 @@ pub mod grain;
 pub mod sound;
 mod suite;
 mod wave;
+pub mod wave_view;
 
 pub use crate::atmos::{Atmos, AtmosState, AtmosView, Tuning};
 pub use crate::atmos_web::module::{AtmosWebModule, AtmosWebState};
@@ -28,3 +29,4 @@ pub use crate::sound::Document;
 pub use crate::edit_player::{EditPlayer, Transport};
 pub use crate::suite::{Suite, SuiteThing, SuiteState};
 pub use crate::wave::{Wave, WaveThing, WaveState};
+pub use crate::wave_view::{WaveView, WAVE_POINTS};

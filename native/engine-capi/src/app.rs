@@ -32,6 +32,8 @@ pub struct NaApp {
     audio: AudioEngine,
     /// Why the last call that failed did.
     error: String,
+    /// `na_wave_api`'s last reply, whole, for `na_wave_reply`.
+    reply: String,
 }
 
 fn app_code(e: &AppError) -> i32 {
@@ -106,7 +108,7 @@ unsafe fn give_text(s: &str, buf: *mut c_char, cap: u32) -> u32 {
 pub extern "C" fn na_new(rate: f32, max_block: u32) -> *mut NaApp {
     guarded(ptr::null_mut(), || {
         let (session, audio) = Session::new(rate, max_block.max(1) as usize);
-        Box::into_raw(Box::new(NaApp { session, audio, error: String::new() }))
+        Box::into_raw(Box::new(NaApp { session, audio, error: String::new(), reply: String::new() }))
     })
 }
 
@@ -619,3 +621,72 @@ pub unsafe extern "C" fn na_atmos_page(buf: *mut c_char, cap: u32) -> u32 {
 
 // The Sound and Edit modules (app/sound.rs).
 mod sound;
+
+/// Wave module `id`'s side of MGL's `/api/wave` routes, as its server
+/// answers them: `method` "GET", "POST" or "DELETE", `path` with any query
+/// ("/api/wave/table?name=X"), `body` the JSON sent, or null. Writes the JSON
+/// reply into `buf` as `snprintf` would and returns its whole length;
+/// `*status` gets the HTTP status MGL would answer (200, 400, 404, 500). A
+/// reply too long for `buf` is kept whole: `na_wave_reply` gives it without
+/// asking again (asking again would do a POST twice).
+///
+/// # Safety
+/// `a` came from `na_new`; `method` and `path` are C strings; `body` is a C
+/// string or null; `buf` has room for `cap` bytes, or is null; `status` is
+/// one int or null.
+#[no_mangle]
+pub unsafe extern "C" fn na_wave_api(
+    a: *mut NaApp,
+    id: u32,
+    method: *const c_char,
+    path: *const c_char,
+    body: *const c_char,
+    buf: *mut c_char,
+    cap: u32,
+    status: *mut i32,
+) -> u32 {
+    let (code, reply) = guarded((500, r#"{"error":"the engine panicked"}"#.to_string()), || match session(a) {
+        Some(s) => {
+            let r = s.wave_api(id, text(method).unwrap_or(""), text(path).unwrap_or(""), text(body));
+            (r.status as i32, r.body.to_string())
+        }
+        None => (500, r#"{"error":"no engine"}"#.to_string()),
+    });
+    if !status.is_null() {
+        *status = code;
+    }
+    let n = give_text(&reply, buf, cap);
+    if !a.is_null() {
+        *ptr::addr_of_mut!((*a).reply) = reply;
+    }
+    n
+}
+
+/// `na_wave_api`'s last reply, whole.
+///
+/// # Safety
+/// `a` came from `na_new`; `buf` has room for `cap` bytes, or is null.
+#[no_mangle]
+pub unsafe extern "C" fn na_wave_reply(a: *mut NaApp, buf: *mut c_char, cap: u32) -> u32 {
+    guarded(0, || if a.is_null() { 0 } else { give_text(&*ptr::addr_of!((*a).reply), buf, cap) })
+}
+
+/// Where Wave's own files go: `home` (the app's home; presets in
+/// `<home>/presets/wave`, board presets in `<home>/presets/wave-boards`), and
+/// `mgl`, MultiGrainLive's `data/wave`, read only (null for MGL's own folder
+/// on this machine, "" for none). Tables go in the first `na_table_dirs`
+/// folder.
+///
+/// # Safety
+/// `a` came from `na_new`; `home` and `mgl` are C strings or null.
+#[no_mangle]
+pub unsafe extern "C" fn na_set_wave_home(a: *mut NaApp, home: *const c_char, mgl: *const c_char) -> i32 {
+    guarded(-12, || {
+        let Some(s) = session(a) else { return NO_ENGINE };
+        let dir = |p: &str| Some(std::path::PathBuf::from(p)).filter(|_| !p.is_empty());
+        let home = text(home).and_then(dir);
+        let mgl = if mgl.is_null() { engine_app::wave_api::WaveDirs::default().mgl } else { text(mgl).and_then(dir) };
+        s.set_wave_dirs(home, mgl);
+        0
+    })
+}
