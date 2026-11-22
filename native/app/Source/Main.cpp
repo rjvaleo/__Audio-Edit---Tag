@@ -848,8 +848,16 @@ public:
             const double again = ms (draw);
             double move = 0;
             const int moves = 10;
+            WaveView::paintTimes().clear();
             for (int i = 0; i < moves; ++i)
                 move += ms ([&] { w.setKey ("osc0.pos", 0.3 + 0.02 * i); draw(); });
+            {
+                juce::String top;
+                for (auto& [n, t] : WaveView::paintTimes())
+                    if (t / moves > 0.8)
+                        top << n << " " << juce::String (t / moves, 1) << "  ";
+                std::printf ("knob move redraws: %s\n", top.toRawUTF8());
+            }
             double lens = 0;
             for (int i = 0; i < moves; ++i)
                 lens += ms ([&] { w.setKey ("filt0.cut", 0.4 + 0.02 * i); draw(); });
@@ -864,6 +872,157 @@ public:
                 w.paintEntireComponent (g, true);
             });
             std::printf ("{\"switch_click_ms\":%.1f,\"zoom_step_ms\":%.1f}\n", click / moves, zoom);
+            // ── Wave's views, every kind of control pressed or dragged as a hand would, the engine read back.
+            // Its tables and presets in a folder of the bench's own.
+            const auto benchHome = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("idmlab-wave-bench");
+            benchHome.deleteRecursively();
+            benchHome.getChildFile ("wave-tables").createDirectory();
+            na_table_dirs (a, (benchHome.getChildFile ("wave-tables").getFullPathName() + "\n").toRawUTF8());
+            na_set_wave_home (a, benchHome.getFullPathName().toRawUTF8(), "");
+            w.api = [a, id] (const juce::String& method, const juce::String& path, const juce::var& body, int& status) { return waveApi (a, id, method, path, body, status); };
+            int failures = 0;
+            auto check = [&] (const char* what, bool ok) {
+                std::printf ("  %-44s %s\n", what, ok ? "ok" : "FAILED");
+                failures += ok ? 0 : 1;
+            };
+            auto get = [&] (const juce::String& path) { int st = 0; return waveApi (a, id, "GET", path, {}, st); };
+            auto mouse = [&] (juce::Point<float> p, juce::ModifierKeys mods, int clicks = 1) {
+                const auto t = juce::Time::getCurrentTime();
+                return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p, mods, 0, 0, 0, 0, 0, &w, &w, t, p, t, clicks, false);
+            };
+            const auto left = juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier);
+            auto press = [&] (juce::Point<float> p) {
+                w.mouseDown (mouse (p, left));
+                w.mouseUp (mouse (p, {}));
+            };
+            auto dragFrom = [&] (juce::Point<float> p, juce::Point<float> d, int steps = 10) {
+                w.mouseDown (mouse (p, left));
+                for (int k = 1; k <= steps; ++k)
+                    w.mouseDrag (mouse (p + d * ((float) k / (float) steps), left));
+                w.mouseUp (mouse (p + d, {}));
+            };
+            auto timed = [&] (auto&& f) {
+                WaveView::paintTimes().clear();
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                f();
+                draw();
+                const double took = juce::Time::getMillisecondCounterHiRes() - t0;
+                juce::String top;
+                for (auto& [n, t] : WaveView::paintTimes())
+                    if (t > 4)
+                        top << n << " " << juce::String (t, 0) << "  ";
+                if (top.isNotEmpty())
+                    std::printf ("      (%s)\n", top.toRawUTF8());
+                return took;
+            };
+            std::printf ("wave views:\n");
+            // Play: More Sources' VEL dragged onto Filter 1's cutoff knob.
+            {
+                const auto vel = w.find ("play", "data-src=vel").getCentre(), cut = w.find ("play", "#wvCu0").getCentre();
+                dragFrom (vel, cut - vel);
+                const auto mods = get ("/api/wave/patch")["mods"];
+                bool has = false;
+                if (auto* m = mods.getArray())
+                    for (auto& r : *m)
+                        has = has || (r["src"].toString() == "vel" && r["dst"].toString() == "filt0.cut");
+                check ("play: a source dragged onto a control", has);
+            }
+            // The view tabs, once each view has been drawn (the app does that when idle).
+            w.warm();
+            draw();
+            for (const auto& v : { "create", "matrix", "fx", "play" })
+            {
+                const auto tab = w.find ("play", "data-v=" + juce::String (v)).getCentre();
+                const double took = timed ([&] { press (tab); });
+                std::printf ("  view %-8s %.1f ms\n", v, took);
+                check ((juce::String ("tab shows ") + v).toRawUTF8(), w.currentView() == v);
+            }
+            // Create: the Line tool, a stroke on the frame, the table stored.
+            {
+                press (w.find ("play", "data-v=create").getCentre());
+                press (w.find ("create", "data-tool=line").getCentre());
+                const auto r = w.find ("create", "#wvCWave");
+                const double took = timed ([&] { dragFrom (r.getRelativePoint (0.2f, 0.3f), { r.getWidth() * 0.5f, r.getHeight() * 0.4f }); });
+                const auto tables = get ("/api/wave/tables");
+                juce::ignoreUnused (tables);
+                bool edited = false;
+                if (auto* t = tables.getArray())
+                    for (auto& x : *t)
+                        edited = edited || x["name"].toString().contains ("(edited)");
+                check ("create: a stroke stores the table", edited);
+                std::printf ("  create stroke %.1f ms\n", took);
+                press (w.find ("create", "data-op=flip").getCentre());
+                check ("create: a process runs", true);
+            }
+            // Matrix: a click on a hole puts a pin in; a drag sets its amount.
+            {
+                press (w.find ("play", "data-v=matrix").getCentre());
+                const auto box = w.find ("matrix", "#wvMxPins");
+                const auto hole = juce::Point<float> (box.getX() + 92 + 12, box.getY() + 16 + 54 + 18 * 3 + 9);   // LFO 1 → A Position
+                const double took = timed ([&] { press (hole); });
+                auto mods = get ("/api/wave/patch")["mods"];
+                bool pin = false;
+                if (auto* m = mods.getArray())
+                    for (auto& r : *m)
+                        pin = pin || (r["src"].toString() == "lfo0" && r["dst"].toString() == "osc0.pos");
+                check ("matrix: a click puts a pin in", pin);
+                std::printf ("  matrix pin click %.1f ms\n", took);
+                dragFrom (hole, { 0, -40 });
+                mods = get ("/api/wave/patch")["mods"];
+                float amt = 0;
+                if (auto* m = mods.getArray())
+                    for (auto& r : *m)
+                        if (r["src"].toString() == "lfo0" && r["dst"].toString() == "osc0.pos")
+                            amt = (float) (double) r["amt"];
+                check ("matrix: dragging a pin sets its amount", amt > 0.5f);
+                press (w.find ("matrix", "data-m=rows").getCentre());
+                check ("matrix: rows", true);
+            }
+            // FX: a node's power, and a knob on it.
+            {
+                press (w.find ("play", "data-v=fx").getCentre());
+                const auto well = w.find ("fx", "#wvFwell");
+                const auto board = get ("/api/wave/board");
+                juce::var echo;
+                if (auto* ns = board["nodes"].getArray())
+                    for (auto& n : *ns)
+                        if (n["kind"].toString() == "fx:echo")
+                            echo = n;
+                if (echo.isObject())
+                {
+                    const auto at = well.getPosition() + juce::Point<float> ((float) (double) echo["x"], (float) (double) echo["y"]);
+                    const double took = timed ([&] { press (at + juce::Point<float> (134, 21)); });
+                    juce::var after;
+                    const auto b1 = get ("/api/wave/board");
+                    if (auto* ns = b1["nodes"].getArray())
+                        for (auto& n : *ns)
+                            if (n["id"] == echo["id"])
+                                after = n;
+                    check ("fx: a node's power", (after["on"].isBool() && !(bool) after["on"]) || (after["on"].isInt() && (int) after["on"] == 0));
+                    if (!(after["on"].isBool() && !(bool) after["on"]))
+                        std::printf ("    (echo at %s, on %s)\n", juce::JSON::toString (echo["x"]).toRawUTF8(), juce::JSON::toString (after["on"]).toRawUTF8());
+                    std::printf ("  fx power click %.1f ms\n", took);
+                    const float before = (float) (double) echo["params"]["delayMs"];
+                    const double km = timed ([&] { dragFrom (at + juce::Point<float> (31, 96), { 0, -30 }, 6); });
+                    float now = 0;
+                    const auto b2 = get ("/api/wave/board");
+                    if (auto* ns = b2["nodes"].getArray())
+                        for (auto& n : *ns)
+                            if (n["id"] == echo["id"])
+                                now = (float) (double) n["params"]["delayMs"];
+                    check ("fx: a knob on a node", std::abs (now - before) > 1);
+                    std::printf ("  fx knob drag %.1f ms (6 steps)\n", km);
+                }
+                else
+                    check ("fx: the default board has an Echo", false);
+                press (w.find ("play", "data-v=play").getCentre());
+            }
+            for (auto* v : { "create", "matrix", "fx" })
+                if (auto* view = w.viewFor (v))
+                    for (auto& [name, t] : view->profile (2.0f))
+                        if (t > 5.0)
+                            std::printf ("  %s %-12s %.1f ms\n", v, name.toRawUTF8(), t);
+            std::printf ("{\"wave_views_failed\":%d}\n", failures);
             for (auto& [name, t] : w.profile (2.0f))
                 if (t > 1.0)
                     std::printf ("  %-12s %.1f ms\n", name.toRawUTF8(), t);

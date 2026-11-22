@@ -97,6 +97,40 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
     buildLayers();
     reload();
     startTimerHz (30);
+    // When idle, a view at a time.
+    juce::Timer::callAfterDelay (1500, [safe = juce::Component::SafePointer<WaveFace> (this)] {
+        if (safe != nullptr)
+            safe->warm (0);
+    });
+}
+
+void WaveFace::warm (int which)
+{
+    const float scale = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr ? (float) juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()->scale : 2.0f;
+    auto once = [this, scale] (WaveView& v) {
+        juce::Image img (juce::Image::ARGB, juce::jmax (1, (int) ((float) getWidth() * scale)), juce::jmax (1, (int) ((float) getHeight() * scale)), true);
+        juce::Graphics g (img);
+        g.addTransform (juce::AffineTransform::scale (scale));
+        const bool was = v.isVisible();
+        v.setVisible (true);
+        v.shown();
+        v.paintEntireComponent (g, true);
+        v.setVisible (was);
+    };
+    if (which < 0)
+    {
+        for (auto& v : views)
+            if (v != nullptr)
+                once (*v);
+        return;
+    }
+    if (which < 3 && views[which] != nullptr)
+        once (*views[which]);
+    if (which + 1 < 3)
+        juce::Timer::callAfterDelay (400, [safe = juce::Component::SafePointer<WaveFace> (this), which] {
+            if (safe != nullptr)
+                safe->warm (which + 1);
+        });
 }
 
 float WaveFace::posNow (int i) const
@@ -192,6 +226,12 @@ void WaveFace::poll()
             tiles->live();
         if (actLayer != nullptr)
             actLayer->repaint();
+        // The effects' knobs move with the rows aimed at them.
+        bool boardRows = false;
+        for (const auto& r : model.mods)
+            boardRows = boardRows || (!r.off && r.dst.startsWith ("board:"));
+        if (boardRows && fxRowLayer != nullptr)
+            fxRowLayer->repaint();
     }
     if (auto* v = viewFor (ctx.view))
         v->tick (nowT);
@@ -202,6 +242,14 @@ void WaveFace::poll()
         if (mapLayer != nullptr)
             mapLayer->repaint();
     }
+}
+
+juce::Rectangle<float> WaveFace::find (const juce::String& view, const juce::String& what)
+{
+    const auto& tree = view == "play" ? face::page ("wave")["tree"] : face::page ("wave-views")["views"][juce::Identifier (view)]["tree"];
+    if (auto* n = face::findNode (tree, what))
+        return rectOf ((*n)["rect"]);
+    return {};
 }
 
 WaveView* WaveFace::viewFor (const juce::String& v)
@@ -227,7 +275,14 @@ void WaveFace::showView (const juce::String& v)
     if (auto* w = viewFor (v))
         w->shown();
     else
-        reload();
+    {
+        // Back on Play: read the patch again, and draw again only if it changed elsewhere.
+        const auto now = readPatch ? readPatch() : juce::String();
+        if (now != lastPatch)
+            reload();
+        else
+            sync();
+    }
     if (textLayer != nullptr)
         textLayer->repaint();
 }
@@ -251,7 +306,8 @@ void WaveFace::index (const juce::var& n, int parent)
 
 void WaveFace::reload()
 {
-    const auto patch = juce::JSON::parse (readPatch ? readPatch() : juce::String());
+    lastPatch = readPatch ? readPatch() : juce::String();
+    const auto patch = juce::JSON::parse (lastPatch);
     if (auto* params = patch["params"].getDynamicObject())
         for (const auto& prop : params->getProperties())
             model.p[prop.name.toString()] = prop.value;
@@ -316,6 +372,7 @@ void WaveFace::repaintFor (const juce::String& key)
 // The readings and the lit switches, from the patch, as the page writes them.
 void WaveFace::sync()
 {
+    const auto textsBefore = texts;
     auto txt = [this] (const juce::String& id, const juce::String& t) {
         auto it = byId.find (id);
         if (it == byId.end())
@@ -419,8 +476,12 @@ void WaveFace::sync()
         if (auto it = before.find (node); it == before.end() || it->second != look)
             if (auto nt = chrome.nodes.find (node); nt != chrome.nodes.end())
                 chrome.redraw (rectOf (nt->second["rect"]));
+    // Only the readings that changed are written again.
     if (textLayer != nullptr)
-        textLayer->repaint();
+        for (const auto& [node, text] : texts)
+            if (auto it = textsBefore.find (node); it == textsBefore.end() || it->second != text)
+                if (auto nt = chrome.nodes.find (node); nt != chrome.nodes.end())
+                    textLayer->repaint (rectOf (nt->second["rect"]).getSmallestIntegerContainer().expanded (4));
 }
 
 // Each switch lit as the patch says: the page's own lit button's look on the
@@ -811,10 +872,11 @@ void WaveFace::buildLayers()
         fxRowBox = { (float) (double) part["root"][0], (float) (double) part["root"][1], (float) (double) part["root"][2], (float) (double) part["root"][3] };
         if (auto it = byId.find ("wvFxRow"); it != byId.end())
             chrome.skip.insert (it->second.i);
-        fxRowLayer = addLayer (fxRowBox.expanded (12), { "osc", "sub.", "noise.", "filt0." }, [this] (juce::Graphics& g) {
+        fxRowLayer = addLayer (fxRowBox.expanded (12), {}, [this] (juce::Graphics& g) {
             g.addTransform (juce::AffineTransform::translation (-(fxRowBox.getX() - 12), -(fxRowBox.getY() - 12)));
             drawFxRow (g, fxRowBox);
         });
+        fxRowLayer->name = "fxrow";
     }
     // A source being dragged onto a control, or lit for a moment: outlines over everything.
     mapLayer = addLayer (getLocalBounds().toFloat(), {}, [this] (juce::Graphics& g) {
@@ -853,8 +915,10 @@ void WaveFace::buildLayers()
         }
     });
     mapLayer->shared = true;
+    mapLayer->name = "mapping";
     // The readings, over everything.
     textLayer = addLayer (getLocalBounds().toFloat(), { "*" }, [this] (juce::Graphics& g) { drawTexts (g); });
+    textLayer->name = "texts";
     for (auto& l : layers)
         l->shared = l.get() == textLayer || l.get() == mapLayer || sharedArea (l->getBounds().toFloat());
 }
@@ -863,8 +927,11 @@ void WaveFace::drawTexts (juce::Graphics& g)
 {
     const bool play = ctx.view == "play";
     for (const auto& [node, text] : texts)
-        if (play || sharedArea (rectOf (chrome.nodes[node]["rect"])))
+    {
+        const auto r = rectOf (chrome.nodes[node]["rect"]);
+        if ((play || sharedArea (r)) && g.clipRegionIntersects (r.getSmallestIntegerContainer().expanded (4)))
             drawText (g, node, text);
+    }
 }
 
 // A choice key's options, as the app layer lists them (na_controls): the

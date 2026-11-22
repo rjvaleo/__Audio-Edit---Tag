@@ -86,9 +86,13 @@ public:
     void shown() override
     {
         ensureKit();
+        const auto before = juce::JSON::toString (board, true);
         readBoard();
-        repaintAll();
+        if (juce::JSON::toString (board, true) != before || !shownOnce)
+            repaintAll();
+        shownOnce = true;
     }
+    bool shownOnce = false;
 
     void changed (const juce::String& key) override
     {
@@ -98,11 +102,26 @@ public:
 
     void tick (float t) override
     {
+        // While there is sound, the pictures and cables at fifteen a second; else at a few.
         pics.frame (t);
-        again ("world");
+        bool sound = !wave::voices (model()).empty();
+        if (auto* b = model().tele["board"].getDynamicObject())
+            for (auto& p : b->getProperties())
+                sound = sound || (p.value.isArray() && ((float) (double) p.value[0] > 0.001f || (float) (double) p.value[1] > 0.001f));
+        ++ticks;
+        if ((sound && ticks % 2 == 0) || ticks % 8 == 0)
+        {
+            again ("live");
+            if (sound)
+            {
+                ++inspFrame;
+                again ("insp");
+            }
+        }
         again ("strip");
-        again ("insp");
     }
+    int ticks = 0, inspFrame = 0;
+    Cached inspCache;
 
     std::vector<std::pair<juce::String, double>> profile (float s) override { return timeLayers (s); }
 
@@ -338,7 +357,14 @@ private:
                     ps->setProperty (key, value);
             }
         model().board = board;
-        repaintAll();
+        // A control moved: only what shows it is drawn again (its node's look stays).
+        if (key == "on")
+            repaintAll();
+        else
+        {
+            again ("live");
+            again ("insp");
+        }
     }
 
     void note (const juce::String& s, bool bad = false)
@@ -449,7 +475,11 @@ private:
     {
         addLayer ("world", well, [this] (juce::Graphics& g) {
             g.addTransform (juce::AffineTransform::translation (-well.getX(), -well.getY()));
-            drawWell (g);
+            drawWell (g, false);
+        });
+        addLayer ("live", well, [this] (juce::Graphics& g) {
+            g.addTransform (juce::AffineTransform::translation (-well.getX(), -well.getY()));
+            drawWell (g, true);
         });
         addLayer ("chain", chainBox.expanded (2), [this] (juce::Graphics& g) {
             g.addTransform (juce::AffineTransform::translation (-(chainBox.getX() - 2), -(chainBox.getY() - 2)));
@@ -464,7 +494,14 @@ private:
         });
         addLayer ("insp", inspBox.expanded (4), [this] (juce::Graphics& g) {
             g.addTransform (juce::AffineTransform::translation (-(inspBox.getX() - 4), -(inspBox.getY() - 4)));
-            drawInspector (g);
+            // Kept until what it shows changes; with sound, its picture moves, a few a second.
+            const auto* n = sel.t == "node" ? board::node (board, sel.id) : nullptr;
+            const auto key = sel.t + sel.id + juce::String (sel.i) + (n != nullptr ? juce::JSON::toString (*n, true) : juce::JSON::toString (board["cables"], true))
+                             + juce::JSON::toString (wave::modsOut (model()), true) + juce::String (inspFrame);
+            auto savedHots = hots;
+            drawCached (g, inspCache, key, inspBox.expanded (4), [this] (juce::Graphics& gg) { drawInspector (gg); });
+            if (hots.empty())
+                hots = savedHots;
         });
         addTextLayer();
         addLayer ("bar", well, [this] (juce::Graphics& g) {
@@ -477,10 +514,19 @@ private:
                 l->setBufferedToImage (false);
     }
 
-    void drawWell (juce::Graphics& g)
+    void drawWell (juce::Graphics& g, bool live)
     {
         juce::Graphics::ScopedSaveState keep (g);
         g.reduceClipRegion (face::box (well, wellNode["radius"]).getBounds().getSmallestIntegerContainer());
+        if (live)
+        {
+            g.addTransform (toPage());
+            if (auto* ns = board["nodes"].getArray())
+                for (auto& n : *ns)
+                    drawNode (g, n, true);
+            drawCables (g);
+            return;
+        }
         // Its fill and the grid: lines every 16 board pixels, stronger every 64, moving with the view.
         face::paintBox (g, wellNode, well);
         auto lines = [&] (float step, float a) {
@@ -505,13 +551,18 @@ private:
             for (auto& k : *kids)
                 if (face::matches (k, "wv-wcap"))
                     face::Stamp().draw (g, k);
-        // The nodes, then the cables over them.
+        // The nodes, each kept as a picture until it changes (what moves on
+        // them and the cables come over them, live).
         if (auto* ns = board["nodes"].getArray())
             for (auto& n : *ns)
-                drawNode (g, n);
-        drawCables (g);
-        // Its notes and the zoom.
+            {
+                const auto id = n["id"].toString();
+                const auto key = juce::JSON::toString (n, true) + (sel.t == "node" && sel.id == id ? "|sel" : "") + (inputLive (model(), n["kind"].toString()) ? "|live" : "")
+                                 + juce::String ((int) Kit::get().byKind.size());
+                drawCached (g, nodeCache[id], key, nodeRect (n).expanded (28), [this, &n] (juce::Graphics& gg) { drawNode (gg, n, false); });
+            }
     }
+    std::map<juce::String, Cached> nodeCache;
 
     void drawStat (juce::Graphics& g)
     {
@@ -546,7 +597,7 @@ private:
         s.draw (g, part["tree"], at);
     }
 
-    void drawNode (juce::Graphics& g, const juce::var& n)
+    void drawNode (juce::Graphics& g, const juce::var& n, bool live)
     {
         const auto* t = tplFor (n);
         if (t == nullptr)
@@ -562,7 +613,21 @@ private:
         int knob = 0, val = 0, lab = 0;
         face::Stamp s;
         s.shallowLook = true;
-        s.look = [&] (const juce::var& k) -> const juce::var* { return isSel && &k == t && selTpl != nullptr ? selTpl : nullptr; };
+        // Its power lit or not as it is: the look of a captured node's that is so.
+        const auto* pwHere = face::findNode (*t, "wv-pw");
+        const auto* pwWant = tpl["n8"] != nullptr && tpl["n1"] != nullptr ? face::findNode (*(off_ ? tpl["n8"] : tpl["n1"]), "wv-pw") : nullptr;
+        s.look = [&] (const juce::var& k) -> const juce::var* {
+            if (isSel && &k == t && selTpl != nullptr)
+                return selTpl;
+            if (pwHere != nullptr && pwWant != nullptr && fx)
+            {
+                if (&k == pwHere)
+                    return pwWant;
+                if (auto* a = face::findNode (*pwHere, "svg"); a == &k)
+                    return face::findNode (*pwWant, "svg");
+            }
+            return nullptr;
+        };
         s.fill = [&] (const juce::var& k, juce::Colour& c) {
             // ::before and the input's dot: the node's own colour.
             if (k["data"]["pseudo"].toString() == "::before" || (k["tag"].toString() == "i" && !face::matches (k, "wv-pin") && n["kind"].toString().startsWith ("in:") && !face::matches (k, "act")))
@@ -636,7 +701,7 @@ private:
                 return (out = soundLabel (n)), true;
             return false;
         };
-        s.after = [&] (juce::Graphics& gg, const juce::var& k, juce::Rectangle<float> cr) {
+        auto canvas = [&] (juce::Graphics& gg, const juce::var& k, juce::Rectangle<float> cr) {
             if (k["tag"].toString() != "canvas")
                 return;
             juce::Graphics::ScopedSaveState keep (gg);
@@ -658,8 +723,23 @@ private:
                     drawBoardKnob (c, cr.getWidth(), pics, n, *p);
             }
         };
-        s.draw (g, *t, off);
-        // The ports.
+        if (!live)
+        {
+            // The node itself, kept: its frame, words and switches.
+            s.draw (g, *t, off);
+            return;
+        }
+        // What moves: its picture and its knobs (faint with the rest of a bypassed node), its ports.
+        {
+            juce::Graphics::ScopedSaveState keep (g);
+            const bool faint = fx && off_;
+            if (faint)
+                g.beginTransparencyLayer (0.4f);
+            for (auto* cv : face::findAll (*t, "canvas"))
+                canvas (g, *cv, face::rectOf (*cv) + off);
+            if (faint)
+                g.endTransparencyLayer();
+        }
         for (const auto& p : inPorts (n))
             drawPin (g, n, p, false);
         for (const auto& p : outPorts (n))
@@ -1454,8 +1534,10 @@ private:
 
     void select (const Sel& s)
     {
+        const bool same = s.t == sel.t && s.id == sel.id && s.i == sel.i;
         sel = s;
-        repaintAll();
+        if (!same)
+            repaintAll();
     }
 
     juce::var* nodeVar (const juce::String& id) { return const_cast<juce::var*> (board::node (board, id)); }
@@ -2211,7 +2293,7 @@ bool WaveBoard::down (const juce::MouseEvent& e)
         drag = [this, p1] (const juce::MouseEvent& ev) {
             const auto p2 = toWorld (ev.position);
             cabPath (p1.x, p1.y, p2.x, p2.y, tmpCable);
-            again ("world");
+            again ("live");
         };
         drag (e);
         dragEnd = [this, nid, port, moved] (const juce::MouseEvent& ev) {
@@ -2326,6 +2408,7 @@ bool WaveBoard::down (const juce::MouseEvent& e)
                         wired = wired || c["from"][0].toString() == id || c["to"][0].toString() == id;
                 insCable = !io && !wired ? cableNear (*nn) : -1;
                 again ("world");
+                again ("live");
             };
             dragEnd = [this, id, x0, y0, lifted] (const juce::MouseEvent&) {
                 const auto* nn = board::node (board, id);

@@ -240,10 +240,13 @@ void WaveTiles::sync()
 
 void WaveTiles::changed (const juce::String& key)
 {
+    bool mine = key == "tempo" || key.startsWith ("macro");
     for (auto& [src, layer] : pics)
         if (key.startsWith (src + ".") || (src.startsWith ("lfo") && key == "tempo"))
-            layer->repaint();
-    sync();
+            layer->repaint(), mine = true;
+    // Only a key a tile shows (or a macro, which a row may aim at a reading) writes its readings again.
+    if (mine)
+        sync();
 }
 
 void WaveTiles::live()

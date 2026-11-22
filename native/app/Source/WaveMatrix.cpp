@@ -56,7 +56,7 @@ public:
     void tick (float) override
     {
         tiles->live();
-        again ("grid");
+        again ("live");
     }
 
     std::vector<std::pair<juce::String, double>> profile (float s) override { return timeLayers (s); }
@@ -167,6 +167,7 @@ public:
         {
             rowScroll = juce::jlimit (0.0f, juce::jmax (0.0f, rowsHeight() - rowsBox.getHeight()), rowScroll - w.deltaY * 400);
             again ("grid");
+            again ("live");
             return true;
         }
         return false;
@@ -180,6 +181,8 @@ private:
     std::unique_ptr<WaveTiles> tiles;
     bool rows = false;
     float scroll = 0, rowScroll = 0;
+    juce::String gridSig;
+    Cached gridCache;
     juce::Rectangle<float> pinsBox, rowsBox, headBox;
     juce::Point<float> pinsAt, rowsAt;
 
@@ -309,13 +312,26 @@ private:
             if (auto* kids = (*p)["kids"].getArray())
                 for (auto& k : *kids)
                     chrome.skip.insert ((int) k["i"]);
-        addLayer ("grid", pinsBox.getUnion (rowsBox).getUnion ({ rowsAt.x, rowsAt.y, rowsBox.getWidth(), 20 }).expanded (4), [this] (juce::Graphics& g) {
-            const auto box = pinsBox.getUnion (rowsBox).getUnion ({ rowsAt.x, rowsAt.y, rowsBox.getWidth(), 20 }).expanded (4);
-            g.addTransform (juce::AffineTransform::translation (-box.getX(), -box.getY()));
+        const auto gridBox = pinsBox.getUnion (rowsBox).getUnion ({ rowsAt.x, rowsAt.y, rowsBox.getWidth(), 20 }).expanded (4);
+        // The grid or the rows, kept; over them what moves (the pins' glow, the sources' pictures).
+        addLayer ("grid", gridBox, [this, gridBox] (juce::Graphics& g) {
+            g.addTransform (juce::AffineTransform::translation (-gridBox.getX(), -gridBox.getY()));
+            juce::String key = gridSig;
             if (rows)
-                drawRows (g);
+                key << juce::JSON::toString (wave::modsOut (model()), true) << draftSrc << draftDst << draftVia;
+            drawCached (g, gridCache, key, gridBox, [this] (juce::Graphics& gg) {
+                if (rows)
+                    drawRows (gg, false);
+                else
+                    drawPins (gg, false);
+            });
+        });
+        addLayer ("live", gridBox, [this, gridBox] (juce::Graphics& g) {
+            g.addTransform (juce::AffineTransform::translation (-gridBox.getX(), -gridBox.getY()));
+            if (rows)
+                drawRows (g, true);
             else
-                drawPins (g);
+                drawPins (g, true);
         });
         addLayer ("head", headBox.expanded (2), [this] (juce::Graphics& g) {
             if (!rows)
@@ -357,7 +373,16 @@ private:
                 }
         }
         say ("wvMxCount", juce::String ((int) model().mods.size()) + " of 64");
-        again ("grid");
+        // The kept grid changes only with its columns (the FX board's) and the view.
+        const auto sig = juce::String (rows ? "r" : "p") + juce::String (scroll) + juce::String ((int) boardKeys().size()) + (rows ? juce::String ((int) model().mods.size()) : juce::String())
+                         + (rows ? juce::String (rowScroll) : juce::String());
+        if (sig != gridSig || rows)
+        {
+            gridSig = sig;
+            again ("grid");
+        }
+        juce::ignoreUnused (gridCache);
+        again ("live");
         again ("head");
     }
 
@@ -441,6 +466,7 @@ private:
     {
         scroll = juce::jlimit (0.0f, juce::jmax (0.0f, contentW() - pinsBox.getWidth()), x);
         again ("grid");
+        again ("live");
     }
 
     // wvPagePins: on to the first group not wholly in view, or back by as
@@ -522,7 +548,7 @@ private:
             }
             *raw = clampf (*raw - dy / (ev.mods.isShiftDown() ? 400.0f : 80.0f), -1, 1);
             model().mods[(size_t) i].amt = wave::snapAmt (model(), dst, *raw);
-            again ("grid");
+            again ("live");
         };
         dragEnd = [this, src, dst, moved] {
             if (!*moved && modAt (src, dst) < 0 && model().mods.size() < 64)
@@ -542,12 +568,13 @@ private:
         render();
     }
 
-    void drawPins (juce::Graphics& g)
+    void drawPins (juce::Graphics& g, bool live)
     {
         juce::Graphics::ScopedSaveState keep (g);
         g.reduceClipRegion (pinsBox.getSmallestIntegerContainer());
+        if (live)
+            return drawPinsLive (g);
         const auto bk = boardKeys();
-        const auto sig = [this] (const wave::Model::Mod& r) { return wave::srcVal (model(), r.src) * (r.via.isNotEmpty() ? wave::srcVal (model(), r.via) : 1.0f); };
         auto stampAt = [&] (const juce::var& n, juce::Point<float> to, const std::function<bool (const juce::var&, juce::String&)>& text = nullptr) {
             face::Stamp s;
             s.text = text;
@@ -594,6 +621,18 @@ private:
                         drawHole (g, *it->second, juce::Point<float> (to.x, ry.getY() + pinsAt.y), true);
             }
         }
+        // What stays: the corner and the sources' heads.
+        for (const auto& c : cells)
+            if (c.sticky)
+                stampAt (*c.n, face::rectOf (*c.n).getPosition() + pinsAt);
+    }
+
+    void drawPinsLive (juce::Graphics& g)
+    {
+        const auto sig = [this] (const wave::Model::Mod& r) { return wave::srcVal (model(), r.src) * (r.via.isNotEmpty() ? wave::srcVal (model(), r.via) : 1.0f); };
+        {
+        juce::Graphics::ScopedSaveState clip (g);
+        g.reduceClipRegion (juce::Rectangle<float> (pinsAt.x + 92, pinsBox.getY(), pinsBox.getWidth() - 92, pinsBox.getHeight()).getSmallestIntegerContainer());
         // The pins the patch has.
         for (const auto& r : model().mods)
         {
@@ -613,12 +652,11 @@ private:
             const float o = r.off ? 0.0f : 0.25f + 0.75f * clampf (std::abs (sig (r)));
             drawPin (g, *b, cell, wave::rowAmtTxt (model(), r), o, r.off, r.src);
         }
-        // What stays: the corner and the sources' heads.
+        }
+        // The sources' heads' pictures and lights.
         for (const auto& c : cells)
             if (c.sticky)
             {
-                const auto r = face::rectOf (*c.n);
-                stampAt (*c.n, r.getPosition() + pinsAt);
                 if (face::matches (*c.n, "wv-rh"))
                 {
                     const auto src = (*c.n)["data"]["src"].toString();
@@ -779,7 +817,7 @@ private:
                     auto& m = model().mods[(size_t) r];
                     *raw = clampf (*raw + dx / (ev.mods.isShiftDown() ? 600.0f : 120.0f), -1, 1);
                     m.amt = wave::snapAmt (model(), m.dst, *raw);
-                    again ("grid");
+                    again ("live");
                 };
                 dragEnd = [this] { changedRows(); };
                 return true;
@@ -810,8 +848,10 @@ private:
     // The row under construction in the add row's slot (WV_DRAFT).
     juce::String draftSrc, draftDst, draftVia;
 
-    void drawRows (juce::Graphics& g)
+    void drawRows (juce::Graphics& g, bool live)
     {
+        if (live)
+            return drawRowsLive (g);
         if (rowsHead != nullptr)
             face::Stamp().draw (g, *rowsHead, rowsAt);
         juce::Graphics::ScopedSaveState keep (g);
@@ -874,18 +914,6 @@ private:
                 face::Stamp vs;
                 vs.draw (g, *vt, juce::Point<float> (rowsAt.x + want.getX(), y + (want.getY() - tr.getY())) - vr.getPosition());
             }
-            // The canvases: the source's live picture, the amount, the curve.
-            if (auto* sp = face::findNode (*tpl, "data-pk=s"))
-                if (auto* cv = face::findNode (*sp, "canvas"))
-                {
-                    const auto cr = face::rectOf (*cv) + off;
-                    juce::Graphics::ScopedSaveState k2 (g);
-                    g.addTransform (juce::AffineTransform::translation (cr.getX(), cr.getY()));
-                    c2d::Context c (g, cr.getWidth(), cr.getHeight());
-                    wave::drawTilePic (c, cr.getWidth(), cr.getHeight(), cl(), model(), m.src);
-                }
-            drawAmount (g, rowCell (r, "amount"), m);
-            drawCurve (g, rowCell (r, "curve"), m);
         }
         // The next free slot, then the empty ones.
         int r = (int) mods.size();
@@ -916,6 +944,36 @@ private:
                 s.text = [r] (const juce::var& n, juce::String& out) { if (!face::matches (n, "wv-ro")) return false; out = juce::String (r + 1); return true; };
                 s.draw (g, *emptyRow, juce::Point<float> (rowsAt.x, y) - tr.getPosition());
             }
+        }
+    }
+
+    // What moves in the rows: each source's picture, its amount and its curve with the engine's dots.
+    void drawRowsLive (juce::Graphics& g)
+    {
+        juce::Graphics::ScopedSaveState keep (g);
+        g.reduceClipRegion (rowsBox.getSmallestIntegerContainer());
+        const auto& mods = model().mods;
+        for (int r = 0; r < (int) mods.size() && r < 64; ++r)
+        {
+            const auto& m = mods[(size_t) r];
+            const auto* tpl = (m.off ? rowOff : rowOn)[m.src];
+            if (tpl == nullptr)
+                continue;
+            const float y = rowTop (r);
+            if (y > rowsBox.getBottom() || y + 30 < rowsBox.getY())
+                continue;
+            const auto off = juce::Point<float> (rowsAt.x, y) - face::rectOf (*tpl).getPosition();
+            if (auto* sp = face::findNode (*tpl, "data-pk=s"))
+                if (auto* cv = face::findNode (*sp, "canvas"))
+                {
+                    const auto cr = face::rectOf (*cv) + off;
+                    juce::Graphics::ScopedSaveState k2 (g);
+                    g.addTransform (juce::AffineTransform::translation (cr.getX(), cr.getY()));
+                    c2d::Context c (g, cr.getWidth(), cr.getHeight());
+                    wave::drawTilePic (c, cr.getWidth(), cr.getHeight(), cl(), model(), m.src);
+                }
+            drawAmount (g, rowCell (r, "amount"), m);
+            drawCurve (g, rowCell (r, "curve"), m);
         }
     }
 

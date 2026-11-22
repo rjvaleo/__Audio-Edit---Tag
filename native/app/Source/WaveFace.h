@@ -59,6 +59,11 @@ public:
     // Read the engine's telemetry now and draw what shows it (the timer does
     // this thirty times a second while the face is on screen).
     void poll();
+    // Draw each view once, off screen, so its first showing is quick (the
+    // frame of a view takes a while to draw the first time).
+    void warm (int which = -1);
+    // Where one of a view's captured nodes is on the page (the bench presses it).
+    juce::Rectangle<float> find (const juce::String& view, const juce::String& what);
 
     // Set a key as a control does (for the bench).
     void setKey (const juce::String& key, const juce::var& value) { set (key, value); }
@@ -86,7 +91,12 @@ private:
         std::function<bool (const juce::String&)> also;
         // In every view (the header's and the dock's), not only on Play.
         bool shared = false;
-        void paint (juce::Graphics& g) override { draw (g); }
+        void paint (juce::Graphics& g) override
+        {
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            draw (g);
+            WaveView::paintTimes()[name.isEmpty() ? juce::String ("play-layer") : name] += juce::Time::getMillisecondCounterHiRes() - t0;
+        }
     };
     std::vector<std::unique_ptr<Layer>> layers;
     Layer* textLayer = nullptr;
@@ -116,7 +126,7 @@ private:
     void modsChanged();
     // The patch's preset bar (105-preset-bar.js, 398-wave-presets.js): its name and tags, the
     // patches before and after it, A and B, Save.
-    juce::String patchName, patchTags;
+    juce::String patchName, patchTags, lastPatch;
     juce::var abSlots[2];
     int ab = 0;
     juce::Array<juce::var> patchList();

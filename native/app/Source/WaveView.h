@@ -98,8 +98,21 @@ protected:
     {
         std::function<void (juce::Graphics&)> draw;
         juce::String name;
-        void paint (juce::Graphics& g) override { draw (g); }
+        void paint (juce::Graphics& g) override
+        {
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            draw (g);
+            paintTimes()[name] += juce::Time::getMillisecondCounterHiRes() - t0;
+        }
     };
+public:
+    // What each layer has spent drawing, by name, since last cleared (the bench).
+    static std::map<juce::String, double>& paintTimes()
+    {
+        static std::map<juce::String, double> t;
+        return t;
+    }
+protected:
     WaveCtx& ctx;
     face::Chrome chrome;
     juce::var cap;
@@ -184,6 +197,27 @@ protected:
         named[name] = layers.back().get();
         return layers.back().get();
     }
+    // A picture kept until what it shows changes (`key`), at the scale it is shown at.
+    struct Cached
+    {
+        juce::String key;
+        juce::Image img;
+        float scale = 0;
+    };
+    static void drawCached (juce::Graphics& g, Cached& c, const juce::String& key, juce::Rectangle<float> area, const std::function<void (juce::Graphics&)>& paint)
+    {
+        const float s = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
+        if (c.key != key || std::abs (c.scale - s) > 0.01f || !c.img.isValid())
+        {
+            c.key = key;
+            c.scale = s;
+            c.img = juce::Image (juce::Image::ARGB, juce::jmax (1, (int) std::ceil (area.getWidth() * s)), juce::jmax (1, (int) std::ceil (area.getHeight() * s)), true);
+            juce::Graphics ig (c.img);
+            ig.addTransform (juce::AffineTransform::translation (-area.getX(), -area.getY()).scaled (s));
+            paint (ig);
+        }
+        g.drawImageTransformed (c.img, juce::AffineTransform::scale (1.0f / c.scale).translated (area.getX(), area.getY()));
+    }
     // A canvas of the page's, by id: drawn by `draw` on its own w x h, as the page draws it.
     Layer* addCanvas (const juce::String& id, std::function<void (c2d::Context&, float w, float h)> draw)
     {
@@ -202,6 +236,7 @@ protected:
     }
     void again (const juce::String& name)
     {
+
         if (auto it = named.find (name); it != named.end())
             it->second->repaint();
     }
