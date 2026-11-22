@@ -747,7 +747,8 @@ void Chrome::drawNode (juce::Graphics& g, const juce::var& n, const juce::var* l
     // Nothing of this node (its shadows reach about 40 px) is being drawn.
     if (!g.getClipBounds().toFloat().intersects (r.expanded (48.0f)) && !(bool) n["clip"] && n["kids"].isVoid())
         return;
-    const float opacity = num (style["opacity"], 1.0f);
+    auto forced = opacityOf.find (i);
+    const float opacity = forced != opacityOf.end() ? forced->second : num (style["opacity"], 1.0f);
     if (opacity <= 0.001f)
         return;
     juce::Graphics::ScopedSaveState keep (g);

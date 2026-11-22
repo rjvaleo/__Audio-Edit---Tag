@@ -1,4 +1,5 @@
 #include "WaveDraw.h"
+#include "WaveKit.h"
 
 namespace wave
 {
@@ -481,7 +482,7 @@ void dot (c2d::Context& c, float x, float y, float r, juce::Colour col)
     c.shadowBlur = 0;
 }
 
-void ring (c2d::Context& c, float size, float u, const Cl& cl, bool bip, bool pointer)
+void ring (c2d::Context& c, float size, float u, const Cl& cl, bool bip, bool pointer, const ModOf* mod)
 {
     const float A0 = PI * 0.75f, SWEEP = PI * 1.5f;
     const float cc = size / 2, r = cc - 4, w = size > 60 ? 3.0f : size >= 40 ? 2.4f : 2.0f;
@@ -513,6 +514,31 @@ void ring (c2d::Context& c, float size, float u, const Cl& cl, bool bip, bool po
         c.moveTo (cc + std::cos (a) * r * 0.2f, cc + std::sin (a) * r * 0.2f);
         c.lineTo (cc + std::cos (a) * r * 0.62f, cc + std::sin (a) * r * 0.62f);
         c.stroke();
+    }
+    // What moves it (uiKnobPaint's .ui-md and .ui-live): its reach either
+    // side, just outside the ring, in the source's colour; where it is now.
+    if (mod != nullptr && mod->rng > 0)
+    {
+        const float mr = r + 3.5f;
+        c2d::Path md;
+        const float u0 = clamp (u - mod->rng), u1 = clamp (u + mod->rng);
+        if (u1 - u0 >= 0.0005f)
+            md.arc (cc, cc, mr, A0 + SWEEP * u0, A0 + SWEEP * u1);
+        c.lineCap = "round";
+        c.lineWidth = 2;
+        c.strokeStyle = mod->col.isNotEmpty() ? c2d::css (mod->col) : cl.mod;
+        c.stroke (md);
+        if (mod->live)
+        {
+            const float a = A0 + SWEEP * clamp (mod->at);
+            c.fillStyle = cl.acc;
+            c.shadowBlur = 6;
+            c.shadowColor = cl.acc;
+            c.beginPath();
+            c.arc (cc + std::cos (a) * mr, cc + std::sin (a) * mr, 2.4f, 0, TAU);
+            c.fill();
+            c.shadowBlur = 0;
+        }
     }
     c.restore();
 }
@@ -628,8 +654,11 @@ void drawSpec3D (c2d::Context& c, float w, float h, const Cl& cl, const Table& T
     c.textAlign = "left";
 }
 
-void drawStrip (c2d::Context& c, float w, float h, const Cl& cl, const Table& T, float p)
+void drawStrip (c2d::Context& c, float w, float h, const Cl& cl0, const Table& T, float p, const ModOf* mod)
 {
+    Cl cl = cl0;
+    if (mod != nullptr && mod->col.isNotEmpty())
+        cl.mod = c2d::css (mod->col);
     const int n = 24;
     const float pad = 6, cw = (w - pad * 2) / (float) n;
     for (int i = 0; i < n; ++i)
@@ -641,6 +670,18 @@ void drawStrip (c2d::Context& c, float w, float h, const Cl& cl, const Table& T,
         c.lineWidth = on ? 1.3f : 1.0f;
         c.stroke (path ([&] (float u) { return juce::Point<float> (x + 2 + u * (cw - 4), h / 2 + 2 - rd (f, u) * (h * 0.3f)); }, 18));
     }
+    if (mod != nullptr && mod->rng > 0)
+    {
+        const float a = pad + clamp (p - mod->rng) * (w - pad * 2), b = pad + clamp (p + mod->rng) * (w - pad * 2);
+        c.strokeStyle = cl.mod;
+        c.lineWidth = 2;
+        c.beginPath();
+        c.moveTo (a, 5);
+        c.lineTo (a, 2);
+        c.lineTo (b, 2);
+        c.lineTo (b, 5);
+        c.stroke();
+    }
     const float x = pad + p * (w - pad * 2);
     c.fillStyle = cl.acc;
     c.shadowBlur = 8;
@@ -649,7 +690,7 @@ void drawStrip (c2d::Context& c, float w, float h, const Cl& cl, const Table& T,
     c.shadowBlur = 0;
 }
 
-void drawFace (c2d::Context& c, float w, float h, const Cl& cl, float v, const Frame& wave, const Frame* ghost, bool empty)
+void drawFace (c2d::Context& c, float w, float h, const Cl& cl, float v, const Frame& wave, const Frame* ghost, bool empty, const ModOf* mod)
 {
     const float cx = w / 2, cy = h / 2;
     if (empty)
@@ -670,7 +711,7 @@ void drawFace (c2d::Context& c, float w, float h, const Cl& cl, float v, const F
         c.stroke();
         return;
     }
-    ring (c, w, v, cl);
+    ring (c, w, v, cl, false, false, mod);
     const float r = w * 0.31f;
     c.save();
     c.beginPath();
@@ -744,16 +785,16 @@ void drawControlPic (c2d::Context& c, float w, float h, const Cl& cl, float u, c
     c.restore();
 }
 
-void drawKnob (c2d::Context& c, float w, float h, const Cl& cl, float v, const juce::String& key, bool bip)
+void drawKnob (c2d::Context& c, float w, float h, const Cl& cl, float v, const juce::String& key, bool bip, const ModOf* mod)
 {
-    ring (c, w, v, cl, bip, true);
+    ring (c, w, v, cl, bip, true, mod);
     drawControlPic (c, w, h, cl, v, key);
 }
 
-void drawUniFace (c2d::Context& c, float w, float h, const Cl& cl, const Frame& cur, int n, float det, float spr)
+void drawUniFace (c2d::Context& c, float w, float h, const Cl& cl, const Frame& cur, int n, float det, float spr, const ModOf* mod)
 {
     const float cx = w / 2, cy = h / 2, r = w * 0.3f;
-    ring (c, w, det, cl);
+    ring (c, w, det, cl, false, false, mod);
     c.save();
     c.beginPath();
     c.arc (cx, cy, r, 0, TAU);
@@ -781,7 +822,7 @@ void drawUniFace (c2d::Context& c, float w, float h, const Cl& cl, const Frame& 
     c.textAlign = "left";
 }
 
-void drawHBar (c2d::Context& c, float w, float h, const Cl& cl, float v)
+void drawHBar (c2d::Context& c, float w, float h, const Cl& cl, float v, const ModOf* mod)
 {
     const float x = 6 + (w - 12) * v;
     c.save();
@@ -809,9 +850,16 @@ void drawHBar (c2d::Context& c, float w, float h, const Cl& cl, float v)
     c.beginPath();
     c.roundRect (x - 2, 2, 4, h - 4, 2);
     c.fill();
+    if (mod != nullptr && mod->rng > 0)
+    {
+        c.fillStyle = mod->col.isNotEmpty() ? c2d::css (mod->col) : cl.mod;
+        c.fillRect (6 + (w - 12) * clamp (v - mod->rng), h - 3, (w - 12) * (clamp (v + mod->rng) - clamp (v - mod->rng)), 2);
+        if (mod->live)
+            dot (c, 6 + (w - 12) * clamp (mod->at), h - 2, 2, cl.acc);
+    }
 }
 
-void drawRuler (c2d::Context& c, float w, float h, const Cl& cl, int semi, int cents)
+void drawRuler (c2d::Context& c, float w, float h, const Cl& cl, int semi, int cents, const ModOf* mod)
 {
     const float step = 6, off = (float) semi + (float) cents / 100;
     auto X = [&] (float v) { return w / 2 + (v - off) * step; };
@@ -833,6 +881,13 @@ void drawRuler (c2d::Context& c, float w, float h, const Cl& cl, int semi, int c
             c.fillText ((v > 0 ? "+" : "") + juce::String (v / 12), x + 3, 10);
         }
     }
+    if (mod != nullptr && mod->rng > 0)
+    {
+        c.fillStyle = mod->col.isNotEmpty() ? c2d::css (mod->col) : cl.mod;
+        c.globalAlpha = 0.6f;
+        c.fillRect (w / 2 - mod->rng * 48 * step, h - 3, mod->rng * 96 * step, 2);
+        c.globalAlpha = 1;
+    }
     c.fillStyle = cl.acc;
     c.shadowBlur = 8;
     c.shadowColor = cl.acc;
@@ -840,9 +895,9 @@ void drawRuler (c2d::Context& c, float w, float h, const Cl& cl, int semi, int c
     c.shadowBlur = 0;
 }
 
-void drawPhase (c2d::Context& c, float w, float h, const Cl& cl, float ph, const Frame& cur)
+void drawPhase (c2d::Context& c, float w, float h, const Cl& cl, float ph, const Frame& cur, const ModOf* mod)
 {
-    ring (c, w, ph, cl);
+    ring (c, w, ph, cl, false, false, mod);
     const float cx = w / 2, cy = h / 2, r = w * 0.27f;
     trace (c, path ([&] (float u) {
                const float a = u * TAU - PI / 2 + ph * TAU, rr = r * 0.6f + rd (cur, u) * r * 0.32f;
@@ -869,7 +924,8 @@ void drawLens (c2d::Context& c, float w, float h, const Cl& cl, const Model& m, 
 {
     const auto f = "filt" + juce::String (i) + ".";
     auto fx = [&] (float fr) { return 6 + (std::log10 (fr) - std::log10 (20.0f)) / 3 * (w - 12); };
-    const float cut = clamp (m.g (f + "cut")), fc = 20 * std::pow (1000.0f, cut), Q = 0.7f + m.g (f + "res") * 9;
+    const auto mc = modOf (m, f + "cut");
+    const float cut = clamp (mc.live ? mc.at : m.g (f + "cut")), fc = 20 * std::pow (1000.0f, cut), Q = 0.7f + m.g (f + "res") * 9;
     const auto type = m.s (f + "type");
     auto Hm = [&] (float fr) -> float {
         const float x = fr / fc;
@@ -914,6 +970,14 @@ void drawLens (c2d::Context& c, float w, float h, const Cl& cl, const Model& m, 
         c.fillStyle = cl.bloom (0.7f);
         c.fillRect (x - 1, h - 3 - fh, 2, fh);
     }
+    if (mc.rng > 0)
+    {
+        const float base = m.g (f + "cut");
+        const auto band = mc.col.isNotEmpty() ? c2d::css (mc.col) : cl.mod;
+        c.fillStyle = band.withMultipliedAlpha (0.14f);
+        const float x0 = fx (20 * std::pow (1000.0f, clamp (base - mc.rng))), x1 = fx (20 * std::pow (1000.0f, clamp (base + mc.rng)));
+        c.fillRect (x0, 3, x1 - x0, h - 6);
+    }
     const auto pts = path ([&] (float u) { const float fr = 20 * std::pow (1000.0f, u); return juce::Point<float> (fx (fr), clamp (dbY (20 * std::log10 (Hm (fr) + 1e-6f)), 3, h - 3)); }, 140);
     under (c, pts, 6, w - 6, h, 0, cl, 0.14f);
     trace (c, pts, cl, 1.5f);
@@ -932,7 +996,8 @@ juce::String drawOfx (c2d::Context& c, float w, float h, const Cl& cl, Model& m,
     if (ofxTable().count (K) == 0)
         K = "off";
     const Frame dry = waveFor (m, i, true);
-    const float a = clamp (m.g (k + "fx.a")), b = m.g (k + "fx.b");
+    const auto ma = modOf (m, k + "fx.a");
+    const float a = clamp (ma.live ? ma.at : m.g (k + "fx.a")), b = m.g (k + "fx.b");
     auto bg = c.createRadialGradient (w * 0.25f, h * 0.1f, 4, w * 0.5f, h * 0.5f, w * 0.8f);
     bg.stops.push_back ({ 0.0f, fxCol (K, 45, 0.22f) });
     bg.stops.push_back ({ 1.0f, fxCol (K, 30, 0) });
@@ -1054,7 +1119,8 @@ juce::String ofxText (const Model& m, int i)
     juce::String K = m.s (k + "fx.mode");
     if (ofxTable().count (K) == 0)
         K = "off";
-    const float a = clamp (m.g (k + "fx.a")), b = m.g (k + "fx.b");
+    const auto ma = modOf (m, k + "fx.a");
+    const float a = clamp (ma.live ? ma.at : m.g (k + "fx.a")), b = m.g (k + "fx.b");
     const auto pct = juce::String (juce::roundToInt (a * 100)) + " %";
     const auto dotSep = juce::String::fromUTF8 (" \xc2\xb7 ");
     if (K == "chorus")
@@ -1081,7 +1147,7 @@ EnvPts envPts (float w, float h, float A, float D, float S, float R)
     return { { x0, bot }, { x0 + ta, top }, { x0 + ta + td, sy }, { x0 + ta + td + hold, sy }, { x0 + ta + td + hold + tr, bot } };
 }
 
-void drawEnv (c2d::Context& c, float w, float h, const Cl& cl, float A, float D, float S, float R)
+void drawEnv (c2d::Context& c, float w, float h, const Cl& cl, float A, float D, float S, float R, const std::vector<std::pair<char, float>>* voices)
 {
     const auto P = envPts (w, h, A, D, S, R);
     c2d::Path p;
@@ -1099,10 +1165,28 @@ void drawEnv (c2d::Context& c, float w, float h, const Cl& cl, float A, float D,
         c.arc (q.x, q.y, 3, 0, TAU);
         c.fill();
     }
+    // Where each voice is on it, from the engine's stage and level (wvEnvDot).
+    if (voices != nullptr)
+        for (const auto& [st, env] : *voices)
+        {
+            const float lvl = clamp (env);
+            auto lerp = [] (juce::Point<float> a, juce::Point<float> b, float u) { return a + (b - a) * u; };
+            juce::Point<float> d;
+            if (st == 'a')
+                d = lerp (P.o, P.a, lvl);
+            else if (st == 'd')
+                d = lerp (P.a, P.d, S < 1 ? clamp ((1 - lvl) / (1 - S)) : 1);
+            else if (st == 'r')
+                d = lerp (P.s, P.r, S > 0 ? clamp (1 - lvl / S) : 1);
+            else
+                d = { (P.d.x + P.s.x) / 2, P.s.y };
+            dot (c, d.x, d.y, 3, cl.acc);
+        }
 }
 
 void drawLfo (c2d::Context& c, float w, float h, const Cl& cl, const Model& m, int L)
 {
+    const float ph = lfoPhase (m, L);
     const auto& pts = m.v ("lfo" + juce::String (L) + ".points");
     const bool drawn = lfoShape (m, L) == "drawn";
     auto py = [&] (float q1) { return 8 + (1 - q1) * (h - 16); };
@@ -1130,6 +1214,15 @@ void drawLfo (c2d::Context& c, float w, float h, const Cl& cl, const Model& m, i
                 c.arc (8 + (float) (double) q[0] * (w - 16), py ((float) (double) q[1]), 3, 0, TAU);
                 c.fill();
             }
+    if (ph >= 0)
+    {
+        c.strokeStyle = cl.acc.withMultipliedAlpha (0.5f);
+        c.beginPath();
+        c.moveTo (8 + ph * (w - 16), 6);
+        c.lineTo (8 + ph * (w - 16), h - 6);
+        c.stroke();
+        dot (c, 8 + ph * (w - 16), py (lfoVal (m, L, ph)), 3.4f, cl.acc);
+    }
 }
 juce::String dbTxt (float v)
 {
@@ -1211,6 +1304,18 @@ void drawMix (c2d::Context& x, float W0, float h, const Cl& cl, const Model& m, 
     x.moveTo (X, h / 2);
     x.lineTo (w - 6, h / 2);
     x.stroke();
+    {
+        static const char* levels[] = { "osc0.level", "osc1.level", "osc2.level", "sub.level", "noise.level" };
+        const auto mm = modOf (m, levels[juce::jlimit (0, 4, c)]);
+        if (mm.rng > 0)
+        {
+            const float a0 = clamp (v - mm.rng), a1 = clamp (v + mm.rng);
+            x.fillStyle = mm.col.isNotEmpty() ? c2d::css (mm.col) : cl.mod;
+            x.fillRect (6 + (w - 12) * a0, h - 3, (w - 12) * (a1 - a0), 2);
+            if (mm.live)
+                dot (x, 6 + (w - 12) * clamp (mm.at), h - 2, 2, mm.col.isNotEmpty() ? c2d::css (mm.col) : cl.acc);
+        }
+    }
     x.fillStyle = cl.t;
     x.beginPath();
     x.roundRect (X - 2, 2, 4, h - 4, 2);
@@ -1344,7 +1449,7 @@ void drawWheel (c2d::Context& c, float w, float h, const Cl& cl, float v, bool b
     c.textAlign = "left";
 }
 
-void drawPuck (c2d::Context& c, float w, float h, const Cl& cl, Model& m)
+void drawPuck (c2d::Context& c, float w, float h, const Cl& cl, Model& m, const std::vector<std::array<float, 3>>* trail, float nowMs)
 {
     const auto& T = m.table (m.s ("osc0.table"));
     for (int gx = 0; gx < 4; ++gx)
@@ -1356,16 +1461,72 @@ void drawPuck (c2d::Context& c, float w, float h, const Cl& cl, Model& m)
             c.lineWidth = 1;
             c.stroke (path ([&] (float u) { return juce::Point<float> (x0 + 3 + u * (cw - 6), y0 + ch / 2 - rd (f, u) * ch * 0.3f * (0.5f + (float) gy / 6)); }, 20));
         }
+    // Where the puck has been in the last second and a half, fading.
+    if (trail != nullptr)
+        for (const auto& q : *trail)
+        {
+            const float a = 1 - (nowMs - q[2]) / 1500;
+            if (a <= 0)
+                continue;
+            c.fillStyle = cl.acc.withMultipliedAlpha (std::round (a * 60) / 100);
+            c.beginPath();
+            c.arc (6 + q[0] * (w - 12), 6 + (1 - q[1]) * (h - 12), 2 * a + 0.5f, 0, TAU);
+            c.fill();
+        }
     dot (c, 6 + clamp (m.g ("osc0.pos")) * (w - 12), 6 + (1 - clamp ((m.g ("filt0.cut") - 0.2f) / 0.7f)) * (h - 12), 4.5f, cl.acc);
 }
 
-void drawOut (c2d::Context& c, float w, float h, const Cl& cl)
+// What you hear (wvDrawOut): the engine's output wave when it sends one,
+// otherwise the sounding oscillators' cycles summed and scaled by its peak.
+// Flat when nothing sounds.
+void drawOut (c2d::Context& c, float w, float h, const Cl& cl, Model& m, float t)
 {
-    c.strokeStyle = cl.bloom (0.15f);
-    c.beginPath();
-    c.moveTo (6, h / 2);
-    c.lineTo (w - 6, h / 2);
-    c.stroke();
+    const auto& T = m.tele;
+    auto* wave = T["wave"].getArray();
+    const bool hasWave = wave != nullptr && wave->size() > 1;
+    float peak = 0;
+    if (auto* p = T["peak"].getArray())
+        for (const auto& x : *p)
+            peak = juce::jmax (peak, (float) (double) x);
+    if (!hasWave && (voices (m).empty() || peak <= 0))
+    {
+        c.strokeStyle = cl.bloom (0.15f);
+        c.beginPath();
+        c.moveTo (6, h / 2);
+        c.lineTo (w - 6, h / 2);
+        c.stroke();
+        return;
+    }
+    if (hasWave)
+    {
+        const int n = wave->size();
+        trace (c, path ([&] (float u) { return juce::Point<float> (6 + u * (w - 12), h / 2 - clamp ((float) (double) wave->getReference (juce::jmin (n - 1, juce::roundToInt (u * (float) (n - 1)))), -1, 1) * h * 0.42f); }, juce::jmin (300, n)), cl, 1.2f, 0.6f);
+        return;
+    }
+    struct W
+    {
+        Frame f;
+        float l, r;
+    };
+    std::vector<W> ws;
+    for (int i = 0; i < 3; ++i)
+        if (m.g ("osc" + juce::String (i) + ".on") >= 0.5f)
+            ws.push_back ({ waveFor (m, i, false), std::pow (m.g ("osc" + juce::String (i) + ".level"), 2.0f), std::pow (2.0f, (float) juce::roundToInt ((m.g ("osc" + juce::String (i) + ".pitch", 0.5f) - 0.5f) * 48) / 12) });
+    if (ws.empty())
+        return;
+    const float ph = t * 3;
+    float norm = 0;
+    for (auto& x : ws)
+        norm += x.l;
+    if (norm <= 0)
+        norm = 1;
+    trace (c, path ([&] (float u) {
+               float y = 0;
+               for (auto& x : ws)
+                   y += rd (x.f, (u * 4 + ph) * x.r) * x.l;
+               return juce::Point<float> (6 + u * (w - 12), h / 2 - y / norm * clamp (peak) * h * 0.42f);
+           }, 300),
+           cl, 1.2f, 0.6f);
 }
 
 void drawMaster (c2d::Context& c, float w, float h, const Cl& cl, float master, float lvl)
@@ -1386,7 +1547,8 @@ void drawMaster (c2d::Context& c, float w, float h, const Cl& cl, float master, 
 void drawMacro (c2d::Context& c, float w, float h, const Cl& cl, Model& m, int i)
 {
     const float v = m.g ("macro" + juce::String (i)), cx = w / 2, cy = h / 2, r = w * 0.26f;
-    ring (c, w, v, cl);
+    const auto mo = modOf (m, "macro" + juce::String (i));
+    ring (c, w, v, cl, false, false, &mo);
     c.save();
     c.strokeStyle = cl.wave;
     c.fillStyle = cl.bloom (0.8f);
@@ -1451,6 +1613,19 @@ void drawMacro (c2d::Context& c, float w, float h, const Cl& cl, Model& m, int i
             c.stroke (path ([&] (float u) { return juce::Point<float> (L + u * 2 * r, cy + r * 0.2f - (1 / (1 + std::exp (-(u - 0.6f) * 12))) * r * 0.9f * v); }, 40));
     }
     c.restore();
+    // A notch on the rim for every route it drives.
+    const auto me = "macro" + juce::String (i);
+    int n = 0;
+    for (const auto& row : m.mods)
+        n += row.src == me || row.via == me ? 1 : 0;
+    for (int q = 0; q < n; ++q)
+    {
+        const float a = PI * 0.75f + PI * 1.5f * ((float) q + 0.5f) / (float) n;
+        c.fillStyle = cl.mod;
+        c.beginPath();
+        c.arc (cx + std::cos (a) * (w / 2 - 0.5f), cy + std::sin (a) * (w / 2 - 0.5f), 1.3f, 0, TAU);
+        c.fill();
+    }
 }
 
 void drawTilePic (c2d::Context& c, float w, float h, const Cl& cl, const Model& m, const juce::String& src)
@@ -1475,7 +1650,30 @@ void drawTilePic (c2d::Context& c, float w, float h, const Cl& cl, const Model& 
         c.fillStyle = C.bloom (0.14f);
         c.fill (f);
     };
-    if (src.startsWith ("macro"))
+    const auto* S = sourceOf (src);
+    const auto kind = S != nullptr ? S->kind : juce::String();
+    if (kind == "lfo")
+    {
+        const int L = src.getTrailingIntValue();
+        const auto p = path ([&] (float u) { return juce::Point<float> (1 + u * (w - 2), h - 2 - lfoVal (m, L, u) * (h - 4)); }, 48);
+        fill (p, 1, w - 1);
+        line (p);
+        const float ph = lfoPhase (m, L);
+        if (ph >= 0)
+            dot (c, 1 + ph * (w - 2), h - 2 - lfoVal (m, L, ph) * (h - 4), 1.9f, juce::Colours::white);
+    }
+    else if (kind == "env")
+    {
+        const auto P = envPts (w + 12, h + 12, m.g (src + ".a"), m.g (src + ".d"), m.g (src + ".s"), m.g (src + ".r"));
+        c2d::Path p;
+        auto sh = [] (juce::Point<float> q) { return q - juce::Point<float> (6, 6); };
+        p.moveTo (sh (P.o).x, sh (P.o).y);
+        for (auto q : { P.a, P.d, P.s, P.r })
+            p.lineTo (sh (q).x, sh (q).y);
+        fill (p, 2, P.r.x - 6);
+        line (p);
+    }
+    else if (kind == "macro")
     {
         const float v = m.g (src), cx = w / 2, cy = h / 2 + 1, r = h / 2 - 2, a0 = PI * 0.75f;
         c.lineCap = "round";
@@ -1507,16 +1705,21 @@ void drawTilePic (c2d::Context& c, float w, float h, const Cl& cl, const Model& 
         c.moveTo (1, h - 7);
         c.lineTo (w - 1, 1);
         c.stroke();
-        dot (c, 1, h - 7, 2, col);
+        const float v = srcVal (m, src);
+        dot (c, 1 + v * (w - 2), h - 7 - v * (h - 8), 2, col);
     }
     else
     {
-        // The playing hand's last four seconds: nothing played yet.
+        // The playing hand: its last four seconds, newest at the right.
         auto y = [&] (float v) { return h - 2 - clamp (v) * (h - 4); };
-        const auto p = path ([&] (float u) { return juce::Point<float> (1 + u * (w - 2), y (0)); }, 60);
+        auto it = m.hist.find (src);
+        const auto p = path ([&] (float u) {
+            const float v = it == m.hist.end() ? 0.0f : it->second[(size_t) ((m.histAt + juce::roundToInt (u * 199)) % 200)];
+            return juce::Point<float> (1 + u * (w - 2), y (v));
+        }, 60);
         fill (p, 1, w - 1);
         line (p);
-        dot (c, w - 2, y (0), 1.9f, juce::Colours::white);
+        dot (c, w - 2, y (srcVal (m, src)), 1.9f, juce::Colours::white);
     }
 }
 } // namespace wave

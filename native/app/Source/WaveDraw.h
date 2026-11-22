@@ -41,6 +41,26 @@ struct Model
     std::function<Table (const juce::String&)> loadTable;
     float tilt[3] = { 0.5f, 0.5f, 0.5f };
     char face[3] = { 'w', 'w', 'w' };
+    // The matrix's rows as the page holds them (`WV.mods`: `off` is the
+    // engine's `on: false`), the macros' names, the board as stored, the
+    // engine's last `/api/wave/state` (null when there is none), the wheel.
+    struct Mod
+    {
+        juce::String src, dst;
+        float amt = 0;
+        juce::String curve = "lin", via;
+        bool off = false;
+    };
+    std::vector<Mod> mods;
+    juce::StringArray macroNames { "Brightness", "Movement", "Width", "Grit", "Space", "Morph", "Attack", "Air" };
+    juce::var board;
+    juce::var tele;
+    float mw = 0;
+    // What each source has done for the last four seconds, fifty a second
+    // (`WV_HIST`), for the tiles that draw a trace.
+    std::map<juce::String, std::array<float, 200>> hist;
+    int histAt = 0;
+    double histLast = -1;
 
     float g (const juce::String& k, float fallback = 0.0f) const;
     juce::String s (const juce::String& k) const;
@@ -54,6 +74,16 @@ struct Model
 
 private:
     std::map<juce::String, Table> tables;
+};
+
+// wvModOf: how far the rows can move a target either way, the engine's value
+// for it now (when it sends one), the first source's colour (WaveKit's modOf).
+struct ModOf
+{
+    float rng = 0;
+    bool live = false;
+    float at = 0;
+    juce::String col;
 };
 
 // The kit.
@@ -91,21 +121,21 @@ void under (c2d::Context&, const c2d::Path&, float x0, float x1, float base, flo
 void dot (c2d::Context&, float x, float y, float r, juce::Colour);
 
 // The shared knob's ring (`uiKnobPaint`), on a canvas `size` across.
-void ring (c2d::Context&, float size, float u, const Cl&, bool bip = false, bool pointer = false);
+void ring (c2d::Context&, float size, float u, const Cl&, bool bip = false, bool pointer = false, const ModOf* mod = nullptr);
 
 // The drawings.
 Frame waveFor (Model&, int i, bool dry);
 void draw3D (c2d::Context&, float w, float h, const Cl&, const Table&, float p, const juce::String& warpMode, float warpAmt, float rise, float depth, bool floor, int most = 28,
              const std::vector<std::pair<float, bool>>* voiceDots = nullptr);
 void drawSpec3D (c2d::Context&, float w, float h, const Cl&, const Table&, float p, const juce::String& warpMode, float warpAmt, float rise, float depth);
-void drawStrip (c2d::Context&, float w, float h, const Cl&, const Table&, float p);
-void drawFace (c2d::Context&, float w, float h, const Cl&, float v, const Frame& wave, const Frame* ghost, bool empty);
+void drawStrip (c2d::Context&, float w, float h, const Cl&, const Table&, float p, const ModOf* mod = nullptr);
+void drawFace (c2d::Context&, float w, float h, const Cl&, float v, const Frame& wave, const Frame* ghost, bool empty, const ModOf* mod = nullptr);
 void drawControlPic (c2d::Context&, float w, float h, const Cl&, float u, const juce::String& key);
-void drawKnob (c2d::Context&, float w, float h, const Cl&, float v, const juce::String& key, bool bip);
-void drawUniFace (c2d::Context&, float w, float h, const Cl&, const Frame& cur, int n, float det, float spr);
-void drawHBar (c2d::Context&, float w, float h, const Cl&, float v);
-void drawRuler (c2d::Context&, float w, float h, const Cl&, int semi, int cents);
-void drawPhase (c2d::Context&, float w, float h, const Cl&, float ph, const Frame& cur);
+void drawKnob (c2d::Context&, float w, float h, const Cl&, float v, const juce::String& key, bool bip, const ModOf* mod = nullptr);
+void drawUniFace (c2d::Context&, float w, float h, const Cl&, const Frame& cur, int n, float det, float spr, const ModOf* mod = nullptr);
+void drawHBar (c2d::Context&, float w, float h, const Cl&, float v, const ModOf* mod = nullptr);
+void drawRuler (c2d::Context&, float w, float h, const Cl&, int semi, int cents, const ModOf* mod = nullptr);
+void drawPhase (c2d::Context&, float w, float h, const Cl&, float ph, const Frame& cur, const ModOf* mod = nullptr);
 void drawPick (c2d::Context&, float w, float h, const Cl&, const Table&);
 void drawLens (c2d::Context&, float w, float h, const Cl&, const Model&, const Frame& cur, int i);
 juce::String drawOfx (c2d::Context&, float w, float h, const Cl&, Model&, int i, float t);
@@ -128,8 +158,8 @@ std::map<int, KeyRect> keyLayout (int lo);
 int keyAt (int lo, float x, float y);
 void drawKeys (c2d::Context&, const Cl&, int lo, const std::function<bool (int)>& lit, float hue);
 void drawWheel (c2d::Context&, float w, float h, const Cl&, float v, bool bip);
-void drawPuck (c2d::Context&, float w, float h, const Cl&, Model&);
-void drawOut (c2d::Context&, float w, float h, const Cl&);
+void drawPuck (c2d::Context&, float w, float h, const Cl&, Model&, const std::vector<std::array<float, 3>>* trail = nullptr, float nowMs = 0);
+void drawOut (c2d::Context&, float w, float h, const Cl&, Model&, float t);
 void drawMaster (c2d::Context&, float w, float h, const Cl&, float master, float level);
 void drawMacro (c2d::Context&, float w, float h, const Cl&, Model&, int i);
 void drawTilePic (c2d::Context&, float w, float h, const Cl&, const Model&, const juce::String& src);
@@ -139,6 +169,6 @@ struct EnvPts
     juce::Point<float> o, a, d, s, r;
 };
 EnvPts envPts (float w, float h, float A, float D, float S, float R);
-void drawEnv (c2d::Context&, float w, float h, const Cl&, float A, float D, float S, float R);
+void drawEnv (c2d::Context&, float w, float h, const Cl&, float A, float D, float S, float R, const std::vector<std::pair<char, float>>* voices = nullptr);
 void drawLfo (c2d::Context&, float w, float h, const Cl&, const Model&, int L);
 } // namespace wave

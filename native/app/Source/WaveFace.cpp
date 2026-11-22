@@ -82,6 +82,105 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
         setCreateTableMenu (*views[0], [this] (juce::Rectangle<float> near, int osc) { tableMenu (near, osc); });
     buildLayers();
     reload();
+    startTimerHz (30);
+}
+
+float WaveFace::posNow (int i) const
+{
+    // The engine's frame position after modulation, while it sends one.
+    const auto& p = model.tele["pos"];
+    if (p.isArray() && p.size() > i)
+        return wave::clamp ((float) (double) p[i]);
+    const auto mo = wave::modOf (model, "osc" + juce::String (i) + ".pos");
+    return wave::clamp (mo.live ? mo.at : model.g ("osc" + juce::String (i) + ".pos"));
+}
+
+void WaveFace::poll()
+{
+    nowT = (float) (juce::Time::getMillisecondCounterHiRes() / 1000.0);
+    if (api)
+    {
+        int status = 0;
+        const auto t = api ("GET", "/api/wave/state", {}, status);
+        model.tele = status == 200 ? t : juce::var();
+    }
+    // What each source has done, fifty a second (WV_HIST).
+    const double t = nowT;
+    if (model.histLast < 0 || t - model.histLast > 1)
+        model.histLast = t - 0.02;
+    while (t - model.histLast >= 0.02)
+    {
+        model.histLast += 0.02;
+        for (const auto& src : wave::sources())
+            model.hist[src.key][(size_t) model.histAt] = wave::srcVal (model, src.key);
+        model.histAt = (model.histAt + 1) % 200;
+    }
+    const auto vs = wave::voices (model);
+    juce::String vsig;
+    for (const auto& v : vs)
+        vsig << v.note << v.stage << ",";
+    const bool voicesChanged = vsig != lastVoices;
+    lastVoices = vsig;
+    // The choices a row steps (wvChoiceTick): lit again only when one moves.
+    juce::String csig;
+    if (auto* o = model.tele["mod"].getDynamicObject())
+        for (const auto& pr : o->getProperties())
+            if (pr.value.isString())
+                csig << pr.name.toString() << "=" << pr.value.toString() << ",";
+    if (csig != lastChoices)
+    {
+        lastChoices = csig;
+        sync();
+        for (auto& l : layers)
+            if (l.get() != textLayer)
+                l->repaint();
+    }
+    const int n = (int) vs.size();
+    if (auto it = byId.find ("wvVoicesRo"); it != byId.end())
+    {
+        const auto txt = juce::String (n) + " voice" + (n == 1 ? "" : "s");
+        if (texts[it->second.i] != txt)
+        {
+            texts[it->second.i] = txt;
+            if (textLayer != nullptr)
+                textLayer->repaint();
+        }
+    }
+    // What the engine moves, drawn again: everything a row aims at, the
+    // voices, the output, the animated screens.
+    if (voicesChanged)
+        repaintCanvas ("wvKeys");
+    for (const auto& id : { "wvOutWave", "wvMaster", "wvPuck" })
+        repaintCanvas (id);
+    if (ctx.view == "play")
+    {
+        juce::StringArray dsts;
+        for (const auto& r : model.mods)
+            if (!r.off)
+                dsts.addIfNotAlreadyThere (r.dst);
+        for (const auto& d : dsts)
+            repaintFor (d);
+        for (int i = 0; i < 3; ++i)
+        {
+            const auto k = "osc" + juce::String (i) + ".";
+            if (!vs.empty() || voicesChanged)
+                repaintCanvas ("wvW3d" + juce::String (i));
+            const auto fx = model.s (k + "fx.mode");
+            if (fx == "chorus" || fx == "phaser")
+                repaintCanvas ("wvOfx" + juce::String (i));
+        }
+        if (model.g ("noise.on") >= 0.5f)
+            repaintCanvas ("wvMixL4");
+        for (const auto& src : wave::sources())
+            if (src.kind == "perf" || src.kind == "macro")
+                repaintCanvas ("wvSc" + src.key);
+        if (tiles != nullptr)
+            tiles->live();
+        if (actLayer != nullptr)
+            actLayer->repaint();
+    }
+    if (auto* v = viewFor (ctx.view))
+        v->tick (nowT);
 }
 
 WaveView* WaveFace::viewFor (const juce::String& v)
@@ -124,25 +223,6 @@ void WaveFace::index (const juce::var& n, int parent)
         chrome.skip.insert (i);
     if (!dataOf (n, "bindKey").isEmpty())
         choices.push_back (node);
-    // A tile's reading: its value in <b>, its bar under it.
-    const auto env = dataOf (n, "env"), lfo = dataOf (n, "lfo");
-    if (hasClass (n, "wv-rd") && (env.isNotEmpty() || lfo.isNotEmpty()))
-    {
-        Readout r;
-        r.key = dataOf (n, "tgt");
-        r.kind = env.isNotEmpty() ? dataOf (n, "k") : dataOf (n, "lk");
-        r.src = env.isNotEmpty() ? env : lfo;
-        r.r = node.r;
-        if (auto* kids = n["kids"].getArray())
-            for (const auto& k : *kids)
-            {
-                if (k["tag"].toString() == "b")
-                    r.b = (int) k["i"], chrome.skipText.insert (r.b);
-                if (hasClass (k, "bar"))
-                    r.bar = (int) k["i"], r.barR = rectOf (k["rect"]), chrome.skip.insert (r.bar);
-            }
-        readouts.push_back (r);
-    }
     if (auto* kids = n["kids"].getArray())
         for (const auto& k : *kids)
             index (k, i);
@@ -154,6 +234,20 @@ void WaveFace::reload()
     if (auto* params = patch["params"].getDynamicObject())
         for (const auto& prop : params->getProperties())
             model.p[prop.name.toString()] = prop.value;
+    // The rows, the macros' names and the board, as the page adopts a patch.
+    if (patch["mods"].isArray())
+        wave::modsIn (model, patch["mods"]);
+    if (auto* names = patch["macroNames"].getArray())
+        for (int i = 0; i < 8 && i < names->size(); ++i)
+            if (names->getReference (i).toString().isNotEmpty())
+                model.macroNames.set (i, names->getReference (i).toString());
+    if (patch["board"].isObject())
+        model.board = patch["board"];
+    if (tiles != nullptr)
+        tiles->sync();
+    for (auto& l : layers)
+        if (l.get() != textLayer)
+            l->repaint();
     sync();
     for (auto& w : views)
         if (w != nullptr && w->isVisible())
@@ -167,6 +261,8 @@ void WaveFace::set (const juce::String& key, const juce::var& value)
         send (key, json (value));
     sync();
     repaintFor (key);
+    if (tiles != nullptr)
+        tiles->changed (key);
     for (auto& w : views)
         if (w != nullptr && w->isVisible())
             w->changed (key);
@@ -219,6 +315,35 @@ void WaveFace::sync()
         if (auto it = byId.find ("wvTn" + juce::String (i)); it != byId.end())
             txt ("wvTn" + juce::String (i), model.s (k + "table"));
     }
+    static const char* warpNames[][2] = { { "off", "Off" }, { "bend", "Bend" }, { "sync", "Sync" }, { "pwm", "PWM" }, { "fold", "Fold" },
+                                          { "mirror", "Mirror" }, { "asym", "Asym" }, { "quant", "Quant" }, { "fm", "FM \xe2\x86\x90 B" } };
+    static const char* filterNames[][2] = { { "lp", "Low pass" }, { "bp", "Band pass" }, { "hp", "High pass" }, { "notch", "Notch" }, { "comb", "Comb" }, { "form", "Formant" } };
+    for (int i = 0; i < 3; ++i)
+    {
+        const auto k = "osc" + juce::String (i) + ".";
+        txt ("wvPkName" + juce::String (i), wave::choiceNow (model, k + "table"));
+        for (int j : { 0, 1 })
+        {
+            const auto mode = wave::choiceNow (model, k + "warp" + juce::String (j) + ".mode");
+            juce::String name = "Off";
+            for (auto& w : warpNames)
+                if (mode == w[0])
+                    name = juce::String::fromUTF8 (w[1]);
+            txt ("wvWn" + juce::String (i) + juce::String (j), mode == "off" ? juce::String ("Add") : name);
+        }
+    }
+    for (int i : { 0, 1 })
+    {
+        const auto type = wave::choiceNow (model, "filt" + juce::String (i) + ".type");
+        juce::String name = "Low pass";
+        for (auto& f : filterNames)
+            if (type == f[0])
+                name = f[1];
+        txt ("wvFtn" + juce::String (i), name);
+    }
+    txt ("wvBendRo", juce::String::fromUTF8 ("\xc2\xb1") + juce::String ((int) model.g ("voice.bend", 2)));
+    for (int i = 0; i < 8; ++i)
+        txt ("wvMacn" + juce::String (i), model.macroNames[i]);
     const float glide = model.g ("voice.glide");
     txt ("wvGlRo", glide > 0.005f ? wave::fmtMs (glide * glide * 2) : juce::String ("Off"));
     auto kHz = [] (float f) { return f >= 10000 ? juce::String (juce::roundToInt (f / 1000)) + " kHz" : wave::fmtHz (f); };
@@ -237,25 +362,6 @@ void WaveFace::sync()
     for (int i = 0; i < 8; ++i)
         txt ("wvMacr" + juce::String (i), juce::String (juce::roundToInt (model.g ("macro" + juce::String (i)) * 100)));
     txt ("wvVoicesRo", "0 voices");
-    for (const auto& r : readouts)
-    {
-        const float v = model.g (r.key);
-        juce::String t;
-        if (r.kind == "a" || r.kind == "d")
-            t = wave::fmtC (v * v * 4);
-        else if (r.kind == "s")
-            t = juce::String (juce::roundToInt (v * 100)) + "%";
-        else if (r.kind == "r")
-            t = wave::fmtC (v * v * 6);
-        else if (r.kind == "rate")
-            t = wave::lfoRateTxt (model, r.src.getTrailingIntValue()).replace (" Hz", "Hz");
-        else if (r.kind == "smooth")
-            t = juce::String (juce::roundToInt (v * 100)) + "%";
-        else if (r.kind == "rise")
-            t = wave::fmtC (v * v * 4);
-        if (r.b >= 0)
-            texts[r.b] = t;
-    }
     for (int i = 0; i < 3; ++i)
         if (auto it = byId.find ("wvOfr" + juce::String (i)); it != byId.end())
             texts[it->second.i] = wave::ofxText (model, i);
@@ -274,6 +380,71 @@ void WaveFace::sync()
 // one chosen, an unlit one's on the rest.
 void WaveFace::restyleChoices()
 {
+    // A group of the page's own switches lit as the patch says: each drawn
+    // with the look of one that was captured lit, or one that wasn't.
+    auto light = [this] (const std::vector<const juce::var*>& group, const std::function<bool (const juce::var&)>& on, const juce::var* litLook = nullptr, const juce::var* unlitLook = nullptr) {
+        const juce::var *lit = litLook, *unlit = unlitLook;
+        for (auto* n : group)
+            if (hasClass (*n, "on"))
+                lit = lit == nullptr ? n : lit;
+            else if (unlit == nullptr)
+                unlit = n;
+        if (lit == nullptr || unlit == nullptr)
+            return;
+        for (auto* n : group)
+            chrome.styleFrom[(int) (*n)["i"]] = (int) (*(on (*n) ? lit : unlit))["i"];
+    };
+    std::vector<const juce::var*> powers, strips;
+    const juce::var *mpe = nullptr, *litSpan = nullptr;
+    std::map<int, std::vector<const juce::var*>> faces;
+    for (const auto& [i, n] : chrome.nodes)
+    {
+        if (dataOf (n, "oscled").isNotEmpty() || dataOf (n, "mixon").isNotEmpty())
+            powers.push_back (&n);
+        if (dataOf (n, "strip").isNotEmpty())
+            if (auto* nm = face::findNode (n, "wv-nm"))
+                strips.push_back (nm);
+        if (n["id"].toString() == "wvMpe")
+            if (auto* kids = n["kids"].getArray(); kids != nullptr && !kids->isEmpty())
+                mpe = &kids->getReference (0);
+        if (litSpan == nullptr && n["tag"].toString() == "span" && hasClass (n, "on") && parentOf.count (i) > 0 && chrome.nodes.count (parentOf[i]) > 0
+            && chrome.nodes[parentOf[i]]["id"].toString() == "wvVoiceMode")
+            litSpan = &n;
+        if (auto f = dataOf (n, "f"); f.isNotEmpty() && parentOf.count (i) > 0)
+            faces[parentOf[i]].push_back (&n);
+    }
+    auto powered = [this] (const juce::var& n) {
+        static const char* mix[] = { "osc0.on", "osc1.on", "osc2.on", "sub.on", "noise.on" };
+        const auto osc = dataOf (n, "oscled"), m = dataOf (n, "mixon");
+        return model.g (osc.isNotEmpty() ? "osc" + osc + ".on" : juce::String (mix[juce::jlimit (0, 4, m.getIntValue())])) >= 0.5f;
+    };
+    light (powers, powered);
+    // .wv-strip.off: a source switched off has its name dimmed.
+    {
+        static const char* mix[] = { "osc0.on", "osc1.on", "osc2.on", "sub.on", "noise.on" };
+        const juce::var *lit = nullptr, *unlit = nullptr;
+        auto stripOf = [this] (const juce::var* nm) -> const juce::var& { return chrome.nodes[parentOf[(int) (*nm)["i"]]]; };
+        for (auto* nm : strips)
+        {
+            auto& slot = hasClass (stripOf (nm), "off") ? unlit : lit;
+            if (slot == nullptr)
+                slot = nm;
+        }
+        if (lit != nullptr && unlit != nullptr)
+            for (auto* nm : strips)
+                chrome.styleFrom[(int) (*nm)["i"]] = (int) (*(model.g (mix[juce::jlimit (0, 4, dataOf (stripOf (nm), "strip").getIntValue())]) >= 0.5f ? lit : unlit))["i"];
+    }
+    // An oscillator switched off is drawn at .55.
+    for (int i = 0; i < 3; ++i)
+        if (auto it = byId.find ("wvOsc" + juce::String (i)); it != byId.end())
+            chrome.opacityOf[it->second.i] = model.g ("osc" + juce::String (i) + ".on") >= 0.5f ? 1.0f : 0.55f;
+    if (mpe != nullptr && litSpan != nullptr)
+        light ({ mpe }, [this] (const juce::var&) { return model.g ("voice.mpe") >= 0.5f; }, litSpan, mpe);
+    for (auto& [parent, group] : faces)
+    {
+        const int osc = dataOf (chrome.nodes[parent], "face").getIntValue();
+        light (group, [this, osc] (const juce::var& n) { return dataOf (n, "f").toStdString()[0] == model.face[juce::jlimit (0, 2, osc)]; });
+    }
     std::map<juce::String, std::vector<const Node*>> groups;
     for (const auto& c : choices)
         groups[dataOf (c.n, "bindKey") + "|" + juce::String (parentOf[c.i])].push_back (&c);
@@ -285,7 +456,8 @@ void WaveFace::restyleChoices()
             (hasClass (n->n, "on") ? lit : unlit) = n;
         if (lit == nullptr || unlit == nullptr)
             continue;
-        const auto now = model.v (key);
+        // A choice a row steps shows the option it is on now (wvChoiceNow).
+        const auto now = model.v (key).isString() ? juce::var (wave::choiceNow (model, key)) : model.v (key);
         for (auto* n : nodes)
         {
             const auto value = dataOf (n->n, "bindValue");
@@ -375,7 +547,6 @@ std::vector<std::pair<juce::String, double>> WaveFace::profile (float scale)
 // Every canvas the page draws, each with the keys it shows.
 void WaveFace::buildLayers()
 {
-    const float t = 0.0f;
     for (int i = 0; i < 3; ++i)
     {
         const auto si = juce::String (i), k = "osc" + si + ".", o = "osc" + juce::String (i == 1 ? 0 : 1) + ".";
@@ -385,41 +556,66 @@ void WaveFace::buildLayers()
         };
         const size_t first = layers.size();
         addCanvas ("wvW3d" + si, osc, [this, i, k] (c2d::Context& c, float w, float h) {
-            const auto& T = model.table (model.s (k + "table"));
-            const float p = wave::clamp (model.g (k + "pos")), tilt = model.tilt[i];
+            const auto& T = model.table (wave::choiceNow (model, k + "table"));
+            const float p = posNow (i), tilt = model.tilt[i];
             const auto wm = model.s (k + "warp0.mode");
-            const float wa = wave::clamp (model.g (k + "warp0.amt"));
+            const auto mwa = wave::modOf (model, k + "warp0.amt");
+            const float wa = wave::clamp (mwa.live ? mwa.at : model.g (k + "warp0.amt"));
             if (model.face[i] == 's')
                 wave::drawSpec3D (c, w, h, cl, T, p, wm, wa, 0.3f + 0.38f * tilt, 0.18f + 0.14f * tilt);
             else
-                wave::draw3D (c, w, h, cl, T, p, wm, wa, 0.3f + 0.38f * tilt, 0.18f + 0.14f * tilt, true);
+            {
+                // A dot for every voice sounding, round the cycle at its own pitch.
+                std::vector<std::pair<float, bool>> dots;
+                if (model.g (k + "on") >= 0.5f)
+                    for (const auto& v : wave::voices (model))
+                        dots.push_back ({ std::fmod (nowT * std::pow (2.0f, (float) (v.note - 60) / 12) * 0.7f, 1.0f), v.stage == 'r' });
+                wave::draw3D (c, w, h, cl, T, p, wm, wa, 0.3f + 0.38f * tilt, 0.18f + 0.14f * tilt, true, 28, &dots);
+            }
         });
-        addCanvas ("wvSt" + si, { k + "table", k + "pos" }, [this, k] (c2d::Context& c, float w, float h) {
-            wave::drawStrip (c, w, h, cl, model.table (model.s (k + "table")), wave::clamp (model.g (k + "pos")));
+        addCanvas ("wvSt" + si, { k + "table", k + "pos" }, [this, i, k] (c2d::Context& c, float w, float h) {
+            const auto mo = wave::modOf (model, k + "pos");
+            wave::drawStrip (c, w, h, cl, model.table (wave::choiceNow (model, k + "table")), posNow (i), &mo);
         });
         for (int j : { 0, 1 })
             addCanvas ("wvWp" + si + juce::String (j), osc, [this, i, j, k] (c2d::Context& c, float w, float h) {
                 const auto key = k + "warp" + juce::String (j) + ".amt", mode = model.s (k + "warp" + juce::String (j) + ".mode");
                 const auto o2 = "osc" + juce::String (i == 1 ? 0 : 1) + ".";
-                const auto B = wave::frameAt (model.table (model.s (o2 + "table")), wave::clamp (model.g (o2 + "pos")));
-                const auto f = wave::frameAt (model.table (model.s (k + "table")), wave::clamp (model.g (k + "pos")));
-                wave::drawFace (c, w, h, cl, model.g (key), wave::warp (f, mode, wave::clamp (model.g (key)), &B), &f, mode == "off");
+                const auto B = wave::frameAt (model.table (model.s (o2 + "table")), posNow (i == 1 ? 0 : 1));
+                const auto f = wave::frameAt (model.table (model.s (k + "table")), posNow (i));
+                const auto mo = wave::modOf (model, key);
+                const float amt = wave::clamp (mo.live ? mo.at : model.g (key));
+                auto C = cl;
+                if (mo.col.isNotEmpty())
+                    C.mod = c2d::css (mo.col);
+                wave::drawFace (c, w, h, C, model.g (key), wave::warp (f, mode, amt, &B), &f, mode == "off", &mo);
             });
         addCanvas ("wvUn" + si, osc, [this, i, k] (c2d::Context& c, float w, float h) {
-            wave::drawUniFace (c, w, h, cl, wave::waveFor (model, i, false), (int) model.g (k + "uni.n", 1), model.g (k + "uni.det"), model.g (k + "uni.spr"));
+            const auto mo = wave::modOf (model, k + "uni.det");
+            wave::drawUniFace (c, w, h, cl, wave::waveFor (model, i, false), (int) model.g (k + "uni.n", 1), model.g (k + "uni.det"), model.g (k + "uni.spr"), &mo);
         });
-        addCanvas ("wvOfx" + si, osc, [this, i, t] (c2d::Context& c, float w, float h) { wave::drawOfx (c, w, h, cl, model, i, t); });
+        addCanvas ("wvOfx" + si, osc, [this, i] (c2d::Context& c, float w, float h) { wave::drawOfx (c, w, h, cl, model, i, nowT); });
         addCanvas ("wvPt" + si, { k + "pitch", k + "fine" }, [this, k] (c2d::Context& c, float w, float h) {
             const int semi = juce::roundToInt ((model.g (k + "pitch", 0.5f) - 0.5f) * 48), cents = juce::roundToInt ((model.g (k + "fine", 0.5f) - 0.5f) * 200);
-            wave::drawRuler (c, w, h, cl, semi, cents);
+            const auto mo = wave::modOf (model, k + "pitch");
+            wave::drawRuler (c, w, h, cl, semi, cents, &mo);
         });
-        addCanvas ("wvPh" + si, osc, [this, i, k] (c2d::Context& c, float w, float h) { wave::drawPhase (c, w, h, cl, model.g (k + "phase"), wave::waveFor (model, i, false)); });
-        addCanvas ("wvPn" + si, { k + "pan" }, [this, k] (c2d::Context& c, float w, float h) { wave::drawKnob (c, w, h, cl, model.g (k + "pan", 0.5f), k + "pan", true); });
-        addCanvas ("wvPk" + si, { k + "table" }, [this, k] (c2d::Context& c, float w, float h) { wave::drawPick (c, w, h, cl, model.table (model.s (k + "table"))); });
+        addCanvas ("wvPh" + si, osc, [this, i, k] (c2d::Context& c, float w, float h) {
+            const auto mo = wave::modOf (model, k + "phase");
+            wave::drawPhase (c, w, h, cl, model.g (k + "phase"), wave::waveFor (model, i, false), &mo);
+        });
+        addCanvas ("wvPn" + si, { k + "pan" }, [this, k] (c2d::Context& c, float w, float h) {
+            const auto mo = wave::modOf (model, k + "pan");
+            wave::drawKnob (c, w, h, cl, model.g (k + "pan", 0.5f), k + "pan", true, &mo);
+        });
+        addCanvas ("wvPk" + si, { k + "table" }, [this, k] (c2d::Context& c, float w, float h) { wave::drawPick (c, w, h, cl, model.table (wave::choiceNow (model, k + "table"))); });
         for (size_t n = first; n < layers.size(); ++n)
             layers[n]->also = fm;
     }
-    addCanvas ("wvGlide", { "voice.glide" }, [this] (c2d::Context& c, float w, float h) { wave::drawHBar (c, w, h, cl, model.g ("voice.glide")); });
+    addCanvas ("wvGlide", { "voice.glide" }, [this] (c2d::Context& c, float w, float h) {
+        const auto mo = wave::modOf (model, "voice.glide");
+        wave::drawHBar (c, w, h, cl, model.g ("voice.glide"), &mo);
+    });
     for (int i : { 0, 1 })
     {
         const auto si = juce::String (i), f = "filt" + si + ".";
@@ -427,25 +623,43 @@ void WaveFace::buildLayers()
         for (const auto& knob : { std::pair { "wvCu", "cut" }, { "wvRs", "res" }, { "wvDr", "drive" }, { "wvKy", "key" } })
         {
             const juce::String key = f + knob.second;
-            addCanvas (juce::String (knob.first) + si, { key }, [this, key] (c2d::Context& c, float w, float h) { wave::drawKnob (c, w, h, cl, model.g (key), key, false); });
+            addCanvas (juce::String (knob.first) + si, { key }, [this, key] (c2d::Context& c, float w, float h) {
+                const auto mo = wave::modOf (model, key);
+                wave::drawKnob (c, w, h, cl, model.g (key), key, false, &mo);
+            });
         }
     }
     for (int c = 0; c < 5; ++c)
     {
         const juce::StringArray deps = c < 3 ? juce::StringArray { "osc" + juce::String (c) + "." } : c == 3 ? juce::StringArray { "sub." } : juce::StringArray { "noise." };
-        addCanvas ("wvMixL" + juce::String (c), deps, [this, c, t] (c2d::Context& x, float w, float h) {
+        addCanvas ("wvMixL" + juce::String (c), deps, [this, c] (c2d::Context& x, float w, float h) {
             const auto cur = c < 3 ? wave::waveFor (model, c, false) : wave::Frame {};
-            wave::drawMix (x, w, h, cl, model, c, c < 3 ? &cur : nullptr, t);
+            wave::drawMix (x, w, h, cl, model, c, c < 3 ? &cur : nullptr, nowT);
         });
     }
     addCanvas ("wvKeys", { "osc0.pos" }, [this] (c2d::Context& c, float, float) {
-        wave::drawKeys (c, cl, kbLo, [this] (int n) { return held.count (n) > 0; }, 205 - 175 * wave::clamp (model.g ("osc0.pos")));
+        // Lit: what is held here, and every voice the engine has not yet let go.
+        std::set<int> on (held);
+        for (const auto& v : wave::voices (model))
+            if (v.stage != 'r')
+                on.insert (v.note);
+        wave::drawKeys (c, cl, kbLo, [&on] (int n) { return on.count (n) > 0; }, 205 - 175 * wave::clamp (model.g ("osc0.pos")));
     });
     addCanvas ("wvBend", {}, [this] (c2d::Context& c, float w, float h) { wave::drawWheel (c, w, h, cl, bend, true); });
     addCanvas ("wvModw", {}, [this] (c2d::Context& c, float w, float h) { wave::drawWheel (c, w, h, cl, mw, false); });
-    addCanvas ("wvPuck", { "osc0.", "filt0.cut" }, [this] (c2d::Context& c, float w, float h) { wave::drawPuck (c, w, h, cl, model); });
-    addCanvas ("wvOutWave", {}, [this] (c2d::Context& c, float w, float h) { wave::drawOut (c, w, h, cl); });
-    addCanvas ("wvMaster", { "master" }, [this] (c2d::Context& c, float w, float h) { wave::drawMaster (c, w, h, cl, model.g ("master", 0.8f), 0.0f); });
+    addCanvas ("wvPuck", { "osc0.", "filt0.cut" }, [this] (c2d::Context& c, float w, float h) {
+        const auto now = (float) juce::Time::getMillisecondCounterHiRes();
+        trail.erase (std::remove_if (trail.begin(), trail.end(), [now] (const auto& q) { return now - q[2] >= 1500; }), trail.end());
+        wave::drawPuck (c, w, h, cl, model, &trail, now);
+    });
+    addCanvas ("wvOutWave", {}, [this] (c2d::Context& c, float w, float h) { wave::drawOut (c, w, h, cl, model, nowT); });
+    addCanvas ("wvMaster", { "master" }, [this] (c2d::Context& c, float w, float h) {
+        float lvl = 0;
+        if (auto* p = model.tele["peak"].getArray())
+            for (const auto& x : *p)
+                lvl = juce::jmax (lvl, (float) (double) x);
+        wave::drawMaster (c, w, h, cl, model.g ("master", 0.8f), wave::clamp (lvl));
+    });
     for (int i = 0; i < 8; ++i)
         addCanvas ("wvMac" + juce::String (i), { "macro" + juce::String (i), "osc0.table" }, [this, i] (c2d::Context& c, float w, float h) { wave::drawMacro (c, w, h, cl, model, i); });
     for (const auto& src : { "vel", "note", "mw", "at", "rand", "macro0", "macro1", "macro2", "macro3", "macro4", "macro5", "macro6", "macro7" })
@@ -453,54 +667,84 @@ void WaveFace::buildLayers()
         const juce::String s (src);
         addCanvas ("wvSc" + s, { s }, [this, s] (c2d::Context& c, float w, float h) { wave::drawTilePic (c, w, h, cl, model, s); });
     }
-    for (const auto& src : { "amp", "env1", "env2", "env3" })
-    {
-        const juce::String s (src);
-        const auto C = s == "amp" ? cl : wave::sourceCl (cl, s);
-        addCanvas ("wvpev" + s, { s + "." }, [this, s, C] (c2d::Context& c, float w, float h) {
-            wave::drawEnv (c, w, h, C, model.g (s + ".a"), model.g (s + ".d"), model.g (s + ".s"), model.g (s + ".r"));
+    // The envelopes and LFOs (391c-wave-tiles.js), as Matrix has them too.
+    WaveTiles::Host th;
+    th.chrome = &chrome;
+    th.tree = face::page ("wave")["tree"];
+    th.model = &model;
+    th.cl = &cl;
+    th.set = [this] (const juce::String& k, const juce::var& v) { set (k, v); };
+    th.addLayer = [this] (const juce::String& name, juce::Rectangle<float> r, std::function<void (juce::Graphics&)> draw) -> juce::Component* {
+        const auto box = r.getSmallestIntegerContainer().toFloat();
+        const auto off = r.getPosition() - box.getPosition();
+        auto* l = addLayer (r, {}, [draw, off] (juce::Graphics& g) {
+            g.addTransform (juce::AffineTransform::translation (off.x, off.y));
+            draw (g);
         });
-    }
-    for (int L = 0; L < 4; ++L)
+        l->name = name;
+        return l;
+    };
+    th.lfoMenu = [this] (juce::Rectangle<float> near, int L) { lfoMenu (near, L); };
+    tiles = std::make_unique<WaveTiles> (th, "p");
+    // The warps' and effects' glyphs, as the patch has them (the page sets their paths).
     {
-        const auto s = "lfo" + juce::String (L);
-        const auto C = wave::sourceCl (cl, s);
-        addCanvas ("wvplv" + s, { s + ".", "tempo" }, [this, s, C, L] (c2d::Context& c, float w, float h) {
-            wave::drawLfo (c, w, h, C, model, L);
-            const float rise = model.g (s + ".rise");
-            if (rise > 0.005f)
+        std::vector<std::pair<juce::String, juce::var>> icons;
+        for (const auto& [i, n] : chrome.nodes)
+        {
+            const auto cyc = dataOf (n, "cycle"), fx = dataOf (n, "ofx");
+            if (cyc.length() != 2 && fx.isEmpty())
+                continue;
+            if (auto* svg = face::findNode (n, "svg"))
             {
-                const float x1 = 8 + rise * (w - 16) * 0.5f;
-                auto gr = c.createLinearGradient (8, 0, x1, 0);
-                gr.addColorStop (0, "rgba(0,0,0,.55)");
-                gr.addColorStop (1, "rgba(0,0,0,0)");
-                c.fillStyle = gr;
-                c.fillRect (8, 6, x1 - 8, h - 12);
-                c.strokeStyle = C.bloom (0.6f);
-                c.setLineDash ({ 3, 3 });
-                c.beginPath();
-                c.moveTo (8, h - 8);
-                c.lineTo (x1, 8);
-                c.stroke();
-                c.setLineDash ({});
+                chrome.skip.insert ((int) (*svg)["i"]);
+                icons.push_back ({ cyc.length() == 2 ? "osc" + cyc.substring (0, 1) + ".warp" + cyc.substring (1) + ".mode" : "osc" + fx + ".fx.mode", *svg });
+            }
+        }
+        juce::Rectangle<float> all;
+        for (auto& ic : icons)
+            all = all.isEmpty() ? rectOf (ic.second["rect"]) : all.getUnion (rectOf (ic.second["rect"]));
+        const auto box = all.expanded (4);
+        addLayer (box, { "osc0.", "osc1.", "osc2." }, [this, icons, box] (juce::Graphics& g) {
+            for (const auto& [key, svg] : icons)
+            {
+                const auto now = wave::choiceNow (model, key);
+                face::drawIcon (g, svg, key.endsWith ("fx.mode") ? wave::ofxGlyphPath (now) : wave::warpGlyph (now), -box.getPosition());
             }
         });
     }
-    // The tiles' bars, in the source's colour, as long as the value.
-    for (const auto& r : readouts)
+    // More Sources: each source's light, as bright as it moves (.act).
+    std::vector<std::pair<juce::String, juce::Rectangle<float>>> acts;
+    for (const auto& [i, n] : chrome.nodes)
+        if (hasClass (n, "wv-sc"))
+            if (auto* a = face::findNode (n, "act"))
+            {
+                chrome.skip.insert ((int) (*a)["i"]);
+                acts.push_back ({ dataOf (n, "src"), rectOf ((*a)["rect"]) });
+            }
+    if (!acts.empty())
     {
-        if (r.bar < 0)
-            continue;
-        const auto box = r.barR.withWidth (r.r.getWidth()).expanded (8);
-        const auto key = r.key, src = r.src;
-        const auto bar = r.barR.withWidth (r.r.getWidth());
-        const auto origin = box.getTopLeft();
-        addLayer (box, { key }, [this, key, src, bar, origin] (juce::Graphics& g) {
-            const auto col = c2d::css (wave::sourceColour (src));
-            const auto b = bar.withWidth (bar.getWidth() * wave::clamp (model.g (key))) - origin;
-            juce::DropShadow (col, 6, {}).drawForRectangle (g, b.toNearestInt());
-            g.setColour (col.withAlpha (0.85f));
-            g.fillRect (b);
+        juce::Rectangle<float> all;
+        for (auto& a : acts)
+            all = all.isEmpty() ? a.second : all.getUnion (a.second);
+        const auto box = all.expanded (8);
+        actLayer = addLayer (box, {}, [this, acts, box] (juce::Graphics& g) {
+            for (const auto& [src, r] : acts)
+            {
+                bool used = false;
+                for (const auto& row : model.mods)
+                    used = used || (row.src == src && !row.off);
+                const float o = used ? 0.3f + 0.7f * std::abs (wave::srcVal (model, src)) : 0.0f;
+                if (o <= 0.001f)
+                    continue;
+                const auto col = c2d::css (wave::sourceColour (src));
+                juce::Path p;
+                p.addEllipse (r - box.getPosition());
+                g.beginTransparencyLayer (o);
+                juce::DropShadow (col, 6, {}).drawForPath (g, p);
+                g.setColour (col);
+                g.fillPath (p);
+                g.endTransparencyLayer();
+            }
         });
     }
     // The readings, over everything.
@@ -586,12 +830,49 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
             set (k, number ? juce::var (v.getDoubleValue()) : juce::var (v));
             return;
         }
+    // The envelopes' and LFOs' tiles.
+    if (tiles != nullptr && tiles->down (e))
+    {
+        drag = [this] (float, float, const juce::MouseEvent& ev) { tiles->dragged (ev); };
+        dragEnd = [this] { tiles->up(); };
+        return;
+    }
     // Pickers and switches by the attributes the page gives them.
     for (const auto& [i, n] : chrome.nodes)
     {
         const auto r = rectOf (n["rect"]);
         if (!r.contains (at))
             continue;
+        if (auto f = dataOf (n, "f"); f.isNotEmpty() && parentOf.count (i) > 0)
+            if (auto osc = dataOf (chrome.nodes[parentOf.at (i)], "face"); osc.isNotEmpty())
+            {
+                model.face[juce::jlimit (0, 2, osc.getIntValue())] = (char) f[0];
+                sync();
+                repaintCanvas ("wvW3d" + osc);
+                return;
+            }
+        if (n["id"].toString() == "wvMpe")
+            return set ("voice.mpe", model.g ("voice.mpe") >= 0.5f ? 0.0 : 1.0);
+        if (n["id"].toString() == "wvBendRange")
+        {
+            const int ranges[] = { 1, 2, 7, 12, 24 };
+            int now = 0;
+            for (int q = 0; q < 5; ++q)
+                if (ranges[q] == (int) model.g ("voice.bend", 2))
+                    now = q;
+            return set ("voice.bend", ranges[(now + 1) % 5]);
+        }
+        if (n["id"].toString() == "wvTempoRo")
+        {
+            // A beat per two pixels, up or across, whole BPM only.
+            auto acc = std::make_shared<float> (0.0f);
+            const float from = wave::clamp (model.g ("tempo", 120), 30, 300);
+            drag = [this, acc, from] (float dx, float dy, const juce::MouseEvent&) {
+                *acc += (dx - dy) / 2;
+                set ("tempo", std::round (wave::clamp (from + *acc, 30, 300)));
+            };
+            return;
+        }
         if (auto mix = dataOf (n, "mixon"); mix.isNotEmpty())
         {
             static const char* on[] = { "osc0.on", "osc1.on", "osc2.on", "sub.on", "noise.on" };
@@ -618,19 +899,7 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
             return warpMenu (r, cyc.substring (0, 1).getIntValue(), cyc.substring (1).getIntValue());
         if (auto fx = dataOf (n, "ofx"); fx.isNotEmpty())
             return fxMenu (r, fx.getIntValue());
-        if (auto shp = dataOf (n, "lshape"); shp.isNotEmpty())
-            return lfoMenu (r, shp.getTrailingIntValue());
-        if (n["tag"].toString() == "span" && n["data"]["k"].isString())
-        {
-            const int parent = parentOf.count (i) ? parentOf.at (i) : -1;
-            if (auto pt = chrome.nodes.find (parent); pt != chrome.nodes.end())
-            {
-                if (auto lm = dataOf (pt->second, "lmode"); lm.isNotEmpty())
-                    return set (lm + ".mode", dataOf (n, "k"));
-                if (auto ls = dataOf (pt->second, "lsync"); ls.isNotEmpty())
-                    return set (ls + ".sync", dataOf (n, "k").getDoubleValue());
-            }
-        }
+
     }
 
     // Drags, each as the page wires it.
@@ -659,6 +928,13 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
             drag = [setp] (float, float, const juce::MouseEvent& ev) { setp (ev.position); };
             return;
         }
+        for (int j : { 0, 1 })
+            if (canvasAt ("wvWp" + si + juce::String (j)) && model.s (k + "warp" + juce::String (j) + ".mode") == "off")
+            {
+                for (const auto& [ni, n] : chrome.nodes)
+                    if (dataOf (n, "cycle") == si + juce::String (j))
+                        return warpMenu (rectOf (n["rect"]), i, j);
+            }
         if (canvasAt ("wvUn" + si))
         {
             drag = [this, k, live] (float, float dy, const juce::MouseEvent& ev) {
@@ -779,10 +1055,11 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
     if (canvasAt ("wvPuck"))
     {
         const auto r = rectOf (chrome.canvases["wvPuck"]["rect"]);
-        auto setPuck = [r, live] (juce::Point<float> p) {
+        auto setPuck = [this, r, live] (juce::Point<float> p) {
             const float px = wave::clamp ((p.x - r.getX() - 6) / (r.getWidth() - 12)), py = wave::clamp (1 - (p.y - r.getY() - 6) / (r.getHeight() - 12));
             live ("osc0.pos", px);
             live ("filt0.cut", 0.2f + 0.7f * py);
+            trail.push_back ({ px, py, (float) juce::Time::getMillisecondCounterHiRes() });
         };
         setPuck (at);
         drag = [setPuck] (float, float, const juce::MouseEvent& ev) { setPuck (ev.position); };
@@ -805,43 +1082,6 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
             drag = [this, f, live] (float dx, float dy, const juce::MouseEvent&) {
                 live (f + "cut", wave::clamp (model.g (f + "cut") + dx / 220));
                 live (f + "res", wave::clamp (model.g (f + "res") - dy / 80));
-            };
-            return;
-        }
-    // An envelope: the nearest corner is the one dragged.
-    for (const auto& src : { "amp", "env1", "env2", "env3" })
-    {
-        const juce::String s (src);
-        if (!canvasAt ("wvpev" + s))
-            continue;
-        const auto r = rectOf (chrome.canvases["wvpev" + s]["rect"]);
-        const auto P = wave::envPts (r.getWidth(), r.getHeight(), model.g (s + ".a"), model.g (s + ".d"), model.g (s + ".s"), model.g (s + ".r"));
-        const float x = at.x - r.getX();
-        const float da = std::abs (P.a.x - x), dd = std::abs (P.d.x - x), dr = std::abs (P.r.x - x);
-        const char eh = da <= dd && da <= dr ? 'a' : dd <= dr ? 'd' : 'r';
-        drag = [this, s, eh, live] (float dx, float dy, const juce::MouseEvent&) {
-            if (eh == 'a')
-                live (s + ".a", wave::clamp (model.g (s + ".a") + dx / 70, 0.005f, 1));
-            else if (eh == 'd')
-            {
-                live (s + ".d", wave::clamp (model.g (s + ".d") + dx / 70, 0.01f, 1));
-                live (s + ".s", wave::clamp (model.g (s + ".s") - dy / 50));
-            }
-            else
-                live (s + ".r", wave::clamp (model.g (s + ".r") + dx / 70, 0.01f, 1));
-        };
-        return;
-    }
-    // A tile's reading: up and down, Shift for fine.
-    for (const auto& r : readouts)
-        if (r.r.contains (at))
-        {
-            const bool env = r.kind.length() == 1;
-            const float lo = r.kind == "a" ? 0.005f : (r.kind == "d" || r.kind == "r") ? 0.01f : 0.0f;
-            const auto key = r.key;
-            drag = [this, key, env, lo, live] (float, float dy, const juce::MouseEvent& ev) {
-                const float sens = env ? (ev.mods.isShiftDown() ? 600.0f : 120.0f) : (ev.mods.isShiftDown() ? 750.0f : 150.0f);
-                live (key, juce::jmax (lo, wave::clamp (model.g (key) - dy / sens)));
             };
             return;
         }
@@ -886,6 +1126,20 @@ void WaveFace::mouseUp (const juce::MouseEvent& e)
         dragEnd();
     drag = nullptr;
     dragEnd = nullptr;
+}
+
+void WaveFace::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
+{
+    // The unison knob turns its voices under the wheel, 1 to 16.
+    if (ctx.view == "play")
+        for (int i = 0; i < 3; ++i)
+            if (auto it = chrome.canvases.find ("wvUn" + juce::String (i)); it != chrome.canvases.end() && rectOf (it->second["rect"]).contains (e.position))
+            {
+                const auto k = "osc" + juce::String (i) + ".uni.n";
+                set (k, juce::jlimit (1, 16, (int) model.g (k, 1) + (w.deltaY > 0 ? 1 : -1)));
+                return;
+            }
+    juce::Component::mouseWheelMove (e, w);
 }
 
 void WaveFace::mouseDoubleClick (const juce::MouseEvent& e)
@@ -1085,12 +1339,14 @@ void WaveFace::warpMenu (juce::Rectangle<float> near, int i, int j)
     const auto B = wave::frameAt (model.table (model.s ("osc" + juce::String (o) + ".table")), posNow (o));
     const auto mode = k + "warp" + juce::String (j) + ".mode", amt = k + "warp" + juce::String (j) + ".amt";
     std::vector<WaveMenu::Item> items;
-    for (const auto& [key, name] : warpNames())
+    for (const auto& entry : warpNames())
     {
+        const auto& key = entry.first;
+        const auto& name = entry.second;
         WaveMenu::Item it;
         it.label = key == "off" ? juce::String ("None") : name;
         it.on = model.s (mode) == key;
-        it.pic = [this, f, B, key = key] (c2d::Context& c, float, float) {
+        it.pic = [this, f, B, key] (c2d::Context& c, float, float) {
             if (key != "off")
             {
                 c.strokeStyle = cl.bloom (0.18f);
@@ -1100,7 +1356,7 @@ void WaveFace::warpMenu (juce::Rectangle<float> near, int i, int j)
             const auto w = key == "off" ? f : wave::warp (f, key, 0.55f, &B);
             wave::trace (c, wave::path ([&] (float u) { return menuPt (4 + u * 80, 19 - wave::rd (w, u) * 14); }, 120), cl, 1.3f, 0.6f);
         };
-        it.act = [this, mode, amt, key = key] {
+        it.act = [this, mode, amt, key] {
             set (mode, key);
             if (key != "off" && model.g (amt) == 0.0f)
                 set (amt, 0.4);
@@ -1182,13 +1438,15 @@ void WaveFace::lfoMenu (juce::Rectangle<float> near, int L)
     const auto l = "lfo" + juce::String (L);
     const auto col = c2d::css (wave::sourceColour (l));
     std::vector<WaveMenu::Item> items;
-    for (const auto& [k, name] : lfoShapes())
+    for (const auto& entry : lfoShapes())
     {
+        const auto& k = entry.first;
+        const auto& name = entry.second;
         WaveMenu::Item it;
         it.label = name;
         it.on = wave::lfoShape (model, L) == k;
         it.ink = col;
-        it.pic = [this, col, l, k = k] (c2d::Context& c, float, float) {
+        it.pic = [this, col, l, k] (c2d::Context& c, float, float) {
             c.strokeStyle = c2d::css ("rgba(255,255,255,.07)");
             c.beginPath();
             c.moveTo (4, 19);
@@ -1203,7 +1461,7 @@ void WaveFace::lfoMenu (juce::Rectangle<float> near, int L)
             c.stroke (wave::path ([&] (float u) { return menuPt (4 + u * 80, 33 - wave::shapeValue (k, pts, u, 0) * 28); }, 120));
             c.shadowBlur = 0;
         };
-        it.act = [this, L, l, k = k] {
+        it.act = [this, L, l, k] {
             if (k == "drawn")
             {
                 // wvToDrawn: the shape it had, as points, then Drawn.

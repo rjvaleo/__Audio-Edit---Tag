@@ -45,6 +45,32 @@ juce::Drawable* svgFor (const juce::String& markup)
     return d.get();
 }
 
+void drawIcon (juce::Graphics& g, const juce::var& n, const juce::String& d, juce::Point<float> offset)
+{
+    auto markup = n["svg"].toString();
+    const int at = markup.indexOf ("<path");
+    if (at < 0)
+        return;
+    const int dAt = markup.indexOf (at, " d=\"");
+    if (dAt >= 0)
+    {
+        const int end = markup.indexOf (dAt + 4, "\"");
+        markup = markup.substring (0, dAt + 4) + d + markup.substring (end);
+    }
+    else
+        markup = markup.substring (0, at + 5) + " d=\"" + d + "\"" + markup.substring (at + 5);
+    auto* dr = svgFor (markup);
+    if (dr == nullptr)
+        return;
+    const auto r = rectOf (n) + offset;
+    auto* composite = dynamic_cast<juce::DrawableComposite*> (dr);
+    const auto area = composite != nullptr ? composite->getContentArea() : juce::Rectangle<float>();
+    if (!area.isEmpty())
+        dr->draw (g, 1.0f, juce::RectanglePlacement (juce::RectanglePlacement::centred).getTransformToFit (area, r));
+    else
+        dr->drawWithin (g, r, juce::RectanglePlacement::centred, 1.0f);
+}
+
 bool matches (const juce::var& n, const juce::String& what)
 {
     if (what.startsWith ("#"))
@@ -109,10 +135,10 @@ void Stamp::node (juce::Graphics& g, const juce::var& n, const juce::var* lookIn
 {
     if (skip && skip (n))
         return;
-    const juce::var* look = lookIn;
-    if (look == nullptr && this->look)
-        look = this->look (n);
-    const auto& style = look != nullptr ? *look : n;
+    const juce::var* worn = lookIn;
+    if (worn == nullptr && look)
+        worn = look (n);
+    const auto& style = worn != nullptr ? *worn : n;
     const auto r = rectOf (n);
     const float opacity = num (style["opacity"], 1.0f);
     if (opacity <= 0.001f)
@@ -132,10 +158,10 @@ void Stamp::node (juce::Graphics& g, const juce::var& n, const juce::var* lookIn
             recoloured->replaceColour (firstColour (n["svg"].toString()), inked);
             d = recoloured.get();
         }
-        else if (d != nullptr && look != nullptr && (*look)["svg"].isString())
+        else if (d != nullptr && worn != nullptr && (*worn)["svg"].isString())
         {
             recoloured = d->createCopy();
-            recoloured->replaceColour (firstColour (n["svg"].toString()), firstColour ((*look)["svg"].toString()));
+            recoloured->replaceColour (firstColour (n["svg"].toString()), firstColour ((*worn)["svg"].toString()));
             d = recoloured.get();
         }
         if (d != nullptr)
@@ -150,10 +176,10 @@ void Stamp::node (juce::Graphics& g, const juce::var& n, const juce::var* lookIn
     }
     if ((bool) n["clip"])
         g.reduceClipRegion (box (r, n["radius"]));
-    words (g, n, look);
+    words (g, n, worn);
     if (auto* kids = n["kids"].getArray())
     {
-        auto* lookKids = look != nullptr ? (*look)["kids"].getArray() : nullptr;
+        auto* lookKids = worn != nullptr ? (*worn)["kids"].getArray() : nullptr;
         for (int k = 0; k < kids->size(); ++k)
             node (g, kids->getReference (k), lookKids != nullptr && k < lookKids->size() ? &lookKids->getReference (k) : nullptr);
     }
@@ -163,12 +189,12 @@ void Stamp::node (juce::Graphics& g, const juce::var& n, const juce::var* lookIn
         g.endTransparencyLayer();
 }
 
-void Stamp::words (juce::Graphics& g, const juce::var& n, const juce::var* look) const
+void Stamp::words (juce::Graphics& g, const juce::var& n, const juce::var* worn) const
 {
     auto* runs = n["text"].getArray();
     if (runs == nullptr || runs->isEmpty())
         return;
-    auto* lookRuns = look != nullptr ? (*look)["text"].getArray() : nullptr;
+    auto* lookRuns = worn != nullptr ? (*worn)["text"].getArray() : nullptr;
     juce::String own;
     const bool replaced = text && text (n, own);
     for (int k = 0; k < runs->size(); ++k)

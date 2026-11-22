@@ -47,4 +47,7 @@ juce::Rectangle<float> rectOf (const juce::var& n);
 
 // An icon's drawable, kept for the life of the app (by its markup).
 juce::Drawable* svgFor (const juce::String& markup);
+// A captured icon with its path's `d` swapped (the page sets it as the patch
+// says: a warp's glyph, an LFO's shape), drawn in the icon's own box.
+void drawIcon (juce::Graphics&, const juce::var& svgNode, const juce::String& d, juce::Point<float> offset = {});
 } // namespace face

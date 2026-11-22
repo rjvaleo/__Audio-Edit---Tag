@@ -57,6 +57,8 @@ void Host::tableDirs()
     for (const auto& d : places::tableDirs())
         dirs << d.getFullPathName() << "\n";
     na_table_dirs (app, dirs.toRawUTF8());
+    // Wave's presets and board presets: the app's own folder, then MGL's, read only.
+    na_set_wave_home (app, places::home().getFullPathName().toRawUTF8(), places::mgl().getChildFile ("wave").getFullPathName().toRawUTF8());
 }
 
 void Host::setMidiIns (std::vector<uint32_t> ids)

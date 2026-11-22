@@ -16,13 +16,14 @@
 #include "Face.h"
 #include "WaveDraw.h"
 #include "WaveMenus.h"
+#include "WaveTiles.h"
 #include "WaveView.h"
 
 #include <functional>
 #include <map>
 #include <set>
 
-class WaveFace final : public juce::Component
+class WaveFace final : public juce::Component, private juce::Timer
 {
 public:
     // `send(key, json)` sets one of the Wave's keys; `patch()` is its patch as
@@ -54,6 +55,9 @@ public:
     void showView (const juce::String&);
     const juce::String& currentView() const { return ctx.view; }
     WaveView* viewFor (const juce::String&);
+    // Read the engine's telemetry now and draw what shows it (the timer does
+    // this thirty times a second while the face is on screen).
+    void poll();
 
     // Set a key as a control does (for the bench).
     void setKey (const juce::String& key, const juce::var& value) { set (key, value); }
@@ -65,6 +69,7 @@ public:
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
 private:
     // One of the page's canvases, drawn into a cache of its own and drawn
@@ -83,6 +88,7 @@ private:
     };
     std::vector<std::unique_ptr<Layer>> layers;
     Layer* textLayer = nullptr;
+    Layer* actLayer = nullptr;
     Layer* addLayer (juce::Rectangle<float> r, juce::StringArray deps, std::function<void (juce::Graphics&)> draw);
     void addCanvas (const juce::String& id, juce::StringArray deps, std::function<void (c2d::Context&, float w, float h)> draw);
     void buildLayers();
@@ -123,15 +129,14 @@ private:
     std::map<juce::String, Node> byId;           // nodes with an id
     std::vector<Node> choices;                   // controls the page wires with wvChoice
     std::map<int, int> parentOf;                 // node -> its parent
-    struct Readout
-    {
-        juce::String key;
-        juce::String kind; // a d s r, or rate smooth rise
-        int b = -1, bar = -1;
-        juce::Rectangle<float> r, barR;
-        juce::String src;
-    };
-    std::vector<Readout> readouts;
+    std::unique_ptr<WaveTiles> tiles;
+    // The page's clock (seconds), what the animated drawings run on, and the
+    // morph puck's trail: x, y, when (ms).
+    float nowT = 0;
+    std::vector<std::array<float, 3>> trail;
+    juce::String lastChoices, lastVoices;
+    float posNow (int osc) const;
+    void timerCallback() override { if (isShowing()) poll(); }
     std::map<int, juce::String> texts;           // node -> its reading now
 
     // The keys: the lowest note shown, what is held, and by which computer key.

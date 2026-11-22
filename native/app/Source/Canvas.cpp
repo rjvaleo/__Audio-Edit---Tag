@@ -1,4 +1,5 @@
 #include "Canvas.h"
+#include "WaveApi.h"
 
 #include "Places.h"
 
@@ -255,6 +256,11 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
             host->with ([&] (NaApp* a) { return na_wave_wheel (a, module, (uint32_t) which, value); });
         };
         wave->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
+        wave->api = [host, module] (const juce::String& method, const juce::String& path, const juce::var& body, int& status) {
+            juce::var reply;
+            host->with ([&] (NaApp* a) { reply = waveApi (a, module, method, path, body, status); return 0; });
+            return reply;
+        };
         addAndMakeVisible (*wave);
     }
     else if (kind.id == "atmos")

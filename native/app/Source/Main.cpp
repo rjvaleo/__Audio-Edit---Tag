@@ -8,6 +8,7 @@
 #include "AtmosFace.h"
 #include "WaveFace.h"
 #include "EditBench.h"
+#include "WaveApi.h"
 #include "Host.h"
 #include "Places.h"
 
@@ -870,6 +871,35 @@ public:
             na_free (a);
             return quit();
         }
+        // --dump-wave <file>: the engine's default Wave patch and its tables at
+        // 256 points, for giving MGL's page what its engine would (capture-wave.mjs).
+        if (args.size() >= 2 && args[0] == "--dump-wave")
+        {
+            NaApp* a = na_new (48000.0f, 4096);
+            const auto id = (uint32_t) na_add (a, "wave", 0, 0);
+            auto* out = new juce::DynamicObject();
+            out->setProperty ("patch", juce::JSON::parse (juce::String (naText ([&] (char* b, uint32_t c) { return na_wave_patch (a, id, b, c); }))));
+            auto* tables = new juce::DynamicObject();
+            for (const auto& name : juce::StringArray { "Formant Sweep", "Glass Organ", juce::String::fromUTF8 ("Vowel Ah\xe2\x80\x93Oo"), "Hollow Pulse", "Grit Saw" })
+            {
+                const auto n = na_table_frames (name.toRawUTF8(), nullptr, 0);
+                std::vector<float> f (n * 256);
+                na_table_frames (name.toRawUTF8(), f.data(), n);
+                juce::Array<juce::var> frames;
+                for (uint32_t i = 0; i < n; ++i)
+                {
+                    juce::Array<juce::var> one;
+                    for (int k = 0; k < 256; ++k)
+                        one.add (f[(size_t) i * 256 + (size_t) k]);
+                    frames.add (one);
+                }
+                tables->setProperty (name, frames);
+            }
+            out->setProperty ("tables", juce::var (tables));
+            juce::File (args[1].unquoted()).replaceWithText (juce::JSON::toString (juce::var (out), true));
+            na_free (a);
+            return quit();
+        }
         if (args.size() >= 3 && args[0] == "--snapshot")
         {
             const auto page = args[1].unquoted();
@@ -938,6 +968,32 @@ public:
                         auto value = juce::JSON::fromString (text);
                         w.setKey (kv.upToFirstOccurrenceOf ("=", false, false), value.isVoid() ? juce::var (text) : value);
                     }
+                w.api = [a, id] (const juce::String& method, const juce::String& path, const juce::var& body, int& status) { return waveApi (a, id, method, path, body, status); };
+                // WAVE_MODS='[rows]': the matrix's rows, as the page sends them.
+                if (auto rows = juce::SystemStats::getEnvironmentVariable ("WAVE_MODS", {}); rows.isNotEmpty())
+                {
+                    int st = 0;
+                    auto* body = new juce::DynamicObject();
+                    body->setProperty ("mods", juce::JSON::parse (rows));
+                    waveApi (a, id, "POST", "/api/wave/mods", juce::var (body), st);
+                    w.reload();
+                }
+                // WAVE_NOTE=60: a note held a moment, so the live parts have something.
+                if (auto note = juce::SystemStats::getEnvironmentVariable ("WAVE_NOTE", {}); note.isNotEmpty())
+                {
+                    const auto out = (uint32_t) na_add (a, "output", 0, 0);
+                    na_connect (a, id, 0, out, 0);
+                    for (const auto& nn : juce::StringArray::fromTokens (note, ",", ""))
+                        na_note (a, id, 1, (uint32_t) nn.getIntValue(), 0.8f);
+                    std::vector<float> l (512), r (512);
+                    for (int k = 0; k < 40; ++k)
+                    {
+                        na_settle (a);
+                        na_render (a, l.data(), r.data(), 512);
+                        na_collect (a);
+                    }
+                    w.poll();
+                }
                 if (auto v = juce::SystemStats::getEnvironmentVariable ("WAVE_VIEW", {}); v.isNotEmpty())
                     w.showView (v);
                 image = w.createComponentSnapshot (w.getLocalBounds(), true, scale);

@@ -15,6 +15,10 @@
 // it, for the native face to draw where the patch puts them.
 // For the default theme only, each view as Chromium draws it:
 //   <reference>/wave-<view>.png (2x) and wave-<view>-1x.png
+// GIVEN_ENGINE=<file> (from `idMLab --dump-wave`): the page is given the
+// engine's default patch and tables, as it has them when its engine answers,
+// and only the reference pictures are written, Play's too, as
+// wave-<view>-engine.png: the native face against the page as MGL shows it.
 // Nothing touches the live app on 8737.
 
 import { createRequire } from 'node:module';
@@ -39,6 +43,7 @@ fs.mkdirSync(faces, { recursive: true });
 fs.mkdirSync(refs, { recursive: true });
 const write = (file, value) => fs.writeFileSync(file, zlib.gzipSync(JSON.stringify(value), { level: 9 }));
 const data = (f) => JSON.parse(fs.readFileSync(path.join(here, 'given', f), 'utf8'));
+const engine = process.env.GIVEN_ENGINE ? JSON.parse(fs.readFileSync(process.env.GIVEN_ENGINE, 'utf8')) : null;
 const given = { wavefx: data('wave-fx.json'), boards: data('wave-boards.json'), rack: data('fx.json') };
 
 const ui = path.join(mgl, 'ui');
@@ -126,11 +131,17 @@ try {
       await tab.waitForTimeout(200);
       await tab.evaluate(markBindings);
       await tab.evaluate(giveCatalogue, given);
+      if (engine) {
+        await tab.evaluate((e) => {
+          wvAdopt(e.patch);
+          for (const [n, fr] of Object.entries(e.tables)) WV.tables[n] = fr.map((f) => Float32Array.from(f));
+        }, engine);
+      }
       await tab.evaluate(() => setMode('synth'));
       await tab.waitForTimeout(900);
       const hide = () => tab.evaluate((skip) => skip.forEach((s) => document.querySelectorAll(s).forEach((e) => { e.style.visibility = 'hidden'; })), SKIP);
       const views = {};
-      for (const v of ['create', 'matrix', 'fx']) {
+      for (const v of engine ? ['play', 'create', 'matrix', 'fx'] : ['create', 'matrix', 'fx']) {
         await tab.evaluate((v) => wvShowView(v), v);
         await tab.waitForTimeout(500);
         await hide();
@@ -138,15 +149,15 @@ try {
         if (size[0] !== 1900 || size[1] !== 1052) throw new Error(`${t.id} ${v}: the page is ${size}, not 1900 x 1052`);
         if (t.id === 'default') {
           const shot = await tab.locator(ROOT).screenshot({ animations: 'disabled' });
-          fs.writeFileSync(path.join(refs, scale === 2 ? `wave-${v}.png` : `wave-${v}-1x.png`), shot);
+          fs.writeFileSync(path.join(refs, `wave-${v}${engine ? '-engine' : ''}${scale === 2 ? '' : '-1x'}.png`), shot);
         }
-        if (scale === scales[0]) {
+        if (scale === scales[0] && !engine) {
           const f = await tab.evaluate(`(${walk})(${JSON.stringify(ROOT)}, ${JSON.stringify(SKIP)})`);
           if (f.error) throw new Error(`${t.id} ${v}: ${f.error}`);
           views[v] = f;
         }
       }
-      if (scale === scales[0]) {
+      if (scale === scales[0] && !engine) {
         const parts = {};
         for (const p of PARTS) {
           await tab.evaluate((v) => wvShowView(v), p.view);
@@ -162,6 +173,7 @@ try {
       }
       await ctx.close();
     }
+    if (engine) { process.stdout.write(`  ${t.id}: references\n`); continue; }
     write(path.join(faces, `mgl-wave-${t.id}.json.gz`), face);
     process.stdout.write(`  ${t.id}: ${Object.entries(face.views).map(([k, v]) => `${k} ${v.nodes}`).join(', ')}, ${Object.keys(face.parts).length} parts\n`);
   }
