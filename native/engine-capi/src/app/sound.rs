@@ -303,3 +303,25 @@ pub unsafe extern "C" fn na_edit_ui(a: *mut NaApp, id: u32, buf: *mut c_char, ca
         answer(a, r, buf, cap)
     })
 }
+
+/// Sound module `id`'s whole timeline in up to `cols` columns: its first
+/// channel's mins, then its maxes, into `out` (room for `2 * cols`). The columns.
+///
+/// # Safety
+/// `a` came from `na_new`; `out` has room for `2 * cols` floats.
+#[no_mangle]
+pub unsafe extern "C" fn na_sound_peaks(a: *mut NaApp, id: u32, cols: u32, out: *mut f32) -> i32 {
+    guarded(-12, || {
+        let Some(s) = session(a) else { return NO_ENGINE };
+        let mut v = Vec::new();
+        match s.sound_peaks(id, cols as usize, &mut v) {
+            Ok(c) => {
+                if !out.is_null() {
+                    ptr::copy_nonoverlapping(v.as_ptr(), out, v.len().min(2 * cols as usize));
+                }
+                c as i32
+            }
+            Err(e) => fail(a, e),
+        }
+    })
+}
