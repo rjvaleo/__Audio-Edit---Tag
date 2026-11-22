@@ -153,6 +153,17 @@ float shapeAt (const juce::String& shape, const juce::var& pts, float u, int cyc
 }
 } // namespace
 
+Spec spectrumOf (const Frame& a, int K)
+{
+    Spec s;
+    spectrum (a, K, s.re, s.im);
+    return s;
+}
+
+Frame fromSpec (const std::vector<float>& re, const std::vector<float>& im) { return fromSpectrum (re, im); }
+Frame normalised (Frame a) { return norm (a); }
+float shapeValue (const juce::String& shape, const juce::var& points, float u, int cyc) { return shapeAt (shape, points, u, cyc); }
+
 // ─────────────────────────────────────────────────────────────── colours
 
 Cl colours (const juce::var& vars)
@@ -372,6 +383,14 @@ std::vector<float> mags (const Frame& a, int K)
     return out;
 }
 
+std::vector<float> magsOf (const Spec& sp)
+{
+    std::vector<float> out (sp.re.size());
+    for (size_t k = 0; k < sp.re.size(); ++k)
+        out[k] = std::hypot (sp.re[k], sp.im[k]);
+    return out;
+}
+
 juce::String lfoShape (const Model& m, int L)
 {
     const auto s = m.s ("lfo" + juce::String (L) + ".shape");
@@ -511,9 +530,10 @@ Frame waveFor (Model& m, int i, bool dry)
     return dry ? f : ofxShape (f, m.s (k + "fx.mode"), m.g (k + "fx.a"), m.g (k + "fx.b"));
 }
 
-void draw3D (c2d::Context& c, float w, float h, const Cl& cl, const Table& T, float p, const juce::String& wm, float wa, float rise, float depth, bool floor)
+void draw3D (c2d::Context& c, float w, float h, const Cl& cl, const Table& T, float p, const juce::String& wm, float wa, float rise, float depth, bool floor, int most,
+             const std::vector<std::pair<float, bool>>* voiceDots)
 {
-    const int n = juce::jmin ((int) T.size(), 28);
+    const int n = juce::jmin ((int) T.size(), most);
     const float cf = p * (float) (n - 1);
     const float sx = w * (0.98f - depth) - 12, amp = h * 0.15f;
     for (int i = n - 1; i >= 0; --i)
@@ -554,6 +574,15 @@ void draw3D (c2d::Context& c, float w, float h, const Cl& cl, const Table& T, fl
     under (c, pts, x0, x0 + sx, y0, y0 - amp, cl, 0.2f);
     trace (c, pts, cl, 1.6f);
     dot (c, x0 - 4, y0, 2.6f, cl.acc);
+    // A dot for every voice the engine has sounding, running round the cycle
+    // at its own pitch: its phase now, and whether it is in its release.
+    if (voiceDots != nullptr)
+        for (const auto& [ph, released] : *voiceDots)
+        {
+            c.globalAlpha = released ? 0.4f : 1.0f;
+            dot (c, x0 + ph * sx, y0 - rd (a, ph) * amp, 2.8f, cl.acc);
+            c.globalAlpha = 1.0f;
+        }
 }
 
 void drawSpec3D (c2d::Context& c, float w, float h, const Cl& cl, const Table& T, float p, const juce::String& wm, float wa, float rise, float depth)

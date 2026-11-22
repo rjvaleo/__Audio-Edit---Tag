@@ -905,7 +905,17 @@ public:
             }
             else if (page == "wave-face")
             {
-                // The live face, a real Wave behind it (no sound card).
+                // The live face, a real Wave behind it (no sound card):
+                // --snapshot wave-face out.png scale [theme_label | -]
+                // WAVE_VIEW=create|matrix|fx shows that view; WAVE_KEYS="key=json;..." sets keys first.
+                if (args.size() > 4 && args[4] != "-")
+                {
+                    const auto label = args[4].unquoted().replace ("_", " ");
+                    const auto& list = face::themeChoices();
+                    for (int i = 0; i < (int) list.size(); ++i)
+                        if (list[(size_t) i].label == label)
+                            face::wear (i, "thinRing");
+                }
                 NaApp* a = na_new (48000.0f, 4096);
                 juce::String dirs;
                 for (const auto& d : places::tableDirs())
@@ -921,6 +931,15 @@ public:
                             na_table_frames (name.toRawUTF8(), t.front().data(), (uint32_t) t.size());
                         return t;
                     });
+                for (const auto& kv : juce::StringArray::fromTokens (juce::SystemStats::getEnvironmentVariable ("WAVE_KEYS", {}), ";", ""))
+                    if (kv.containsChar ('='))
+                    {
+                        const auto text = kv.fromFirstOccurrenceOf ("=", false, false);
+                        auto value = juce::JSON::fromString (text);
+                        w.setKey (kv.upToFirstOccurrenceOf ("=", false, false), value.isVoid() ? juce::var (text) : value);
+                    }
+                if (auto v = juce::SystemStats::getEnvironmentVariable ("WAVE_VIEW", {}); v.isNotEmpty())
+                    w.showView (v);
                 image = w.createComponentSnapshot (w.getLocalBounds(), true, scale);
                 na_free (a);
             }

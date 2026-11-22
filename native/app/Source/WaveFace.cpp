@@ -48,8 +48,68 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
     for (int i = 0; i < 3; ++i)
         if (auto it = byId.find ("wvOfr" + juce::String (i)); it != byId.end())
             chrome.skipText.insert (it->second.i);
+
+    // The other three views, each the page as it shows that view, over Play's
+    // frame and under the header's and the dock's live parts.
+    ctx.model = &model;
+    ctx.cl = &cl;
+    ctx.set = [this] (const juce::String& key, const juce::var& value) { set (key, value); };
+    ctx.api = [this] (const juce::String& method, const juce::String& path, const juce::var& body, int& status) {
+        status = 0;
+        return api ? api (method, path, body, status) : juce::var();
+    };
+    ctx.reload = [this] { reload(); };
+    ctx.closeMenus = [this] { closeMenu(); };
+    const auto& other = face::page ("wave-views")["views"];
+    const char* names[] = { "create", "matrix", "fx" };
+    for (int v = 0; v < 3; ++v)
+    {
+        const auto& cap = other[names[v]];
+        if (!cap.isObject())
+            continue;
+        views[v] = v == 0 ? makeWaveCreate (ctx, cap) : v == 1 ? makeWaveMatrix (ctx, cap) : makeWaveFx (ctx, cap);
+        views[v]->setBounds (getLocalBounds());
+        addChildComponent (*views[v]);
+        // What the header and dock show live is written over every view.
+        for (const auto& id : { "wvVoicesRo", "wvOctRo", "wvVelRo" })
+            if (auto* n = face::findNode (cap["tree"], "#" + juce::String (id)))
+                views[v]->page().skipText.insert ((int) (*n)["i"]);
+        for (int m = 0; m < 8; ++m)
+            if (auto* n = face::findNode (cap["tree"], "#wvMacr" + juce::String (m)))
+                views[v]->page().skipText.insert ((int) (*n)["i"]);
+    }
+    if (views[0] != nullptr)
+        setCreateTableMenu (*views[0], [this] (juce::Rectangle<float> near, int osc) { tableMenu (near, osc); });
     buildLayers();
     reload();
+}
+
+WaveView* WaveFace::viewFor (const juce::String& v)
+{
+    const int i = v == "create" ? 0 : v == "matrix" ? 1 : v == "fx" ? 2 : -1;
+    return i >= 0 ? views[i].get() : nullptr;
+}
+
+// Show one of the page's views (`wvShowView`): its frame and what it draws;
+// the header's and the dock's parts stay.
+void WaveFace::showView (const juce::String& v)
+{
+    if (v != "play" && viewFor (v) == nullptr)
+        return;
+    closeMenu();
+    ctx.view = v;
+    chrome.setVisible (v == "play");
+    for (auto& l : layers)
+        l->setVisible (l->shared || v == "play");
+    for (auto& w : views)
+        if (w != nullptr)
+            w->setVisible (w.get() == viewFor (v));
+    if (auto* w = viewFor (v))
+        w->shown();
+    else
+        reload();
+    if (textLayer != nullptr)
+        textLayer->repaint();
 }
 
 void WaveFace::index (const juce::var& n, int parent)
@@ -95,6 +155,9 @@ void WaveFace::reload()
         for (const auto& prop : params->getProperties())
             model.p[prop.name.toString()] = prop.value;
     sync();
+    for (auto& w : views)
+        if (w != nullptr && w->isVisible())
+            w->shown();
 }
 
 void WaveFace::set (const juce::String& key, const juce::var& value)
@@ -104,6 +167,9 @@ void WaveFace::set (const juce::String& key, const juce::var& value)
         send (key, json (value));
     sync();
     repaintFor (key);
+    for (auto& w : views)
+        if (w != nullptr && w->isVisible())
+            w->changed (key);
 }
 
 void WaveFace::repaintFor (const juce::String& key)
@@ -439,12 +505,16 @@ void WaveFace::buildLayers()
     }
     // The readings, over everything.
     textLayer = addLayer (getLocalBounds().toFloat(), { "*" }, [this] (juce::Graphics& g) { drawTexts (g); });
+    for (auto& l : layers)
+        l->shared = l.get() == textLayer || sharedArea (l->getBounds().toFloat());
 }
 
 void WaveFace::drawTexts (juce::Graphics& g)
 {
+    const bool play = ctx.view == "play";
     for (const auto& [node, text] : texts)
-        drawText (g, node, text);
+        if (play || sharedArea (rectOf (chrome.nodes[node]["rect"])))
+            drawText (g, node, text);
 }
 
 // A choice key's options, as the app layer lists them (na_controls): the
@@ -478,17 +548,6 @@ const WaveFace::Node* WaveFace::hit (juce::Point<float> at) const
     return best;
 }
 
-void WaveFace::menu (const juce::String& key, const juce::StringArray& options, const juce::String& current, juce::Rectangle<float> near)
-{
-    juce::PopupMenu m;
-    for (int i = 0; i < options.size(); ++i)
-        m.addItem (i + 1, options[i], true, options[i] == current);
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (localAreaToGlobal (near).toNearestInt()), [this, key, options] (int chosen) {
-        if (chosen > 0)
-            set (key, options[chosen - 1]);
-    });
-}
-
 void WaveFace::mouseDown (const juce::MouseEvent& e)
 {
     drag = nullptr;
@@ -500,6 +559,24 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
     dragEnd = nullptr;
     last = e.position;
     const auto at = e.position;
+    // A press outside the open menu shuts it (`wvCloseMenus`), and does
+    // nothing else when it lands on what opened it.
+    if (menuOpen != nullptr)
+    {
+        closeMenu();
+        if (menuR.contains (at))
+            return;
+    }
+    // The view tabs.
+    for (const auto& [i, n] : chrome.nodes)
+        if (hasClass (n, "wv-tab") && rectOf (n["rect"]).contains (at))
+            return showView (dataOf (n, "v"));
+    if (ctx.view != "play" && !sharedArea ({ at.x, at.y, 0, 0 }))
+    {
+        if (auto* v = viewFor (ctx.view); v != nullptr && v->down (e))
+            viewDrag = true;
+        return;
+    }
     // The marked nodes under the pointer, smallest first.
     for (const auto& c : choices)
         if (c.r.contains (at))
@@ -536,28 +613,13 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
             return;
         }
         if (auto pick = dataOf (n, "pick"); pick.isNotEmpty())
-        {
-            menu ("osc" + pick + ".table", options ("osc" + pick + ".table"), model.s ("osc" + pick + ".table"), r);
-            return;
-        }
+            return tableMenu (r, pick.getIntValue());
         if (auto cyc = dataOf (n, "cycle"); cyc.length() == 2)
-        {
-            const auto k = "osc" + cyc.substring (0, 1) + ".warp" + cyc.substring (1) + ".mode";
-            menu (k, options (k), model.s (k), r);
-            return;
-        }
+            return warpMenu (r, cyc.substring (0, 1).getIntValue(), cyc.substring (1).getIntValue());
         if (auto fx = dataOf (n, "ofx"); fx.isNotEmpty())
-        {
-            const auto k = "osc" + fx + ".fx.mode";
-            menu (k, options (k), model.s (k), r);
-            return;
-        }
+            return fxMenu (r, fx.getIntValue());
         if (auto shp = dataOf (n, "lshape"); shp.isNotEmpty())
-        {
-            const auto k = shp + ".shape";
-            menu (k, options (k), model.s (k), r);
-            return;
-        }
+            return lfoMenu (r, shp.getTrailingIntValue());
         if (n["tag"].toString() == "span" && n["data"]["k"].isString())
         {
             const int parent = parentOf.count (i) ? parentOf.at (i) : -1;
@@ -801,12 +863,25 @@ void WaveFace::mouseDrag (const juce::MouseEvent& e)
 {
     const auto d = e.position - last;
     last = e.position;
+    if (viewDrag)
+    {
+        if (auto* v = viewFor (ctx.view))
+            v->dragged (e);
+        return;
+    }
     if (drag)
         drag (d.x, d.y, e);
 }
 
-void WaveFace::mouseUp (const juce::MouseEvent&)
+void WaveFace::mouseUp (const juce::MouseEvent& e)
 {
+    if (viewDrag)
+    {
+        viewDrag = false;
+        if (auto* v = viewFor (ctx.view))
+            v->up (e);
+        return;
+    }
     if (dragEnd)
         dragEnd();
     drag = nullptr;
@@ -815,6 +890,12 @@ void WaveFace::mouseUp (const juce::MouseEvent&)
 
 void WaveFace::mouseDoubleClick (const juce::MouseEvent& e)
 {
+    if (ctx.view != "play" && !sharedArea ({ e.position.x, e.position.y, 0, 0 }))
+    {
+        if (auto* v = viewFor (ctx.view))
+            v->doubleClick (e);
+        return;
+    }
     // The tempo goes back to 120, as the page's does.
     if (auto it = byId.find ("wvTempoRo"); it != byId.end() && it->second.r.contains (e.position))
         set ("tempo", 120);
@@ -840,6 +921,13 @@ const juce::String qwerty ("awsedftgyhujkolp;");
 
 bool WaveFace::keyPressed (const juce::KeyPress& key)
 {
+    if (key == juce::KeyPress::escapeKey && menuOpen != nullptr)
+    {
+        closeMenu();
+        return true;
+    }
+    if (auto* v = viewFor (ctx.view); v != nullptr && v->key (key))
+        return true;
     if (key.getModifiers().isCommandDown() || key.getModifiers().isAltDown() || key.getModifiers().isCtrlDown())
         return false;
     const auto ch = juce::CharacterFunctions::toLowerCase (key.getTextCharacter());
@@ -879,4 +967,262 @@ bool WaveFace::keyStateChanged (bool)
             ++it;
     }
     return any;
+}
+
+// ─────────────────────────────────────────────────────────────── the menus
+//
+// The page's own (393b-wave-menus.js, 391c `wvLfoMenu`): tiles, three across,
+// each the choice drawn on this oscillator's wave, placed under the control
+// that opened it and kept inside the page. One open at a time.
+
+void WaveFace::openMenu (std::unique_ptr<WaveMenu> m, const juce::String& owner, juce::Rectangle<float> near, float dx)
+{
+    const bool same = menuOpen != nullptr && menuOwner == owner;
+    closeMenu();
+    if (same)
+        return;
+    m->place (near, dx, getLocalBounds().toFloat());
+    m->onClose = [this] { juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<WaveFace> (this)] { if (safe != nullptr) safe->closeMenu(); }); };
+    menuOwner = owner;
+    menuR = near;
+    addAndMakeVisible (*m);
+    menuOpen = std::move (m);
+}
+
+void WaveFace::closeMenu()
+{
+    menuOpen.reset();
+    menuOwner.clear();
+    menuR = {};
+}
+
+namespace
+{
+const juce::var& menuPart()
+{
+    return face::page ("wave-views")["parts"]["menu"];
+}
+
+juce::Point<float> menuPt (float x, float y) { return { x, y }; }
+
+void strokeSvg (c2d::Context& c, const char* d, float x, float y, float sc, juce::Colour col)
+{
+    // wvFxIcon: the effect's glyph, glowing in its colour.
+    c2d::Path p;
+    p.p = juce::Drawable::parseSVGPath (d);
+    c.save();
+    c.translate (x, y);
+    c.scale (sc, sc);
+    c.strokeStyle = col;
+    c.lineWidth = 1.7f / sc * 1.1f;
+    c.lineCap = "round";
+    c.lineJoin = "round";
+    c.shadowBlur = 8;
+    c.shadowColor = col;
+    c.stroke (p);
+    c.restore();
+}
+
+const std::vector<std::pair<juce::String, juce::String>>& warpNames()
+{
+    static const std::vector<std::pair<juce::String, juce::String>> w {
+        { "off", "Off" }, { "bend", "Bend" }, { "sync", "Sync" }, { "pwm", "PWM" }, { "fold", "Fold" },
+        { "mirror", "Mirror" }, { "asym", "Asym" }, { "quant", "Quant" }, { "fm", juce::String::fromUTF8 ("FM \xe2\x86\x90 B") },
+    };
+    return w;
+}
+
+const char* ofxGlyph (const juce::String& k)
+{
+    static const std::map<juce::String, const char*> g {
+        { "off", "M2 7 H16" }, { "chorus", "M2 5 C5 1,7 1,9 5 S13 9,16 5 M2 10 C5 6,7 6,9 10 S13 14,16 10" },
+        { "crush", "M2 12 V9 H5 V5 H8 V3 H11 V6 H14 V10 H16" }, { "drive", "M2 12 C4 12,5 3,8 3 H11 C13 3,13 12,16 12" },
+        { "delay", "M3 3 V11 M7 4.5 V9.5 M11 5.5 V8.5 M15 6.3 V7.7" }, { "phaser", "M2 7 C4 2,6 12,8 7 S12 2,16 7" },
+        { "ring", "M2 7 C3 2,4 2,5 7 S7 12,8 7 S10 2,11 7 S13 12,14 7 S15 2,16 7" }, { "comb", "M2 4 L4 12 L6 4 L8 12 L10 4 L12 12 L14 4 L16 12" },
+    };
+    auto it = g.find (k);
+    return it == g.end() ? "M2 7 H16" : it->second;
+}
+
+const std::vector<std::pair<juce::String, juce::String>>& lfoShapes()
+{
+    static const std::vector<std::pair<juce::String, juce::String>> s {
+        { "sine", "Sine" }, { "tri", "Triangle" }, { "up", "Saw up" }, { "down", "Saw down" },
+        { "square", "Square" }, { "steps", "Random steps" }, { "smooth", "Smooth random" }, { "drawn", "Drawn" },
+    };
+    return s;
+}
+} // namespace
+
+void WaveFace::tableMenu (juce::Rectangle<float> near, int i)
+{
+    const auto k = "osc" + juce::String (i) + ".table";
+    std::vector<WaveMenu::Item> items;
+    for (const auto& name : options (k))
+    {
+        WaveMenu::Item it;
+        it.label = name;
+        it.on = model.s (k) == name;
+        it.pic = [this, name] (c2d::Context& c, float, float) {
+            const auto f = wave::frameAt (model.table (name), 0.5f);
+            wave::trace (c, wave::path ([&] (float u) { return menuPt (4 + u * 80, 19 - wave::rd (f, u) * 14); }, 100), cl, 1.3f, 0.6f);
+        };
+        it.act = [this, k, name] { set (k, name); };
+        items.push_back (std::move (it));
+    }
+    openMenu (std::make_unique<WaveMenu> (menuPart(), std::move (items), cl.t2, cl.t), "table" + juce::String (i), near, 0);
+}
+
+void WaveFace::warpMenu (juce::Rectangle<float> near, int i, int j)
+{
+    const auto k = "osc" + juce::String (i) + ".";
+    const int o = i == 1 ? 0 : 1;
+    auto posNow = [this] (int q) {
+        const auto& p = ctx.tele["pos"];
+        return p.isArray() && p.size() > q ? wave::clamp ((float) (double) p[q]) : wave::clamp (model.g ("osc" + juce::String (q) + ".pos"));
+    };
+    const auto f = wave::frameAt (model.table (model.s (k + "table")), posNow (i));
+    const auto B = wave::frameAt (model.table (model.s ("osc" + juce::String (o) + ".table")), posNow (o));
+    const auto mode = k + "warp" + juce::String (j) + ".mode", amt = k + "warp" + juce::String (j) + ".amt";
+    std::vector<WaveMenu::Item> items;
+    for (const auto& [key, name] : warpNames())
+    {
+        WaveMenu::Item it;
+        it.label = key == "off" ? juce::String ("None") : name;
+        it.on = model.s (mode) == key;
+        it.pic = [this, f, B, key = key] (c2d::Context& c, float, float) {
+            if (key != "off")
+            {
+                c.strokeStyle = cl.bloom (0.18f);
+                c.lineWidth = 1;
+                c.stroke (wave::path ([&] (float u) { return menuPt (4 + u * 80, 19 - wave::rd (f, u) * 14); }, 80));
+            }
+            const auto w = key == "off" ? f : wave::warp (f, key, 0.55f, &B);
+            wave::trace (c, wave::path ([&] (float u) { return menuPt (4 + u * 80, 19 - wave::rd (w, u) * 14); }, 120), cl, 1.3f, 0.6f);
+        };
+        it.act = [this, mode, amt, key = key] {
+            set (mode, key);
+            if (key != "off" && model.g (amt) == 0.0f)
+                set (amt, 0.4);
+        };
+        items.push_back (std::move (it));
+    }
+    openMenu (std::make_unique<WaveMenu> (menuPart(), std::move (items), cl.t2, cl.t), "warp" + juce::String (i) + juce::String (j), near, -120);
+}
+
+void WaveFace::fxMenu (juce::Rectangle<float> near, int i)
+{
+    const auto k = "osc" + juce::String (i) + ".fx.mode";
+    const auto dry = wave::waveFor (model, i, true);
+    std::vector<WaveMenu::Item> items;
+    for (const juce::String key : { "off", "chorus", "crush", "drive", "delay", "phaser", "ring", "comb" })
+    {
+        WaveMenu::Item it;
+        it.label = wave::ofxName (key);
+        it.on = model.s (k) == key;
+        it.ink = wave::fxCol (key, 78);
+        it.pic = [this, dry, key] (c2d::Context& c, float, float) {
+            auto bg = c.createLinearGradient (0, 0, 88, 0);
+            bg.stops.push_back ({ 0.0f, wave::fxCol (key, 45, 0.25f) });
+            bg.stops.push_back ({ 1.0f, wave::fxCol (key, 45, 0) });
+            c.fillStyle = bg;
+            c.fillRect (0, 0, 88, 38);
+            strokeSvg (c, ofxGlyph (key), 2, 10, 1.05f, wave::fxCol (key, 76));
+            c.strokeStyle = cl.bloom (0.18f);
+            c.lineWidth = 1;
+            c.stroke (wave::path ([&] (float u) { return menuPt (24 + u * 60, 19 - wave::rd (dry, u * 2) * 13); }, 80));
+            auto fxTrace = [&] (const c2d::Path& p, float lw) {
+                c.lineJoin = "round";
+                c.lineCap = "round";
+                c.strokeStyle = wave::fxCol (key, 60, 0.22f);
+                c.lineWidth = lw * 3.6f;
+                c.shadowBlur = 10;
+                c.shadowColor = wave::fxCol (key, 60, 0.5f);
+                c.stroke (p);
+                c.shadowBlur = 0;
+                c.strokeStyle = wave::fxCol (key, 80);
+                c.lineWidth = lw;
+                c.stroke (p);
+            };
+            if (key == "chorus")
+            {
+                for (int v = 0; v < 3; ++v)
+                {
+                    c.globalAlpha = v != 0 ? 0.5f : 1.0f;
+                    fxTrace (wave::path ([&] (float u) { return menuPt (24 + u * 60, 19 + (float) (v - 1) * 4 - wave::rd (dry, u * 2 + (float) v * 0.03f) * 12); }, 80), 1.1f);
+                }
+                c.globalAlpha = 1;
+            }
+            else if (key == "delay")
+            {
+                for (int r = 0; r < 4; ++r)
+                {
+                    const float A = std::pow (0.6f, (float) r);
+                    c.globalAlpha = A;
+                    fxTrace (wave::path ([&] (float u) { return menuPt (24 + (float) r * 16 + u * 13, 19 - wave::rd (dry, u * 2) * 12 * A); }, 30), 1.1f);
+                }
+                c.globalAlpha = 1;
+            }
+            else if (key == "phaser")
+                fxTrace (wave::path ([&] (float u) { return menuPt (24 + u * 60, 19 - (wave::rd (dry, u * 2) * 0.5f + wave::rd (dry, u * 2 + 0.1f) * 0.5f) * 13); }, 100), 1.2f);
+            else
+            {
+                const auto shaped = wave::ofxShape (dry, key, 0.75f, 0.5f);
+                fxTrace (wave::path ([&] (float u) { return menuPt (24 + u * 60, 19 - wave::rd (shaped, u * 2) * 13); }, key == "crush" ? 300 : 120), 1.2f);
+            }
+        };
+        it.act = [this, k, key] { set (k, key); };
+        items.push_back (std::move (it));
+    }
+    openMenu (std::make_unique<WaveMenu> (menuPart(), std::move (items), cl.t2, cl.t), "fx" + juce::String (i), near, -60);
+}
+
+void WaveFace::lfoMenu (juce::Rectangle<float> near, int L)
+{
+    const auto l = "lfo" + juce::String (L);
+    const auto col = c2d::css (wave::sourceColour (l));
+    std::vector<WaveMenu::Item> items;
+    for (const auto& [k, name] : lfoShapes())
+    {
+        WaveMenu::Item it;
+        it.label = name;
+        it.on = wave::lfoShape (model, L) == k;
+        it.ink = col;
+        it.pic = [this, col, l, k = k] (c2d::Context& c, float, float) {
+            c.strokeStyle = c2d::css ("rgba(255,255,255,.07)");
+            c.beginPath();
+            c.moveTo (4, 19);
+            c.lineTo (84, 19);
+            c.stroke();
+            c.lineJoin = "round";
+            c.strokeStyle = col;
+            c.lineWidth = 1.4f;
+            c.shadowBlur = 6;
+            c.shadowColor = col;
+            const auto pts = model.v (l + ".points");
+            c.stroke (wave::path ([&] (float u) { return menuPt (4 + u * 80, 33 - wave::shapeValue (k, pts, u, 0) * 28); }, 120));
+            c.shadowBlur = 0;
+        };
+        it.act = [this, L, l, k = k] {
+            if (k == "drawn")
+            {
+                // wvToDrawn: the shape it had, as points, then Drawn.
+                if (wave::lfoShape (model, L) == "drawn")
+                    return;
+                juce::Array<juce::var> pts;
+                if (wave::lfoShape (model, L) == "square")
+                    for (auto q : { std::pair { 0.0, 1.0 }, { 0.49, 1.0 }, { 0.5, 0.0 }, { 0.99, 0.0 }, { 1.0, 1.0 } })
+                        pts.add (juce::Array<juce::var> { q.first, q.second });
+                else
+                    for (int i = 0; i < 9; ++i)
+                        pts.add (juce::Array<juce::var> { i / 8.0, std::round (wave::lfoVal (model, L, (float) i / 8, 0) * 1e4) / 1e4 });
+                set (l + ".points", pts);
+                set (l + ".shape", "drawn");
+            }
+            else
+                set (l + ".shape", k);
+        };
+        items.push_back (std::move (it));
+    }
+    openMenu (std::make_unique<WaveMenu> (menuPart(), std::move (items), cl.t2, cl.t), "lfo" + juce::String (L), near, -150);
 }

@@ -15,6 +15,8 @@
 
 #include "Face.h"
 #include "WaveDraw.h"
+#include "WaveMenus.h"
+#include "WaveView.h"
 
 #include <functional>
 #include <map>
@@ -44,6 +46,15 @@ public:
     // Read the patch again (after a preset, a load, or a change elsewhere).
     void reload();
 
+    // MGL's /api/wave routes, as the engine answers them (na_wave_api): what
+    // the page asks its server, asked of the engine.
+    using Api = std::function<juce::var (const juce::String& method, const juce::String& path, const juce::var& body, int& status)>;
+    Api api;
+    // The page's four views (`wvShowView`): play, create, matrix, fx.
+    void showView (const juce::String&);
+    const juce::String& currentView() const { return ctx.view; }
+    WaveView* viewFor (const juce::String&);
+
     // Set a key as a control does (for the bench).
     void setKey (const juce::String& key, const juce::var& value) { set (key, value); }
     // How long each layer takes to draw at `scale`, slowest first (for the bench).
@@ -66,6 +77,8 @@ private:
         // Keys it shows only sometimes: another oscillator's, while a warp
         // here is FM from it.
         std::function<bool (const juce::String&)> also;
+        // In every view (the header's and the dock's), not only on Play.
+        bool shared = false;
         void paint (juce::Graphics& g) override { draw (g); }
     };
     std::vector<std::unique_ptr<Layer>> layers;
@@ -85,6 +98,19 @@ private:
     Send send;
     Patch readPatch;
     face::Chrome chrome;
+    WaveCtx ctx;
+    std::unique_ptr<WaveView> views[3];
+    // The page's own menu, open, and what opened it (the same control again shuts it).
+    std::unique_ptr<juce::Component> menuOpen;
+    juce::String menuOwner;
+    void openMenu (std::unique_ptr<WaveMenu>, const juce::String& owner, juce::Rectangle<float> near, float dx);
+    void closeMenu();
+    void tableMenu (juce::Rectangle<float> near, int osc);
+    void warpMenu (juce::Rectangle<float> near, int osc, int j);
+    void fxMenu (juce::Rectangle<float> near, int osc);
+    void lfoMenu (juce::Rectangle<float> near, int L);
+    // Drawn where every view shows it: the header's 44 px and the dock under 932.
+    static bool sharedArea (juce::Rectangle<float> r) { return r.getBottom() <= 44.5f || r.getY() >= 931.5f; }
     wave::Model model;
     wave::Cl cl;
 
@@ -120,6 +146,8 @@ private:
     std::function<void (float dx, float dy, const juce::MouseEvent&)> drag;
     std::function<void()> dragEnd;
     juce::Point<float> last;
+    bool viewDrag = false;
+    juce::Rectangle<float> menuR;
 
     void index (const juce::var& n, int parent);
     void set (const juce::String& key, const juce::var& value);
@@ -127,7 +155,6 @@ private:
     void sync();
     void restyleChoices();
     const Node* hit (juce::Point<float>) const;
-    void menu (const juce::String& key, const juce::StringArray& options, const juce::String& current, juce::Rectangle<float> near);
     void drawText (juce::Graphics&, int node, const juce::String& text);
     juce::StringArray options (const juce::String& key) const;
     juce::Array<juce::var> controls;

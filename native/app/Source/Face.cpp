@@ -133,6 +133,7 @@ struct Worn
     juce::var mgl;           // Wave's face in the MGL theme
     juce::var atmos;         // Atmosphere's face in the MGL theme
     juce::var edit;          // the Edit page in the MGL theme
+    juce::var waveViews;     // Wave's other views and parts in the MGL theme
     int stamp = 0;
 };
 Worn& wornState()
@@ -178,6 +179,17 @@ const juce::var& page (const juce::String& name)
         if (!w.edit.isObject())
             w.edit = juce::JSON::parse (embedded ("mgl-edit-default.json.gz"));
         return w.edit;
+    }
+    // Wave's Create, Matrix and FX views, and the parts it builds
+    // (capture-wave.mjs): { views: {create, matrix, fx}, parts: {...} }.
+    if (name == "wave-views")
+    {
+        auto& w = wornState();
+        if (!w.waveViews.isObject())
+            w.waveViews = juce::JSON::parse (embedded ("mgl-wave-" + (w.choice >= 0 ? themeChoices()[(size_t) w.choice].mgl : juce::String ("default")) + ".json.gz"));
+        if (!w.waveViews.isObject())
+            w.waveViews = juce::JSON::parse (embedded ("mgl-wave-default.json.gz"));
+        return w.waveViews;
     }
     static std::map<juce::String, juce::var> pages;
     auto it = pages.find (name);
@@ -291,6 +303,7 @@ void wear (int choice, const juce::String& kit)
         w.mgl = juce::JSON::parse (embedded ("mgl-theme-" + c.mgl + ".json.gz"));
         w.atmos = juce::var();
         w.edit = juce::var();
+        w.waveViews = juce::var();
         w.choice = choice;
     }
     w.kit = kit.isEmpty() ? juce::String ("thinRing") : kit;

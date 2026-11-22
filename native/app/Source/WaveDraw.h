@@ -46,6 +46,11 @@ struct Model
     juce::String s (const juce::String& k) const;
     const juce::var& v (const juce::String& k) const;
     const Table& table (const juce::String& name);
+    // A table the page edits (Create): its own copy, kept until it is sent.
+    Table& editable (const juce::String& name) { table (name); return tables[name]; }
+    void putTable (const juce::String& name, Table t) { tables[name] = std::move (t); }
+    // Read a table from the engine again (it was stored anew).
+    void forget (const juce::String& name) { tables.erase (name); }
 
 private:
     std::map<juce::String, Table> tables;
@@ -58,6 +63,19 @@ Frame frameAt (const Table&, float p);
 Frame warp (const Frame& a, const juce::String& mode, float w, const Frame* mod = nullptr);
 Frame ofxShape (const Frame& f, const juce::String& m, float a, float b);
 std::vector<float> mags (const Frame& a, int K = 48);
+// The spectrum as the page works it (`wvSpectrum`, `wvFromSpectrum`, `wvNorm`):
+// K harmonics' cosine and sine parts, and back.
+struct Spec
+{
+    std::vector<float> re, im;
+};
+Spec spectrumOf (const Frame& a, int K = 48);
+Frame fromSpec (const std::vector<float>& re, const std::vector<float>& im);
+Frame normalised (Frame a);
+// The magnitudes of a spectrum, normalised as the page's `wvMags` does.
+std::vector<float> magsOf (const Spec&);
+// An LFO shape at u (0 to 1), `wvShapeAt`.
+float shapeValue (const juce::String& shape, const juce::var& points, float u, int cyc = 0);
 float lfoVal (const Model&, int L, float u, int cyc = 0);
 juce::String lfoShape (const Model&, int L);
 juce::String lfoRateTxt (const Model&, int L);
@@ -77,7 +95,8 @@ void ring (c2d::Context&, float size, float u, const Cl&, bool bip = false, bool
 
 // The drawings.
 Frame waveFor (Model&, int i, bool dry);
-void draw3D (c2d::Context&, float w, float h, const Cl&, const Table&, float p, const juce::String& warpMode, float warpAmt, float rise, float depth, bool floor);
+void draw3D (c2d::Context&, float w, float h, const Cl&, const Table&, float p, const juce::String& warpMode, float warpAmt, float rise, float depth, bool floor, int most = 28,
+             const std::vector<std::pair<float, bool>>* voiceDots = nullptr);
 void drawSpec3D (c2d::Context&, float w, float h, const Cl&, const Table&, float p, const juce::String& warpMode, float warpAmt, float rise, float depth);
 void drawStrip (c2d::Context&, float w, float h, const Cl&, const Table&, float p);
 void drawFace (c2d::Context&, float w, float h, const Cl&, float v, const Frame& wave, const Frame* ghost, bool empty);
