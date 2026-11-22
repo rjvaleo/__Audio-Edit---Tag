@@ -142,6 +142,31 @@ public:
 
     std::function<void (const juce::String& src, const juce::MouseEvent&)> startMapping;
 
+    // Every knob on the board's nodes, where it is on the page now.
+    std::vector<Target> targets() override
+    {
+        std::vector<Target> out;
+        if (auto* ns = board["nodes"].getArray())
+            for (auto& n : *ns)
+            {
+                const auto* t = tplFor (n);
+                if (t == nullptr)
+                    continue;
+                const auto off = nodeRect (n).getPosition() - face::rectOf (*t).getPosition();
+                const auto sp = isFx (n) ? facePr (n) : spec (n);
+                int k = 0;
+                for (auto* cv : face::findAll (*t, "data-fxk"))
+                {
+                    const auto key = isFx (n) && k < sp.size() ? sp[k]["key"].toString() : (*cv)["data"]["fxk"].toString().fromFirstOccurrenceOf ("|", false, false);
+                    ++k;
+                    auto r = (face::rectOf (*cv) + off).transformedBy (toPage());
+                    if (well.contains (r.getCentre()))
+                        out.push_back ({ r, "board:" + n["id"].toString() + ":" + key, true });
+                }
+            }
+        return out;
+    }
+
 private:
     juce::var parts, world, wellNode, fstat, fzoom;
     juce::Rectangle<float> well, chainBox, inspBox;

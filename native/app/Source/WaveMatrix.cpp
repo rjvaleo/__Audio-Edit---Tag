@@ -82,6 +82,12 @@ public:
                 return true;
             }
         }
+        if (auto src = tiles->sourceAt (at); src.isNotEmpty())
+        {
+            if (startMapping)
+                startMapping (src, e);
+            return true;
+        }
         if (tiles->down (e))
         {
             drag = [this] (const juce::MouseEvent& ev) { tiles->dragged (ev); };

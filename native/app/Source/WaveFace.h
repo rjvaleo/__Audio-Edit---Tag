@@ -16,6 +16,7 @@
 #include "Face.h"
 #include "WaveDraw.h"
 #include "WaveMenus.h"
+#include "WaveBoardPics.h"
 #include "WaveTiles.h"
 #include "WaveView.h"
 
@@ -113,6 +114,33 @@ private:
     void openMenu (std::unique_ptr<WaveMenu>, const juce::String& owner, juce::Rectangle<float> near, float dx);
     void closeMenu();
     void modsChanged();
+    // The patch's preset bar (105-preset-bar.js, 398-wave-presets.js): its name and tags, the
+    // patches before and after it, A and B, Save.
+    juce::String patchName, patchTags;
+    juce::var abSlots[2];
+    int ab = 0;
+    juce::Array<juce::var> patchList();
+    void loadPatch (const juce::var& preset);
+    bool presetBarDown (juce::Point<float>);
+    // Play's row of the board's effects (wvRenderFxRow): a card each, its power, up to four knobs.
+    void drawFxRow (juce::Graphics&, juce::Rectangle<float> box);
+    bool fxRowDown (const juce::MouseEvent&);
+    void boardParam (const juce::String& node, const juce::String& key, const juce::var& value, bool live);
+    juce::Rectangle<float> fxRowBox;
+    Layer* fxRowLayer = nullptr;
+    std::unique_ptr<board::Pics> fxPics;
+    // A source dragged onto a control (wvWireSrc): every control it can move
+    // outlined in its colour, the one under the pointer lit; a click lights
+    // what it moves for a moment (wvSelectSrc).
+    void startMapping (const juce::String& src, const juce::MouseEvent&);
+    void mapSource (const juce::String& src, const juce::String& dst);
+    juce::String mapSrc, litSrc;
+    bool mapActive = false, mapping = false;
+    juce::Point<float> mapFrom;
+    int mapOver = -1;
+    double litUntil = 0;
+    std::vector<WaveView::Target> mapTargets;
+    Layer* mapLayer = nullptr;
     void tableMenu (juce::Rectangle<float> near, int osc);
     void warpMenu (juce::Rectangle<float> near, int osc, int j);
     void fxMenu (juce::Rectangle<float> near, int osc);

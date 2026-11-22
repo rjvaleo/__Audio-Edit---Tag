@@ -142,6 +142,9 @@ const PARTS = [
   // walked from it: the world (nodes and cables), a selected node, a
   // selected cable, the main path, and every inspector (the page's own,
   // without the rack's faces, which come with the FX page).
+  // Play's row of effect cards, and the right dock's chain, with the test board.
+  { name: 'fxrow', view: 'play', sel: '#wvFxRow', setup: `${BOARD}; WV_FXROW.board = null; wvRenderFxRow()` },
+  { name: 'chaindock', view: 'play', sel: '#wvChainDock', setup: `${BOARD}; ${NO_RACK}; WV_CHAIN.board = null; wvRenderChainDock()`, after: RACK },
   { name: 'world', view: 'fx', sel: '#wvWorld', setup: `${BOARD}; wvBoardSelect(null); wvRenderBoard()` },
   { name: 'worldSel', view: 'fx', sel: '#wvWorld', setup: `${BOARD}; WV_BOARD_VIEW.sel = { t: 'node', id: 'n1' }; wvRenderBoard(); document.querySelectorAll('#wvCables g[data-cab]')[0].classList.add('sel')` },
   { name: 'chain', view: 'fx', sel: '#wvFchain', setup: `${BOARD}; wvRenderBoard()` },

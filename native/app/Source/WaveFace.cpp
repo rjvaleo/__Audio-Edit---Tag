@@ -1,6 +1,7 @@
 #include "WaveFace.h"
 
 #include "Host.h"
+#include "WaveBoardPics.h"
 
 namespace
 {
@@ -88,6 +89,9 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
                 if (auto* n = face::findNode (cap["tree"], id + juce::String (m)))
                     views[v]->page().skipText.insert ((int) (*n)["i"]);
     }
+    for (int v = 1; v < 3; ++v)
+        if (views[v] != nullptr)
+            (v == 1 ? setMatrixMapping : setBoardMapping) (*views[v], [this] (const juce::String& src, const juce::MouseEvent& e) { startMapping (src, e); });
     if (views[0] != nullptr)
         setCreateTableMenu (*views[0], [this] (juce::Rectangle<float> near, int osc) { tableMenu (near, osc); });
     buildLayers();
@@ -191,6 +195,13 @@ void WaveFace::poll()
     }
     if (auto* v = viewFor (ctx.view))
         v->tick (nowT);
+    if (litSrc.isNotEmpty() && juce::Time::getMillisecondCounterHiRes() >= litUntil)
+    {
+        litSrc.clear();
+        mapTargets.clear();
+        if (mapLayer != nullptr)
+            mapLayer->repaint();
+    }
 }
 
 WaveView* WaveFace::viewFor (const juce::String& v)
@@ -253,6 +264,16 @@ void WaveFace::reload()
                 model.macroNames.set (i, names->getReference (i).toString());
     if (patch["board"].isObject())
         model.board = patch["board"];
+    patchName = patch["name"].toString();
+    if (auto* tg = patch["tags"].getArray())
+    {
+        juce::StringArray t;
+        for (auto& x : *tg)
+            t.add (x.toString());
+        patchTags = t.joinIntoString (juce::String::fromUTF8 (" \xc2\xb7 "));
+    }
+    else
+        patchTags = patch["tags"].toString();
     if (tiles != nullptr)
         tiles->sync();
     for (auto& l : layers)
@@ -351,6 +372,22 @@ void WaveFace::sync()
                 name = f[1];
         txt ("wvFtn" + juce::String (i), name);
     }
+    // The preset bar: the patch's name, and its tags (a factory patch's are "Factory · …").
+    {
+        bool factory = false;
+        for (auto& p : patchList())
+            factory = factory || (p["name"].toString() == patchName && (bool) p["factory"]);
+
+        for (const auto& [i, n] : chrome.nodes)
+        {
+            if (dataOf (n, "pb") == "label")
+                chrome.skipText.insert (i), texts[i] = patchName.isNotEmpty() ? patchName : juce::String ("No patch");
+            if (dataOf (n, "pb") == "tag")
+                chrome.skipText.insert (i), texts[i] = factory ? "Factory" + (patchTags.isNotEmpty() ? juce::String::fromUTF8 (" \xc2\xb7 ") + patchTags : juce::String()) : patchTags;
+            if (dataOf (n, "pb") == "dirty")
+                chrome.skip.insert (i);
+        }
+    }
     txt ("wvBendRo", juce::String::fromUTF8 ("\xc2\xb1") + juce::String ((int) model.g ("voice.bend", 2)));
     for (int i = 0; i < 8; ++i)
         txt ("wvMacn" + juce::String (i), model.macroNames[i]);
@@ -444,10 +481,21 @@ void WaveFace::restyleChoices()
             for (auto* nm : strips)
                 chrome.styleFrom[(int) (*nm)["i"]] = (int) (*(model.g (mix[juce::jlimit (0, 4, dataOf (stripOf (nm), "strip").getIntValue())]) >= 0.5f ? lit : unlit))["i"];
     }
-    // An oscillator switched off is drawn at .55.
+    // An oscillator switched off is drawn at .55, its pictures with it.
     for (int i = 0; i < 3; ++i)
         if (auto it = byId.find ("wvOsc" + juce::String (i)); it != byId.end())
-            chrome.opacityOf[it->second.i] = model.g ("osc" + juce::String (i) + ".on") >= 0.5f ? 1.0f : 0.55f;
+        {
+            const float a = model.g ("osc" + juce::String (i) + ".on") >= 0.5f ? 1.0f : 0.55f;
+            auto was = chrome.opacityOf.find (it->second.i);
+            if (was == chrome.opacityOf.end() || std::abs (was->second - a) > 0.001f)
+            {
+                chrome.opacityOf[it->second.i] = a;
+                chrome.redraw (it->second.r);
+            }
+            for (auto& l : layers)
+                if (l.get() != textLayer && it->second.r.contains (l->getBounds().toFloat().getCentre()))
+                    l->setAlpha (a);
+        }
     if (mpe != nullptr && litSpan != nullptr)
         light ({ mpe }, [this] (const juce::var&) { return model.g ("voice.mpe") >= 0.5f; }, litSpan, mpe);
     for (auto& [parent, group] : faces)
@@ -757,10 +805,58 @@ void WaveFace::buildLayers()
             }
         });
     }
+    // The board's effects, a card each, under the Mix row.
+    {
+        const auto& part = face::page ("wave-views")["parts"]["fxrow"];
+        fxRowBox = { (float) (double) part["root"][0], (float) (double) part["root"][1], (float) (double) part["root"][2], (float) (double) part["root"][3] };
+        if (auto it = byId.find ("wvFxRow"); it != byId.end())
+            chrome.skip.insert (it->second.i);
+        fxRowLayer = addLayer (fxRowBox.expanded (12), { "osc", "sub.", "noise.", "filt0." }, [this] (juce::Graphics& g) {
+            g.addTransform (juce::AffineTransform::translation (-(fxRowBox.getX() - 12), -(fxRowBox.getY() - 12)));
+            drawFxRow (g, fxRowBox);
+        });
+    }
+    // A source being dragged onto a control, or lit for a moment: outlines over everything.
+    mapLayer = addLayer (getLocalBounds().toFloat(), {}, [this] (juce::Graphics& g) {
+        const bool lit = litSrc.isNotEmpty() && juce::Time::getMillisecondCounterHiRes() < litUntil;
+        if (!mapping && !lit)
+            return;
+        const auto src = mapping ? mapSrc : litSrc;
+        const auto col = c2d::css (wave::sourceColour (src));
+        for (int i = 0; i < (int) mapTargets.size(); ++i)
+        {
+            const auto& t = mapTargets[(size_t) i];
+            bool moves = false;
+            for (auto& r : model.mods)
+                moves = moves || (r.src == src && r.dst == t.key);
+            if (!mapping && !moves)
+                continue;
+            const auto r = t.r.expanded (2);
+            juce::Path p;
+            if (t.round)
+                p.addEllipse (r);
+            else
+                p.addRoundedRectangle (r, 4);
+            if (mapping && i != mapOver)
+            {
+                // [data-tgt] while mapping: dashed, in the source's colour.
+                juce::Path d;
+                const float dash[] = { 3, 3 };
+                juce::PathStrokeType (1).createDashedStroke (d, p, dash, 2);
+                g.setColour (col);
+                g.fillPath (d);
+                continue;
+            }
+            juce::DropShadow (col, 12, {}).drawForPath (g, p);
+            g.setColour (col);
+            g.strokePath (p, juce::PathStrokeType (2));
+        }
+    });
+    mapLayer->shared = true;
     // The readings, over everything.
     textLayer = addLayer (getLocalBounds().toFloat(), { "*" }, [this] (juce::Graphics& g) { drawTexts (g); });
     for (auto& l : layers)
-        l->shared = l.get() == textLayer || sharedArea (l->getBounds().toFloat());
+        l->shared = l.get() == textLayer || l.get() == mapLayer || sharedArea (l->getBounds().toFloat());
 }
 
 void WaveFace::drawTexts (juce::Graphics& g)
@@ -830,6 +926,9 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
         if (menuR.contains (at))
             return;
     }
+    // The preset bar.
+    if (at.y < 44 && presetBarDown (at))
+        return;
     // The view tabs.
     for (const auto& [i, n] : chrome.nodes)
         if (hasClass (n, "wv-tab") && rectOf (n["rect"]).contains (at))
@@ -849,6 +948,15 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
             set (k, number ? juce::var (v.getDoubleValue()) : juce::var (v));
             return;
         }
+    if (fxRowDown (e))
+        return;
+    // A source to drag onto a control: a tile's pill, or one of More Sources.
+    if (tiles != nullptr)
+        if (auto src = tiles->sourceAt (at); src.isNotEmpty())
+            return startMapping (src, e);
+    for (const auto& [i, n] : chrome.nodes)
+        if (hasClass (n, "wv-sc") && rectOf (n["rect"]).contains (at))
+            return startMapping (dataOf (n, "src"), e);
     // The envelopes' and LFOs' tiles.
     if (tiles != nullptr && tiles->down (e))
     {
@@ -1122,6 +1230,26 @@ void WaveFace::mouseDrag (const juce::MouseEvent& e)
 {
     const auto d = e.position - last;
     last = e.position;
+    if (mapActive)
+    {
+        if (!mapping && e.position.getDistanceFrom (mapFrom) > 6)
+        {
+            mapping = true;
+            mapTargets.clear();
+            if (auto* v = viewFor (ctx.view))
+                mapTargets = v->targets();
+            else
+                WaveView::collectTargets (face::page ("wave")["tree"], mapTargets, false);
+        }
+        int over = -1;
+        for (int i = 0; i < (int) mapTargets.size(); ++i)
+            if (mapTargets[(size_t) i].r.contains (e.position))
+                over = i;
+        mapOver = over;
+        if (mapLayer != nullptr)
+            mapLayer->repaint();
+        return;
+    }
     if (viewDrag)
     {
         if (auto* v = viewFor (ctx.view))
@@ -1134,6 +1262,29 @@ void WaveFace::mouseDrag (const juce::MouseEvent& e)
 
 void WaveFace::mouseUp (const juce::MouseEvent& e)
 {
+    if (mapActive)
+    {
+        if (!mapping)
+        {
+            litSrc = mapSrc;
+            litUntil = juce::Time::getMillisecondCounterHiRes() + 800;
+            if (mapTargets.empty())
+            {
+                if (auto* v = viewFor (ctx.view))
+                    mapTargets = v->targets();
+                else
+                    WaveView::collectTargets (face::page ("wave")["tree"], mapTargets, false);
+            }
+        }
+        else if (mapOver >= 0)
+            mapSource (mapSrc, mapTargets[(size_t) mapOver].key);
+        mapActive = mapping = false;
+        mapOver = -1;
+        viewDrag = false;
+        if (mapLayer != nullptr)
+            mapLayer->repaint();
+        return;
+    }
     if (viewDrag)
     {
         viewDrag = false;
@@ -1145,6 +1296,328 @@ void WaveFace::mouseUp (const juce::MouseEvent& e)
         dragEnd();
     drag = nullptr;
     dragEnd = nullptr;
+}
+
+namespace
+{
+// The row's cards as captured: by how many knobs they show (4, 3, none), and an off one.
+const juce::var* fxCard (int count, bool off)
+{
+    const auto& tree = face::page ("wave-views")["parts"]["fxrow"]["tree"];
+    auto* kids = tree["kids"].getArray();
+    if (kids == nullptr)
+        return nullptr;
+    auto by = [&] (const juce::String& id) -> const juce::var* {
+        for (auto& k : *kids)
+            if (k["data"]["fxcard"].toString() == id)
+                return &k;
+        return nullptr;
+    };
+    if (off)
+        return by ("n8");
+    return count == 0 ? by ("n13") : count == 3 ? by ("n7") : by ("n1");
+}
+
+juce::Array<juce::var> fxRowParams (const juce::var& n)
+{
+    auto main = board::facePr (n);
+    for (auto& p : board::spec (n))
+    {
+        if (main.size() >= 4)
+            break;
+        if (p["choices"].isArray() || (bool) p["toggle"])
+            continue;
+        bool have = false;
+        for (auto& q : main)
+            have = have || q["key"] == p["key"];
+        if (!have)
+            main.add (p);
+    }
+    while (main.size() > 4)
+        main.remove (4);
+    return main;
+}
+} // namespace
+
+void WaveFace::drawFxRow (juce::Graphics& g, juce::Rectangle<float> box)
+{
+    auto& kit = board::Kit::get();
+    if (!kit.fx.isArray() && api)
+    {
+        int st = 0;
+        const auto fx = api ("GET", "/api/wave/fx", {}, st);
+        if (st == 200)
+            kit.setFx (fx);
+    }
+    if (!model.board.isObject())
+        return;
+    if (fxPics == nullptr)
+        fxPics = std::make_unique<board::Pics>();
+    fxPics->board = &model.board;
+    fxPics->model = &model;
+    fxPics->cl = &cl;
+    fxPics->frame (nowT);
+    const auto ids = board::chainIds (model.board);
+    for (int i = 0; i < ids.size(); ++i)
+    {
+        const auto* n = board::node (model.board, ids[i]);
+        if (n == nullptr)
+            continue;
+        const auto ps = fxRowParams (*n);
+        const bool off = (*n)["on"].isBool() && !(bool) (*n)["on"];
+        const auto* t = fxCard (ps.size(), false);
+        const auto* tOff = fxCard (4, true);
+        if (t == nullptr)
+            continue;
+        const auto tr = rectOf ((*t)["rect"]);
+        const auto at = juce::Point<float> (box.getX() + (float) i * (tr.getWidth() + 8), box.getY());
+        int cell = 0, lab = 0, val = 0, kn = 0;
+        face::Stamp s;
+        s.look = [&] (const juce::var& k) -> const juce::var* {
+            // Its power, lit or not as the node is.
+            if (face::matches (k, "wv-pw") && off && tOff != nullptr)
+                return face::findNode (*tOff, "wv-pw");
+            return nullptr;
+        };
+        s.shallowLook = false;
+        s.skip = [&] (const juce::var& k) {
+            if (face::matches (k, "wv-fxrow-control"))
+                return cell++ >= ps.size();
+            return face::matches (k, "ui-pic");
+        };
+        s.text = [&] (const juce::var& k, juce::String& out) {
+            if (face::matches (k, "wv-fxcard-name"))
+                return (out = board::name (*n)), true;
+            if (face::matches (k, "ui-kname") && lab < ps.size())
+                return (out = ps[lab++]["label"].toString()), true;
+            if (face::matches (k, "ui-kval") && val < ps.size())
+            {
+                const auto& p = ps[val++];
+                return (out = board::fmtP (p, board::pval (*n, p))), true;
+            }
+            return false;
+        };
+        s.after = [&] (juce::Graphics& gg, const juce::var& k, juce::Rectangle<float> cr) {
+            if (k["tag"].toString() != "canvas" || kn >= ps.size())
+                return;
+            juce::Graphics::ScopedSaveState keep (gg);
+            gg.addTransform (juce::AffineTransform::translation (cr.getX(), cr.getY()));
+            c2d::Context c (gg, cr.getWidth(), cr.getHeight());
+            board::drawBoardKnob (c, cr.getWidth(), *fxPics, *n, ps[kn++]);
+        };
+        s.draw (g, *t, at - tr.getPosition());
+    }
+}
+
+void WaveFace::boardParam (const juce::String& nid, const juce::String& key, const juce::var& value, bool live)
+{
+    auto* n = const_cast<juce::var*> (board::node (model.board, nid));
+    if (n == nullptr)
+        return;
+    if (key == "on")
+        n->getDynamicObject()->setProperty ("on", (bool) value);
+    else if (auto* ps = (*n)["params"].getDynamicObject())
+        ps->setProperty (key, value);
+    auto* body = new juce::DynamicObject();
+    body->setProperty ("node", nid);
+    body->setProperty ("key", key);
+    body->setProperty ("value", key == "on" ? juce::var ((bool) value ? 1 : 0) : value);
+    if (live)
+        body->setProperty ("live", true);
+    int st = 0;
+    if (api)
+        api ("POST", "/api/wave/board/param", juce::var (body), st);
+    if (fxRowLayer != nullptr)
+        fxRowLayer->repaint();
+}
+
+bool WaveFace::fxRowDown (const juce::MouseEvent& e)
+{
+    if (!fxRowBox.contains (e.position) || !model.board.isObject())
+        return false;
+    const auto ids = board::chainIds (model.board);
+    for (int i = 0; i < ids.size(); ++i)
+    {
+        const auto* n = board::node (model.board, ids[i]);
+        if (n == nullptr)
+            continue;
+        const auto ps = fxRowParams (*n);
+        const auto* t = fxCard (ps.size(), false);
+        if (t == nullptr)
+            continue;
+        const auto tr = rectOf ((*t)["rect"]);
+        const auto off = juce::Point<float> (fxRowBox.getX() + (float) i * (tr.getWidth() + 8), fxRowBox.getY()) - tr.getPosition();
+        if (!(tr + off).contains (e.position))
+            continue;
+        const auto id = ids[i];
+        if (auto* pw = face::findNode (*t, "wv-pw"); pw != nullptr && (rectOf ((*pw)["rect"]) + off).contains (e.position))
+        {
+            boardParam (id, "on", (*n)["on"].isBool() && !(bool) (*n)["on"], false);
+            return true;
+        }
+        int k = 0;
+        for (auto* cv : face::findAll (*t, "canvas"))
+        {
+            if (k < ps.size() && (rectOf ((*cv)["rect"]) + off).contains (e.position))
+            {
+                const auto p = ps[k];
+                auto u = std::make_shared<float> (board::pn (p, board::pval (*n, p)));
+                drag = [this, id, p, u] (float, float dy, const juce::MouseEvent& ev) {
+                    *u = wave::clamp (*u - dy / (ev.mods.isShiftDown() ? 750.0f : 150.0f));
+                    boardParam (id, p["key"].toString(), board::pv (p, *u), true);
+                };
+                dragEnd = [this, id, p] {
+                    if (const auto* nn = board::node (model.board, id))
+                        boardParam (id, p["key"].toString(), board::pval (*nn, p), false);
+                };
+                return true;
+            }
+            ++k;
+        }
+        return true;
+    }
+    return false;
+}
+
+// WV_PATCHES.list: the factory set (the eight the page offers), then the engine's.
+juce::Array<juce::var> WaveFace::patchList()
+{
+    static const char* fac[][3] = { { "Night Glass Pad", "Pad \xc2\xb7 Warm", "Formant Sweep" }, { "Hollow Choir", "Pad \xc2\xb7 Vocal", "Vowel Ah\xe2\x80\x93Oo" },
+                                    { "Organ Bloom", "Keys \xc2\xb7 Bright", "Glass Organ" }, { "Pulse Runner", "Bass \xc2\xb7 Hard", "Hollow Pulse" },
+                                    { "Grit Engine", "Lead \xc2\xb7 Dirty", "Grit Saw" }, { "Vowel Pluck", "Pluck \xc2\xb7 Vocal", "Vowel Ah\xe2\x80\x93Oo" },
+                                    { "Formant Bass", "Bass \xc2\xb7 Warm", "Formant Sweep" }, { "Glass Bell", "Keys \xc2\xb7 Glassy", "Glass Organ" } };
+    juce::Array<juce::var> out;
+    for (auto& f : fac)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("name", juce::String::fromUTF8 (f[0]));
+        o->setProperty ("tags", juce::String::fromUTF8 (f[1]));
+        o->setProperty ("factory", true);
+        auto* params = new juce::DynamicObject();
+        params->setProperty ("osc0.table", juce::String::fromUTF8 (f[2]));
+        auto* patch = new juce::DynamicObject();
+        patch->setProperty ("params", juce::var (params));
+        o->setProperty ("patch", juce::var (patch));
+        out.add (juce::var (o));
+    }
+    if (api)
+    {
+        int st = 0;
+        const auto list = api ("GET", "/api/wave/presets", {}, st);
+        if (auto* a = list.getArray())
+            for (auto& p : *a)
+                out.add (p);
+    }
+    return out;
+}
+
+// wvApplyPreset: over the current patch, sent whole to the engine.
+void WaveFace::loadPatch (const juce::var& p)
+{
+    if (!api)
+        return;
+    int st = 0;
+    auto patch = api ("GET", "/api/wave/patch", {}, st);
+    if (auto* params = p["patch"]["params"].getDynamicObject())
+        for (auto& pr : params->getProperties())
+            patch["params"].getDynamicObject()->setProperty (pr.name, pr.value);
+    for (auto* k : { "mods", "macroNames", "board" })
+        if (!p["patch"][k].isVoid())
+            patch.getDynamicObject()->setProperty (k, p["patch"][k]);
+    patch.getDynamicObject()->setProperty ("name", p["name"]);
+    patch.getDynamicObject()->setProperty ("tags", p["tags"]);
+    api ("POST", "/api/wave/patch", patch, st);
+    reload();
+}
+
+bool WaveFace::presetBarDown (juce::Point<float> at)
+{
+    for (const auto& [i, n] : chrome.nodes)
+    {
+        if (!rectOf (n["rect"]).contains (at))
+            continue;
+        const auto pb = dataOf (n, "pb"), abk = dataOf (n, "ab");
+        if (pb == "prev" || pb == "next")
+        {
+            const auto list = patchList();
+            int now = -1;
+            for (int k = 0; k < list.size(); ++k)
+                if (list[k]["name"].toString() == patchName)
+                    now = k;
+            const int step = pb == "next" ? 1 : -1;
+            const int to = ((now < 0 ? (step > 0 ? -1 : 0) : now) + step + list.size()) % juce::jmax (1, list.size());
+            if (!list.isEmpty())
+                loadPatch (list[to]);
+            return true;
+        }
+        if (abk.isNotEmpty() && api)
+        {
+            // A and B: two patches to compare; switching keeps the one you leave.
+            const int to = abk == "B" ? 1 : 0;
+            if (to == ab)
+                return true;
+            int st = 0;
+            abSlots[ab] = api ("GET", "/api/wave/patch", {}, st);
+            const auto next = abSlots[to].isObject() ? abSlots[to] : abSlots[ab];
+            ab = to;
+            api ("POST", "/api/wave/patch", next, st);
+            // Lit as the page lights it.
+            const juce::var *lit = nullptr, *unlit = nullptr;
+            for (const auto& [j, m] : chrome.nodes)
+                if (dataOf (m, "ab").isNotEmpty())
+                    (hasClass (m, "on") ? lit : unlit) = &m;
+            for (const auto& [j, m] : chrome.nodes)
+                if (dataOf (m, "ab").isNotEmpty() && lit != nullptr && unlit != nullptr)
+                {
+                    chrome.styleFrom[j] = (int) (*((dataOf (m, "ab") == "B") == (ab == 1) ? lit : unlit))["i"];
+                    chrome.redraw (rectOf (m["rect"]));
+                }
+            reload();
+            return true;
+        }
+        if (pb == "save" && api)
+        {
+            // Save: these settings as the patch of its name (a factory one is saved as yours).
+            int st = 0;
+            const auto patch = api ("GET", "/api/wave/patch", {}, st);
+            auto* body = new juce::DynamicObject();
+            body->setProperty ("name", patchName.isNotEmpty() ? patchName : juce::String ("Patch"));
+            body->setProperty ("tags", juce::StringArray::fromTokens (patchTags, juce::String::fromUTF8 ("\xc2\xb7"), "").joinIntoString (","));
+            body->setProperty ("patch", patch);
+            api ("POST", "/api/wave/presets", juce::var (body), st);
+            return true;
+        }
+    }
+    return false;
+}
+
+void WaveFace::startMapping (const juce::String& src, const juce::MouseEvent& e)
+{
+    mapSrc = src;
+    mapFrom = e.position;
+    mapActive = true;
+    mapping = false;
+    mapOver = -1;
+    mapTargets.clear();
+}
+
+// A source onto a control: a new row at +30, or an existing one back to it (wvMapSource).
+void WaveFace::mapSource (const juce::String& src, const juce::String& dst)
+{
+    bool found = false;
+    for (auto& r : model.mods)
+        if (r.src == src && r.dst == dst)
+            r.amt = 0.3f, r.off = false, found = true;
+    if (!found)
+    {
+        if (model.mods.size() >= 64)
+            return;
+        model.mods.push_back ({ src, dst, 0.3f, "lin", {}, false });
+    }
+    if (ctx.modsChanged)
+        ctx.modsChanged();
+    if (auto* v = viewFor (ctx.view))
+        v->shown();
 }
 
 void WaveFace::modsChanged()

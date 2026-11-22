@@ -63,6 +63,29 @@ public:
     virtual void changed (const juce::String& /*key*/) {}
     // The frame, about thirty a second while the view is shown (`wvFrame`).
     virtual void tick (float /*t*/) {}
+    // What a source can be dropped on here (`[data-tgt]`): where, which key,
+    // and whether it is a knob (round).
+    struct Target
+    {
+        juce::Rectangle<float> r;
+        juce::String key;
+        bool round = false;
+    };
+    virtual std::vector<Target> targets()
+    {
+        std::vector<Target> out;
+        collectTargets (cap["tree"], out, false);
+        return out;
+    }
+    static void collectTargets (const juce::var& n, std::vector<Target>& out, bool inKnob)
+    {
+        const bool knob = inKnob || face::matches (n, "wv-knob");
+        if (n["data"]["tgt"].isString())
+            out.push_back ({ face::rectOf (n), n["data"]["tgt"].toString(), knob });
+        if (auto* kids = n["kids"].getArray())
+            for (auto& k : *kids)
+                collectTargets (k, out, knob);
+    }
     // How long each of its layers takes to draw (the bench).
     virtual std::vector<std::pair<juce::String, double>> profile (float) { return {}; }
 
