@@ -74,5 +74,9 @@ a trait so that `rack` and `live` no longer need `App`.
   - A change in a handler reruns only the specs that call its routes.
   - A change anywhere else in the server crates reruns them all: the core, the
     table, a crate's `lib.rs` or `routes.rs`, or `server-ui`.
-- **The test map was made before the split.** Until `npm run test:map` is run
-  again, every moved file counts as new, so a change to one reruns every spec.
+- **The test map was remade after the split** (21 Nov 2026, at `cb673d9`, on the MacBook), so
+  it knows the moved files.
+- **`npm run test:changed` tests only the crates a change reaches** on the PC:
+  the changed crates and the crates that use them (`run-tests.cmd rust <crate>…`).
+  A change in a route file runs that area's crate, `server` and `audiolab`; a
+  change in the core runs every server crate.
