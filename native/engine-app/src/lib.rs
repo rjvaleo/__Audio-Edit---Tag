@@ -20,7 +20,12 @@
 //! [`Session::set`]: a knob or a switch by its value, a choice by the
 //! number of its option.
 
+pub mod annot;
 pub mod atmos_part;
+pub mod edit_part;
+mod mgl_rack;
+pub mod sound_part;
+mod sound_link;
 pub mod wave_patch;
 mod wave_part;
 
@@ -29,6 +34,8 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
 pub use atmos_part::{fx_kinds_json, AtmosPart};
+pub use edit_part::EditPart;
+pub use sound_part::SoundPart;
 pub use wave_part::{frames_256, frames_for, read_table_wav, set_table_dirs, table_names, WavePart};
 use wave_part::Tables;
 
@@ -51,6 +58,12 @@ pub struct KindInfo {
     /// Whether its face carries a keyboard.
     pub keyboard: bool,
 }
+
+/// The Sound module's face, and the Edit page's (`edit_part.rs`).
+pub const SOUND_W: u32 = 320;
+pub const SOUND_H: u32 = 132;
+pub const EDIT_W: u32 = 1500;
+pub const EDIT_H: u32 = 1100;
 
 /// Atmosphere's face's height, in pixels.
 pub const ATMOS_HEIGHT: u32 = 998;
@@ -76,6 +89,19 @@ pub static KINDS: &[KindInfo] = &[
         ins: &[("Notes", Kind::Notes)],
         outs: &[("Audio", Kind::Audio)],
         keyboard: true,
+    },
+    // MGL's sound document: a file from disk or the library, and its edits.
+    KindInfo { id: "sound", title: "Sound", width: SOUND_W, height: SOUND_H, ins: &[], outs: &[("Sound", Kind::Sound)], keyboard: false },
+    KindInfo {
+        id: "edit",
+        title: "Edit",
+        // MGL's Edit page as RJ uses it (a 1668 x 1100 window, the rail 168
+        // wide): the page and the Now Playing bar under it.
+        width: EDIT_W,
+        height: EDIT_H,
+        ins: &[("Sound", Kind::Sound)],
+        outs: &[("Audio", Kind::Audio)],
+        keyboard: false,
     },
     KindInfo { id: "midi-in", title: "MIDI In", width: 246, height: 73, ins: &[], outs: &[("Notes", Kind::Notes)], keyboard: false },
     KindInfo {
@@ -246,6 +272,8 @@ enum Part {
     /// Which channel it listens to: 0 all, 1 to 16 one.
     MidiIn { channel: u8 },
     Output,
+    Sound(Box<SoundPart>),
+    Edit(Box<EditPart>),
 }
 
 struct Placed {
@@ -341,6 +369,19 @@ impl Session {
                 part.lay(&mut self.ctl, f, self.rate, self.max_block)?;
                 Part::Atmos(Box::new(part))
             }
+            "sound" => {
+                self.ctl.add(engine_id(id, 0), Box::new(engine_core::basics::SoundSource::new()))?;
+                let mut part = SoundPart::empty();
+                if let Some(state) = saved.and_then(|s| s.get("sound")) {
+                    sound_link::restore(&mut part, state, self.rate);
+                }
+                Part::Sound(Box::new(part))
+            }
+            "edit" => {
+                let part = EditPart::new(saved.and_then(|s| s.get("edit")));
+                self.ctl.add(engine_id(id, 0), Box::new(engine_mgl::EditPlayer::new(part.transport.clone())))?;
+                Part::Edit(Box::new(part))
+            }
             "midi-in" => {
                 let channel = saved.and_then(|s| s.get("channel")).and_then(Value::as_u64).unwrap_or(0).min(16) as u8;
                 self.ctl.add(engine_id(id, 0), Box::new(engine_core::basics::Keys::new()))?;
@@ -359,7 +400,11 @@ impl Session {
         if let Part::Wave(w) = &part {
             w.hand_over_board(&mut self.ctl, engine_id(id, 0), self.rate);
         }
+        let hand = matches!(&part, Part::Sound(s) if s.is_open());
         self.modules.insert(id, Placed { kind: info, x, y, part });
+        if hand {
+            self.sound_hand_over(id)?;
+        }
         self.next = self.next.max(id + 1);
         self.sync_tables();
         Ok(())
@@ -469,7 +514,7 @@ impl Session {
                 *channel = (value.max(0.0) as u8).min(16);
                 Ok(())
             }
-            Part::Output | Part::Atmos(_) => Err(AppError::NoSuchControl(index)),
+            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) => Err(AppError::NoSuchControl(index)),
         }
     }
 
@@ -480,14 +525,14 @@ impl Session {
         Ok(match &m.part {
             Part::Wave(w) => w.values(),
             Part::MidiIn { channel } => vec![*channel as f32],
-            Part::Output | Part::Atmos(_) => Vec::new(),
+            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) => Vec::new(),
         })
     }
 
     /// A note played on a module's own keyboard, heard from the next block.
     pub fn note(&mut self, id: u32, on: bool, note: u8, velocity: f32) -> Result<u64, AppError> {
         let m = self.modules.get(&id).ok_or(AppError::NoSuchModule(id))?;
-        if matches!(m.part, Part::Output) {
+        if matches!(m.part, Part::Output | Part::Sound(_) | Part::Edit(_)) {
             return Err(AppError::NoSuchSocket);
         }
         let event = if on { NoteEvent::on(note.min(127), velocity.clamp(0.0, 1.0)) } else { NoteEvent::off(note.min(127)) };
@@ -555,6 +600,7 @@ impl Session {
     /// finished with, and hand over the tables that have finished building.
     pub fn collect(&mut self) {
         self.ctl.collect();
+        self.sound_collect();
         if self.tables.take_built() {
             self.sync_tables();
         }
@@ -612,6 +658,12 @@ impl Session {
                         o.insert("channel".into(), (*channel).into());
                     }
                     Part::Output => {}
+                    Part::Sound(s) => {
+                        o.insert("sound".into(), s.state());
+                    }
+                    Part::Edit(e) => {
+                        o.insert("edit".into(), e.ui.clone());
+                    }
                 }
                 Value::Object(o)
             })
@@ -710,6 +762,10 @@ impl Session {
                     Part::Atmos(a) => {
                         o.insert("atmos".into(), a.state());
                         o.insert("name".into(), a.name().into());
+                    }
+                    Part::Sound(s) => {
+                        o.insert("sound".into(), s.edit_json());
+                        o.insert("name".into(), s.origin().get("name").cloned().unwrap_or(Value::Null));
                     }
                     _ => {}
                 }

@@ -10,6 +10,11 @@ engine-core = { path = "../engine-core" }
 engine-mgl = { path = "../engine-mgl" }
 wave = { path = "../../core/crates/wave" }
 serde_json = { version = "1", features = ["float_roundtrip"] }
+# The Sound and Edit modules: MGL's own edit list, its file reading and an
+# empty rack to measure through, as MGL's server uses them for /api/edit.
+mgl-edit = { package = "edit", path = "../../core/crates/edit" }
+mgl-fx = { package = "fx", path = "../../core/crates/fx" }
+audio-core = { path = "../../core/crates/audio-core" }
 
 [dev-dependencies]
 # Atmosphere's synth driven by hand, to check the canvas module against it.

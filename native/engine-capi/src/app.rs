@@ -616,3 +616,6 @@ pub unsafe extern "C" fn na_fx_kinds(buf: *mut c_char, cap: u32) -> u32 {
 pub unsafe extern "C" fn na_atmos_page(buf: *mut c_char, cap: u32) -> u32 {
     guarded(0, || give_text(engine_app::atmos_part::PAGE_JSON, buf, cap))
 }
+
+// The Sound and Edit modules (app/sound.rs).
+mod sound;

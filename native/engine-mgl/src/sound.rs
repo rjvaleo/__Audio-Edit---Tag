@@ -58,6 +58,28 @@ impl<S: RandomAccessSource> Document<S> {
         self.session.revert()
     }
 
+    /// The session: the list, and whether there is anything to undo or redo.
+    pub fn session(&self) -> &Session {
+        &self.session
+    }
+
+    /// The list and the file together, for what must read the audio before
+    /// it can decide what to do (snap, normalise, strip silence, find a
+    /// click), and for an edit made after it.
+    pub fn parts(&mut self) -> (&mut Session, &mut Reader<S>) {
+        (&mut self.session, &mut self.reader)
+    }
+
+    /// The file as it is, before any edit.
+    pub fn reader(&mut self) -> &mut Reader<S> {
+        &mut self.reader
+    }
+
+    /// The engine's rate, which [`Document::sound`] renders at.
+    pub fn rate(&self) -> u32 {
+        self.rate
+    }
+
     /// The edited sound, interleaved in two channels at the engine's rate.
     fn rendered(&mut self) -> io::Result<Vec<f32>> {
         let list = self.session.list();

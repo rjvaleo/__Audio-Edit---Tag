@@ -160,6 +160,7 @@ use basics::*;
 mod rack_presets;
 use rack_presets::*;
 mod edits_markers;
+mod edit_references;
 mod automation_recording;
 mod live_prism;
 mod bad_blocks;

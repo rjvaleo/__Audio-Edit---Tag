@@ -69,6 +69,39 @@ uint32_t na_fx_kinds (char* buf, uint32_t cap);
 // The page's own lists (data/atmos-page.json).
 uint32_t na_atmos_page (char* buf, uint32_t cap);
 
+// The Sound module: a file opened (origin: {"kind": "file"|"library", "path",
+// "name"}; keep 1 takes back a lost sound's edits), and what it holds (MGL's
+// /api/edit answer, its origin, its markers). Its info into buf, or an error.
+int32_t na_sound_open (NaApp*, uint32_t id, const char* path, const char* origin, uint32_t keep, char* buf, uint32_t cap);
+int32_t na_sound_info (NaApp*, uint32_t id, char* buf, uint32_t cap);
+// The Sound module cabled into Edit module id, or -2.
+int32_t na_sound_of (NaApp*, uint32_t edit);
+
+// Edit, on the sound cabled into it. Text answers return their length, or an
+// error code. An op is MGL's /api/edit message; annot is /api/markers'
+// ({"op":"set",...}) or /api/annot's.
+int32_t na_edit_op (NaApp*, uint32_t id, const char* json, char* buf, uint32_t cap);
+int32_t na_edit_annot (NaApp*, uint32_t id, const char* json, char* buf, uint32_t cap);
+int32_t na_edit_measure (NaApp*, uint32_t id, uint64_t start, uint64_t end, char* buf, uint32_t cap);
+// The page's own measures (hits, loud, bands and levels of [from, to)), null until made.
+int32_t na_edit_measures (NaApp*, uint32_t id, double from, double to, char* buf, uint32_t cap);
+// Peaks of the edited timeline: [channel][min, max, rms][column]; info: channels, from, to.
+int32_t na_edit_peaks (NaApp*, uint32_t id, uint64_t from, uint64_t to, uint32_t cols, float* out, uint32_t cap, uint64_t* info3);
+// The file's spectrogram, a byte a cell, column by column; info: bins, maxHz.
+int32_t na_edit_spectrogram (NaApp*, uint32_t id, uint64_t from, uint64_t to, uint32_t cols, uint32_t fft, uint8_t* out, uint32_t cap, float* info2);
+// Rainbow colours, r g b per column; 1, or 0 until measured.
+int32_t na_edit_colours (NaApp*, uint32_t id, double from, double to, uint32_t cols, float* out);
+// Mono samples from `from`; the sound's length, 0 until measured.
+int64_t na_edit_mono (NaApp*, uint32_t id, int64_t from, float* out, uint32_t n);
+int64_t na_edit_edge_snap (NaApp*, uint32_t id, int64_t frame, uint32_t hits, uint32_t zero);
+// {"play":bool} {"seek":frame} {"loop":{"on","a","b"}}; frames on the document.
+int32_t na_edit_transport (NaApp*, uint32_t id, const char* json);
+// frame, playing, peak l, peak r
+int32_t na_edit_position (NaApp*, uint32_t id, double* out4);
+int64_t na_edit_export (NaApp*, uint32_t id, const char* path, uint32_t bits);
+int32_t na_edit_set_ui (NaApp*, uint32_t id, const char* json);
+int32_t na_edit_ui (NaApp*, uint32_t id, char* buf, uint32_t cap);
+
 #ifdef __cplusplus
 }
 #endif
