@@ -719,6 +719,38 @@ public:
                 zoomStep += ms ([&] { main.canvasForBench().setZoom (main.canvasForBench().zoom() * 1.1f); draw(); });
             const double rest = ms ([&] { main.canvasForBench().settleZoom(); draw(); });
             std::printf ("{\"zoom_rest_ms\":%.1f}\n", rest);
+            // A wheel as a hand turns it: three notches out, a pause, three back in, a pause.
+            auto& cv = main.canvasForBench();
+            const float z0 = cv.zoom();
+            cv.setZoom (0.8f);
+            cv.settleZoom();
+            draw();
+            double out3 = 0, in3 = 0;
+            for (int i = 0; i < 3; ++i)
+                out3 += ms ([&] { cv.setZoom (cv.zoom() / 1.1f); draw(); });
+            const double restOut = ms ([&] { cv.settleZoom(); draw(); });
+            for (int i = 0; i < 3; ++i)
+                in3 += ms ([&] { cv.setZoom (cv.zoom() * 1.1f); draw(); });
+            const double restIn = ms ([&] { cv.settleZoom(); draw(); });
+            const double still = ms (draw);
+            std::printf ("{\"nothing_changed_ms\":%.1f}\n", still);
+            std::printf ("{\"notch_ms\":%.1f,\"pause_after_out_ms\":%.1f,\"pause_after_in_ms\":%.1f}\n", (out3 + in3) / 6, restOut, restIn);
+            // The wheel itself: two notches in quick succession, eased frame by frame.
+            {
+                const float from = cv.zoom();
+                int frames = 0;
+                double worst = 0;
+                cv.wheelZoom ({ 800, 500 }, 1);
+                cv.wheelZoom ({ 800, 500 }, 1);
+                while (cv.isGliding() && frames < 200)
+                {
+                    juce::Thread::sleep (16);
+                    worst = juce::jmax (worst, ms ([&] { cv.glideFrame(); draw(); }));
+                    ++frames;
+                }
+                std::printf ("{\"glide_frames\":%d,\"glide_frame_worst_ms\":%.1f,\"zoom_from\":%.3f,\"zoom_to\":%.3f}\n", frames, worst, from, cv.zoom());
+            }
+            cv.setZoom (z0);
             std::printf ("{\"window_ms\":%.1f,\"pan_step_ms\":%.1f,\"zoom_step_ms\":%.1f}\n", whole, panStep / 10, zoomStep / 10);
             return quit();
         }

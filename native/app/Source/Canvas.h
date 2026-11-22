@@ -214,6 +214,10 @@ public:
     void retheme();
     // End a zoom gesture now and draw sharp (for the bench).
     void settleZoom() { if (zooming) timerCallback(); }
+    // A wheel's notches at a point (the bench drives it), and one screen frame of its glide.
+    void wheelZoom (juce::Point<float> at, float notches);
+    void glideFrame() { glide(); }
+    bool isGliding() const { return gliding; }
     void fit();
     void setZoom (float);
     float zoom() const { return cam.zoom; }
@@ -291,6 +295,14 @@ private:
     // While a zoom gesture runs, a picture of the canvas taken as it began is
     // moved and scaled, which costs nothing; the canvas is drawn again sharp
     // once the gesture has rested.
+    // A wheel's zoom, eased toward where it is going, one step a screen frame.
+    bool gliding = false;
+    float targetZoom = 1;
+    juce::Point<float> anchor;
+    double lastFrame = 0;
+    void glide();
+    juce::VBlankAttachment vblank { this, [this] { glide(); } };
+
     juce::Image shot;
     Camera shotCam;
     float shotDensity = 1;

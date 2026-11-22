@@ -64,6 +64,78 @@ std::pair<juce::Colour, float> glowOf (const juce::String& filter)
 
 // ───────────────────────────────────────────────────────────────── camera
 
+// A module's picture, kept at a few fixed sharpnesses (a power of two of the
+// screen's pixels, as many as it takes to stay sharp) rather than at exactly
+// the zoom: between steps the canvas only scales the picture, so zooming never
+// waits for every module to be drawn again; it is drawn again only when the
+// zoom crosses into another step. Otherwise as JUCE's own cache
+// (StandardCachedComponentImage).
+class SteppedCache final : public juce::CachedComponentImage
+{
+public:
+    explicit SteppedCache (juce::Component& c) : owner (c) {}
+
+    // The step for a screen scale: the next power of two up, no larger than
+    // keeps the picture under about 24 million pixels.
+    static float stepFor (float scale, juce::Rectangle<int> bounds)
+    {
+        float step = 0.25f;
+        while (step < scale && step < 8.0f)
+            step *= 2.0f;
+        const float area = (float) juce::jmax (1, bounds.getWidth() * bounds.getHeight());
+        const float most = std::sqrt (24.0e6f / area);
+        return juce::jmax (0.25f, juce::jmin (step, most));
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
+        const auto bounds = owner.getLocalBounds();
+        // The step it has, kept while it is near enough (a little soft above
+        // it, down to well below it), so a zoom back and forth across a step
+        // does not draw the module again each time.
+        if (step <= 0 || scale > step * 1.15f || scale < step / 2.5f)
+            step = stepFor (scale, bounds);
+        const auto imageBounds = (bounds.toFloat() * step).getSmallestIntegerContainer();
+        if (image.isNull() || image.getBounds() != imageBounds.withZeroOrigin())
+        {
+            image = juce::Image (juce::Image::ARGB, juce::jmax (1, imageBounds.getWidth()), juce::jmax (1, imageBounds.getHeight()), true,
+                                 *g.getInternalContext().getPreferredImageTypeForTemporaryImages());
+            image.setBackupEnabled (false);
+            valid.clear();
+        }
+        if (auto ptr = image.getPixelData())
+            if (auto* ext = ptr->getBackupExtensions())
+                if (ext->needsBackup() && !ext->canBackup())
+                    valid.clear();
+        if (!valid.containsRectangle (bounds))
+        {
+            juce::Graphics ig (image);
+            auto& lg = ig.getInternalContext();
+            lg.addTransform (juce::AffineTransform::scale (step));
+            for (auto& r : valid)
+                lg.excludeClipRectangle (r);
+            lg.setFill (juce::Colours::transparentBlack);
+            lg.fillRect (bounds, true);
+            lg.setFill (juce::Colours::black);
+            owner.paintEntireComponent (ig, true);
+        }
+        valid = bounds;
+        g.setColour (juce::Colours::black.withAlpha (owner.getAlpha()));
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+        g.drawImageTransformed (image, juce::AffineTransform::scale ((float) bounds.getWidth() / (float) image.getWidth(), (float) bounds.getHeight() / (float) image.getHeight()), false);
+    }
+    bool invalidateAll() override { valid.clear(); return true; }
+    bool invalidate (const juce::Rectangle<int>& area) override { valid.subtract (area); return true; }
+    void releaseResources() override { image = {}; }
+
+private:
+    juce::Component& owner;
+    juce::Image image;
+    juce::RectangleList<int> valid;
+    float step = 0;
+};
+
 namespace camera
 {
 float clampZoom (float z) { return std::isfinite (z) ? juce::jlimit (minZoom, maxZoom, z) : 1.0f; }
@@ -147,7 +219,7 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
     accent = accentFor (kind.id);
     // A pan moves a finished picture of the module; a change inside it draws
     // only that part again.
-    setBufferedToImage (true);
+    setCachedComponentImage (new SteppedCache (*this));
 
     for (int s = 0; s < (int) kind.ins.size(); ++s)
     {
@@ -773,7 +845,10 @@ void Canvas::zoomTo (const Camera& next)
         }
         shotCam = cam;
         zooming = true;
-        stage.setVisible (false);
+        // Out of sight, not hidden: hiding a component throws away every
+        // picture cached inside it (JUCE releases them), so the gesture's end
+        // would draw every module again from nothing.
+        stage.setTransform (juce::AffineTransform::translation (-1.0e7f, -1.0e7f));
     }
     cam = next;
     repaint();
@@ -787,7 +862,6 @@ void Canvas::timerCallback()
     stopTimer();
     zooming = false;
     shot = {};
-    stage.setVisible (true);
     applyCamera();
 }
 
@@ -941,11 +1015,45 @@ void Canvas::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDe
     const float notches = wheel.isSmooth ? juce::jlimit (-1.0f, 1.0f, wheel.deltaY * 5.0f) : (wheel.deltaY > 0 ? 1.0f : wheel.deltaY < 0 ? -1.0f : 0.0f);
     if (std::abs (notches) < 1e-6f)
         return;
-    zoomTo (camera::zoomAround (cam, at.position, std::pow (camera::notch, notches)));
+    wheelZoom (at.position, notches);
+}
+
+void Canvas::wheelZoom (juce::Point<float> at, float notches)
+{
+    // Eased, not jumped: the wheel moves where the zoom is going, and each
+    // frame of the screen takes it part of the way there (glide()).
+    targetZoom = camera::clampZoom ((gliding ? targetZoom : cam.zoom) * std::pow (camera::notch, notches));
+    anchor = at;
+    if (!gliding)
+    {
+        gliding = true;
+        lastFrame = juce::Time::getMillisecondCounterHiRes();
+        glide();
+    }
+}
+
+void Canvas::glide()
+{
+    if (!gliding)
+        return;
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    const float dt = (float) juce::jlimit (1.0, 50.0, now - lastFrame) / 1000.0f;
+    lastFrame = now;
+    // About two thirds of the way in 60 ms, as a browser eases its smooth scrolling.
+    const float a = 1.0f - std::exp (-dt / 0.06f);
+    const float ratio = targetZoom / cam.zoom;
+    if (std::abs (std::log (ratio)) < 0.002f)
+    {
+        gliding = false;
+        zoomTo (camera::zoomAround (cam, anchor, ratio));
+        return;
+    }
+    zoomTo (camera::zoomAround (cam, anchor, std::pow (ratio, a)));
 }
 
 void Canvas::mouseMagnify (const juce::MouseEvent& e, float scale)
 {
+    gliding = false;
     // A pinch holds the canvas.
     zoomTo (camera::zoomAround (cam, e.getEventRelativeTo (this).position, juce::jlimit (0.8f, 1.25f, scale)));
 }
