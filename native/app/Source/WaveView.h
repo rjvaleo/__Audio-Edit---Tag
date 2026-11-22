@@ -216,6 +216,9 @@ protected:
             ig.addTransform (juce::AffineTransform::translation (-area.getX(), -area.getY()).scaled (s));
             paint (ig);
         }
+        // Whole: an image takes the colour's opacity, and what was drawn last may have been faint.
+        juce::Graphics::ScopedSaveState keep (g);
+        g.setOpacity (1.0f);
         g.drawImageTransformed (c.img, juce::AffineTransform::scale (1.0f / c.scale).translated (area.getX(), area.getY()));
     }
     // A canvas of the page's, by id: drawn by `draw` on its own w x h, as the page draws it.

@@ -15,6 +15,7 @@
 // it, for the native face to draw where the patch puts them.
 // For the default theme only, each view as Chromium draws it:
 //   <reference>/wave-<view>.png (2x) and wave-<view>-1x.png
+// REFS_ALL=1: every theme's too, as wave-<view>-<theme>.png.
 // GIVEN_ENGINE=<file> (from `idMLab --dump-wave`): the page is given the
 // engine's default patch and tables, as it has them when its engine answers,
 // and only the reference pictures are written, Play's too, as
@@ -209,9 +210,10 @@ try {
         await hide();
         const size = await tab.evaluate((sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return [r.width, r.height]; }, ROOT);
         if (size[0] !== 1900 || size[1] !== 1052) throw new Error(`${t.id} ${v}: the page is ${size}, not 1900 x 1052`);
-        if (t.id === 'default') {
+        if (t.id === 'default' || process.env.REFS_ALL) {
           const shot = await tab.locator(ROOT).screenshot({ animations: 'disabled' });
-          fs.writeFileSync(path.join(refs, `wave-${v}${engine ? '-engine' : ''}${scale === 2 ? '' : '-1x'}.png`), shot);
+          const named = t.id === 'default' ? '' : `-${t.id}`;
+          fs.writeFileSync(path.join(refs, `wave-${v}${named}${engine ? '-engine' : ''}${scale === 2 ? '' : '-1x'}.png`), shot);
         }
         if (scale === scales[0] && !engine) {
           const f = await tab.evaluate(`(${walk})(${JSON.stringify(ROOT)}, ${JSON.stringify(SKIP)})`);
