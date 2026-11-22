@@ -22,6 +22,13 @@ fn steps() -> Value {
     serde_json::from_str(&std::fs::read_to_string(format!("{REF}/steps.json")).unwrap()).unwrap()
 }
 
+/// A file of its own for each export: the tests run at once in one process.
+fn scratch(what: &str) -> std::path::PathBuf {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    std::env::temp_dir().join(format!("edit-{what}-{}-{n}.wav", std::process::id()))
+}
+
 fn fnv(bytes: &[u8]) -> String {
     let mut h: u64 = 0xcbf29ce484222325;
     for b in bytes {
@@ -55,11 +62,13 @@ fn dry_bytes(s: &mut Session, sound: u32) -> Vec<u8> {
     if whole {
         std::fs::read(format!("{REF}/source.wav")).unwrap()
     } else {
-        let path = std::env::temp_dir().join(format!("edit-dry-{}.wav", std::process::id()));
+        let path = scratch("dry");
         // The same call MGL's route makes: the whole timeline, 16-bit.
         let edit = s.wires().iter().find(|w| w.from.0 == sound).unwrap().to.0;
         s.edit_export(edit, path.to_str().unwrap(), 16).unwrap();
-        std::fs::read(path).unwrap()
+        let bytes = std::fs::read(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+        bytes
     }
 }
 
@@ -164,7 +173,7 @@ fn bank(s: &mut Session, sound: u32) -> (Vec<f32>, Vec<f32>) {
     let info = s.sound_info(sound).unwrap();
     let frames = info["frames"].as_u64().unwrap() as usize;
     let edit = s.wires().iter().find(|w| w.from.0 == sound).unwrap().to.0;
-    let path = std::env::temp_dir().join(format!("edit-bank-{}.wav", std::process::id()));
+    let path = scratch("bank");
     s.edit_export(edit, path.to_str().unwrap(), 32).unwrap();
     let bytes = std::fs::read(&path).unwrap();
     let data = &bytes[bytes.len() - frames * 8..];
