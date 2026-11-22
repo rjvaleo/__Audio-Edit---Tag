@@ -39,7 +39,7 @@ juce::String fixed (double v, int places)
     const double p = std::pow (10.0, places);
     double r = std::floor (std::abs (v) * p + 0.5) / p;
     auto s = juce::String (r, places);
-    if (v < 0 && r != 0)
+    if (v < 0 && ! juce::exactlyEqual (r, 0.0))
         s = "-" + s;
     return s;
 }
@@ -63,7 +63,7 @@ double gsRnd (double n)
 // gsLfoVal.
 double lfoVal (const juce::String& shape, double u, double cyc)
 {
-    if (u != 1)
+    if (! juce::exactlyEqual (u, 1.0))
         u = std::fmod (std::fmod (u, 1.0) + 1.0, 1.0);
     if (shape == "sine")
         return 0.5 + 0.5 * std::sin (u * tau);
@@ -394,7 +394,7 @@ void GrainFace::loadPeaks()
         return 0;
     });
     peakCols = juce::jmax (0, n);
-    peaks.assign (out.begin(), out.begin() + juce::jmin ((size_t) peakCols * 3, out.size()));
+    peaks.assign (out.begin(), out.begin() + (std::ptrdiff_t) juce::jmin ((size_t) peakCols * 3, out.size()));
     peaksA = a;
     peaksB = b;
     // gsRidge: each column's envelope, 0 to 1 of the loudest.
@@ -446,7 +446,7 @@ void GrainFace::drawCloudStatic (juce::Graphics& gr, float w, float h)
     }
     for (int k = 4; k >= 1; --k)
     {
-        const auto p = wvPath ([&] (float u) { return std::pair<float, float> (6 + u * W + k * 6, yc - k * 7 - E (u * W) * A * (1 - 0.06f * k)); }, (int) std::floor (W / 2));
+        const auto p = wvPath ([&] (float u) { return std::pair<float, float> (6 + u * W + (float) k * 6, yc - (float) k * 7 - E (u * W) * A * (1 - 0.06f * (float) k)); }, (int) std::floor (W / 2));
         c.setStroke ("hsla(" + juce::String (205 - 28 * k) + ",60%,72%," + fixed (0.04 + 0.025 * (4 - k), 3) + ")");
         c.stroke (p);
     }
@@ -492,12 +492,12 @@ void GrainFace::drawCloud (juce::Graphics& gr, float w, float h)
     const auto cl = colours (captured["cl"]);
     const auto [a, b] = cloudView();
     const float W = w - 12, yc = h * 0.6f, A = h * 0.27f, K = (h * 0.4f - 16) / 12;
-    auto X = [&, a = a, b = b] (double s) { return (float) (6 + (s - a) / (b - a) * (w - 12)); };
+    auto X = [&, va = a, vb = b] (double s) { return (float) (6 + (s - va) / (vb - va) * (w - 12)); };
     const bool act = cloudActive();
     c.font = "9px " + cl.mono;
     for (int s : { 12, 6, 0, -6, -12 })
     {
-        const float y = yc - s * K;
+        const float y = yc - (float) s * K;
         c.setFill (s ? "rgba(255,255,255,.2)" : "rgba(255,255,255,.34)");
         c.fillRect (w - (s % 12 ? 9 : 13), y - 0.5f, s % 12 ? 5.0f : 9.0f, 1);
         if (s % 12 == 0)
@@ -630,7 +630,7 @@ void GrainFace::drawMarks (juce::Graphics& gr, float w, float h)
     c2d::Context c (gr, w, h);
     const auto cl = colours (captured["cl"]);
     const auto [a, b] = cloudView();
-    auto X = [&, a = a, b = b] (double s) { return (float) (6 + (s - a) / (b - a) * (w - 12)); };
+    auto X = [&, va = a, vb = b] (double s) { return (float) (6 + (s - va) / (vb - va) * (w - 12)); };
     c.save();
     c.beginPath();
     c.rect (6, 0, w - 12, h);
@@ -697,7 +697,7 @@ void GrainFace::drawLoop (juce::Graphics& gr, float w, float h)
     c2d::Context c (gr, w, h);
     const auto cl = colours (captured["cl"]);
     const auto [va, vb] = cloudView();
-    auto X = [&, va = va, vb = vb] (double s) { return (float) (6 + (s - va) / (vb - va) * (w - 12)); };
+    auto X = [&, ca = va, cb = vb] (double s) { return (float) (6 + (s - ca) / (cb - ca) * (w - 12)); };
     const auto [a, b] = loopSecs();
     const float bot = h - 14;
     c.save();
@@ -883,8 +883,8 @@ void GrainFace::drawLfoRow (juce::Graphics& g, int i)
             for (int j = 0; j < kids->size(); ++j)
             {
                 const auto r = rectOf ((*kids)[j]["rect"]);
-                const bool lit = on (j);
-                const auto& look = lit ? segOn : segOff;
+                const bool isLit = on (j);
+                const auto& look = isLit ? segOn : segOff;
                 if (look.isObject())
                     face::paintBox (g, look, r);
                 if (extra)
@@ -954,7 +954,7 @@ void GrainFace::drawLfoRow (juce::Graphics& g, int i)
                 for (const auto& [k, c] : ctls)
                     if (lfoId (k) == L.targets[t])
                         name = c.label;
-                const juce::Rectangle<float> chip (cx, r.getY() + (t / 2) * 20.0f, 60, 17);
+                const juce::Rectangle<float> chip (cx, r.getY() + (float) (t / 2) * 20.0f, 60, 17);
                 g.setColour (col.withAlpha (0.16f));
                 g.fillRoundedRectangle (chip, 3);
                 g.setColour (c2d::css (captured["cl"]["t"].toString()));
@@ -985,7 +985,7 @@ void GrainFace::drawOutWave (juce::Graphics& gr, float w, float h)
     }
     const int n = (int) outL.size();
     wvTrace (c, wvPath ([&] (float u) {
-        const int i = juce::jmin (n - 1, (int) std::floor (u * n));
+        const int i = juce::jmin (n - 1, (int) std::floor (u * (float) n));
         return std::pair<float, float> (6 + u * (w - 12), h / 2 - (float) juce::jlimit (-1.0, 1.0, (outL[(size_t) i] + outR[(size_t) i]) * 1.1) * h * 0.42f);
     }, 240), cl, 1.1f, 0.6f);
 }
@@ -999,7 +999,7 @@ void GrainFace::drawMaster (juce::Graphics& gr, float w, float h)
     for (int i = 0; i < n; ++i)
     {
         c.setFill ((double) i / n < l ? (i > n - 4 ? cl.on : "rgba(" + cl.bloom + ",.8)") : juce::String ("rgba(255,255,255,.06)"));
-        c.fillRect (4 + i * 4.6f, 6, 3, 10);
+        c.fillRect (4 + (float) i * 4.6f, 6, 3, 10);
     }
     c.setFill (cl.t2);
     c.fillRect (4 + (float) volume * (w - 8) - 0.5f, 18, 1.5f, 3);
@@ -1017,7 +1017,7 @@ void GrainFace::drawLoad (juce::Graphics& gr, float w, float h)
     for (int i = 0; i < 10; ++i)
     {
         c.setFill ((double) i / 10 < l ? (i >= 8 ? (l > 1 ? juce::String ("#ff6b5e") : cl.on) : "rgba(" + cl.bloom + ",.8)") : juce::String ("rgba(255,255,255,.06)"));
-        c.fillRect (30 + i * 3.2f, 6, 2, 10);
+        c.fillRect (30 + (float) i * 3.2f, 6, 2, 10);
     }
 }
 
@@ -1217,7 +1217,7 @@ void GrainFace::drawSegs (juce::Graphics& g)
             face::paintBox (g, it->second.n, r);
         if (runs != nullptr && !runs->isEmpty())
         {
-            if (r.getX() == it->second.r.getX() && !loopOn && shown != nullptr)
+            if (juce::exactlyEqual (r.getX(), it->second.r.getX()) && !loopOn && shown != nullptr)
                 shown->drawPart (g, it->second.n);
             else
                 face::paintText (g, it->second.n, r.reduced (7, 0), (*runs)[0]["text"].toString());
@@ -1396,7 +1396,7 @@ void GrainFace::drawTexts (juce::Graphics& g)
         }
         text ("gsSeedRo", rnd (dnum (draft["grain"]["seed"], 1)), juce::Justification::centredRight);
         // The tuning, on its chip and in the dock.
-        const auto tune = scaleName.isNotEmpty() ? scaleName : pitchStep == 1 ? juce::String ("Semitone grid") : pitchStep == 0.5 ? juce::String ("Half-semitone grid") : pitchStep > 0 ? juce::String (pitchStep) + " st grid" : juce::String ("Tuning: free");
+        const auto tune = scaleName.isNotEmpty() ? scaleName : juce::exactlyEqual (pitchStep, 1.0) ? juce::String ("Semitone grid") : juce::exactlyEqual (pitchStep, 0.5) ? juce::String ("Half-semitone grid") : pitchStep > 0 ? juce::String (pitchStep) + " st grid" : juce::String ("Tuning: free");
         if (auto* n = at ("gsTuneBtn"))
             writeText (g, *n, tune + uni (" \xe2\x96\xbe"));
     }
@@ -1407,7 +1407,7 @@ void GrainFace::drawTexts (juce::Graphics& g)
             face::paintText (g, *b, rectOf ((*b)["rect"]).withWidth (30), uni ("\xc2\xb1") + juce::String (voice.bendR));
     if (auto* n = at ("gsKbScale"))
     {
-        const auto name = scaleName.isNotEmpty() ? scaleName : pitchStep == 1 ? juce::String ("12 per octave") : pitchStep == 0.5 ? juce::String ("24 per octave") : pitchStep > 0 ? juce::String (pitchStep) + " st grid" : juce::String ("chromatic");
+        const auto name = scaleName.isNotEmpty() ? scaleName : juce::exactlyEqual (pitchStep, 1.0) ? juce::String ("12 per octave") : juce::exactlyEqual (pitchStep, 0.5) ? juce::String ("24 per octave") : pitchStep > 0 ? juce::String (pitchStep) + " st grid" : juce::String ("chromatic");
         if (auto* i = child (n->n, "i"))
             face::paintText (g, *i, rectOf ((*i)["rect"]).withWidth (60), "GRAIN");
         if (auto* s = child (n->n, "span"))
@@ -1483,8 +1483,8 @@ void GrainFace::drawFxView (juce::Graphics& g)
         const double db = 20 * std::log10 (juce::jmax (1e-9, std::pow (u / 0.8, 2.0)));
         return db <= -60 ? uni ("\xe2\x88\x92\xe2\x88\x9e") : juce::String (db > 0.04 ? "+" : db < -0.04 ? uni ("\xe2\x88\x92") : juce::String()) + fixed (std::abs (db), 1);
     };
-    auto fader = [&] (const char* id, const char* ro, double u, const juce::String& text) {
-        canvasAt (id, [&] (c2d::Context& c, float w, float h) {
+    auto fader = [&] (const char* cid, const char* ro, double u, const juce::String& text) {
+        canvasAt (cid, [&] (c2d::Context& c, float w, float h) {
             const float y = 8 + (float) (1 - u) * (h - 16);
             c.setFill (cl.track);
             c.fillRect (w / 2 - 1, 8, 2, h - 16);
