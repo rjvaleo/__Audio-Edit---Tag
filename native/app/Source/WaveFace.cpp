@@ -59,6 +59,15 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
         return api ? api (method, path, body, status) : juce::var();
     };
     ctx.reload = [this] { reload(); };
+    // The rows changed in a view: to the engine (wvSendMods), and every view told.
+    ctx.modsChanged = [this] {
+        int status = 0;
+        auto* body = new juce::DynamicObject();
+        body->setProperty ("mods", wave::modsOut (model));
+        if (api)
+            api ("POST", "/api/wave/mods", juce::var (body), status);
+        modsChanged();
+    };
     ctx.closeMenus = [this] { closeMenu(); };
     const auto& other = face::page ("wave-views")["views"];
     const char* names[] = { "create", "matrix", "fx" };
@@ -75,8 +84,9 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
             if (auto* n = face::findNode (cap["tree"], "#" + juce::String (id)))
                 views[v]->page().skipText.insert ((int) (*n)["i"]);
         for (int m = 0; m < 8; ++m)
-            if (auto* n = face::findNode (cap["tree"], "#wvMacr" + juce::String (m)))
-                views[v]->page().skipText.insert ((int) (*n)["i"]);
+            for (const auto& id : { "#wvMacr", "#wvMacn" })
+                if (auto* n = face::findNode (cap["tree"], id + juce::String (m)))
+                    views[v]->page().skipText.insert ((int) (*n)["i"]);
     }
     if (views[0] != nullptr)
         setCreateTableMenu (*views[0], [this] (juce::Rectangle<float> near, int osc) { tableMenu (near, osc); });
@@ -1128,8 +1138,21 @@ void WaveFace::mouseUp (const juce::MouseEvent& e)
     dragEnd = nullptr;
 }
 
+void WaveFace::modsChanged()
+{
+    if (tiles != nullptr)
+        tiles->sync();
+    for (auto& l : layers)
+        if (l.get() != textLayer)
+            l->repaint();
+    sync();
+}
+
 void WaveFace::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
+    if (ctx.view != "play" && !sharedArea ({ e.position.x, e.position.y, 0, 0 }))
+        if (auto* v = viewFor (ctx.view); v != nullptr && v->wheel (e, w))
+            return;
     // The unison knob turns its voices under the wheel, 1 to 16.
     if (ctx.view == "play")
         for (int i = 0; i < 3; ++i)

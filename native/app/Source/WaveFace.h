@@ -111,6 +111,7 @@ private:
     juce::String menuOwner;
     void openMenu (std::unique_ptr<WaveMenu>, const juce::String& owner, juce::Rectangle<float> near, float dx);
     void closeMenu();
+    void modsChanged();
     void tableMenu (juce::Rectangle<float> near, int osc);
     void warpMenu (juce::Rectangle<float> near, int osc, int j);
     void fxMenu (juce::Rectangle<float> near, int osc);

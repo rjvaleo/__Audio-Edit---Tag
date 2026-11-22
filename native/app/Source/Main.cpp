@@ -996,6 +996,17 @@ public:
                 }
                 if (auto v = juce::SystemStats::getEnvironmentVariable ("WAVE_VIEW", {}); v.isNotEmpty())
                     w.showView (v);
+                // WAVE_CLICKS="x,y;x,y": clicks on the face, in its own pixels, as a hand would.
+                for (const auto& xy : juce::StringArray::fromTokens (juce::SystemStats::getEnvironmentVariable ("WAVE_CLICKS", {}), ";", ""))
+                {
+                    const juce::Point<float> p (xy.upToFirstOccurrenceOf (",", false, false).getFloatValue(), xy.fromFirstOccurrenceOf (",", false, false).getFloatValue());
+                    auto src = juce::Desktop::getInstance().getMainMouseSource();
+                    const auto t = juce::Time::getCurrentTime();
+                    juce::MouseEvent down (src, p, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 0, 0, 0, 0, 0, &w, &w, t, p, t, 1, false);
+                    w.mouseDown (down);
+                    juce::MouseEvent up (src, p, juce::ModifierKeys(), 0, 0, 0, 0, 0, &w, &w, t, p, t, 1, false);
+                    w.mouseUp (up);
+                }
                 image = w.createComponentSnapshot (w.getLocalBounds(), true, scale);
                 na_free (a);
             }

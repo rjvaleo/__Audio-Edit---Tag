@@ -210,3 +210,5 @@ std::unique_ptr<WaveView> makeWaveFx (WaveCtx&, const juce::var& captured);
 
 // Give Create the face's table menu (the page's own, `wvTableMenu`).
 void setCreateTableMenu (WaveView&, std::function<void (juce::Rectangle<float> near, int osc)>);
+// Let the Matrix's row heads start a source's drag onto a control.
+void setMatrixMapping (WaveView&, std::function<void (const juce::String& src, const juce::MouseEvent&)>);

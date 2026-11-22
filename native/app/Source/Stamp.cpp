@@ -211,6 +211,19 @@ void Stamp::words (juce::Graphics& g, const juce::var& n, const juce::var* worn)
         auto words = replaced ? own : run["text"].toString();
         if (words.isEmpty())
             continue;
+        if (run["turn"].isInt() || run["turn"].isDouble())
+        {
+            // A side label: the words turned, centred on their box.
+            juce::Graphics::ScopedSaveState keep (g);
+            g.addTransform (juce::AffineTransform::rotation (juce::degreesToRadians ((float) (double) run["turn"]), r.getCentreX(), r.getCentreY()));
+            const float tw = juce::GlyphArrangement::getStringWidth (f, words);
+            // New words start where the captured ones did (the box's foot, read upward).
+            const float x0 = replaced ? r.getCentreX() - r.getHeight() / 2 : r.getCentreX() - tw / 2;
+            juce::GlyphArrangement ga;
+            ga.addLineOfText (f, words, x0, r.getCentreY() + (f.getAscent() - f.getDescent()) / 2);
+            ga.draw (g);
+            continue;
+        }
         const float baseline = r.getY() + (r.getHeight() - (f.getAscent() + f.getDescent())) / 2.0f + f.getAscent();
         const float w = juce::GlyphArrangement::getStringWidth (f, words);
         const auto align = run["font"]["align"].toString();

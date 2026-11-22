@@ -100,10 +100,31 @@ const giveCatalogue = (g) => {
 
 // The parts: each a state the page is put in, and what is walked there.
 // `setup` runs in the page (after the view is shown), `sel` is walked.
+// A row for every source, switched on and then off, each onto a target of
+// its own (so every source's pin, on and off, and every source's row are
+// captured in its own colour), each with itself as × source; and one onto the
+// FX board (so its group's band and column show).
+const MX_SOURCES = ['env1', 'env2', 'env3', 'lfo0', 'lfo1', 'lfo2', 'lfo3', 'vel', 'note', 'mw', 'at', 'rand', 'macro0', 'macro1', 'macro2', 'macro3', 'macro4', 'macro5', 'macro6', 'macro7'];
+const MX_TARGETS = [0, 1, 2].flatMap((o) => ['pos', 'warp0.amt', 'warp1.amt', 'uni.det', 'uni.spr', 'fx.a', 'pitch', 'fine', 'phase', 'rand', 'pan', 'table', 'warp0.mode', 'warp1.mode', 'fx.mode'].map((k) => `osc${o}.${k}`));
+const MX_ROWS = [
+  ...MX_SOURCES.map((src, i) => ({ src, dst: MX_TARGETS[i], amt: 0.3, curve: 'lin', via: src, on: true })),
+  ...MX_SOURCES.map((src, i) => ({ src, dst: MX_TARGETS[20 + i], amt: -0.3, curve: 'exp', via: null, on: false })),
+  { src: 'lfo1', dst: 'board:n1:wet', amt: 0.3, curve: 'lin', via: null, on: true },
+];
 const SHOW_MENUS = () => document.querySelectorAll('.wv-menu, .wv-pmenu, .wv-cmenu').forEach((e) => { e.style.visibility = ''; });
 const PARTS = [
   // The page's tile menu, open on osc A's tables (`wvTableMenu`).
   { name: 'menu', view: 'play', sel: '#wvMenu', setup: `(${SHOW_MENUS})(); wvTableMenu(document.querySelector('[data-pick="0"]'), 0)`, after: 'wvCloseMenus()' },
+  // The Matrix's pins with rows in: one on, one switched off, one onto a
+  // choice key, one onto the FX board (so its group's band and column show).
+  { name: 'pins', view: 'matrix', sel: '#wvMxPins', setup: `WV.mods = ${JSON.stringify(MX_ROWS)}.map(wvModIn); WV.mx = 'pins'; wvRenderMatrix(); wvDrawMatrix(0)`, after: 'WV.mods = []; wvRenderMatrix()' },
+  // The rows: the same, as rows, with the add row and the empty ones.
+  { name: 'rows', view: 'matrix', sel: '#wvMxList', setup: `WV.mods = ${JSON.stringify(MX_ROWS)}.map(wvModIn); WV.mx = 'rows'; wvRenderMatrix(); wvDrawMatrix(0)`, after: 'WV.mx = "pins"; WV.mods = []; wvRenderMatrix()' },
+  // The Matrix's header in Rows.
+  { name: 'mxhead', view: 'matrix', sel: '#wvViewMatrix .wv-mxt > .wv-mh', setup: `WV.mx = 'rows'; wvRenderMatrix()`, after: 'WV.mx = "pins"; wvRenderMatrix()' },
+  // The pickers: the sources (with × none), and the targets.
+  { name: 'pickSrc', view: 'matrix', sel: '#wvPmenu', setup: `(${SHOW_MENUS})(); WV.mx = 'rows'; wvRenderMatrix(); wvOpenPicker(document.querySelector('#wvMxRows [data-pk="v"]'))`, after: 'wvCloseMenus(); WV.mx = "pins"; wvRenderMatrix()' },
+  { name: 'pickTgt', view: 'matrix', sel: '#wvPmenu', setup: `(${SHOW_MENUS})(); WV.mx = 'rows'; wvRenderMatrix(); wvOpenPicker(document.querySelector('#wvMxRows [data-pk="t"]'))`, after: 'wvCloseMenus(); WV.mx = "pins"; wvRenderMatrix()' },
 ];
 
 const browser = await chromium.launch();
