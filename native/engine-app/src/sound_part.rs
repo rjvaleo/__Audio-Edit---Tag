@@ -133,6 +133,11 @@ impl SoundPart {
         if let Some(o) = origin.as_object_mut() {
             o.insert("bytes".into(), (bytes.len() as u64).into());
             o.insert("check".into(), format!("{:016x}", fnv(&bytes)).into());
+            // What the page's facts say of the file (the format and its depth).
+            if let Ok(info) = audio_core::probe(&mut SliceSource::new(bytes.clone())) {
+                o.insert("bits".into(), info.bits.into());
+            }
+            o.insert("format".into(), (if bytes.starts_with(b"FORM") { "aiff" } else { "wav" }).into());
         }
         *self = SoundPart { serial: self.serial + 1, sound: self.sound, ..SoundPart::empty() };
         self.origin = origin;

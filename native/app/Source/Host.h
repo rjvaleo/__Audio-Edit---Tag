@@ -14,6 +14,7 @@
 #include <atomic>
 #include <functional>
 #include <mutex>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -66,6 +67,9 @@ public:
 
 private:
     std::mutex lock;
+    // Grain's LFOs, ticked every 8 ms as MGL's automation thread ticks them.
+    std::thread lfoTicker;
+    std::atomic<bool> ticking { true };
     NaApp* app = nullptr;
     std::atomic<NaApp*> live { nullptr };
     std::vector<uint32_t> midiIns;

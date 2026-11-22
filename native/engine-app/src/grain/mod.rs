@@ -653,6 +653,20 @@ impl GrainPart {
     }
 }
 
+/// `/api/scales`: every scale, in its groups, in the table's order.
+pub fn scales_json() -> Value {
+    let mut order: Vec<&str> = Vec::new();
+    let mut by: std::collections::BTreeMap<&str, Vec<Value>> = std::collections::BTreeMap::new();
+    for s in mgl_fx::tuning::SCALES {
+        if !order.contains(&s.cat) {
+            order.push(s.cat);
+        }
+        by.entry(s.cat).or_default().push(json!({ "name": s.name, "info": s.info, "degrees": s.cents.len() as f64, "span": s.span() as f64, "cents": s.cents.iter().map(|c| *c as f64).collect::<Vec<_>>() }));
+    }
+    let groups: Vec<Value> = order.into_iter().map(|cat| json!({ "category": cat, "scales": by.remove(cat).unwrap_or_default() })).collect();
+    json!({ "groups": groups })
+}
+
 /// `RackSpec::switched_slot`: the one slot whose kind alone changed.
 fn switched_slot(now: &RackSpec, had: &RackSpec) -> Option<usize> {
     if now.slots.len() != had.slots.len() || now.slot_ids != had.slot_ids {

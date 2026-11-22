@@ -42,6 +42,14 @@ pub unsafe extern "C" fn na_grain_call(a: *mut NaApp, id: u32, what: *const c_ch
             "info" => s.grain_info(id),
             "read" => s.grain_read(id),
             "ui" => s.grain_set_ui(id, v).map(|_| Value::Bool(true)),
+            "schedule" => {
+                let w = match (v.get("from").and_then(Value::as_u64), v.get("to").and_then(Value::as_u64)) {
+                    (Some(a), Some(b)) if b > a => Some((a, b)),
+                    _ => None,
+                };
+                s.grain_schedule(id, w)
+            }
+            "scales" => Ok(engine_app::grain::scales_json()),
             other => Err(AppError::BadFile(format!("no Grain call {other:?}"))),
         };
         match r {

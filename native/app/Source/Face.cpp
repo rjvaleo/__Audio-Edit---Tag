@@ -134,6 +134,7 @@ struct Worn
     juce::var atmos;         // Atmosphere's face in the MGL theme
     juce::var edit;          // the Edit page in the MGL theme
     juce::var waveViews;     // Wave's other views and parts in the MGL theme
+    juce::var grain;         // the Grain page in the MGL theme
     int stamp = 0;
 };
 Worn& wornState()
@@ -190,6 +191,15 @@ const juce::var& page (const juce::String& name)
         if (!w.waveViews.isObject())
             w.waveViews = juce::JSON::parse (embedded ("mgl-wave-default.json.gz"));
         return w.waveViews;
+    }
+    if (name == "grain")
+    {
+        auto& w = wornState();
+        if (!w.grain.isObject())
+            w.grain = juce::JSON::parse (embedded ("mgl-grain-" + (w.choice >= 0 ? themeChoices()[(size_t) w.choice].mgl : juce::String ("default")) + ".json.gz"));
+        if (!w.grain.isObject())
+            w.grain = juce::JSON::parse (embedded ("mgl-grain-default.json.gz"));
+        return w.grain;
     }
     static std::map<juce::String, juce::var> pages;
     auto it = pages.find (name);
@@ -304,6 +314,7 @@ void wear (int choice, const juce::String& kit)
         w.atmos = juce::var();
         w.edit = juce::var();
         w.waveViews = juce::var();
+        w.grain = juce::var();
         w.choice = choice;
     }
     w.kit = kit.isEmpty() ? juce::String ("thinRing") : kit;
@@ -736,6 +747,23 @@ juce::Colour firstColour (const juce::String& svg)
     return juce::Colours::transparentBlack;
 }
 } // namespace
+
+void Chrome::drawPart (juce::Graphics& g, const juce::var& node, juce::Point<float> offset, float opacity, const std::set<int>* without)
+{
+    juce::Graphics::ScopedSaveState keep (g);
+    g.addTransform (juce::AffineTransform::translation (offset));
+    if (opacity < 1.0f)
+        g.beginTransparencyLayer (opacity);
+    auto savedSkip = std::move (skip);
+    auto savedText = std::move (skipText);
+    skip = without != nullptr ? *without : std::set<int>();
+    skipText.clear();
+    drawNode (g, node);
+    skip = std::move (savedSkip);
+    skipText = std::move (savedText);
+    if (opacity < 1.0f)
+        g.endTransparencyLayer();
+}
 
 void Chrome::drawNode (juce::Graphics& g, const juce::var& n, const juce::var* look)
 {

@@ -41,7 +41,8 @@ file(GLOB THEME_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/theme
 file(GLOB ATMOS_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/atmos/*.json.gz")
 file(GLOB EDIT_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/edit/*.json.gz" "${CMAKE_CURRENT_SOURCE_DIR}/faces/edit/edit-page.json")
 file(GLOB WAVE_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/wave/*.json.gz")
-juce_add_binary_data(idmlab_faces SOURCES faces/wave.json ${THEME_FILES} ${ATMOS_FILES} ${EDIT_FILES} ${WAVE_FILES}
+file(GLOB GRAIN_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/grain/*.json.gz" "${CMAKE_CURRENT_SOURCE_DIR}/faces/grain/grain-page.json")
+juce_add_binary_data(idmlab_faces SOURCES faces/wave.json ${THEME_FILES} ${ATMOS_FILES} ${EDIT_FILES} ${WAVE_FILES} ${GRAIN_FILES}
   ../engine-app/data/atmos-page.json
   faces/idmlab/idmlab-bar.json faces/idmlab/idmlab-status.json faces/idmlab/idmlab-node-audio.json
   faces/idmlab/idmlab-node-notes.json faces/idmlab/idmlab-menu.json faces/idmlab/idmlab-style.json)
@@ -49,7 +50,8 @@ target_sources(idMLab PRIVATE Source/Main.cpp Source/Host.cpp Source/Canvas.cpp 
   Source/Canvas2D.cpp Source/WaveDraw.cpp Source/WaveFace.cpp Source/AtmosFace.cpp
   Source/EditFace.cpp Source/SoundFace.cpp Source/EditBench.cpp
   Source/Stamp.cpp Source/WaveMenus.cpp Source/WaveCreate.cpp Source/WaveMatrix.cpp Source/WaveBoard.cpp
-  Source/WaveKit.cpp Source/WaveTiles.cpp Source/WaveBoardKit.cpp Source/WaveBoardPics.cpp)
+  Source/WaveKit.cpp Source/WaveTiles.cpp Source/WaveBoardKit.cpp Source/WaveBoardPics.cpp
+  Source/GrainFace.cpp Source/GrainDraw.cpp Source/GrainGlyphs.cpp Source/GrainBench.cpp Source/GrainPictures.cpp)
 target_compile_definitions(idMLab PRIVATE
   JUCE_WEB_BROWSER=0
   JUCE_USE_CURL=0

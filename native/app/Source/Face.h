@@ -91,6 +91,12 @@ public:
     // Draw the look itself, unscaled, into `g` (what the cached picture holds).
     void paintLook (juce::Graphics&);
 
+    // Draw one of its captured nodes, and what is inside it, into `g`, moved
+    // by `offset`, at `opacity`, leaving out the nodes in `without` (and none
+    // of those it leaves out of its own picture): a part of the page a face
+    // draws live, lit or not, dimmed or not.
+    void drawPart (juce::Graphics&, const juce::var& node, juce::Point<float> offset = {}, float opacity = 1.0f, const std::set<int>* without = nullptr);
+
     // Every node with a canvas, by its id, and every node by its index.
     std::map<juce::String, juce::var> canvases;
     std::map<int, juce::var> nodes;

@@ -284,6 +284,64 @@ impl Session {
         }))
     }
 
+    /// The grain schedule over the output window `[from, to)` (none: the
+    /// whole), as MGL's `/api/grains` answers it: each grain's output frame,
+    /// source frame, size, pitch, level, brightness, pan and number.
+    pub fn grain_schedule(&self, id: u32, window: Option<(u64, u64)>) -> Result<Value, AppError> {
+        let (_, doc) = self.grain_doc(id)?;
+        let Some(list) = doc.list() else { return Ok(json!({ "grains": [] })) };
+        let st = list.stretch;
+        let (sent, total) = mgl_fx::grain::grains_sampled(list.base_frames() as usize, list.sample_rate, st.ratio, st.semitones, st.window_ms, &st.grain, 8_000, window);
+        // Measured from the sound's samples (MGL reads its decoded file; here
+        // the edited timeline, the same while nothing is cut).
+        let (buf, ch) = (doc.dry(), doc.channels().max(1));
+        let measure = |start: f32, len: usize| -> (f32, f32) {
+            let frames = buf.len() / ch;
+            if frames == 0 {
+                return (0.0, 0.0);
+            }
+            let a = (start as usize).min(frames.saturating_sub(1));
+            let b = (a + len).min(frames);
+            if b <= a + 1 {
+                return (0.0, 0.0);
+            }
+            let (mut sum, mut n, mut crossings, mut prev) = (0f64, 0u32, 0u32, 0f32);
+            for f in (a..b).step_by(8) {
+                let v = buf[f * ch];
+                sum += (v as f64) * (v as f64);
+                if prev <= 0.0 && v > 0.0 {
+                    crossings += 1;
+                }
+                prev = v;
+                n += 1;
+            }
+            let rms = if n > 0 { (sum / n as f64).sqrt() as f32 } else { 0.0 };
+            let brightness = if n > 1 { crossings as f32 / n as f32 } else { 0.0 };
+            (rms, brightness.min(1.0))
+        };
+        let pan_of = |index: u64| -> f32 {
+            let (l, r) = mgl_fx::grain::pan_gains(&st.grain, index, 2);
+            let sum = l + r;
+            if sum <= 1e-6 {
+                0.0
+            } else {
+                ((r - l) / sum).clamp(-1.0, 1.0)
+            }
+        };
+        let r2 = |v: f32, places: i32| -> f64 {
+            let m = 10f64.powi(places);
+            (v as f64 * m).round() / m
+        };
+        let arr: Vec<Value> = sent
+            .iter()
+            .map(|e| {
+                let (rms, bright) = measure(e.src_frame, e.size as usize);
+                json!([e.out_frame as f64, r2(e.src_frame, 2), e.size as f64, r2(e.pitch_semis, 3), r2(rms, 4), r2(bright, 4), r2(pan_of(e.index), 3), e.index as f64])
+            })
+            .collect();
+        Ok(json!({ "grains": arr, "total": total, "shown": sent.len(), "outFrames": list.frames(), "srcFrames": list.base_frames(), "sampleRate": list.sample_rate, "granular": st.is_granular() }))
+    }
+
     /// The live read-backs (`/api/engine/grains`).
     pub fn grain_read(&self, id: u32) -> Result<Value, AppError> {
         Ok(self.grain_ref(id)?.grains())

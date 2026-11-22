@@ -36,10 +36,26 @@ Host::Host()
     devices.addMidiInputDeviceCallback ({}, this);
 
     startTimerHz (30);
+    lfoTicker = std::thread ([this] {
+        auto last = std::chrono::steady_clock::now();
+        while (ticking.load())
+        {
+            std::this_thread::sleep_for (std::chrono::milliseconds (8));
+            const auto now = std::chrono::steady_clock::now();
+            const double dt = std::chrono::duration<double> (now - last).count();
+            last = now;
+            std::lock_guard<std::mutex> hold (lock);
+            if (app != nullptr)
+                na_grain_tick (app, dt);
+        }
+    });
 }
 
 Host::~Host()
 {
+    ticking.store (false);
+    if (lfoTicker.joinable())
+        lfoTicker.join();
     stopTimer();
     devices.removeMidiInputDeviceCallback ({}, this);
     devices.removeAudioCallback (this);

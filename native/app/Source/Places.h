@@ -41,6 +41,14 @@ inline juce::File atmosPresets()
     return d;
 }
 
+// Grain's presets: one file in MGL's own shape (its data/PRESETS.json).
+inline juce::File grainPresets()
+{
+    auto d = home().getChildFile ("presets").getChildFile ("grain");
+    d.createDirectory();
+    return d.getChildFile ("PRESETS.json");
+}
+
 // MultiGrainLive's own data folder on this machine, read only.
 inline juce::File mgl()
 {

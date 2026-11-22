@@ -370,6 +370,19 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         atmos->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
         addAndMakeVisible (*atmos);
     }
+    else if (kind.id == "grain")
+    {
+        // MGL's Grain page, on the sound cabled into it (GrainFace).
+        auto* host = &canvas.host;
+        const auto module = (uint32_t) id;
+        grain = std::make_unique<GrainFace> ([host] (const std::function<int64_t (NaApp*)>& f) { return host->with ([&] (NaApp* a) { return f (a); }); }, module);
+        grain->onMessage = [cv = &canvas] (const juce::String& m) { if (cv->status) cv->status (m); };
+        grain->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
+        grain->onNote = [host, module] (int n, float vel, bool on) {
+            host->with ([&] (NaApp* a) { return na_note (a, module, on ? 1u : 0u, (uint32_t) n, vel); });
+        };
+        addAndMakeVisible (*grain);
+    }
     else if (kind.id == "edit" || kind.id == "sound")
     {
         // MGL's Edit page, and the sound it works on (EditFace, SoundFace).
@@ -717,7 +730,7 @@ void AddMenu::filter()
     const auto q = search.getText().trim().toLowerCase();
     // idMLab groups its modules by family; MGL's sit under their own.
     const std::vector<std::pair<juce::String, juce::StringArray>> groups {
-        { "MULTIGRAINLIVE", { "wave", "atmos", "sound", "edit" } },
+        { "MULTIGRAINLIVE", { "wave", "atmos", "sound", "edit", "grain" } },
         { "MIDI", { "midi-in" } },
         { "AUDIO", { "output" } },
     };
