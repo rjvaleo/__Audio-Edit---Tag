@@ -26,7 +26,7 @@ pub const QUIET: Duration = Duration::from_millis(150);
 
 /// `CHOP_DEF`: every setting, at the page's start.
 pub fn chop_def() -> Map<String, Value> {
-    let v = json!({
+    let v: Value = serde_json::from_str(r#"{
         "mode": "transient", "sens": 60, "topDb": 40, "minDur": 40, "pad": 12,
         "div": "8", "feel": "straight", "nudge": 0, "shuffle": 50,
         "gate": 100, "smooth": 0, "tail": false, "tailMs": 80,
@@ -35,8 +35,8 @@ pub fn chop_def() -> Map<String, Value> {
         "trOn": false, "trThresh": -30, "trAmount": 0, "trAttack": 20, "trRelease": 100, "trGain": 0,
         "eqOn": false, "loCut": 15, "lowF": 100, "lowG": 0, "lowQ": 1, "highF": 2500, "highG": 0, "highQ": 1, "hiCut": 20000,
         "fltOn": false, "fltType": "lp", "fltFreq": 1000, "fltQ": 0.7, "drive": 0, "gain": 0, "mix": 100,
-        "outMidi": false, "outSfz": false,
-    });
+        "outMidi": false, "outSfz": false
+    }"#).unwrap_or(Value::Null);
     match v {
         Value::Object(m) => m,
         _ => Map::new(),

@@ -140,6 +140,20 @@ int32_t na_grain_scope (NaApp*, uint32_t id, float* l, float* r, uint32_t n);
 // largest of all).
 int32_t na_prism_call (NaApp*, uint32_t id, const char* what, const char* json, char* buf, uint32_t cap);
 int32_t na_prism_peaks (NaApp*, uint32_t id, uint32_t cols, float* out, uint32_t cap, float* peak);
+// Chop, on the sound cabled into it (CHOP-API.md). `what` names the page's
+// function: "state", "set", "apply", "ab", "dice", "detect", "scale",
+// "region", "whole", "recut", "pick", "toggle", "lock", "move", "moved",
+// "delete", "add", "play", "preview", "ratchet", "stop", "playing", "slice",
+// "tails", "write", "toRegions", "presets", "home", "ui". JSON in and out.
+int32_t na_chop_call (NaApp*, uint32_t id, const char* what, const char* json, char* buf, uint32_t cap);
+// chop.mono from `from` (0 past the ends); the sound's length, 0 with none.
+int64_t na_chop_mono (NaApp*, uint32_t id, int64_t from, float* out, uint32_t n);
+// One analysis array (0 low 1 mid 2 high 3 cent 4 flat 5 zcr 6 rms 7 rise 8 hz 9 clar); F, 0 until measured.
+int32_t na_chop_analysis (NaApp*, uint32_t id, uint32_t which, float* out, uint32_t n);
+// Slice i's first channel as it sounds now; its length (ask again with room).
+int32_t na_chop_render (NaApp*, uint32_t id, int32_t i, float* out, uint32_t n);
+// What plays now, first channel, from the playhead (a loop wraps); how many, 0 when nothing plays.
+int32_t na_chop_out (NaApp*, uint32_t id, float* out, uint32_t n);
 
 #ifdef __cplusplus
 }

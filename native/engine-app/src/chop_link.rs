@@ -28,6 +28,15 @@ pub fn fingerprint(dry: &[f32], rate: u32, channels: usize) -> u64 {
     h ^ dry.len() as u64
 }
 
+/// A check of a text.
+fn fingerprint_text(t: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in t.bytes() {
+        h = (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
 /// MGL's `capture::safe`: what a file system would rather not see, made plain.
 pub fn safe(name: &str) -> String {
     name.chars()
@@ -179,7 +188,11 @@ impl Session {
             };
             let Some(Part::Sound(p)) = self.modules.get(&s).map(|m| &m.part) else { continue };
             let (ch, rate, dry) = (p.channels().max(1), p.file_rate(), p.dry());
-            let check = fingerprint(dry, rate, ch);
+            // The samples, and where they came from: the same file opened
+            // again from elsewhere (the library, say) is a new sound.
+            let o = p.origin();
+            let whence = ["kind", "path", "file", "check"].map(|k| o.get(k).map(Value::to_string).unwrap_or_default()).join("|");
+            let check = fingerprint(dry, rate, ch) ^ fingerprint_text(&whence);
             let same = c.page.is_some() && c.check == Some(check) && c.fed.map(|f| f.0) == Some(s);
             if same {
                 if let Ok(c) = self.chop(id) {
@@ -189,7 +202,6 @@ impl Session {
             }
             let frames = dry.len() / ch;
             let channels: Vec<Vec<f32>> = (0..ch).map(|k| (0..frames).map(|i| dry[i * ch + k]).collect()).collect();
-            let o = p.origin();
             let txt = |k: &str| o.get(k).and_then(Value::as_str).unwrap_or("").to_string();
             let file = txt("file");
             let path = if txt("path").is_empty() { file.clone() } else { txt("path") };
