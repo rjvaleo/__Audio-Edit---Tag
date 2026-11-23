@@ -7,6 +7,7 @@
 //! (`mod.rs`): this says where the hand is and what the two controls are to
 //! be; the module writes them as the page writes them.
 
+use engine_mgl::chop::js;
 use serde_json::{json, Value};
 
 /// `HS_TICK`: a take holds at most a point per tick.
@@ -18,7 +19,7 @@ pub fn clamp01(v: f64) -> f64 {
 
 /// `hsCoef`: the one-pole coefficient Hyperprism's Smoothing (%) stands for.
 pub fn coef(s: f64) -> f64 {
-    (10f64.powf(0.04 * (100.0 - s)) + 1e-9).floor() * 0.0001
+    (f64::powf(10.0, 0.04 * (100.0 - s)) + 1e-9).floor() * 0.0001
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -183,7 +184,7 @@ impl Pad {
     pub fn value_in(&self, x_axis: bool, f: f64, lim: &Lim) -> f64 {
         let (lo, hi, log) = self.span(x_axis, lim);
         let t = if x_axis { f } else { 1.0 - f };
-        let v = if log { lo * (hi / lo).powf(t) } else { lo + t * (hi - lo) };
+        let v = if log { lo * f64::powf(hi / lo, t) } else { lo + t * (hi - lo) };
         let a = if x_axis { self.ax.0 } else { self.ax.1 };
         if a.stepped {
             js_round(v)
@@ -204,7 +205,7 @@ impl Pad {
         }
         let t = if log {
             if v > 0.0 {
-                (v / lo).ln() / (hi / lo).ln()
+                js::log(v / lo) / js::log(hi / lo)
             } else {
                 0.0
             }
@@ -339,7 +340,7 @@ impl Pad {
         }
         self.down = false;
         let pt = self.prev.map(|(_, pt)| pt).unwrap_or(t);
-        let thrown = self.throw_on && t - pt < 60.0 && self.vel.0.hypot(self.vel.1) > 1e-5;
+        let thrown = self.throw_on && t - pt < 60.0 && js::hypot(self.vel.0, self.vel.1) > 1e-5;
         if !thrown {
             self.vel = (0.0, 0.0);
         }
@@ -513,9 +514,9 @@ impl Pad {
         for i in 0..n {
             let a = (i as f64 / n as f64) * pi * 2.0;
             let (x, y) = match kind {
-                "circle" => (0.5 + 0.38 * a.cos(), 0.5 + 0.38 * a.sin()),
-                "eight" => (0.5 + 0.38 * a.sin(), 0.5 + 0.36 * (2.0 * a).sin()),
-                "liss" => (0.5 + 0.4 * (3.0 * a).sin(), 0.5 + 0.4 * (2.0 * a + 0.6).sin()),
+                "circle" => (0.5 + 0.38 * super::jsmath::cos(a), 0.5 + 0.38 * super::jsmath::sin(a)),
+                "eight" => (0.5 + 0.38 * super::jsmath::sin(a), 0.5 + 0.36 * super::jsmath::sin(2.0 * a)),
+                "liss" => (0.5 + 0.4 * super::jsmath::sin(3.0 * a), 0.5 + 0.4 * super::jsmath::sin(2.0 * a + 0.6)),
                 _ => {
                     vx = vx * 0.96 + (self.random() - 0.5) * 0.004;
                     vy = vy * 0.96 + (self.random() - 0.5) * 0.004;
@@ -605,11 +606,11 @@ impl Pad {
                 y = 2.0 - y;
                 vy = -vy;
             }
-            let f = 0.9988f64.powf(dt);
+            let f = f64::powf(0.9988, dt);
             self.vel = (vx * f, vy * f);
             a.or(self.move_to((x, y), now, true));
         }
-        let k = 1.0 - (1.0 - coef(self.glide)).powf(dt * 44.1 / 512.0);
+        let k = 1.0 - f64::powf(1.0 - coef(self.glide), dt * 44.1 / 512.0);
         let g = self.ghost.get_or_insert(self.hand);
         g.0 += (self.hand.0 - g.0) * k;
         g.1 += (self.hand.1 - g.1) * k;

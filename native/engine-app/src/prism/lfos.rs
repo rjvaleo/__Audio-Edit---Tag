@@ -56,7 +56,7 @@ impl Default for Lfos {
 pub fn at(shape: &str, pw: f64, held: f64, ph: f64) -> f64 {
     let u = ((ph % 1.0) + 1.0) % 1.0;
     match shape {
-        "sine" => (u * 2.0 * std::f64::consts::PI).sin(),
+        "sine" => super::jsmath::sin(u * 2.0 * std::f64::consts::PI),
         "triangle" => 1.0 - 4.0 * (u - 0.5).abs(),
         "square" => {
             if u < 0.5 {

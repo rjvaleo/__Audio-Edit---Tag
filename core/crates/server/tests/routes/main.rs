@@ -162,6 +162,7 @@ use rack_presets::*;
 mod edits_markers;
 mod edit_references;
 mod grain_references;
+mod prism_references;
 mod automation_recording;
 mod live_prism;
 mod bad_blocks;

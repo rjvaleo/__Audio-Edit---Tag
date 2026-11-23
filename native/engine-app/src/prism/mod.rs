@@ -21,6 +21,7 @@
 //! file that is open, which is that sound at first.
 
 mod link;
+pub mod jsmath;
 pub mod lfos;
 pub mod presets;
 pub mod sources;
@@ -606,7 +607,7 @@ impl PrismPart {
 
     /// `prismHpSend`.
     fn send_hp(&mut self) {
-        let g = |v: f64| 10f64.powf(fader_db(v) / 20.0);
+        let g = |v: f64| engine_mgl::chop::js::pow(10.0, fader_db(v) / 20.0);
         let body = json!({ "speed": self.hp[0] / 128.0, "gainL": g(self.hp[1]), "gainR": g(self.hp[3]) });
         self.transport(&body);
     }
@@ -1175,7 +1176,7 @@ impl PrismPart {
             })
             .collect();
         let a = coef(self.pad.glide);
-        let tau = if a >= 1.0 { "instant".to_string() } else { format!("{:.2} s to 63 %", (-1.0 / (1.0 - a).ln()) * 512.0 / 44100.0) };
+        let tau = if a >= 1.0 { "instant".to_string() } else { format!("{:.2} s to 63 %", (-1.0 / engine_mgl::chop::js::log(1.0 - a)) * 512.0 / 44100.0) };
         let lfo_marks: Vec<Value> = cur
             .as_ref()
             .map(|s| {
