@@ -494,3 +494,17 @@ fn nothing_on_the_audio_thread_allocates_while_prism_plays_and_changes() {
     render(&mut audio, 1_024, 256);
     assert_eq!(counted() - before, 0, "allocations or frees inside a render; the last sizes: {:?}", last_sizes());
 }
+
+#[test]
+fn choosing_hyperprisms_echo_from_the_menu_is_quick() {
+    let (mut s, _audio, _sound, p) = canvas();
+    call(&mut s, p, "lfo", json!({ "op": "toggle", "src": "stretch", "key": "cloudMix" }));
+    for i in 0..10 {
+        call(&mut s, p, "tick", json!({ "t": 1000.0 + i as f64 * 17.0 }));
+    }
+    let t0 = std::time::Instant::now();
+    call(&mut s, p, "pick", json!({ "kind": "prism:hp-echo", "id": "", "t": 2000 }));
+    let took = t0.elapsed().as_secs_f64();
+    eprintln!("pick echo took {took:.3} s");
+    assert!(took < 1.0, "{took} s");
+}

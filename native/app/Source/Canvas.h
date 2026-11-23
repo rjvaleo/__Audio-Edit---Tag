@@ -20,6 +20,7 @@
 #include "Host.h"
 #include "AtmosFace.h"
 #include "ChopFace.h"
+#include "PrismFace.h"
 #include "EditFace.h"
 #include "GrainFace.h"
 #include "SoundFace.h"
@@ -102,11 +103,14 @@ public:
     std::unique_ptr<SoundFace> sound;
     std::unique_ptr<GrainFace> grain;
     std::unique_ptr<ChopFace> chop;
+    std::unique_ptr<PrismFace> prism;
     // The page that is this module's face, if it has one.
     juce::Component* body() const
     {
         if (chop != nullptr)
             return chop.get();
+        if (prism != nullptr)
+            return prism.get();
         if (grain != nullptr)
             return grain.get();
         if (edit != nullptr)

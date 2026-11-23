@@ -383,6 +383,15 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         };
         addAndMakeVisible (*grain);
     }
+    else if (kind.id == "prism")
+    {
+        // MGL's Prism page, on the sound cabled into it (PrismFace).
+        auto* host = &canvas.host;
+        prism = std::make_unique<PrismFace> ([host] (const std::function<int64_t (NaApp*)>& f) { return host->with ([&] (NaApp* a) { return f (a); }); }, (uint32_t) id);
+        prism->onMessage = [cv = &canvas] (const juce::String& m) { if (cv->status) cv->status (m); };
+        prism->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
+        addAndMakeVisible (*prism);
+    }
     else if (kind.id == "chop")
     {
         // MGL's Chop page, on the sound cabled into it (ChopFace).
@@ -758,7 +767,7 @@ void AddMenu::filter()
     const auto q = search.getText().trim().toLowerCase();
     // idMLab groups its modules by family; MGL's sit under their own.
     const std::vector<std::pair<juce::String, juce::StringArray>> groups {
-        { "MULTIGRAINLIVE", { "wave", "atmos", "sound", "edit", "grain", "chop" } },
+        { "MULTIGRAINLIVE", { "wave", "atmos", "sound", "edit", "grain", "chop", "prism" } },
         { "MIDI", { "midi-in" } },
         { "AUDIO", { "output" } },
     };

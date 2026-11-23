@@ -49,6 +49,14 @@ inline juce::File grainPresets()
     return d.getChildFile ("PRESETS.json");
 }
 
+// Prism's presets: one file in MGL's own shape (its data/PAD-PRESETS.json).
+inline juce::File prismPresets()
+{
+    auto d = home().getChildFile ("presets").getChildFile ("prism");
+    d.createDirectory();
+    return d.getChildFile ("PAD-PRESETS.json");
+}
+
 // MultiGrainLive's own data folder on this machine, read only.
 inline juce::File mgl()
 {

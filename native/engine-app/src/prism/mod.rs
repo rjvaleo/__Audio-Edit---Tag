@@ -137,6 +137,8 @@ pub struct PrismPart {
     /// key and the face.
     pub sound_name: String,
     pub sound_path: String,
+    /// The file it was read from, for its facts (format, bits).
+    pub sound_file: String,
     /// The deck's sound's frames (at the deck's rate).
     pub frames: u64,
     /// The face's clock at the last tick, ms.
@@ -168,6 +170,7 @@ impl PrismPart {
             src: None,
             sound_name: String::new(),
             sound_path: String::new(),
+            sound_file: String::new(),
             frames: 0,
             last_tick: 0.0,
         };
@@ -1208,7 +1211,7 @@ impl PrismPart {
             "coef": format!("{a:.4}"),
             "tau": tau,
             "deck": deck,
-            "sound": { "name": self.sound_name, "path": self.sound_path, "frames": self.frames as f64, "rate": self.rate as f64 },
+            "sound": { "name": self.sound_name, "path": self.sound_path, "file": self.sound_file, "frames": self.frames as f64, "rate": self.rate as f64 },
             "pad": pad,
             "lfos": self.lfos.view(),
             "lfoMarks": lfo_marks,

@@ -93,8 +93,10 @@ impl Session {
             let o = doc.origin();
             let path = o.get("path").or_else(|| o.get("file")).and_then(Value::as_str).unwrap_or("").to_string();
             let name = o.get("name").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| path.rsplit(['/', '\\']).next().unwrap_or("").to_string());
+            let o_file = o.get("file").and_then(Value::as_str).unwrap_or("").to_string();
             let source = doc.grain_source();
             let Ok(g) = self.prism(id) else { continue };
+            g.sound_file = o_file;
             if let Some(src) = source {
                 g.load(from, serial, src, &name, &path);
             }

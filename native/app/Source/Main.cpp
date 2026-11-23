@@ -10,6 +10,7 @@
 #include "EditBench.h"
 #include "WaveApi.h"
 #include "ChopBench.h"
+#include "PrismBench.h"
 #include "GrainBench.h"
 #include "Host.h"
 #include "Places.h"
@@ -812,6 +813,11 @@ public:
             setApplicationReturnValue (chopBench (args));
             return quit();
         }
+        if (args.size() >= 2 && args[0] == "--bench" && args[1] == "prism")
+        {
+            setApplicationReturnValue (prismBench (args));
+            return quit();
+        }
         if (args.size() >= 2 && args[0] == "--bench" && args[1] == "grain")
         {
             setApplicationReturnValue (grainBench (args));
@@ -1236,6 +1242,8 @@ public:
                 image = grainSnapshot (args, scale);
             else if (page == "chop-face")
                 image = chopSnapshot (args, scale);
+            else if (page == "prism-face")
+                image = prismSnapshot (args, scale);
             else if (page == "atmos-face")
             {
                 // The live face, a real Atmosphere behind it (no sound card):
