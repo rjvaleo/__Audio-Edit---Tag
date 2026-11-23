@@ -122,6 +122,12 @@ int32_t na_edit_ui (NaApp*, uint32_t id, char* buf, uint32_t cap);
 // (/api/engine/voice), "transport", "lfos", "lfos-state", "rack", "presets",
 // "info", "read" (/api/engine/grains), "ui". JSON in and out.
 int32_t na_grain_call (NaApp*, uint32_t id, const char* what, const char* json, char* buf, uint32_t cap);
+// The FX modules (the FX page, and every effect on its own, kinds "fx" and
+// "fx:<kind>"): one of MGL's routes by name ("catalogue", "rack", "transport",
+// "levels", "info", "ui") with JSON, the answer (JSON) into buf; and the last
+// n frames of its output, mono.
+int32_t na_fx_call (NaApp*, uint32_t id, const char* what, const char* json, char* buf, uint32_t cap);
+int32_t na_fx_scope (NaApp*, uint32_t id, float* out, uint32_t n);
 // Every Grain's LFOs on by `seconds` (MGL ticks them every 8 ms).
 void na_grain_tick (NaApp*, double seconds);
 int32_t na_grain_peaks (NaApp*, uint32_t id, uint64_t from, uint64_t to, uint32_t cols, float* out, uint32_t cap, uint64_t* info3);

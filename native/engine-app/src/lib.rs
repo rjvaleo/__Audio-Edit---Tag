@@ -24,6 +24,7 @@ pub mod annot;
 pub mod atmos_part;
 pub mod edit_part;
 pub mod grain;
+pub mod fx;
 mod mgl_rack;
 pub mod sound_part;
 mod sound_link;
@@ -116,6 +117,17 @@ pub static KINDS: &[KindInfo] = &[
         outs: &[("Audio", Kind::Audio)],
         keyboard: true,
     },
+    // MGL's FX page: the sound cabled in and anything played into it, through
+    // MGL's rack, out.
+    KindInfo {
+        id: "fx",
+        title: "FX",
+        width: fx::FX_W,
+        height: fx::FX_H,
+        ins: &[("Sound", Kind::Sound), ("Audio", Kind::Audio)],
+        outs: &[("Audio", Kind::Audio)],
+        keyboard: false,
+    },
     KindInfo { id: "midi-in", title: "MIDI In", width: 246, height: 73, ins: &[], outs: &[("Notes", Kind::Notes)], keyboard: false },
     KindInfo {
         id: "output",
@@ -129,7 +141,27 @@ pub static KINDS: &[KindInfo] = &[
 ];
 
 pub fn kind(id: &str) -> Option<&'static KindInfo> {
-    KINDS.iter().find(|k| k.id == id)
+    KINDS.iter().find(|k| k.id == id).or_else(|| effect_kinds().iter().find(|k| k.id == id))
+}
+
+/// Every effect as a module of its own (`fx:<kind>`): a card of MGL's rack,
+/// audio in, audio out, at the card's own size.
+pub fn effect_kinds() -> &'static [KindInfo] {
+    static ALL: std::sync::OnceLock<Vec<KindInfo>> = std::sync::OnceLock::new();
+    ALL.get_or_init(|| {
+        fx::effects()
+            .iter()
+            .map(|e| KindInfo {
+                id: e.id.as_str(),
+                title: e.label.as_str(),
+                width: fx::card_width(&e.kind),
+                height: fx::CARD_H,
+                ins: &[("Audio", Kind::Audio)],
+                outs: &[("Audio", Kind::Audio)],
+                keyboard: false,
+            })
+            .collect()
+    })
 }
 
 /// One control on a module's face.
@@ -182,6 +214,7 @@ pub fn kinds_json() -> Value {
     Value::Array(
         KINDS
             .iter()
+            .chain(effect_kinds().iter())
             .map(|k| {
                 let mut o = Map::new();
                 o.insert("id".into(), k.id.into());
@@ -288,6 +321,7 @@ enum Part {
     Sound(Box<SoundPart>),
     Edit(Box<EditPart>),
     Grain(Box<grain::GrainPart>),
+    Fx(Box<fx::FxPart>),
 }
 
 struct Placed {
@@ -400,6 +434,7 @@ impl Session {
                 Part::Edit(Box::new(part))
             }
             "grain" => self.add_grain(id, saved)?,
+            k if k == "fx" || k.starts_with("fx:") => self.add_fx(id, k, saved)?,
             "midi-in" => {
                 let channel = saved.and_then(|s| s.get("channel")).and_then(Value::as_u64).unwrap_or(0).min(16) as u8;
                 self.ctl.add(engine_id(id, 0), Box::new(engine_core::basics::Keys::new()))?;
@@ -432,9 +467,10 @@ impl Session {
     /// Take a module off the canvas, and every cable to and from it.
     pub fn remove(&mut self, id: u32) -> Result<(), AppError> {
         let placed = self.modules.remove(&id).ok_or(AppError::NoSuchModule(id))?;
-        let count = match placed.part {
+        let count = match &placed.part {
             Part::Output => 2,
             Part::Atmos(_) => 3,
+            Part::Fx(f) if f.is_page() => 4,
             _ => 1,
         };
         for k in 0..count {
@@ -465,7 +501,11 @@ impl Session {
     fn engine_out(&self, (id, socket): (u32, u32)) -> Result<(engine_core::PortRef, Kind), AppError> {
         let m = self.modules.get(&id).ok_or(AppError::NoSuchModule(id))?;
         let (_, kind) = m.kind.outs.get(socket as usize).ok_or(AppError::NoSuchSocket)?;
-        let k = if matches!(m.part, Part::Atmos(_)) { atmos_part::FX } else { 0 };
+        let k = match &m.part {
+            Part::Atmos(_) => atmos_part::FX,
+            Part::Fx(f) if f.is_page() => fx::LEVELS,
+            _ => 0,
+        };
         Ok((port(engine_id(id, k), socket), *kind))
     }
 
@@ -474,6 +514,10 @@ impl Session {
         let (_, kind) = m.kind.ins.get(socket as usize).ok_or(AppError::NoSuchSocket)?;
         // Grain's Sound socket is the app's (grain/link.rs); its Notes are the deck's first input.
         let socket = if matches!(m.part, Part::Grain(_)) { socket.saturating_sub(1) } else { socket };
+        // The FX page's Sound goes to its player, its Audio into the sum.
+        if matches!(&m.part, Part::Fx(f) if f.is_page()) {
+            return Ok(if socket == 0 { (port(engine_id(id, fx::PLAYER), 0), *kind) } else { (port(engine_id(id, fx::SUM), 1), *kind) });
+        }
         Ok((port(engine_id(id, 0), socket), *kind))
     }
 
@@ -542,7 +586,7 @@ impl Session {
                 *channel = (value.max(0.0) as u8).min(16);
                 Ok(())
             }
-            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) => Err(AppError::NoSuchControl(index)),
+            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Fx(_) => Err(AppError::NoSuchControl(index)),
         }
     }
 
@@ -553,14 +597,14 @@ impl Session {
         Ok(match &m.part {
             Part::Wave(w) => w.values(),
             Part::MidiIn { channel } => vec![*channel as f32],
-            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) => Vec::new(),
+            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Fx(_) => Vec::new(),
         })
     }
 
     /// A note played on a module's own keyboard, heard from the next block.
     pub fn note(&mut self, id: u32, on: bool, note: u8, velocity: f32) -> Result<u64, AppError> {
         let m = self.modules.get(&id).ok_or(AppError::NoSuchModule(id))?;
-        if matches!(m.part, Part::Output | Part::Sound(_) | Part::Edit(_)) {
+        if matches!(m.part, Part::Output | Part::Sound(_) | Part::Edit(_) | Part::Fx(_)) {
             return Err(AppError::NoSuchSocket);
         }
         let event = if on { NoteEvent::on(note.min(127), velocity.clamp(0.0, 1.0)) } else { NoteEvent::off(note.min(127)) };
@@ -697,6 +741,9 @@ impl Session {
                     }
                     Part::Grain(g) => {
                         o.insert("grain".into(), g.state());
+                    }
+                    Part::Fx(f) => {
+                        o.insert("fx".into(), f.state());
                     }
                 }
                 Value::Object(o)
