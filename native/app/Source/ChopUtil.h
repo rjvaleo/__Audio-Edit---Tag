@@ -41,6 +41,13 @@ inline juce::String fixed (double v, int places)
 }
 inline juce::String rnd (double v) { return juce::String ((int64_t) jsRound (v)); }
 
+// A list's item, or nothing (juce::var's own [] asserts on a non-list).
+inline juce::var ix (const juce::var& v, int i)
+{
+    auto* a = v.getArray();
+    return a != nullptr && i >= 0 && i < a->size() ? a->getReference (i) : juce::var();
+}
+
 inline juce::var obj() { return juce::var (new juce::DynamicObject()); }
 inline juce::var put (juce::var o, const juce::Identifier& k, const juce::var& v)
 {

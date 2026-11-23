@@ -1051,10 +1051,11 @@ void ChopFace::drawCurve (juce::Graphics& g, float w, float h, const std::functi
     }
     const float glow = (float) dnum (captured["cl"]["glow"], 1);
     const auto bloom = rgba (captured["cl"]["bloom"].toString(), 0.5f * juce::jmin (1.0f, glow));
-    for (int k = 3; k >= 1; --k)
+    // shadowBlur 7 x glow: a soft halo, faint.
+    for (int k = 4; k >= 1; --k)
     {
-        g.setColour (bloom.withMultipliedAlpha (0.25f));
-        g.strokePath (p, juce::PathStrokeType (1.5f + (float) k * 2.2f * glow, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (bloom.withMultipliedAlpha (0.07f));
+        g.strokePath (p, juce::PathStrokeType (1.5f + (float) k * 1.6f * glow, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
     g.setColour (cl ("wave"));
     g.strokePath (p, juce::PathStrokeType (1.5f));
@@ -1359,7 +1360,18 @@ void ChopFace::drawKnob (juce::Graphics& g, const juce::String& key)
             {
                 juce::Array<juce::var> colr { (int) accent.getRed(), (int) accent.getGreen(), (int) accent.getBlue(), u * 0.42 };
                 if (auto* o = stops->getReference (0).getDynamicObject())
+                {
                     o->setProperty ("colour", colr);
+                    o->setProperty ("at", "0%");
+                }
+                // `transparent 62%`: the capture leaves out a stop with no colour.
+                if (stops->size() == 1)
+                {
+                    auto end = obj();
+                    put (end, "colour", juce::Array<juce::var> { (int) accent.getRed(), (int) accent.getGreen(), (int) accent.getBlue(), 0.0 });
+                    put (end, "at", "62%");
+                    stops->add (end);
+                }
             }
         if (auto* sh = c["shadows"].getArray(); sh != nullptr && sh->size() >= 5)
             if (auto* o = sh->getReference (4).getDynamicObject())

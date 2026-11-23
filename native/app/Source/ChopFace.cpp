@@ -79,8 +79,8 @@ ChopFace::ChopFace (Call c, uint32_t i)
             {
                 auto k = knobOf (s, fx);
                 k.fx = true;
-                k.fxLook = data["fxLook"][juce::Identifier (k.key)][0].toString();
-                k.facet = data["fxLook"][juce::Identifier (k.key)][1].toString();
+                k.fxLook = ix (data["fxLook"][juce::Identifier (k.key)], 0).toString();
+                k.facet = ix (data["fxLook"][juce::Identifier (k.key)], 1).toString();
                 knobs[k.key] = k;
                 knobOrder.push_back (k.key);
             }
@@ -277,10 +277,21 @@ void ChopFace::buildLayers()
     canvas ("out", "chopOut", [this] (juce::Graphics& g, float w, float h) { drawOut (g, w, h); }, true);
     canvas ("slicepic", "chopSlicePic", [this] (juce::Graphics& g, float w, float h) { drawSlicePic (g, w, h); });
     canvas ("pass", "chopPassPic", [this] (juce::Graphics& g, float w, float h) { drawPass (g, w, h); });
-    canvas ("env", "chopPicEnv", [this] (juce::Graphics& g, float w, float h) { drawEnv (g, w, h); }, true);
-    canvas ("tr", "chopPicTr", [this] (juce::Graphics& g, float w, float h) { drawTransient (g, w, h); }, true);
-    canvas ("eq", "chopPicEq", [this] (juce::Graphics& g, float w, float h) { drawEq (g, w, h); }, true);
-    canvas ("flt", "chopPicFlt", [this] (juce::Graphics& g, float w, float h) { drawFilter (g, w, h); }, true);
+    // A module that is off shows its picture at .42 (`.chop-fxs.off .chop-pic`).
+    auto dimmedBy = [this] (const char* on, std::function<void (juce::Graphics&, float, float)> draw) {
+        return [this, on, draw] (juce::Graphics& g, float w, float h) {
+            const bool lit = flag (on);
+            if (!lit)
+                g.beginTransparencyLayer (0.42f);
+            draw (g, w, h);
+            if (!lit)
+                g.endTransparencyLayer();
+        };
+    };
+    canvas ("env", "chopPicEnv", dimmedBy ("envOn", [this] (juce::Graphics& g, float w, float h) { drawEnv (g, w, h); }), true);
+    canvas ("tr", "chopPicTr", dimmedBy ("trOn", [this] (juce::Graphics& g, float w, float h) { drawTransient (g, w, h); }), true);
+    canvas ("eq", "chopPicEq", dimmedBy ("eqOn", [this] (juce::Graphics& g, float w, float h) { drawEq (g, w, h); }), true);
+    canvas ("flt", "chopPicFlt", dimmedBy ("fltOn", [this] (juce::Graphics& g, float w, float h) { drawFilter (g, w, h); }), true);
     addLayer ("legend", at ("chopLegend").withWidth (842).expanded (2), [this, at] (juce::Graphics& g) {
         g.setOrigin (-at ("chopLegend").expanded (2).getSmallestIntegerContainer().getPosition());
         drawLegend (g);
@@ -294,7 +305,16 @@ void ChopFace::buildLayers()
         auto it = ids.find ("knob:" + k);
         if (it == ids.end())
             continue;
-        const auto r = it->second.r.expanded (6);
+        // The knob and all it holds (a processing bar's knob hangs below its row).
+        juce::Rectangle<float> all = it->second.r;
+        std::function<void (const juce::var&)> grow = [&] (const juce::var& n) {
+            all = all.getUnion (rectOf (n["rect"]));
+            if (auto* kk = n["kids"].getArray())
+                for (const auto& x : *kk)
+                    grow (x);
+        };
+        grow (it->second.n);
+        const auto r = all.expanded (6);
         addLayer ("knob:" + k, r, [this, k, r] (juce::Graphics& g) {
             g.setOrigin (-r.getSmallestIntegerContainer().getPosition());
             drawKnob (g, k);
@@ -403,14 +423,14 @@ void ChopFace::readState (const juce::var& s)
         for (const auto& x : *a)
         {
             Slice sl;
-            sl.s = (int64_t) dnum (x[0]);
-            sl.e = (int64_t) dnum (x[1]);
-            const int f = (int) dnum (x[2]);
+            sl.s = (int64_t) dnum (ix (x, 0));
+            sl.e = (int64_t) dnum (ix (x, 1));
+            const int f = (int) dnum (ix (x, 2));
             sl.locked = (f & 1) != 0;
             sl.moved = (f & 2) != 0;
             sl.muted = (f & 4) != 0;
             sl.rev = (f & 8) != 0;
-            sl.kind = x[3].toString();
+            sl.kind = ix (x, 3).toString();
             slices.push_back (sl);
         }
     sel.clear();
@@ -418,8 +438,8 @@ void ChopFace::readState (const juce::var& s)
         for (const auto& x : *a)
             sel.insert ((int) dnum (x));
     current = (int) dnum (s["current"], -1);
-    regionS = (int64_t) dnum (s["region"][0]);
-    regionE = (int64_t) dnum (s["region"][1]);
+    regionS = (int64_t) dnum (ix (s["region"], 0));
+    regionE = (int64_t) dnum (ix (s["region"], 1));
     playing = s["playing"].toString();
     const auto& snd = s["sound"];
     const bool had = len > 0;
@@ -471,7 +491,9 @@ void ChopFace::readState (const juce::var& s)
     shown = hasSound() ? page.get() : empty.get();
     for (auto& l : layers)
         l->toFront (false);
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
     restyle();
+    restyleMs = juce::Time::getMillisecondCounterHiRes() - t0;
     for (auto& l : layers)
         l->repaint();
 }
@@ -518,7 +540,8 @@ void ChopFace::loadAnalysis()
 void ChopFace::reload()
 {
     uiRead = false;
-    readState (chopCall ("state", {}));
+    const auto a = chopCall ("state", {});
+    readState (a["state"].isObject() ? a["state"] : a);
 }
 
 void ChopFace::keepUi()
@@ -574,7 +597,7 @@ void ChopFace::restyle()
         auto& my = ch == page.get() ? ids : emptyIds;
         std::map<int, int> st;
         std::map<int, float> op;
-        auto kidI = [] (const Node& seg, int j) { return (int) dnum (seg.n["kids"][j]["i"], -1); };
+        auto kidI = [] (const Node& seg, int j) { return (int) dnum (ix (seg.n["kids"], j)["i"], -1); };
         // A row of choices: each lit as the page's chosen one, or as one not.
         auto seg = [&] (const juce::String& sid, const juce::StringArray& vals, const juce::String& v, int onLook, int offLook) {
             auto it = my.find (sid);
@@ -643,17 +666,8 @@ void ChopFace::restyle()
             op[it->second.i] = any && hasSound() ? 1.0f : 0.4f;
         }
 
-        // Draw again only where something changed.
-        juce::Rectangle<float> dirty;
-        auto mark = [&] (int i) {
-            auto n = ch->nodes.find (i);
-            if (n != ch->nodes.end())
-            {
-                const auto r = rectOf (n->second["rect"]).expanded (6);
-                dirty = dirty.isEmpty() ? r : dirty.getUnion (r);
-                ch->redraw (r);
-            }
-        };
+        // Draw again only where something changed, neighbours merged into
+        // one area (each redraw walks the whole capture).
         std::set<int> changed;
         for (const auto& [i, j] : st)
             if (ch->styleFrom.count (i) == 0 || ch->styleFrom[i] != j)
@@ -663,8 +677,27 @@ void ChopFace::restyle()
                 changed.insert (i);
         ch->styleFrom = st;
         ch->opacityOf = op;
+        std::vector<juce::Rectangle<float>> areas;
         for (int i : changed)
-            mark (i);
+            if (auto n = ch->nodes.find (i); n != ch->nodes.end())
+            {
+                auto r = rectOf (n->second["rect"]).expanded (6);
+                for (bool merged = true; merged;)
+                {
+                    merged = false;
+                    for (auto a = areas.begin(); a != areas.end(); ++a)
+                        if (a->expanded (40).intersects (r))
+                        {
+                            r = r.getUnion (*a);
+                            areas.erase (a);
+                            merged = true;
+                            break;
+                        }
+                }
+                areas.push_back (r);
+            }
+        for (const auto& r : areas)
+            ch->redraw (r);
     }
 }
 
@@ -735,7 +768,15 @@ void ChopFace::writeText (juce::Graphics& g, const juce::String& nid, const juce
     g.setColour (tint != nullptr ? *tint : face::colour (f["colour"]));
     const auto r = node->r;
     const float baseline = r.getY() + (r.getHeight() - (fnt.getAscent() + fnt.getDescent())) / 2.0f + fnt.getAscent();
-    const bool right = f["align"].toString() == "right" || f["align"].toString() == "end";
+    // Those after a row's spring (`chop-grow`, `justify-content: space-between`)
+    // keep their right edge where the page put it.
+    static const juce::StringArray rightEdged { "chopPickRo", "chopPassRo", "chopPattern", "chopZoomRo" };
+    const bool right = f["align"].toString() == "right" || f["align"].toString() == "end" || rightEdged.contains (nid);
+    juce::Graphics::ScopedSaveState clip (g);
+    if (nid == "chopPickRo")
+        g.reduceClipRegion (juce::Rectangle<int> (32, 648, 436, 20));
+    else if (nid == "chopPassRo")
+        g.reduceClipRegion (juce::Rectangle<int> (490, 648, 436, 20));
     const bool centre = f["align"].toString() == "center";
     const float w = juce::GlyphArrangement::getStringWidth (fnt, text);
     const float x = right ? r.getRight() - w : centre ? r.getCentreX() - w / 2 : r.getX();
@@ -1062,9 +1103,8 @@ void ChopFace::set (const juce::String& key, const juce::var& v)
 
 void ChopFace::setKnob (const juce::String& key, double v, bool live)
 {
-    auto body = put (obj(), juce::Identifier (key), v);
-    put (body, "live", live);
-    const auto answer = chopCall ("set", body);
+    juce::ignoreUnused (live);
+    const auto answer = chopCall ("set", put (obj(), juce::Identifier (key), v));
     // The knob's own layer at once; the rest of the page with the state.
     take (answer);
 }

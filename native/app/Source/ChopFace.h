@@ -149,6 +149,9 @@ private:
 
     // ── the looks: switches lit from the captures ──
     void restyle();
+public:
+    double restyleMs = 0;
+private:
     bool knobDim (const juce::String& key) const;
     juce::var rowOn, rowCurrent, rowPicked, rowPlain, rowMuted, badgeOk, badgeClamped, badgeSkip, kindLabel;
 

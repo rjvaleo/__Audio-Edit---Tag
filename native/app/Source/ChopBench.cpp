@@ -55,7 +55,7 @@ struct Rig
         for (int i = 0; i < 400; ++i)
         {
             na_collect (a);
-            const auto st = call (a, chop, "state", "{}");
+            const auto st = call (a, chop, "state", "{}")["state"];
             if (!st["sound"].isObject() || st["an"].isObject())
                 if (i > 2)
                     break;
@@ -116,9 +116,16 @@ int chopBench (const juce::StringArray& args)
         if (clicks == 2)
             f.mouseDoubleClick (ev (to, false));
     };
-    auto state = [&] { return call (rig.a, rig.chop, "state", "{}"); };
+    auto render = [&] (int blocks) {
+        std::vector<float> l (512), r (512);
+        for (int b = 0; b < blocks; ++b)
+            na_render (rig.a, l.data(), r.data(), 512);
+    };
+    auto state = [&] { const auto v = call (rig.a, rig.chop, "state", "{}"); return v["state"].isObject() ? v["state"] : v; };
     auto cp = [&] (const char* k) { return juce::JSON::toString (state()["cp"][k], true); };
     auto report = [] (const char* name, double t, const juce::String& what) { std::printf ("{\"%s_ms\":%.1f,%s}\n", name, t, what.toRawUTF8()); };
+    if (juce::SystemStats::getEnvironmentVariable ("CHOP_STATE", "") == "1")
+        std::printf ("%s\n", juce::JSON::toString (state(), true).toRawUTF8());
     const double whole = ms (draw), again = ms (draw);
     std::printf ("{\"whole_ms\":%.1f,\"again_ms\":%.1f,\"slices\":%d}\n", whole, again, state()["slices"].size());
 
@@ -150,6 +157,15 @@ int chopBench (const juce::StringArray& args)
         report ("div_click", t2, "\"div\":" + cp ("div") + ",\"slices\":" + juce::String (state()["slices"].size()));
         press ({ m.getX() + 40, m.getCentreY() }, { m.getX() + 40, m.getCentreY() });
     }
+    // Where a mode change's time goes: the engine's call alone, then the face's.
+    {
+        const double eng = ms ([&] { call (rig.a, rig.chop, "set", "{\"mode\":\"silence\"}"); });
+        const double st = ms ([&] { call (rig.a, rig.chop, "state", "{}"); });
+        const double rd = ms ([&] { f.reload(); });
+        std::printf ("{\"engine_set_mode_ms\":%.1f,\"engine_state_ms\":%.1f,\"face_reload_ms\":%.1f,\"restyle_ms\":%.1f}\n", eng, st, rd, f.restyleMs);
+        call (rig.a, rig.chop, "set", "{\"mode\":\"transient\"}");
+        f.reload();
+    }
     // A switch: the Filter module on.
     {
         const auto r = f.where ("pwr:filter");
@@ -165,6 +181,7 @@ int chopBench (const juce::StringArray& args)
         auto xOf = [&] (double fr) { return lane.getX() + (float) (fr / len) * lane.getWidth(); };
         const double s1 = (double) st["slices"][1][0], e1 = (double) st["slices"][1][1];
         const double t = ms ([&] { press ({ xOf ((s1 + e1) / 2), lane.getCentreY() }, { xOf ((s1 + e1) / 2), lane.getCentreY() }); f.poll(); draw(); });
+        render (8);
         const auto p = call (rig.a, rig.chop, "playing", "{}");
         report ("slice_click", t, "\"current\":" + juce::String ((int) state()["current"]) + ",\"playing\":\"" + p["kind"].toString() + "\"");
         // Drag the cut at slice 2's start on the ruler, 20 px right.
@@ -175,20 +192,27 @@ int chopBench (const juce::StringArray& args)
         const auto tools = f.where ("chopTools");
         press ({ tools.getX() + tools.getWidth() * 0.62f, tools.getCentreY() }, { tools.getX() + tools.getWidth() * 0.62f, tools.getCentreY() });
         press ({ xOf ((double) after["slices"][1][0]), lane.getY() + 12 }, { xOf ((double) after["slices"][1][0]), lane.getY() + 12 });
+        std::printf ("{\"after_lock_flags\":%s,\"tool_seg\":\"%s\"}\n", juce::JSON::toString (state()["slices"][1][2], true).toRawUTF8(), juce::JSON::toString (state()["ui"], true).toRawUTF8());
         const auto re = f.where ("chopRedetect");
         press (re.getCentre(), re.getCentre());
+        // The locked cut stays where it was put, beside the one found again.
         const auto locked = state();
-        std::printf ("{\"locked_flags\":%s,\"kept_at\":%s}\n", juce::JSON::toString (locked["slices"][1][2], true).toRawUTF8(), juce::JSON::toString (locked["slices"][1][0], true).toRawUTF8());
+        juce::String kept = "none";
+        for (const auto& x : *locked["slices"].getArray())
+            if (((int) x[2] & 1) != 0)
+                kept = juce::JSON::toString (x, true);
+        std::printf ("{\"after_redetect_locked\":%s}\n", kept.toRawUTF8());
         press ({ tools.getX() + 10, tools.getCentreY() }, { tools.getX() + 10, tools.getCentreY() });
     }
     // Preview, then Ratchet, then stop.
     {
         const auto r = f.where ("chopPreview");
         const double t = ms ([&] { press (r.getCentre(), r.getCentre()); f.poll(); drawIn (r); });
-        juce::Thread::sleep (50);
+        render (8);
         report ("preview_click", t, "\"playing\":\"" + call (rig.a, rig.chop, "playing", "{}")["kind"].toString() + "\"");
         const auto q = f.where ("chopRatchet");
         press (q.getCentre(), q.getCentre());
+        render (8);
         std::printf ("{\"ratchet\":\"%s\"}\n", call (rig.a, rig.chop, "playing", "{}")["kind"].toString().toRawUTF8());
         press (q.getCentre(), q.getCentre());
     }
