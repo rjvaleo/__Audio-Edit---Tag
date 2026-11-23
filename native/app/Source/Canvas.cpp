@@ -383,6 +383,34 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         };
         addAndMakeVisible (*grain);
     }
+    else if (kind.id == "chop")
+    {
+        // MGL's Chop page, on the sound cabled into it (ChopFace).
+        auto* host = &canvas.host;
+        chop = std::make_unique<ChopFace> ([host] (const std::function<int64_t (NaApp*)>& f) { return host->with ([&] (NaApp* a) { return f (a); }); }, (uint32_t) id);
+        chop->onMessage = [cv = &canvas] (const juce::String& m) { if (cv->status) cv->status (m); };
+        chop->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
+        // ＋ with no sound: a Sound module beside it, cabled into its Sound socket.
+        chop->wantSound = [cv = &canvas, mine = id] {
+            juce::MessageManager::callAsync ([cv, mine] {
+                auto it = cv->nodes.find (mine);
+                const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) it->second->getX() - 380, (float) it->second->getY()) : juce::Point<float>();
+                const int s = cv->host.with ([&] (NaApp* a) {
+                    const int n = na_add (a, "sound", at.x, at.y);
+                    if (n > 0 && na_connect (a, (uint32_t) n, 0, (uint32_t) mine, 0) < 0)
+                    {
+                        na_remove (a, (uint32_t) n);
+                        return -1;
+                    }
+                    return n;
+                });
+                cv->refresh();
+                if (cv->status)
+                    cv->status (s > 0 ? "Added a Sound module: open a file or one from the library in it" : "Open a sound in the Sound module cabled into Chop");
+            });
+        };
+        addAndMakeVisible (*chop);
+    }
     else if (kind.id == "edit" || kind.id == "sound")
     {
         // MGL's Edit page, and the sound it works on (EditFace, SoundFace).
@@ -730,7 +758,7 @@ void AddMenu::filter()
     const auto q = search.getText().trim().toLowerCase();
     // idMLab groups its modules by family; MGL's sit under their own.
     const std::vector<std::pair<juce::String, juce::StringArray>> groups {
-        { "MULTIGRAINLIVE", { "wave", "atmos", "sound", "edit", "grain" } },
+        { "MULTIGRAINLIVE", { "wave", "atmos", "sound", "edit", "grain", "chop" } },
         { "MIDI", { "midi-in" } },
         { "AUDIO", { "output" } },
     };

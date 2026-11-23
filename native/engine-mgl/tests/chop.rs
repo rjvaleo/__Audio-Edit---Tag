@@ -12,7 +12,7 @@
 mod common;
 use common::*;
 use engine_core::*;
-use engine_mgl::chop::{self, listen, Div, Feel, Filter, Mode, Page, Render, Settings, TailParams};
+use engine_mgl::chop::{self, listen, Div, Feel, Filter, Flag, Mode, Page, Render, Settings, Slice, TailParams};
 use engine_mgl::{Chop, ChopThing};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -158,62 +158,67 @@ impl Check {
     }
 }
 
+/// One of the page's settings, by its name, at its raw value.
+fn set_one(s: &mut Settings, k: &str, v: &Value) {
+    let n = || v.as_f64().unwrap();
+    let b = || v.as_bool().unwrap();
+    let t = || v.as_str().unwrap();
+    match k {
+        "mode" => s.mode = match t() { "silence" => Mode::Silence, "grid" => Mode::Grid, _ => Mode::Transient },
+        "sens" => s.sens = n(),
+        "topDb" => s.top_db = n(),
+        "minDur" => s.min_dur = n(),
+        "pad" => s.pad = n(),
+        "div" => s.div = if t() == "bar" { Div::Bar } else { Div::Of(t().parse().unwrap()) },
+        "feel" => s.feel = match t() { "dot" => Feel::Dot, "trip" => Feel::Trip, _ => Feel::Straight },
+        "nudge" => s.nudge = n(),
+        "shuffle" => s.shuffle = n(),
+        "gate" => s.gate = n(),
+        "smooth" => s.smooth = n(),
+        "tail" => s.tail = b(),
+        "tailMs" => s.tail_ms = n(),
+        "bars" => s.bars = n(),
+        "beats" => s.beats = n(),
+        "sig" => s.sig = n(),
+        "tempo" => s.tempo = n(),
+        "pitch" => s.pitch = n(),
+        "stretch" => s.stretch = n(),
+        "sync" => s.lock = t() == "lock",
+        "envOn" => s.env_on = b(),
+        "attack" => s.attack = n(),
+        "decay" => s.decay = n(),
+        "trOn" => s.tr_on = b(),
+        "trThresh" => s.tr_thresh = n(),
+        "trAmount" => s.tr_amount = n(),
+        "trAttack" => s.tr_attack = n(),
+        "trRelease" => s.tr_release = n(),
+        "trGain" => s.tr_gain = n(),
+        "eqOn" => s.eq_on = b(),
+        "loCut" => s.lo_cut = n(),
+        "lowF" => s.low_f = n(),
+        "lowG" => s.low_g = n(),
+        "lowQ" => s.low_q = n(),
+        "highF" => s.high_f = n(),
+        "highG" => s.high_g = n(),
+        "highQ" => s.high_q = n(),
+        "hiCut" => s.hi_cut = n(),
+        "fltOn" => s.flt_on = b(),
+        "fltType" => s.flt_type = Filter::named(t()),
+        "fltFreq" => s.flt_freq = n(),
+        "fltQ" => s.flt_q = n(),
+        "drive" => s.drive = n(),
+        "gain" => s.gain = n(),
+        "mix" => s.mix = n(),
+        other => panic!("a setting the test does not know: {other}"),
+    }
+}
+
 /// The page's settings, from its names: the starting ones with `set` over them.
 fn settings(set: &Value) -> Settings {
     let mut s = Settings::default();
     let Some(set) = set.as_object() else { return s };
     for (k, v) in set {
-        let n = || v.as_f64().unwrap();
-        let b = || v.as_bool().unwrap();
-        let t = || v.as_str().unwrap();
-        match k.as_str() {
-            "mode" => s.mode = match t() { "silence" => Mode::Silence, "grid" => Mode::Grid, _ => Mode::Transient },
-            "sens" => s.sens = n(),
-            "topDb" => s.top_db = n(),
-            "minDur" => s.min_dur = n(),
-            "pad" => s.pad = n(),
-            "div" => s.div = if t() == "bar" { Div::Bar } else { Div::Of(t().parse().unwrap()) },
-            "feel" => s.feel = match t() { "dot" => Feel::Dot, "trip" => Feel::Trip, _ => Feel::Straight },
-            "nudge" => s.nudge = n(),
-            "shuffle" => s.shuffle = n(),
-            "gate" => s.gate = n(),
-            "smooth" => s.smooth = n(),
-            "tail" => s.tail = b(),
-            "tailMs" => s.tail_ms = n(),
-            "bars" => s.bars = n(),
-            "beats" => s.beats = n(),
-            "sig" => s.sig = n(),
-            "tempo" => s.tempo = n(),
-            "pitch" => s.pitch = n(),
-            "stretch" => s.stretch = n(),
-            "sync" => s.lock = t() == "lock",
-            "envOn" => s.env_on = b(),
-            "attack" => s.attack = n(),
-            "decay" => s.decay = n(),
-            "trOn" => s.tr_on = b(),
-            "trThresh" => s.tr_thresh = n(),
-            "trAmount" => s.tr_amount = n(),
-            "trAttack" => s.tr_attack = n(),
-            "trRelease" => s.tr_release = n(),
-            "trGain" => s.tr_gain = n(),
-            "eqOn" => s.eq_on = b(),
-            "loCut" => s.lo_cut = n(),
-            "lowF" => s.low_f = n(),
-            "lowG" => s.low_g = n(),
-            "lowQ" => s.low_q = n(),
-            "highF" => s.high_f = n(),
-            "highG" => s.high_g = n(),
-            "highQ" => s.high_q = n(),
-            "hiCut" => s.hi_cut = n(),
-            "fltOn" => s.flt_on = b(),
-            "fltType" => s.flt_type = Filter::named(t()),
-            "fltFreq" => s.flt_freq = n(),
-            "fltQ" => s.flt_q = n(),
-            "drive" => s.drive = n(),
-            "gain" => s.gain = n(),
-            "mix" => s.mix = n(),
-            other => panic!("a setting the test does not know: {other}"),
-        }
+        set_one(&mut s, k, v);
     }
     s
 }
@@ -486,4 +491,287 @@ fn it_allocates_nothing_while_it_plays_or_takes_new_slices() {
     assert_eq!(counted() - before, 0, "allocations or frees inside a render; the last sizes: {:?}", last_sizes());
     assert!(peak(&l) > 0.01 && peak(&l2) > 0.01);
     assert!(ctl.collect().things >= 2, "the replaced slices came back to be freed");
+}
+
+// ------------------------------------------------- the edits, the measures, Write
+
+fn edits_doc() -> Value {
+    serde_json::from_str(&std::fs::read_to_string(here().join("chop-edits.json")).unwrap()).unwrap()
+}
+
+fn fnv_bytes(b: &[u8]) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &x in b {
+        h ^= x as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{h:016x}")
+}
+
+/// The page's state as `chop-edits.spec.mjs` runs it: the page and its two slots.
+struct Run {
+    page: Page,
+    slots: [Settings; 2],
+    b: bool,
+    said: String,
+}
+
+impl Run {
+    fn new(chs: &[Vec<f32>], rate: f64) -> Run {
+        Run { page: Page::new(chs.to_vec(), rate, Settings::default()), slots: [Settings::default(), Settings::default()], b: false, said: String::new() }
+    }
+
+    fn cp(&mut self) -> &mut Settings {
+        &mut self.slots[self.b as usize]
+    }
+
+    fn take_slot(&mut self) {
+        self.page.settings = self.slots[self.b as usize].clone();
+    }
+
+    fn bars(&mut self, bars: f64, beats: f64) {
+        for s in self.slots.iter_mut() {
+            s.bars = bars;
+            s.beats = beats;
+        }
+        self.take_slot();
+        self.page.recut();
+    }
+
+    fn op(&mut self, op: &Value) {
+        let a = op.as_array().unwrap();
+        let i = |k: usize| a[k].as_f64().unwrap() as i64;
+        match a[0].as_str().unwrap() {
+            "set" => {
+                for kv in a[1].as_array().unwrap() {
+                    let k = kv[0].as_str().unwrap();
+                    set_one(self.cp(), k, &kv[1]);
+                    self.take_slot();
+                    if chop::RECUT_KEYS.contains(&k) {
+                        self.page.recut();
+                    }
+                }
+            }
+            "region" => self.page.set_region(i(1), i(2)),
+            "lock" => assert!(self.page.toggle_lock(i(1) as usize)),
+            "move" => {
+                let to = if a[4].as_bool().unwrap() { self.page.snap_near(i(3)) } else { i(3) };
+                self.page.move_edge(i(1) as usize, a[2].as_str().unwrap() == "s", to);
+            }
+            "delete" => {
+                self.page.delete_cut(i(1) as usize);
+            }
+            "add" => {
+                self.page.add_cut(i(1));
+            }
+            "pick" => self.page.pick(i(1), a[2].as_bool().unwrap()),
+            "toggle" => {
+                self.page.toggle(Flag::named(a[1].as_str().unwrap()).unwrap());
+            }
+            "recut" => self.page.recut(),
+            "detect" => {
+                let t = self.page.find_tempo();
+                let (text, bars) = chop::detect_said(t.as_ref());
+                self.said = text;
+                if let Some((bars, beats)) = bars {
+                    self.bars(bars, beats);
+                }
+            }
+            "scale" => {
+                let cp = self.cp().clone();
+                let (text, bars, beats) = chop::scale_bars(cp.bars, cp.beats, cp.sig, a[1].as_f64().unwrap());
+                self.said = text;
+                self.bars(bars, beats);
+            }
+            "ab" => {
+                self.b = a[1].as_str().unwrap() == "B";
+                self.take_slot();
+                self.page.recut();
+            }
+            "flag" => {
+                let f = Flag::named(a[1].as_str().unwrap()).unwrap();
+                for k in a[2].as_array().unwrap() {
+                    f.set(&mut self.page.slices[k.as_u64().unwrap() as usize], true);
+                }
+            }
+            other => panic!("no such op {other}"),
+        }
+    }
+
+    fn check(&self, check: &mut Check, what: &str, want: &Value) {
+        let flags = |x: &Slice| (x.locked as i64) | (x.moved as i64) << 1 | (x.muted as i64) << 2 | (x.rev as i64) << 3;
+        let got: Vec<i64> = self.page.slices.iter().flat_map(|x| [x.s, x.e, flags(x)]).collect();
+        let w: Vec<Value> = want["slices"].as_array().unwrap().iter().flat_map(|p| p.as_array().unwrap().clone()).collect();
+        check.ints(&format!("{what}.slices"), &Value::Array(w), &got);
+        check.ints(&format!("{what}.sel"), &want["sel"], &self.page.sel);
+        check.ints(&format!("{what}.current/region"), &Value::Array(vec![want["current"].clone(), want["region"][0].clone(), want["region"][1].clone()]), &[self.page.current, self.page.region.0, self.page.region.1]);
+        for (k, s) in [("a", &self.slots[0]), ("b", &self.slots[1])] {
+            check.num(&format!("{what}.{k}.bars"), &want[k][0], s.bars);
+            check.num(&format!("{what}.{k}.beats"), &want[k][1], s.beats);
+        }
+        check.num(&format!("{what}.bpm"), &want["bpm"], self.page.bpm());
+        check.text(&format!("{what}.said"), &want["said"], &self.said);
+        check.text(&format!("{what}.which"), &want["which"], if self.b { "b" } else { "a" });
+    }
+}
+
+impl Check {
+    fn text(&mut self, what: &str, want: &Value, got: &str) {
+        self.counted += 1;
+        if want.as_str() != Some(got) {
+            self.faults.push(format!("{what}: {got:?} against the page's {want}"));
+        }
+    }
+    fn bytes(&mut self, what: &str, want: &Value, got: &[u8]) {
+        self.counted += got.len();
+        let n = want["n"].as_u64().unwrap() as usize;
+        if n == got.len() && want["fnv"].as_str().unwrap() == fnv_bytes(got) {
+            return;
+        }
+        let mut say = format!("{what}: {} bytes against {n}", got.len());
+        if let Ok(dir) = std::env::var("CHOP_EDITS_REF") {
+            if let Ok(w) = std::fs::read(PathBuf::from(dir).join(want["u8"].as_str().unwrap())) {
+                if let Some(i) = w.iter().zip(got).position(|(a, b)| a != b) {
+                    say += &format!(", first differs at byte {i}: {} against the page's {}", got[i], w[i]);
+                }
+            }
+        }
+        self.faults.push(say);
+    }
+}
+
+/// The page's hand edits, its measures, its tail badges, Write's WAVs, MIDI
+/// and SFZ, Detect and ½× / 2×, step by step, against a recording of the page
+/// (`tests/ui/chop-edits.spec.mjs`).
+#[test]
+fn its_edits_measures_and_writing_are_the_pages() {
+    let doc = edits_doc();
+    let (chs, rate) = input(&doc);
+    let an = {
+        let p = Page::new(chs.clone(), rate, Settings::default());
+        listen::analyse(&p.mono, rate)
+    };
+    let mut check = Check::default();
+    let cases = doc["cases"].as_array().unwrap();
+    for case in cases {
+        let id = case["id"].as_str().unwrap();
+        let mut run = Run::new(&chs, rate);
+        let steps = case["steps"].as_array().unwrap();
+        run.check(&mut check, &format!("{id}[start]"), &steps[0]);
+        for (k, op) in case["ops"].as_array().unwrap().iter().enumerate() {
+            run.op(op);
+            run.check(&mut check, &format!("{id}[{k}: {op}]"), &steps[k + 1]);
+        }
+        let page = &run.page;
+        let v = &case["value"];
+        match case["what"].as_str().unwrap_or("") {
+            "" => {}
+            "measures" => {
+                let w = v.as_array().unwrap();
+                assert_eq!(w.len(), page.slices.len(), "{id}: slices measured");
+                for (i, (w, x)) in w.iter().zip(&page.slices).enumerate() {
+                    let m = page.measure(&an, x);
+                    for (k, g) in [
+                        ("low", m.low), ("mid", m.mid), ("high", m.high), ("cent", m.cent), ("flat", m.flat), ("zcr", m.zcr), ("db", m.db),
+                        ("peakDb", m.peak_db), ("crest", m.crest), ("dur", m.dur), ("clarity", m.clarity), ("hz", m.hz),
+                    ] {
+                        check.num(&format!("{id}.m[{i}].{k}"), &w[k], g);
+                    }
+                    check.text(&format!("{id}.m[{i}].kind"), &w["kind"], m.kind);
+                    check.num(&format!("{id}.m[{i}].attackMs"), &w["attackMs"], page.attack_ms(x));
+                    let note = if m.hz != 0.0 { chop::note(m.hz) } else { String::new() };
+                    check.text(&format!("{id}.m[{i}].note"), &w["note"], &note);
+                }
+            }
+            "tails" => {
+                let (badges, cycles) = page.tail_badges();
+                let w = v["badges"].as_array().unwrap();
+                assert_eq!(w.len(), badges.len(), "{id}: badges");
+                for (i, (w, b)) in w.iter().zip(&badges).enumerate() {
+                    check.text(&format!("{id}.badge[{i}].cls"), &w["cls"], b.cls);
+                    check.text(&format!("{id}.badge[{i}].text"), &w["text"], &b.text);
+                    check.text(&format!("{id}.badge[{i}].title"), &w["title"], &b.title);
+                }
+                check.text(&format!("{id}.cycles"), &v["cycles"], &cycles);
+            }
+            "wav" => {
+                let w = v.as_array().unwrap();
+                assert_eq!(w.len(), page.slices.len(), "{id}: WAVs");
+                for (i, w) in w.iter().enumerate() {
+                    check.bytes(&format!("{id}.wav[{i}]"), w, &page.slice_wav(i));
+                }
+            }
+            "write" => {
+                let written: Vec<usize> = (0..page.slices.len()).filter(|&i| !page.slices[i].muted).collect();
+                let names: Vec<String> = written.iter().map(|&i| chop::slice_name("reference", i)).collect();
+                check.ints(&format!("{id}.written"), &v["written"], &written.iter().map(|&i| i as i64).collect::<Vec<_>>());
+                for (i, n) in names.iter().enumerate() {
+                    check.text(&format!("{id}.names[{i}]"), &v["names"][i], n);
+                }
+                check.bytes(&format!("{id}.midi"), &v["midi"], &page.midi(&written));
+                check.text(&format!("{id}.sfz"), &v["sfz"], &page.sfz("reference", &names));
+            }
+            other => panic!("a case the test does not know: {other}"),
+        }
+    }
+    assert!(check.faults.is_empty(), "{} differences from the page:\n{}", check.faults.len(), check.faults.join("\n"));
+    assert!(cases.len() >= 35, "{} cases", cases.len());
+    println!("chop edits: {} cases, {} values, every one the page's", cases.len(), check.counted);
+}
+
+#[test]
+fn javascripts_numbers_as_text() {
+    use engine_mgl::chop::js;
+    assert_eq!(js::fixed(2.5, 0), "3");
+    assert_eq!(js::fixed(0.125, 2), "0.13");
+    assert_eq!(js::fixed(1.005, 2), "1.00");
+    assert_eq!(js::fixed(-0.04, 1), "-0.0");
+    assert_eq!(js::fixed(-0.0, 1), "0.0");
+    assert_eq!(js::fixed(9.995, 2), "9.99");
+    assert_eq!(js::fixed(99.96, 1), "100.0");
+    assert_eq!(js::fixed(119.75, 1), "119.8");
+    assert_eq!(js::num(80.0), "80");
+    assert_eq!(js::num(82.5), "82.5");
+    assert_eq!(js::num(-0.0), "0");
+    assert_eq!(js::num(0.1 + 0.2), "0.30000000000000004");
+    assert_eq!(js::num(1e21), "1e+21");
+    assert_eq!(js::num(1.5e-7), "1.5e-7");
+    assert_eq!(chop::note(440.0), "A4");
+    assert_eq!(chop::note(55.0), "A1");
+    assert_eq!(chop::note(277.2), "C#4");
+}
+
+/// The module's read-back says what it plays and where it has got to.
+#[test]
+fn it_says_what_it_plays() {
+    let page = page();
+    let (mut ctl, mut audio) = engine(RATE, exact());
+    let chop_m = Chop::new();
+    let said = chop_m.playing();
+    ctl.add(2, Box::new(chop_m)).unwrap();
+    ctl.connect_out(port(2, 0)).unwrap();
+    ctl.commit().unwrap();
+    ctl.give(2, 0, ChopThing::new(&page)).unwrap();
+    render(&mut audio, 128, BLOCK);
+    assert_eq!(said.read().transport, 0);
+    assert!(!said.read().slice_on);
+    ctl.send(2, EventKind::Param { index: chop::PLAY, value: 2.0 }).unwrap();
+    render(&mut audio, 1000, 100);
+    let r = said.read();
+    assert!(r.slice_on && r.slice == 2 && r.slice_pos == 1000, "{r:?}");
+    // A note plays the same, from its key.
+    ctl.send(2, EventKind::Note(NoteEvent::on(37, 1.0))).unwrap();
+    render(&mut audio, 300, 100);
+    let r = said.read();
+    assert!(r.slice_on && r.slice == 1 && r.slice_pos == 300, "{r:?}");
+    let len = page.slice_audio(1, 0)[0].len();
+    render(&mut audio, len, 128);
+    assert!(!said.read().slice_on, "it ended");
+    ctl.send(2, EventKind::Param { index: chop::TRANSPORT, value: 2.0 }).unwrap();
+    render(&mut audio, 500, 100);
+    let r = said.read();
+    assert_eq!((r.transport, r.transport_pos), (2, 500));
+    ctl.send(2, EventKind::Param { index: chop::TRANSPORT, value: 0.0 }).unwrap();
+    render(&mut audio, 100, 100);
+    assert_eq!(said.read().transport, 0);
 }

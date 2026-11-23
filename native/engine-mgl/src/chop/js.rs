@@ -198,3 +198,78 @@ pub fn fixed0(x: f64) -> String {
         format!("{n}")
     }
 }
+
+/// `Number.prototype.toFixed(digits)`: the exact value rounded to `digits`
+/// places, a tie going up (to the larger), a minus kept for a negative that
+/// rounds to nothing ("-0.0").
+pub fn fixed(x: f64, digits: usize) -> String {
+    if x.is_nan() {
+        return "NaN".into();
+    }
+    if x.abs() >= 1e21 {
+        return num(x);
+    }
+    let neg = x < 0.0;
+    // The double's exact decimal expansion (at most 1074 places).
+    let exact = format!("{:.1100}", x.abs());
+    let (int, frac) = exact.split_once('.').unwrap_or((&exact, ""));
+    let mut digits_v: Vec<u8> = int.bytes().chain(frac.bytes().take(digits)).collect();
+    if frac.as_bytes().get(digits).is_some_and(|&d| d >= b'5') {
+        let mut i = digits_v.len();
+        loop {
+            if i == 0 {
+                digits_v.insert(0, b'1');
+                break;
+            }
+            i -= 1;
+            if digits_v[i] == b'9' {
+                digits_v[i] = b'0';
+            } else {
+                digits_v[i] += 1;
+                break;
+            }
+        }
+    }
+    let s = String::from_utf8(digits_v).unwrap_or_default();
+    let (a, b) = s.split_at(s.len() - digits);
+    let body = if digits == 0 { a.to_string() } else { format!("{a}.{b}") };
+    if neg {
+        format!("-{body}")
+    } else {
+        body
+    }
+}
+
+/// A number as JavaScript writes it (`String(n)`, a template's `${n}`): the
+/// shortest that reads back the same, with no ".0", and exponents only
+/// below 1e-6 and from 1e21.
+pub fn num(x: f64) -> String {
+    if x.is_nan() {
+        return "NaN".into();
+    }
+    if x.is_infinite() {
+        return if x > 0.0 { "Infinity".into() } else { "-Infinity".into() };
+    }
+    if x == 0.0 {
+        return "0".into();
+    }
+    let a = x.abs();
+    if !(1e-6..1e21).contains(&a) {
+        let e = format!("{x:e}");
+        return match e.split_once('e') {
+            Some((m, p)) if !p.starts_with('-') => format!("{m}e+{p}"),
+            _ => e,
+        };
+    }
+    format!("{x}")
+}
+
+/// `Math.log10` where its last bit shows: the system's own `log10`. The
+/// Chromium the page was recorded in (V8 on macOS) answers with the C
+/// library's, which differs from fdlibm's ([`log10`]) in the last bit now
+/// and then: seen in `chopMeasure`'s decibels, which are kept as doubles.
+/// (Where a result is stored to a float, as in the cuts and the analysis,
+/// the two agree.) On another system the last bit may differ.
+pub fn log10_system(x: f64) -> f64 {
+    x.log10()
+}

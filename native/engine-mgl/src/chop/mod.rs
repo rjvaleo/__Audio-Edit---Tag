@@ -25,11 +25,21 @@
 //!
 //! All of this but [`Chop`] runs off the audio thread: it allocates.
 
+pub mod edit;
 pub mod js;
 pub mod listen;
+pub mod measure;
+pub mod said;
+pub mod write;
 
 use engine_core::{EventKind, Io, Kind, Module, NoteKind, Thing};
+pub use edit::Flag;
 pub use listen::{analyse, Analysis, Tempo};
+pub use measure::{kind_of, median, note, Badge, Measure};
+pub use said::{detect_said, scale_bars};
+pub use write::{encode_wav, encode_wav_interleaved, slice_name};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
+use std::sync::Arc;
 
 /// `CHOP_FRAME`: the frames of one RMS measure.
 pub const FRAME: usize = 512;
@@ -321,6 +331,9 @@ pub fn stretch(chs: &[Vec<f32>], target: usize, rate: f64) -> Vec<Vec<f32>> {
 
 // ------------------------------------------------- the settings
 
+/// `CHOP_RECUT`: the settings the cuts depend on; moving one cuts again.
+pub const RECUT_KEYS: [&str; 12] = ["mode", "sens", "topDb", "minDur", "pad", "div", "feel", "nudge", "shuffle", "bars", "beats", "sig"];
+
 /// How the cuts are found.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -541,13 +554,18 @@ pub fn effects(chs: &mut [Vec<f32>], sr: f64, cp: &Settings) {
 
 // ------------------------------------------------- the page
 
-/// One slice: its frames, start to end, and its two switches.
+/// One slice: its frames, start to end, and its switches: muted and
+/// reversed (the page's buttons), locked (the lock tool) and moved (an edge
+/// dragged or a cut pencilled in). A locked or moved cut survives cutting
+/// again.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Slice {
     pub s: i64,
     pub e: i64,
     pub muted: bool,
     pub rev: bool,
+    pub locked: bool,
+    pub moved: bool,
 }
 
 /// Where a rendered slice sits in a Preview or a Ratchet: `chopRenderPreview`'s
@@ -582,6 +600,10 @@ pub struct Page {
     pub slices: Vec<Slice>,
     /// The sequencer's tempo, for Sync `lock`; none when it has none.
     pub seq_tempo: Option<f64>,
+    /// `chop.sel`: every slice picked, in the order picked (a JavaScript Set).
+    pub sel: Vec<i64>,
+    /// `chop.current`: the slice picked or playing, or -1.
+    pub current: i64,
 }
 
 impl Page {
@@ -607,8 +629,10 @@ impl Page {
             settings,
             slices: Vec::new(),
             seq_tempo: None,
+            sel: Vec::new(),
+            current: -1,
         };
-        page.recut();
+        page.recut_with(false);
         page
     }
 
@@ -754,26 +778,58 @@ impl Page {
         out
     }
 
-    /// `chopRecut`, from nothing: no locked or moved cuts to keep. A slice
-    /// keeps its mute and reverse when one starts where it started.
+    /// `chopRecut()`: cut again from the settings, keeping the locked and
+    /// hand-moved cuts inside S to E.
     pub fn recut(&mut self) {
+        self.recut_with(true);
+    }
+
+    /// `chopRecut({ keep })`. With `keep`, locked and hand-moved cuts inside
+    /// S to E stay (in every mode); without, nothing is kept (a new sound).
+    /// A slice keeps its mute and reverse when one starts where it started.
+    pub fn recut_with(&mut self, keep: bool) {
         let (s0, e0) = self.region;
         let old = std::mem::take(&mut self.slices);
+        let kept: Vec<Slice> = if keep { old.iter().filter(|x| (x.locked || x.moved) && x.s >= s0 && x.s < e0).copied().collect() } else { Vec::new() };
         let mut slices: Vec<Slice> = if self.settings.mode == Mode::Silence {
             let cp = &self.settings;
-            detect_segs(&self.rms, cp.top_db, cp.min_dur, cp.pad, self.rate, self.len)
+            let mut v: Vec<Slice> = detect_segs(&self.rms, cp.top_db, cp.min_dur, cp.pad, self.rate, self.len)
                 .into_iter()
                 .map(|[s, e]| (s.max(s0), e.min(e0)))
-                .filter(|(s, e)| e > s)
+                .filter(|(s, e)| e > s && !kept.iter().any(|k| *s < k.e && *e > k.s))
                 .map(|(s, e)| Slice { s, e, ..Slice::default() })
-                .collect()
+                .collect();
+            v.extend(kept.iter().map(|k| Slice { e: k.e.min(e0), ..*k }));
+            // `Array.prototype.sort` is stable.
+            v.sort_by_key(|x| x.s);
+            v
         } else {
-            let mut cuts = if self.settings.mode == Mode::Grid { self.grid_cuts() } else { self.onsets() };
+            let near = js::round(self.rate * 0.01);
+            // `new Map(kept.map((k) => [k.s, k]))`: a start's first place, its last slice.
+            let mut kept_at: Vec<(i64, Slice)> = Vec::new();
+            for k in &kept {
+                match kept_at.iter_mut().find(|p| p.0 == k.s) {
+                    Some(p) => p.1 = *k,
+                    None => kept_at.push((k.s, *k)),
+                }
+            }
+            let found = if self.settings.mode == Mode::Grid { self.grid_cuts() } else { self.onsets() };
+            let mut cuts: Vec<i64> = found.into_iter().filter(|c| !kept_at.iter().any(|(k, _)| ((k - c).abs() as f64) < near)).collect();
+            cuts.extend(kept_at.iter().map(|(k, _)| *k));
             // `[...new Set(cuts)].sort((a, b) => a - b)`
             cuts.sort();
             cuts.dedup();
             (0..cuts.len())
-                .map(|i| Slice { s: cuts[i], e: if i + 1 < cuts.len() { cuts[i + 1] } else { e0 }, ..Slice::default() })
+                .map(|i| {
+                    let k = kept_at.iter().find(|p| p.0 == cuts[i]).map(|p| p.1);
+                    Slice {
+                        s: cuts[i],
+                        e: if i + 1 < cuts.len() { cuts[i + 1] } else { e0 },
+                        locked: k.is_some_and(|k| k.locked),
+                        moved: k.is_some_and(|k| k.moved),
+                        ..Slice::default()
+                    }
+                })
                 .collect()
         };
         for x in slices.iter_mut() {
@@ -783,7 +839,12 @@ impl Page {
                 x.rev = f.rev;
             }
         }
+        let n = slices.len() as i64;
         self.slices = slices;
+        self.sel.retain(|&i| i < n);
+        if self.current >= n {
+            self.current = -1;
+        }
     }
 
     /// `chopSliceAudio`: slice `i` as channels of samples, everything on.
@@ -928,7 +989,8 @@ pub struct Clip {
 }
 
 impl Clip {
-    fn of(chs: &[Vec<f32>]) -> Clip {
+    /// From a render's channels: the first two, or the one on both sides.
+    pub fn of(chs: &[Vec<f32>]) -> Clip {
         match chs {
             [] => Clip::default(),
             [one] => Clip { l: one.clone(), r: one.clone() },
@@ -954,11 +1016,20 @@ pub struct ChopThing {
 
 impl ChopThing {
     pub fn new(page: &Page) -> Box<ChopThing> {
-        Box::new(ChopThing {
+        ChopThing::with_maps(page).0
+    }
+
+    /// The same, and where each slice sits in Preview and in Ratchet (their
+    /// renders' `map`s), for a playhead.
+    pub fn with_maps(page: &Page) -> (Box<ChopThing>, Vec<Placed>, Vec<Placed>) {
+        let preview = page.render_preview();
+        let ratchet = page.render_ratchet();
+        let thing = Box::new(ChopThing {
             slices: (0..page.slices.len()).map(|i| Clip::of(&page.slice_audio(i, 0))).collect(),
-            preview: Clip::of(&page.render_preview().chs),
-            ratchet: Clip::of(&page.render_ratchet().chs),
-        })
+            preview: Clip::of(&preview.chs),
+            ratchet: Clip::of(&ratchet.chs),
+        });
+        (thing, preview.map, ratchet.map)
     }
 }
 
@@ -966,7 +1037,60 @@ impl ChopThing {
 pub const FIRST_KEY: u8 = 36;
 /// Knob 0: 0 stops Preview and Ratchet, 1 plays Preview once, 2 loops Ratchet.
 pub const TRANSPORT: u32 = 0;
+/// Knob 1: plays slice `value` once from its start, as its note does, for a
+/// slice past the last key (note 127 is slice 91).
+pub const PLAY: u32 = 1;
 const VOICES: usize = 16;
+
+/// What [`Chop`] is playing, written by the audio thread after every block
+/// and read by the app's (atomics only: nothing is locked or allocated).
+/// Handed out by [`Chop::playing`] before the module goes to the engine.
+#[derive(Debug)]
+pub struct ChopPlaying {
+    transport: AtomicU32,
+    transport_pos: AtomicI64,
+    slice: AtomicI64,
+    slice_pos: AtomicI64,
+    slice_on: AtomicBool,
+}
+
+/// One reading of [`ChopPlaying`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayingNow {
+    /// 0 nothing, 1 Preview, 2 Ratchet.
+    pub transport: u32,
+    /// Frames into Preview's or Ratchet's render (Ratchet's grows past its
+    /// length as it goes round: take it modulo).
+    pub transport_pos: i64,
+    /// The slice the last voice started plays, or -1.
+    pub slice: i64,
+    /// Frames into that slice's render.
+    pub slice_pos: i64,
+    /// Whether that voice still sounds.
+    pub slice_on: bool,
+}
+
+impl ChopPlaying {
+    fn new() -> ChopPlaying {
+        ChopPlaying {
+            transport: AtomicU32::new(0),
+            transport_pos: AtomicI64::new(0),
+            slice: AtomicI64::new(-1),
+            slice_pos: AtomicI64::new(0),
+            slice_on: AtomicBool::new(false),
+        }
+    }
+
+    pub fn read(&self) -> PlayingNow {
+        PlayingNow {
+            transport: self.transport.load(Ordering::Relaxed),
+            transport_pos: self.transport_pos.load(Ordering::Relaxed),
+            slice: self.slice.load(Ordering::Relaxed),
+            slice_pos: self.slice_pos.load(Ordering::Relaxed),
+            slice_on: self.slice_on.load(Ordering::Relaxed),
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 enum Source {
@@ -994,11 +1118,41 @@ pub struct Chop {
     voices: [Option<Voice>; VOICES],
     transport: Option<Voice>,
     age: u64,
+    /// The last slice voice started: its place and its age.
+    last: Option<(usize, u64)>,
+    shared: Arc<ChopPlaying>,
 }
 
 impl Chop {
     pub fn new() -> Chop {
-        Chop { thing: None, voices: [None; VOICES], transport: None, age: 0 }
+        Chop { thing: None, voices: [None; VOICES], transport: None, age: 0, last: None, shared: Arc::new(ChopPlaying::new()) }
+    }
+
+    /// The read-back of what it plays; take it before the module goes to
+    /// the engine.
+    pub fn playing(&self) -> Arc<ChopPlaying> {
+        self.shared.clone()
+    }
+
+    /// What it plays now, into the read-back.
+    fn tell(&self) {
+        let sh = &*self.shared;
+        let (kind, pos) = match self.transport {
+            Some(Voice { source: Source::Preview, pos, .. }) => (1, pos),
+            Some(Voice { source: Source::Ratchet, pos, .. }) => (2, pos),
+            _ => (0, 0),
+        };
+        sh.transport.store(kind, Ordering::Relaxed);
+        sh.transport_pos.store(pos, Ordering::Relaxed);
+        let now = self.last.and_then(|(at, age)| self.voices[at].filter(|v| v.age == age));
+        match now {
+            Some(Voice { source: Source::Slice(i), pos, .. }) => {
+                sh.slice.store(i as i64, Ordering::Relaxed);
+                sh.slice_pos.store(pos, Ordering::Relaxed);
+                sh.slice_on.store(true, Ordering::Relaxed);
+            }
+            _ => sh.slice_on.store(false, Ordering::Relaxed),
+        }
     }
 
     fn start(&mut self, slice: usize, offset: u32) {
@@ -1014,6 +1168,7 @@ impl Chop {
             oldest
         });
         self.voices[free] = Some(v);
+        self.last = Some((free, self.age));
     }
 
     fn note(&mut self, key: u8, kind: NoteKind, offset: u32) {
@@ -1027,6 +1182,7 @@ impl Chop {
             NoteKind::AllOff => {
                 self.voices = [None; VOICES];
                 self.transport = None;
+                self.last = None;
             }
         }
     }
@@ -1085,9 +1241,11 @@ impl Module for Chop {
                     _ => None,
                 };
             }
+            EventKind::Param { index: PLAY, value } if value >= 0.0 => self.start(value.round() as usize, 0),
             EventKind::Note(n) => self.note(n.note, n.kind, 0),
             _ => {}
         }
+        self.tell();
     }
     /// A new [`ChopThing`]: what sounds stops, and the old one goes back.
     fn take(&mut self, _slot: u32, thing: Thing) -> Option<Thing> {
@@ -1097,6 +1255,8 @@ impl Module for Chop {
         };
         self.voices = [None; VOICES];
         self.transport = None;
+        self.last = None;
+        self.tell();
         match self.thing.as_mut() {
             Some(mine) => {
                 std::mem::swap(mine, &mut boxed);
@@ -1117,6 +1277,7 @@ impl Module for Chop {
         r.fill(0.0);
         let Some(thing) = self.thing.as_deref() else {
             self.voices = [None; VOICES];
+            self.tell();
             return;
         };
         for slot in self.voices.iter_mut() {
@@ -1131,5 +1292,6 @@ impl Module for Chop {
                 self.transport = None;
             }
         }
+        self.tell();
     }
 }

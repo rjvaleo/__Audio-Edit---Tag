@@ -22,6 +22,9 @@
 
 pub mod annot;
 pub mod atmos_part;
+// MGL's Chop page, on the sound cabled into it.
+pub mod chop_part;
+mod chop_link;
 pub mod edit_part;
 pub mod grain;
 mod mgl_rack;
@@ -115,6 +118,16 @@ pub static KINDS: &[KindInfo] = &[
         ins: &[("Sound", Kind::Sound), ("Notes", Kind::Notes)],
         outs: &[("Audio", Kind::Audio)],
         keyboard: true,
+    },
+    // MGL's Chop page at its own size, on the sound cabled into it.
+    KindInfo {
+        id: "chop",
+        title: "Chop",
+        width: chop_part::CHOP_W,
+        height: chop_part::CHOP_H,
+        ins: &[("Sound", Kind::Sound), ("Notes", Kind::Notes)],
+        outs: &[("Audio", Kind::Audio)],
+        keyboard: false,
     },
     KindInfo { id: "midi-in", title: "MIDI In", width: 246, height: 73, ins: &[], outs: &[("Notes", Kind::Notes)], keyboard: false },
     KindInfo {
@@ -288,6 +301,7 @@ enum Part {
     Sound(Box<SoundPart>),
     Edit(Box<EditPart>),
     Grain(Box<grain::GrainPart>),
+    Chop(Box<chop_part::ChopPart>),
 }
 
 struct Placed {
@@ -400,6 +414,7 @@ impl Session {
                 Part::Edit(Box::new(part))
             }
             "grain" => self.add_grain(id, saved)?,
+            "chop" => self.add_chop(id, saved)?,
             "midi-in" => {
                 let channel = saved.and_then(|s| s.get("channel")).and_then(Value::as_u64).unwrap_or(0).min(16) as u8;
                 self.ctl.add(engine_id(id, 0), Box::new(engine_core::basics::Keys::new()))?;
@@ -426,6 +441,7 @@ impl Session {
         self.next = self.next.max(id + 1);
         self.sync_tables();
         self.grain_sync();
+        self.chop_sync();
         Ok(())
     }
 
@@ -443,6 +459,7 @@ impl Session {
         self.wires.retain(|w| w.from.0 != id && w.to.0 != id);
         self.ctl.commit()?;
         self.grain_sync();
+        self.chop_sync();
         Ok(())
     }
 
@@ -474,12 +491,17 @@ impl Session {
         let (_, kind) = m.kind.ins.get(socket as usize).ok_or(AppError::NoSuchSocket)?;
         // Grain's Sound socket is the app's (grain/link.rs); its Notes are the deck's first input.
         let socket = if matches!(m.part, Part::Grain(_)) { socket.saturating_sub(1) } else { socket };
+        // Chop's too (chop_link.rs).
+        let socket = if matches!(m.part, Part::Chop(_)) { socket.saturating_sub(1) } else { socket };
         Ok((port(engine_id(id, 0), socket), *kind))
     }
 
     /// Cable an output socket to an input socket.
     pub fn connect(&mut self, from: (u32, u32), to: (u32, u32)) -> Result<(), AppError> {
         if let Some(r) = self.grain_connect(from, to, true) {
+            return r;
+        }
+        if let Some(r) = self.chop_connect(from, to, true) {
             return r;
         }
         let (out, a) = self.engine_out(from)?;
@@ -505,6 +527,9 @@ impl Session {
 
     pub fn disconnect(&mut self, from: (u32, u32), to: (u32, u32)) -> Result<(), AppError> {
         if let Some(r) = self.grain_connect(from, to, false) {
+            return r;
+        }
+        if let Some(r) = self.chop_connect(from, to, false) {
             return r;
         }
         let wire = Wire { from, to };
@@ -542,7 +567,7 @@ impl Session {
                 *channel = (value.max(0.0) as u8).min(16);
                 Ok(())
             }
-            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) => Err(AppError::NoSuchControl(index)),
+            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Chop(_) => Err(AppError::NoSuchControl(index)),
         }
     }
 
@@ -553,7 +578,7 @@ impl Session {
         Ok(match &m.part {
             Part::Wave(w) => w.values(),
             Part::MidiIn { channel } => vec![*channel as f32],
-            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) => Vec::new(),
+            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Chop(_) => Vec::new(),
         })
     }
 
@@ -632,6 +657,7 @@ impl Session {
         self.ctl.collect();
         self.sound_collect();
         self.grain_collect();
+        self.chop_collect();
         if self.tables.take_built() {
             self.sync_tables();
         }
@@ -653,6 +679,7 @@ impl Session {
             self.sync_tables();
         }
         self.sync_tables();
+        self.chop_settle();
     }
 
     fn sync_tables(&mut self) {
@@ -697,6 +724,9 @@ impl Session {
                     }
                     Part::Grain(g) => {
                         o.insert("grain".into(), g.state());
+                    }
+                    Part::Chop(c) => {
+                        o.insert("chop".into(), c.state());
                     }
                 }
                 Value::Object(o)
@@ -800,6 +830,10 @@ impl Session {
                     Part::Sound(s) => {
                         o.insert("sound".into(), s.edit_json());
                         o.insert("name".into(), s.origin().get("name").cloned().unwrap_or(Value::Null));
+                    }
+                    Part::Chop(c) => {
+                        o.insert("name".into(), c.facts.name.as_str().into());
+                        o.insert("chop".into(), serde_json::json!({ "serial": c.serial, "slices": c.page.as_ref().map_or(0, |p| p.slices.len()), "preset": c.preset }));
                     }
                     _ => {}
                 }

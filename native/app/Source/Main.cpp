@@ -9,6 +9,7 @@
 #include "WaveFace.h"
 #include "EditBench.h"
 #include "WaveApi.h"
+#include "ChopBench.h"
 #include "GrainBench.h"
 #include "Host.h"
 #include "Places.h"
@@ -806,6 +807,11 @@ public:
             std::printf ("{\"window_ms\":%.1f,\"pan_step_ms\":%.1f,\"zoom_step_ms\":%.1f}\n", whole, panStep / 10, zoomStep / 10);
             return quit();
         }
+        if (args.size() >= 2 && args[0] == "--bench" && args[1] == "chop")
+        {
+            setApplicationReturnValue (chopBench (args));
+            return quit();
+        }
         if (args.size() >= 2 && args[0] == "--bench" && args[1] == "grain")
         {
             setApplicationReturnValue (grainBench (args));
@@ -1228,6 +1234,8 @@ public:
                 image = editSnapshot (args, scale);
             else if (page == "grain-face")
                 image = grainSnapshot (args, scale);
+            else if (page == "chop-face")
+                image = chopSnapshot (args, scale);
             else if (page == "atmos-face")
             {
                 // The live face, a real Atmosphere behind it (no sound card):

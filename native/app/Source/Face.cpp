@@ -135,6 +135,7 @@ struct Worn
     juce::var edit;          // the Edit page in the MGL theme
     juce::var waveViews;     // Wave's other views and parts in the MGL theme
     juce::var grain;         // the Grain page in the MGL theme
+    juce::var chop;          // the Chop page in the MGL theme
     int stamp = 0;
 };
 Worn& wornState()
@@ -200,6 +201,15 @@ const juce::var& page (const juce::String& name)
         if (!w.grain.isObject())
             w.grain = juce::JSON::parse (embedded ("mgl-grain-default.json.gz"));
         return w.grain;
+    }
+    if (name == "chop")
+    {
+        auto& w = wornState();
+        if (!w.chop.isObject())
+            w.chop = juce::JSON::parse (embedded ("mgl-chop-" + (w.choice >= 0 ? themeChoices()[(size_t) w.choice].mgl : juce::String ("default")) + ".json.gz"));
+        if (!w.chop.isObject())
+            w.chop = juce::JSON::parse (embedded ("mgl-chop-default.json.gz"));
+        return w.chop;
     }
     static std::map<juce::String, juce::var> pages;
     auto it = pages.find (name);
@@ -315,6 +325,7 @@ void wear (int choice, const juce::String& kit)
         w.edit = juce::var();
         w.waveViews = juce::var();
         w.grain = juce::var();
+        w.chop = juce::var();
         w.choice = choice;
     }
     w.kit = kit.isEmpty() ? juce::String ("thinRing") : kit;
