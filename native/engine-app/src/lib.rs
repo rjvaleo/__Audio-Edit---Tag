@@ -24,6 +24,7 @@ pub mod annot;
 pub mod atmos_part;
 pub mod edit_part;
 pub mod grain;
+pub mod prism;
 mod mgl_rack;
 pub mod sound_part;
 mod sound_link;
@@ -115,6 +116,17 @@ pub static KINDS: &[KindInfo] = &[
         ins: &[("Sound", Kind::Sound), ("Notes", Kind::Notes)],
         outs: &[("Audio", Kind::Audio)],
         keyboard: true,
+    },
+    // MGL's Prism page (HyperStretch, the pad) as RJ uses it, on the sound
+    // cabled into it: the page and the Now Playing bar, its transport.
+    KindInfo {
+        id: "prism",
+        title: "Prism",
+        width: prism::PRISM_W,
+        height: prism::PRISM_H,
+        ins: &[("Sound", Kind::Sound)],
+        outs: &[("Audio", Kind::Audio)],
+        keyboard: false,
     },
     KindInfo { id: "midi-in", title: "MIDI In", width: 246, height: 73, ins: &[], outs: &[("Notes", Kind::Notes)], keyboard: false },
     KindInfo {
@@ -288,6 +300,7 @@ enum Part {
     Sound(Box<SoundPart>),
     Edit(Box<EditPart>),
     Grain(Box<grain::GrainPart>),
+    Prism(Box<prism::PrismPart>),
 }
 
 struct Placed {
@@ -400,6 +413,7 @@ impl Session {
                 Part::Edit(Box::new(part))
             }
             "grain" => self.add_grain(id, saved)?,
+            "prism" => self.add_prism(id, saved)?,
             "midi-in" => {
                 let channel = saved.and_then(|s| s.get("channel")).and_then(Value::as_u64).unwrap_or(0).min(16) as u8;
                 self.ctl.add(engine_id(id, 0), Box::new(engine_core::basics::Keys::new()))?;
@@ -426,6 +440,7 @@ impl Session {
         self.next = self.next.max(id + 1);
         self.sync_tables();
         self.grain_sync();
+        self.prism_sync();
         Ok(())
     }
 
@@ -443,6 +458,7 @@ impl Session {
         self.wires.retain(|w| w.from.0 != id && w.to.0 != id);
         self.ctl.commit()?;
         self.grain_sync();
+        self.prism_sync();
         Ok(())
     }
 
@@ -482,6 +498,9 @@ impl Session {
         if let Some(r) = self.grain_connect(from, to, true) {
             return r;
         }
+        if let Some(r) = self.prism_connect(from, to, true) {
+            return r;
+        }
         let (out, a) = self.engine_out(from)?;
         let (inp, b) = self.engine_in(to)?;
         if a != b {
@@ -505,6 +524,9 @@ impl Session {
 
     pub fn disconnect(&mut self, from: (u32, u32), to: (u32, u32)) -> Result<(), AppError> {
         if let Some(r) = self.grain_connect(from, to, false) {
+            return r;
+        }
+        if let Some(r) = self.prism_connect(from, to, false) {
             return r;
         }
         let wire = Wire { from, to };
@@ -542,7 +564,7 @@ impl Session {
                 *channel = (value.max(0.0) as u8).min(16);
                 Ok(())
             }
-            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) => Err(AppError::NoSuchControl(index)),
+            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Prism(_) => Err(AppError::NoSuchControl(index)),
         }
     }
 
@@ -553,7 +575,7 @@ impl Session {
         Ok(match &m.part {
             Part::Wave(w) => w.values(),
             Part::MidiIn { channel } => vec![*channel as f32],
-            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) => Vec::new(),
+            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Prism(_) => Vec::new(),
         })
     }
 
@@ -632,6 +654,8 @@ impl Session {
         self.ctl.collect();
         self.sound_collect();
         self.grain_collect();
+        self.prism_collect();
+        self.prism_sync();
         if self.tables.take_built() {
             self.sync_tables();
         }
@@ -697,6 +721,9 @@ impl Session {
                     }
                     Part::Grain(g) => {
                         o.insert("grain".into(), g.state());
+                    }
+                    Part::Prism(g) => {
+                        o.insert("prism".into(), g.state());
                     }
                 }
                 Value::Object(o)

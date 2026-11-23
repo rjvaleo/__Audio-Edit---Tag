@@ -167,6 +167,7 @@ impl Session {
         }
         // A Grain on the same sound hears the edit (and an undo of its own moves).
         self.grain_sync();
+        self.prism_sync();
         Ok(out)
     }
 
