@@ -128,6 +128,13 @@ int32_t na_grain_peaks (NaApp*, uint32_t id, uint64_t from, uint64_t to, uint32_
 int64_t na_grain_mono (NaApp*, uint32_t id, uint64_t from, float* out, uint32_t n);
 int32_t na_grain_scope (NaApp*, uint32_t id, float* l, float* r, uint32_t n);
 
+// Prism (MGL's Prism page, engine-app/src/prism): its calls as JSON, named by
+// MGL's route or the page's action (see na_prism_call in engine-capi), and
+// its sound's peaks (each column the largest of any channel; `peak` the
+// largest of all).
+int32_t na_prism_call (NaApp*, uint32_t id, const char* what, const char* json, char* buf, uint32_t cap);
+int32_t na_prism_peaks (NaApp*, uint32_t id, uint32_t cols, float* out, uint32_t cap, float* peak);
+
 #ifdef __cplusplus
 }
 #endif
