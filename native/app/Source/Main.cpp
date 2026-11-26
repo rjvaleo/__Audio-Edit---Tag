@@ -19,6 +19,8 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <mach/mach.h>
+#include <sys/resource.h>
 
 namespace
 {
@@ -569,6 +571,69 @@ public:
         startTimerHz (1);
         if (auto* path = std::getenv ("IDMLAB_WHEEL_TEST"))
             wheelTest (path);
+        if (auto* path = std::getenv ("IDMLAB_BOARD_TEST"))
+            boardTest (path);
+    }
+
+    // IDMLAB_BOARD_TEST=<file.json>: in the real window, a board of synths as
+    // RJ made one (IDMLAB_BOARD="wave,wave,seq,..." or the default), silent;
+    // then, for ten seconds, how long a press waits for the message thread
+    // (a callAsync every 100 ms, as a click's handling is), the screen
+    // frames, and the app's memory; then a module closed as its x closes it.
+    void boardTest (juce::String path)
+    {
+        auto kinds = juce::StringArray::fromTokens (juce::SystemStats::getEnvironmentVariable ("IDMLAB_BOARD", "wave,wave,atmos,atmos,seq,seq,grain,prism"), ",", "");
+        for (int i = 0; i < kinds.size(); ++i)
+            canvas.addModule (kinds[i], { (float) (i % 4) * 1700.0f, 1300.0f + (float) (i / 4) * 1300.0f });
+        canvas.fit();
+        juce::Timer::callAfterDelay (4000, [this, path] {
+            const double start = juce::Time::getMillisecondCounterHiRes();
+            last = start;
+            auto waits = std::make_shared<std::vector<double>>();
+            testFrames = std::make_unique<juce::VBlankAttachment> (this, [this] {
+                const double now = juce::Time::getMillisecondCounterHiRes();
+                frames.push_back ({ 0.0, now - last });
+                last = now;
+            });
+            for (int t = 0; t < 10000; t += 100)
+                juce::Timer::callAfterDelay (t, [waits] {
+                    const double asked = juce::Time::getMillisecondCounterHiRes();
+                    juce::MessageManager::callAsync ([waits, asked] { waits->push_back (juce::Time::getMillisecondCounterHiRes() - asked); });
+                });
+            juce::Timer::callAfterDelay (10500, [this, path, waits, start] {
+                testFrames.reset();
+                const double cpuWall = juce::Time::getMillisecondCounterHiRes() - start;
+                // A module closed as its x closes it (callAsync, then removed).
+                const double asked = juce::Time::getMillisecondCounterHiRes();
+                juce::MessageManager::callAsync ([this, path, waits, asked, cpuWall] {
+                    const double ran = juce::Time::getMillisecondCounterHiRes();
+                    const int id = canvas.nodes.empty() ? -1 : canvas.nodes.rbegin()->first;
+                    canvas.removeModule (id);
+                    const double removed = juce::Time::getMillisecondCounterHiRes();
+                    auto sorted = *waits;
+                    std::sort (sorted.begin(), sorted.end());
+                    auto pct = [&] (double p) { return sorted.empty() ? 0.0 : sorted[(size_t) juce::jmin ((double) sorted.size() - 1, p * (double) sorted.size())]; };
+                    double worstFrame = 0, sumFrame = 0;
+                    for (auto& f : frames)
+                        worstFrame = juce::jmax (worstFrame, f.second), sumFrame += f.second;
+                    task_vm_info_data_t vm {};
+                    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+                    task_info (mach_task_self(), TASK_VM_INFO, (task_info_t) &vm, &count);
+                    rusage ru {};
+                    getrusage (RUSAGE_SELF, &ru);
+                    juce::String out;
+                    out << "{\"modules\":" << (int) canvas.nodes.size() + 1
+                        << ",\"press_wait_ms\":{\"median\":" << juce::String (pct (0.5), 1) << ",\"p90\":" << juce::String (pct (0.9), 1) << ",\"worst\":" << juce::String (pct (1.0), 1) << ",\"n\":" << (int) sorted.size() << "}"
+                        << ",\"frames\":" << (int) frames.size() << ",\"frame_mean_ms\":" << juce::String (frames.empty() ? 0.0 : sumFrame / (double) frames.size(), 1) << ",\"frame_worst_ms\":" << juce::String (worstFrame, 1)
+                        << ",\"close_wait_ms\":" << juce::String (ran - asked, 1) << ",\"close_ms\":" << juce::String (removed - ran, 1)
+                        << ",\"footprint_mb\":" << juce::String ((double) vm.phys_footprint / 1048576.0, 0)
+                        << ",\"cpu_s\":" << juce::String ((double) ru.ru_utime.tv_sec + (double) ru.ru_utime.tv_usec / 1e6, 1) << ",\"wall_s\":" << juce::String (cpuWall / 1000.0, 1) << "}";
+                    juce::File (path).replaceWithText (out);
+                    std::printf ("%s\n", out.toRawUTF8());
+                    juce::JUCEApplication::getInstance()->quit();
+                });
+            });
+        });
     }
 
     // IDMLAB_WHEEL_TEST=<file.json>: in the real window, turn the wheel as a

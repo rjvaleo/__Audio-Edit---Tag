@@ -113,8 +113,34 @@ public:
                 if (ext->needsBackup() && !ext->canBackup())
                     valid.clear();
         if (!valid.containsRectangle (bounds))
-            render (image, step, valid, bounds, bounds);
-        valid = bounds;
+        {
+            // A module not being worked with (not selected, not under the
+            // mouse) shows what moves in it at most eight times a second:
+            // every face animates as its page does, and a board of them at
+            // full rate held the message thread (RJ, 26 Nov 2026).
+            const double now = juce::Time::getMillisecondCounterHiRes();
+            const bool quick = first || (live && live());
+            if (!quick && now - renderedAt < calmMs)
+            {
+                if (!later)
+                {
+                    later = true;
+                    juce::Timer::callAfterDelay ((int) (calmMs - (now - renderedAt)) + 1, [p = juce::Component::SafePointer<juce::Component> (owner.getParentComponent()), o = juce::Component::SafePointer<juce::Component> (&owner), this] {
+                        if (o == nullptr)
+                            return;
+                        later = false;
+                        if (p != nullptr)
+                            p->repaint (o->getBounds());
+                    });
+                }
+            }
+            else
+            {
+                render (image, step, valid, bounds, bounds);
+                renderedAt = now;
+                valid = bounds;
+            }
+        }
 
         // A sharper (or lighter) picture, made a band at a time in the time
         // each frame has to spare; the one it has is shown until it is whole.
@@ -170,8 +196,14 @@ public:
 
     // Set by the canvas while a zoom runs.
     bool held = false;
+    // True while the module is being worked with: what moves in it is shown
+    // every frame; otherwise at most every calmMs.
+    std::function<bool()> live;
 
 private:
+    static constexpr double calmMs = 125.0;
+    double renderedAt = 0;
+    bool later = false;
     juce::Component& owner;
     juce::Image image, next;
     juce::RectangleList<int> valid, nextValid;
@@ -302,7 +334,9 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
     accent = accentFor (kind.id);
     // A pan moves a finished picture of the module; a change inside it draws
     // only that part again.
-    setCachedComponentImage (new SteppedCache (*this));
+    auto* cache = new SteppedCache (*this);
+    cache->live = [this] { return selected || isMouseOverOrDragging (true); };
+    setCachedComponentImage (cache);
 
     for (int s = 0; s < (int) kind.ins.size(); ++s)
     {
