@@ -82,6 +82,19 @@ uint32_t na_fx_kinds (char* buf, uint32_t cap);
 // The page's own lists (data/atmos-page.json).
 uint32_t na_atmos_page (char* buf, uint32_t cap);
 
+// Seq: its state by the page's own keys (slider ids less "Slider" at their
+// values, select ids less "Select" at their options' values, "scale",
+// "pattern", "step<i>", "rest<i>", "play", "stop"). Unknown keys are ignored.
+int32_t na_seq_set (NaApp*, uint32_t id, const char* key, const char* json);
+uint32_t na_seq_state (NaApp*, uint32_t id, char* buf, uint32_t cap);
+// The step heard now: 1 playing and heard, 0 playing, none yet, -1 stopped.
+int32_t na_seq_now (NaApp*, uint32_t id, int32_t* step, float* hz, int32_t* degree);
+// As one of MGL's Seq presets, named; and back: how many controls it set.
+uint32_t na_seq_preset (NaApp*, uint32_t id, const char* name, char* buf, uint32_t cap);
+int32_t na_load_seq_preset (NaApp*, uint32_t id, const char* json);
+// The page's own lists (data/seq-page.json).
+uint32_t na_seq_page (char* buf, uint32_t cap);
+
 // The Sound module: a file opened (origin: {"kind": "file"|"library", "path",
 // "name"}; keep 1 takes back a lost sound's edits), and what it holds (MGL's
 // /api/edit answer, its origin, its markers). Its info into buf, or an error.

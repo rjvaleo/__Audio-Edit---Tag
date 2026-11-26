@@ -16,7 +16,9 @@
 //! knob that was never moved holds the page's literal (LFO 2's 0.55 Hz)
 //! until one beside it is. After the controls come the 64 steps, two knobs
 //! each ([`step_knob`]): the degree and the rest. `play` 1 starts the steps
-//! from the first, as Play does; 0 stops them.
+//! from the first, as Play does; 0 stops them. `preview` plays one note at
+//! the pitch it is given (Hz), as a step's ▶, a degree chip or a key of the
+//! 88 does.
 //!
 //! The scales are handed in whole ([`SeqModule::new`], `SCALES`' cents in
 //! order), so `scale` is an index.
@@ -48,6 +50,7 @@ pub const KEYS: &[&str] = &[
     "lfo3Rate", "lfo3Depth", "lfo3Wave", "lfo3Target",
     "delayTime", "tapeSpeed", "delayFb", "delayWet", "delaySpread", "delayHiCut",
     "root", "octave", "scale", "play",
+    "preview",
 ];
 
 /// Each control's value as the page opens (its HTML), by [`KEYS`].
@@ -60,6 +63,7 @@ pub const DEFAULTS: &[f64] = &[
     40.0, 0.0, 0.0, 0.0,
     0.5, 2.0, 35.0, 25.0, 100.0, 75.0,
     9.0, 4.0, 0.0, 0.0,
+    0.0,
 ];
 
 /// `waveSelect`'s options, in order.
@@ -96,6 +100,17 @@ pub fn knob(key: &str) -> Option<u32> {
 
 /// Every knob the module has.
 pub const KNOBS: usize = KEYS.len() + 2 * MAX_STEPS;
+
+/// Every knob's value as the page opens: [`DEFAULTS`], then the steps'
+/// (`degree: i % 7`, no rests).
+pub fn default_knobs() -> Vec<f64> {
+    let mut v = DEFAULTS.to_vec();
+    for i in 0..MAX_STEPS {
+        v.push((i % 7) as f64);
+        v.push(0.0);
+    }
+    v
+}
 
 fn k(key: &str) -> usize {
     KEYS.iter().position(|x| *x == key).expect("a key of KEYS")
@@ -254,6 +269,12 @@ impl SeqModule {
         self
     }
 
+    /// Set knob `index` before the module is added to a patch.
+    pub fn set_knob(mut self, index: u32, value: f64) -> Self {
+        self.knob(index, value);
+        self
+    }
+
     /// The synth, to read (tests and probes).
     pub fn classic(&self) -> &Classic {
         &self.c
@@ -330,6 +351,15 @@ impl SeqModule {
             }
             "root" | "octave" => self.root_hz = steps::root_hz(self.int("root") as i32, self.int("octave") as i32),
             "scale" => {}
+            // `previewStep`, a degree chip, a key of the 88 (`playNote`): one
+            // step's note at this pitch, now. Not kept.
+            "preview" => {
+                self.set[i] = false;
+                if value > 0.0 {
+                    let t = self.now();
+                    self.c.play_note(value, t, 1.0);
+                }
+            }
             "play" => {
                 if value != 0.0 {
                     if !self.playing {

@@ -19,6 +19,7 @@
 #include "Face.h"
 #include "Host.h"
 #include "AtmosFace.h"
+#include "SeqFace.h"
 #include "ChopFace.h"
 #include "PrismFace.h"
 #include "FxFace.h"
@@ -102,6 +103,7 @@ public:
     std::vector<std::unique_ptr<Jack>> jacks;
     std::unique_ptr<WaveFace> wave;
     std::unique_ptr<AtmosFace> atmos;
+    std::unique_ptr<SeqFace> seq;
     std::unique_ptr<EditFace> edit;
     std::unique_ptr<SoundFace> sound;
     std::unique_ptr<GrainFace> grain;
@@ -111,6 +113,8 @@ public:
     // The page that is this module's face, if it has one.
     juce::Component* body() const
     {
+        if (seq != nullptr)
+            return seq.get();
         if (chop != nullptr)
             return chop.get();
         if (fxFace != nullptr)
@@ -265,6 +269,11 @@ public:
     void openAtmosPreset (int id);
     void saveAtmosPreset (int id);
     void loadAtmosPreset (int id, const juce::var& preset);
+    // Seq's presets: MGL's own (its presets.json) and those saved here, by name.
+    std::vector<std::pair<juce::String, juce::var>> seqPresets();
+    void loadSeqPreset (int id, const juce::var& preset);
+    void saveSeqPreset (int id);
+    void deleteSeqPreset (const juce::String& name);
     // The presets saved in the app's folder, each a menu item that loads it.
     juce::PopupMenu atmosPresetList (int id);
 

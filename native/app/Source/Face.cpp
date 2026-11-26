@@ -132,6 +132,7 @@ struct Worn
     juce::var idmlab;        // the idMLab theme's parts
     juce::var mgl;           // Wave's face in the MGL theme
     juce::var atmos;         // Atmosphere's face in the MGL theme
+    juce::var seq;           // Seq's face in the MGL theme
     juce::var edit;          // the Edit page in the MGL theme
     juce::var waveViews;     // Wave's other views and parts in the MGL theme
     juce::var grain;         // the Grain page in the MGL theme
@@ -236,6 +237,16 @@ const juce::var& page (const juce::String& name)
         if (!w.atmos.isObject())
             w.atmos = juce::JSON::parse (embedded ("mgl-atmos-default.json.gz"));
         return w.atmos;
+    }
+    if (name == "seq")
+    {
+        // Captured in MGL's main 3 themes (RJ, 25 Nov 2026); any other wears the default's.
+        auto& w = wornState();
+        if (!w.seq.isObject())
+            w.seq = juce::JSON::parse (embedded ("mgl-seq-" + (w.choice >= 0 ? themeChoices()[(size_t) w.choice].mgl : juce::String ("default")) + ".json.gz"));
+        if (!w.seq.isObject())
+            w.seq = juce::JSON::parse (embedded ("mgl-seq-default.json.gz"));
+        return w.seq;
     }
     if (name == "edit")
     {
@@ -402,6 +413,7 @@ void wear (int choice, const juce::String& kit)
         w.idmlab = juce::JSON::parse (embedded ("idmlab-theme-" + juce::String (c.idmlab) + ".json.gz"));
         w.mgl = juce::JSON::parse (embedded ("mgl-theme-" + c.mgl + ".json.gz"));
         w.atmos = juce::var();
+        w.seq = juce::var();
         w.edit = juce::var();
         w.waveViews = juce::var();
         w.grain = juce::var();

@@ -632,6 +632,116 @@ pub unsafe extern "C" fn na_atmos_page(buf: *mut c_char, cap: u32) -> u32 {
     guarded(0, || give_text(engine_app::atmos_part::PAGE_JSON, buf, cap))
 }
 
+// ── Seq (engine-app's seq_part) ─────────────────────────────────────────
+
+/// Set one of Seq module `id`'s keys by the page's name for it: a slider's
+/// id less `Slider` at its value, a select's less `Select` at its option's
+/// value, `scale`, `pattern`, `step<i>`, `rest<i>`, `play`, or `stop`. A key
+/// it does not keep is ignored (0).
+///
+/// # Safety
+/// `a` came from `na_new`; `key` and `json` are C strings.
+#[no_mangle]
+pub unsafe extern "C" fn na_seq_set(a: *mut NaApp, id: u32, key: *const c_char, json: *const c_char) -> i32 {
+    guarded(-12, || {
+        let Some(s) = session(a) else { return NO_ENGINE };
+        match parse(text(json)) {
+            Ok(v) => status(a, s.seq_set(id, text(key).unwrap_or(""), &v)),
+            Err(e) => fail(a, e),
+        }
+    })
+}
+
+/// Seq module `id`'s state as JSON: every page key and its value.
+///
+/// # Safety
+/// `a` came from `na_new`; `buf` has room for `cap` bytes, or is null.
+#[no_mangle]
+pub unsafe extern "C" fn na_seq_state(a: *mut NaApp, id: u32, buf: *mut c_char, cap: u32) -> u32 {
+    guarded(0, || match session(a).map(|s| s.seq_state(id)) {
+        Some(Ok(v)) => give_text(&v.to_string(), buf, cap),
+        _ => 0,
+    })
+}
+
+/// The step Seq module `id` is heard playing: its number (0-based) into
+/// `step`, its pitch into `hz`, its degree into `degree`; returns 1 while
+/// its steps play and one has been heard, 0 while they play and none has,
+/// -1 when stopped (the out values left as they were).
+///
+/// # Safety
+/// `a` came from `na_new`; the pointers are null or point at room for one value.
+#[no_mangle]
+pub unsafe extern "C" fn na_seq_now(a: *mut NaApp, id: u32, step: *mut i32, hz: *mut f32, degree: *mut i32) -> i32 {
+    guarded(-12, || {
+        let Some(s) = session(a) else { return NO_ENGINE };
+        match s.seq_now(id) {
+            Ok((now, playing)) => {
+                if let Some((st, h, d)) = now {
+                    if !step.is_null() {
+                        *step = st as i32;
+                    }
+                    if !hz.is_null() {
+                        *hz = h as f32;
+                    }
+                    if !degree.is_null() {
+                        *degree = d as i32;
+                    }
+                }
+                if !playing {
+                    -1
+                } else {
+                    now.is_some() as i32
+                }
+            }
+            Err(e) => fail(a, e),
+        }
+    })
+}
+
+/// Seq module `id` as one of MGL's Seq presets (`getPresetState`'s shape),
+/// named `name`. Its length, as `na_save` gives text.
+///
+/// # Safety
+/// `a` came from `na_new`; `name` is a C string; `buf` has room for `cap`
+/// bytes, or is null.
+#[no_mangle]
+pub unsafe extern "C" fn na_seq_preset(a: *mut NaApp, id: u32, name: *const c_char, buf: *mut c_char, cap: u32) -> u32 {
+    guarded(0, || match session(a).map(|s| s.seq_preset(id, text(name).unwrap_or(""))) {
+        Some(Ok(v)) => give_text(&v.to_string(), buf, cap),
+        _ => 0,
+    })
+}
+
+/// Give Seq module `id` one of MGL's Seq presets. How many of its controls
+/// it set, or an error.
+///
+/// # Safety
+/// `a` came from `na_new`; `json` is a C string.
+#[no_mangle]
+pub unsafe extern "C" fn na_load_seq_preset(a: *mut NaApp, id: u32, json: *const c_char) -> i32 {
+    guarded(-12, || {
+        let Some(s) = session(a) else { return NO_ENGINE };
+        match parse(text(json)) {
+            Ok(v) => match s.load_seq_preset(id, &v) {
+                Ok(n) => n as i32,
+                Err(e) => fail(a, e),
+            },
+            Err(e) => fail(a, e),
+        }
+    })
+}
+
+/// The Seq page's own lists (its scales, its controls, its steps), as
+/// captured from it: engine-app's `data/seq-page.json`.
+///
+/// # Safety
+/// `buf` has room for `cap` bytes, or is null.
+#[no_mangle]
+pub unsafe extern "C" fn na_seq_page(buf: *mut c_char, cap: u32) -> u32 {
+    guarded(0, || give_text(engine_app::seq_part::PAGE_JSON, buf, cap))
+}
+
 // The Sound and Edit modules (app/sound.rs).
 mod sound;
 

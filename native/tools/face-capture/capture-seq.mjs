@@ -139,7 +139,55 @@ try {
     await tab.evaluate(() => document.querySelectorAll('.toast, #toast, .toasts').forEach((e) => { e.style.visibility = 'hidden'; }));
     const page = await frame.evaluate(`(${walk})(".page", ${JSON.stringify(SKIP)})`);
     if (page.error) throw new Error(`${id} page: ${page.error}`);
-    write(path.join(out, `mgl-seq-${id}.json.gz`), { page, size: [1500, height], theme: id, captured: new Date().toISOString() });
+    // The parts the page makes as it plays, staged on the same page and walked
+    // again, so the face has each look: step 1 picked (its buttons open), step
+    // 2 resting, step 3 playing, step 10 (not played) resting; a key playing;
+    // Play lit; the whole scale list (it scrolls); a two-row scale's chips.
+    const parts = {};
+    parts.grid = await frame.evaluate(`(() => {
+      pickStep(0); steps[1].rest = true; steps[9].rest = true; renderStepGrid(); pickStep(0);
+      document.getElementById('step-2').classList.add('playing-step');
+      document.querySelectorAll('.step').forEach((el, i) => { el.dataset.step = String(i); });
+      return (${walk})(".seq-panel", []);
+    })()`);
+    parts.keys = await frame.evaluate(`(() => {
+      const k = document.getElementById('key-48'); if (k) k.classList.add('playing-key');
+      document.querySelectorAll('.kb-key').forEach((el) => { el.dataset.key = el.id.replace(/^key-/, ''); });
+      return (${walk})(".kb-strip", []);
+    })()`);
+    parts.play = await frame.evaluate(`(() => {
+      const b = document.getElementById('playBtn'); b.textContent = '⏸ PAUSE'; b.classList.add('active');
+      return (${walk})("#playBtn", []);
+    })()`);
+    parts.list = await frame.evaluate(`(() => {
+      const l = document.getElementById('scaleList');
+      const r = l.getBoundingClientRect();
+      const st = l.getAttribute('style') || '';
+      l.style.maxHeight = 'none'; l.style.height = 'auto'; l.style.overflow = 'visible';
+      const w = (${walk})("#scaleList", []);
+      l.setAttribute('style', st);
+      w.view = [r.x, r.y, r.width, r.height];
+      return w;
+    })()`);
+    parts.chips = await frame.evaluate(`(() => {
+      const i = SCALES.findIndex((s) => s.cents.length > 12);
+      selectScale(i);
+      const w = (${walk})(".scale-display", []);
+      w.scale = i;
+      selectScale(0);
+      return w;
+    })()`);
+    for (const [k, w] of Object.entries(parts)) if (w.error) throw new Error(`${id} ${k}: ${w.error}`);
+    // Where each part's root sits on the page (its walk is relative to it).
+    const roots = { grid: '.seq-panel', keys: '.kb-strip', play: '#playBtn', list: '#scaleList', chips: '.scale-display' };
+    for (const [k, sel] of Object.entries(roots)) {
+      parts[k].at = await frame.evaluate((sel) => {
+        const p = document.querySelector('.page').getBoundingClientRect(), r = document.querySelector(sel).getBoundingClientRect();
+        return [r.x - p.x, r.y - p.y];
+      }, sel);
+    }
+    const page0 = await frame.evaluate(() => { const r = document.querySelector('.page').getBoundingClientRect(); return [r.x, r.y]; });
+    write(path.join(out, `mgl-seq-${id}.json.gz`), { page, parts, origin: page0, size: [1500, height], theme: id, captured: new Date().toISOString() });
     if (id === 'default') {
       await tab.screenshot({ path: path.join(out, 'seq-reference.png'), clip: { x: rect[0], y: rect[1], width: 1500, height } });
       const data = await frame.evaluate(() => ({

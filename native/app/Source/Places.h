@@ -41,6 +41,15 @@ inline juce::File atmosPresets()
     return d;
 }
 
+// Seq's presets: each file one of MGL's Seq presets, or a list of them (what
+// its Seq exports and imports).
+inline juce::File seqPresets()
+{
+    auto d = home().getChildFile ("presets").getChildFile ("seq");
+    d.createDirectory();
+    return d;
+}
+
 // Grain's presets: one file in MGL's own shape (its data/PRESETS.json).
 inline juce::File grainPresets()
 {
