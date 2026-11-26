@@ -246,3 +246,31 @@ fn probe_filter_tail() {
         }
     }
 }
+
+/// Cases of one's own against Chromium's renders of them (raw interleaved
+/// floats beside the cases file): `SEQ_PROBE=<cases.json>`. Values only;
+/// the sign of zeros is reported apart.
+#[test]
+#[ignore]
+fn probe_cases() {
+    let Some(path) = std::env::var_os("SEQ_PROBE") else { return };
+    let path = std::path::PathBuf::from(path);
+    let m = manifest();
+    let cases: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    for case in cases.as_array().unwrap() {
+        let id = case["id"].as_str().unwrap();
+        let ours = play(&m, case);
+        let bytes = std::fs::read(path.with_file_name(format!("{id}.raw"))).unwrap();
+        let theirs: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+        let (mut vals, mut signs, mut first) = (0, 0, None);
+        for (i, (a, b)) in ours.iter().zip(&theirs).enumerate() {
+            if a != b {
+                vals += 1;
+                first.get_or_insert(i);
+            } else if a.to_bits() != b.to_bits() {
+                signs += 1;
+            }
+        }
+        println!("{id}: {vals} values differ (first at frame {:?}), {signs} signs of zero", first.map(|i| i / 2));
+    }
+}
