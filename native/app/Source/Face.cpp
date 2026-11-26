@@ -948,6 +948,23 @@ void Chrome::drawNode (juce::Graphics& g, const juce::var& n, const juce::var* l
             g.setColour (colour (n["font"]["colour"]));
             g.drawText (options->getReference (chosen).toString(), r.reduced (8.0f, 0.0f), juce::Justification::centredLeft, false);
         }
+        // The chevron the stylesheet paints as its background image
+        // (`select`: a 10 x 6 "M1 1l4 4 4-4", #858b94, 1.5 wide, 8 px from
+        // the right, centred), which the capture keeps only as "an image".
+        bool image = false;
+        if (auto* layers = n["layers"].getArray())
+            for (const auto& l : *layers)
+                image = image || l["type"].toString() == "image";
+        if (image)
+        {
+            const float x = r.getRight() - 8.0f - 10.0f, y = r.getCentreY() - 3.0f;
+            juce::Path chevron;
+            chevron.startNewSubPath (x + 1, y + 1);
+            chevron.lineTo (x + 5, y + 5);
+            chevron.lineTo (x + 9, y + 1);
+            g.setColour (juce::Colour (0xff858b94));
+            g.strokePath (chevron, juce::PathStrokeType (1.5f));
+        }
     }
 
     if ((bool) n["clip"])

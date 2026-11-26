@@ -139,6 +139,19 @@ try {
     await tab.evaluate(() => document.querySelectorAll('.toast, #toast, .toasts').forEach((e) => { e.style.visibility = 'hidden'; }));
     const page = await frame.evaluate(`(${walk})(".page", ${JSON.stringify(SKIP)})`);
     if (page.error) throw new Error(`${id} page: ${page.error}`);
+    // The page's picture, as it opens: before anything is staged on it.
+    if (id === 'default') await tab.screenshot({ path: path.join(out, 'seq-reference.png'), clip: { x: rect[0], y: rect[1], width: 1500, height } });
+    // The page's own lists, as it opens.
+    if (id === 'default') {
+      const data = await frame.evaluate(() => ({
+        scales: SCALES.map((s) => ({ cat: s.cat, name: s.name, info: s.info, cents: s.cents })),
+        knobs: [...document.querySelectorAll('input[type=range]')].map((i) => [i.id.replace(/Slider$/, ''), +i.min, +i.max, +(i.step || 1), +i.value]),
+        selects: [...document.querySelectorAll('select')].filter((s) => s.id).map((s) => [s.id.replace(/Select$/, ''), [...s.options].map((o) => [o.value, o.textContent]), s.selectedIndex]),
+        steps: steps.map((s) => [s.degree, s.rest]),
+        seq: { scale: selectedScaleIdx, root: rootMidi, octave: rootOctave, numSteps },
+      }));
+      fs.writeFileSync(path.join(out, 'seq-page.json'), JSON.stringify(data));
+    }
     // The parts the page makes as it plays, staged on the same page and walked
     // again, so the face has each look: step 1 picked (its buttons open), step
     // 2 resting, step 3 playing, step 10 (not played) resting; a key playing;
@@ -188,17 +201,6 @@ try {
     }
     const page0 = await frame.evaluate(() => { const r = document.querySelector('.page').getBoundingClientRect(); return [r.x, r.y]; });
     write(path.join(out, `mgl-seq-${id}.json.gz`), { page, parts, origin: page0, size: [1500, height], theme: id, captured: new Date().toISOString() });
-    if (id === 'default') {
-      await tab.screenshot({ path: path.join(out, 'seq-reference.png'), clip: { x: rect[0], y: rect[1], width: 1500, height } });
-      const data = await frame.evaluate(() => ({
-        scales: SCALES.map((s) => ({ cat: s.cat, name: s.name, info: s.info, cents: s.cents })),
-        knobs: [...document.querySelectorAll('input[type=range]')].map((i) => [i.id.replace(/Slider$/, ''), +i.min, +i.max, +(i.step || 1), +i.value]),
-        selects: [...document.querySelectorAll('select')].filter((s) => s.id).map((s) => [s.id.replace(/Select$/, ''), [...s.options].map((o) => [o.value, o.textContent]), s.selectedIndex]),
-        steps: steps.map((s) => [s.degree, s.rest]),
-        seq: { scale: selectedScaleIdx, root: rootMidi, octave: rootOctave, numSteps },
-      }));
-      fs.writeFileSync(path.join(out, 'seq-page.json'), JSON.stringify(data));
-    }
     process.stdout.write(`  ${id}: ${page.nodes} boxes, 1500 x ${height}\n`);
     await ctx.close();
   }

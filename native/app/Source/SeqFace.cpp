@@ -423,12 +423,6 @@ juce::StringArray SeqFace::optionValues (const juce::String& key, juce::StringAr
             for (const auto& p : presetNames())
                 out.add (p), names.add (p);
     }
-    else if (key == "kyMidi_classic")
-    {
-        out.add ("0"), names.add ("MIDI off");
-        for (int c = 1; c <= 16; ++c)
-            out.add (juce::String (c)), names.add ("MIDI " + juce::String (c));
-    }
     else if (auto* rows = data["selects"].getArray())
         for (const auto& s : *rows)
             if (s[0].toString() == key)
@@ -821,8 +815,11 @@ void SeqFace::drawStep (juce::Graphics& g, int i)
     const int oct = (int) std::floor ((double) degree / n) + 1;
     juce::Graphics::ScopedSaveState keep (g);
     g.addTransform (juce::AffineTransform::translation (offset.x, offset.y));
+    // Its words as dim as its box (the frame dims the box by its opacity).
     const float opacity = numOf ((*tmpl)["opacity"], 1.0f);
-    g.setOpacity (opacity);
+    const bool dim = opacity < 0.999f;
+    if (dim)
+        g.beginTransparencyLayer (opacity);
     const auto* restTmpl = gridStep (grid.tree, active ? 1 : 9);
     eachNode (*tmpl, [&] (const juce::var& node) {
         if (hasClass (node, "step-num"))
@@ -850,6 +847,8 @@ void SeqFace::drawStep (juce::Graphics& g, int i)
             if (hasClass (node, "step-rest"))
                 drawText (g, node, firstText (node), false);
         });
+    if (dim)
+        g.endTransparencyLayer();
 }
 
 void SeqFace::drawSteps (juce::Graphics& g)
