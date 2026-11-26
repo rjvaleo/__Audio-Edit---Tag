@@ -43,10 +43,10 @@ fn rt60(v: f64) -> f64 {
 pub struct Space {
     pub gate: NodeId,
     pre: NodeId,
-    low: NodeId,
+    pub low: NodeId,
     conv: NodeId,
     damp: NodeId,
-    shim: NodeId,
+    pub shim: NodeId,
     dry: NodeId,
     pub wet: NodeId,
     frz_in: NodeId,

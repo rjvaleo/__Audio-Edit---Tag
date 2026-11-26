@@ -120,11 +120,18 @@ fn settings(state: &Value) -> Settings {
 
 /// One case played: its events laid as the spec lays them, rendered.
 fn play(m: &Value, case: &Value) -> Vec<f32> {
+    play_with(m, case, |_| {})
+}
+
+/// The same, with a change to the graph once it is built (as a probe's
+/// patch changes the page).
+fn play_with(m: &Value, case: &Value, patch: impl FnOnce(&mut Classic)) -> Vec<f32> {
     let state = over(&m["defaults"], case.get("set"));
     let s = settings(&state);
     let seconds = f(case, "seconds");
     let frames = (seconds * RATE as f64).round() as usize;
     let mut c = Classic::new(RATE, s);
+    patch(&mut c);
     // Events at a later time wait for the render to reach it (`off.suspend`).
     let mut later: Vec<(f64, Value)> = Vec::new();
     for e in case["events"].as_array().unwrap() {
@@ -274,7 +281,12 @@ fn probe_cases() {
     let cases: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     for case in cases.as_array().unwrap() {
         let id = case["id"].as_str().unwrap();
-        let ours = play(&m, case);
+        let ours = if id.ends_with("-noglide") { play_with(&m, case, |c| {
+            use dsp_core::chromium::graph::params::FREQUENCY;
+            let low = c.space.low;
+            c.g.cancel_scheduled_values(low, FREQUENCY, 0.0);
+            c.g.set(low, FREQUENCY, (20.0 * dsp_core::chromium::fdlibm::pow(50.0, 0.4)) as f32);
+        }) } else { play(&m, case) };
         let bytes = std::fs::read(path.with_file_name(format!("{id}.raw"))).unwrap();
         let theirs: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
         let (mut vals, mut signs, mut first) = (0, 0, None);
@@ -292,5 +304,66 @@ fn probe_cases() {
                 println!("  frame {} {}: ours {:e} theirs {:e}", j / 2, if j % 2 == 0 { "L" } else { "R" }, ours[j], theirs[j]);
             }
         }
+    }
+}
+
+/// The range case with Space's wet held at 1 (`SEQ_WET1=<raw>`), against
+/// Chromium's render of the same: Space's own signal, values only.
+#[test]
+#[ignore]
+fn probe_space_wet1() {
+    use dsp_core::chromium::graph::params::GAIN;
+    let Some(path) = std::env::var_os("SEQ_WET1") else { return };
+    let m = manifest();
+    let case = m["cases"].as_array().unwrap().iter().find(|c| c["id"] == "classic-range").unwrap().clone();
+    let state = over(&m["defaults"], case.get("set"));
+    let mut c = Classic::new(RATE, settings(&state));
+    let wet = c.space.wet;
+    c.g.cancel_scheduled_values(wet, GAIN, 0.0);
+    c.g.set(wet, GAIN, 1.0);
+    if std::env::var_os("SEQ_SHIM0").is_some() {
+        let shim = c.space.shim;
+        c.g.cancel_scheduled_values(shim, GAIN, 0.0);
+        c.g.set(shim, GAIN, 0.0);
+    }
+    for e in case["events"].as_array().unwrap() {
+        c.play_note(f(e, "hz"), f(e, "t"), e["hold"].as_f64().unwrap_or(1.0));
+    }
+    let frames = (f(&case, "seconds") * RATE as f64).round() as usize;
+    let mut ours = Vec::new();
+    let (mut l, mut r) = ([0.0f32; 128], [0.0f32; 128]);
+    while ours.len() < frames * 2 {
+        c.render(&mut l, &mut r);
+        for k in 0..128 {
+            ours.push(l[k]);
+            ours.push(r[k]);
+        }
+    }
+    let bytes = std::fs::read(path).unwrap();
+    let theirs: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+    let mut shown = 0;
+    let (mut vals, mut signs) = (0, 0);
+    for (i, (a, b)) in ours.iter().zip(&theirs).enumerate() {
+        if a != b {
+            vals += 1;
+            if shown < 10 {
+                println!("  frame {} {}: ours {:e} theirs {:e}", i / 2, if i % 2 == 0 { "L" } else { "R" }, a, b);
+                shown += 1;
+            }
+        } else if a.to_bits() != b.to_bits() {
+            signs += 1;
+        }
+    }
+    println!("wet1: {vals} values differ, {signs} signs of zero");
+}
+
+#[test]
+#[ignore]
+fn probe_pow() {
+    use dsp_core::chromium::fdlibm;
+    for (v, lo, hi) in [(40.0f64, 20.0f64, 1000.0f64), (55.0, 800.0, 18000.0), (45.0, 800.0, 18000.0), (60.0, 0.4, 15.0), (22.0, 0.4, 15.0)] {
+        let a = lo * fdlibm::pow(hi / lo, v / 100.0);
+        let b = lo * (hi / lo).powf(v / 100.0);
+        println!("pow {v} {lo} {hi}: fdlibm {a} {:016x}  std {b} {:016x}", a.to_bits().swap_bytes(), b.to_bits().swap_bytes());
     }
 }
