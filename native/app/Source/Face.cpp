@@ -138,6 +138,8 @@ struct Worn
     juce::var chop;          // the Chop page in the MGL theme
     juce::var prism;         // the Prism page in the MGL theme
     juce::var fx;            // the FX page and every effect card in the MGL theme
+    juce::var browse;        // the Browse page in the MGL theme (the main three themes captured)
+    juce::var library;       // the Library page in the MGL theme
     int stamp = 0;
 };
 // The FX capture in MGL theme `id`: the default theme whole, and another
@@ -282,6 +284,18 @@ const juce::var& page (const juce::String& name)
             w.prism = juce::JSON::parse (embedded ("mgl-prism-default.json.gz"));
         return w.prism;
     }
+    if (name == "browse" || name == "library")
+    {
+        // Captured in MGL's main three themes (RJ, 25 Nov): any other worn
+        // theme wears the default's.
+        auto& w = wornState();
+        auto& slot = name == "browse" ? w.browse : w.library;
+        if (!slot.isObject())
+            slot = juce::JSON::parse (embedded ("mgl-" + name + "-" + (w.choice >= 0 ? themeChoices()[(size_t) w.choice].mgl : juce::String ("default")) + ".json.gz"));
+        if (!slot.isObject())
+            slot = juce::JSON::parse (embedded ("mgl-" + name + "-default.json.gz"));
+        return slot;
+    }
     if (name == "chop")
     {
         auto& w = wornState();
@@ -408,6 +422,8 @@ void wear (int choice, const juce::String& kit)
         w.chop = juce::var();
         w.prism = juce::var();
         w.fx = juce::var();
+        w.browse = juce::var();
+        w.library = juce::var();
         w.choice = choice;
     }
     w.kit = kit.isEmpty() ? juce::String ("thinRing") : kit;

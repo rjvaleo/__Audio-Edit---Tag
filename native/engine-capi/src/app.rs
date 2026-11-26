@@ -708,3 +708,4 @@ mod grain;
 mod prism;
 mod fx;
 mod chop;
+mod browse;

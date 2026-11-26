@@ -1,6 +1,7 @@
 #include "SoundFace.h"
 
 #include "Canvas2D.h"
+#include "MglLibrary.h"
 #include "Places.h"
 
 namespace
@@ -75,10 +76,10 @@ struct Library final : public juce::Component, private juce::Thread, private juc
 
     void run() override
     {
+        // MGL's library in the app (MglLibrary): its own routes, answered here.
         auto get = [] (const juce::String& route) {
-            juce::URL url (SoundFace::server() + route);
-            auto in = url.createInputStream (juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress).withConnectionTimeoutMs (4000));
-            return in == nullptr ? juce::var() : juce::JSON::parse (in->readEntireStreamAsString());
+            const auto a = mgllib::call ("GET", route);
+            return a.ok() ? a.json() : juce::var();
         };
         const auto folders = get ("/api/folders");
         std::vector<Row> rows;
@@ -88,14 +89,14 @@ struct Library final : public juce::Component, private juce::Thread, private juc
                 if (threadShouldExit())
                     return;
                 const auto name = f["name"].toString();
-                const auto files = get ("/api/files?folder=" + juce::URL::addEscapeChars (name, true));
+                const auto files = get ("/api/files?folder=" + mgllib::esc (name));
                 if (auto* fs = files.getArray())
                     for (const auto& x : *fs)
                         rows.push_back ({ x["path"].toString(), x["name"].toString(), name, x["category"].toString(), (double) x["duration"] });
             }
         else
         {
-            status = "MGL's library isn't there (" + SoundFace::server() + ")";
+            status = "MGL's library couldn't be read";
             triggerAsyncUpdate();
             return;
         }
@@ -310,7 +311,9 @@ bool SoundFace::openFile (const juce::File& f)
 
 void SoundFace::openLibrary (const juce::String& path, const juce::String& name, bool keep)
 {
-    const auto file = cacheFor (path);
+    // The library's own file, where the library is: opened as it is.
+    const auto own = mgllib::fileOf (path);
+    const auto file = own.existsAsFile() ? own : cacheFor (path);
     auto open = [safe = juce::Component::SafePointer<SoundFace> (this), path, name, file, keep] (bool ok) {
         if (safe == nullptr)
             return;

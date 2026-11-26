@@ -1,0 +1,21 @@
+[package]
+name = "engine-library"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "MGL's library in the app: the Browse and Library pages' routes, answered in-process by MGL's own server code."
+
+[dependencies]
+# MGL's server core (its App, its state, its files) and the routes of the
+# library and the PC's library, the same functions MGL's server calls.
+server-core = { path = "../../core/crates/server-core" }
+server-library = { path = "../../core/crates/server-library" }
+server-stems = { path = "../../core/crates/server-stems" }
+# Only for the build id one route reports: read from disk rather than the
+# whole interface compiled into the app.
+server-ui = { path = "../../core/crates/server-ui", features = ["ui-from-disk"] }
+
+[dev-dependencies]
+# MGL's whole server, to hold every answer to its own route table.
+server = { path = "../../core/crates/server", features = ["ui-from-disk"] }
+audio-core = { path = "../../core/crates/audio-core" }

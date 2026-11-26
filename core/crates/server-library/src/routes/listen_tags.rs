@@ -533,6 +533,10 @@ pub fn api_similar(app: &Arc<App>, req: &Request) -> Response {
     let built = ensure_prints(app);
     ensure_labels(app);
     let heard = heard_value(app, rel);
+    // Taken before the fingerprints are held below: it reads them itself, and
+    // a second read under the first waits for ever once another request's
+    // `ensure_prints` is queued to write (two "Sounds like" at once hung both).
+    let your_tags = user_tags_value(app, rel);
 
     let store = app.prints.read().unwrap();
     let Some(query) = store.get(rel) else {
@@ -617,7 +621,7 @@ pub fn api_similar(app: &Arc<App>, req: &Request) -> Response {
             // deliberately cleared it".
             .set("suggest", suggest_tags(app, rel, &query.descriptors(&cal)))
             .set("saved", saved_tags(app, rel))
-            .set("yourTags", user_tags_value(app, rel))
+            .set("yourTags", your_tags)
             .set("measured", built as f64)
             .set("indexed", store.len() as f64)
             .set("results", Value::Arr(results))

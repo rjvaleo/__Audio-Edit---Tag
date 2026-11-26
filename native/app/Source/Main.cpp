@@ -11,6 +11,7 @@
 #include "WaveApi.h"
 #include "ChopBench.h"
 #include "PrismBench.h"
+#include "BrowseBench.h"
 #include "FxBench.h"
 #include "GrainBench.h"
 #include "Host.h"
@@ -824,6 +825,12 @@ public:
             setApplicationReturnValue (fxCards (args));
             return quit();
         }
+        if (args.size() >= 2 && args[0] == "--bench" && args[1] == "browse")
+        {
+            setApplicationReturnValue (browseBench (args));
+            quit();
+            return;
+        }
         if (args.size() >= 2 && args[0] == "--bench" && args[1] == "prism")
         {
             setApplicationReturnValue (prismBench (args));
@@ -1253,6 +1260,8 @@ public:
                 image = grainSnapshot (args, scale);
             else if (page == "chop-face")
                 image = chopSnapshot (args, scale);
+            else if (page == "browse-face" || page == "library-face")
+                image = browseSnapshot (args, scale, page == "library-face");
             else if (page == "prism-face")
                 image = prismSnapshot (args, scale);
             else if (page == "fx-face" || page == "fx-card" || page == "fx-reverb")
