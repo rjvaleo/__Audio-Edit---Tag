@@ -6,6 +6,7 @@
 #include "Canvas.h"
 #include "Face.h"
 #include "AtmosFace.h"
+#include "SeqFace.h"
 #include "WaveFace.h"
 #include "EditBench.h"
 #include "WaveApi.h"
@@ -19,6 +20,8 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <mach/mach.h>
+#include <sys/resource.h>
 
 namespace
 {
@@ -569,6 +572,69 @@ public:
         startTimerHz (1);
         if (auto* path = std::getenv ("IDMLAB_WHEEL_TEST"))
             wheelTest (path);
+        if (auto* path = std::getenv ("IDMLAB_BOARD_TEST"))
+            boardTest (path);
+    }
+
+    // IDMLAB_BOARD_TEST=<file.json>: in the real window, a board of synths as
+    // RJ made one (IDMLAB_BOARD="wave,wave,seq,..." or the default), silent;
+    // then, for ten seconds, how long a press waits for the message thread
+    // (a callAsync every 100 ms, as a click's handling is), the screen
+    // frames, and the app's memory; then a module closed as its x closes it.
+    void boardTest (juce::String path)
+    {
+        auto kinds = juce::StringArray::fromTokens (juce::SystemStats::getEnvironmentVariable ("IDMLAB_BOARD", "wave,wave,atmos,atmos,seq,seq,grain,prism"), ",", "");
+        for (int i = 0; i < kinds.size(); ++i)
+            canvas.addModule (kinds[i], { (float) (i % 4) * 1700.0f, 1300.0f + (float) (i / 4) * 1300.0f });
+        canvas.fit();
+        juce::Timer::callAfterDelay (4000, [this, path] {
+            const double start = juce::Time::getMillisecondCounterHiRes();
+            last = start;
+            auto waits = std::make_shared<std::vector<double>>();
+            testFrames = std::make_unique<juce::VBlankAttachment> (this, [this] {
+                const double now = juce::Time::getMillisecondCounterHiRes();
+                frames.push_back ({ 0.0, now - last });
+                last = now;
+            });
+            for (int t = 0; t < 10000; t += 100)
+                juce::Timer::callAfterDelay (t, [waits] {
+                    const double asked = juce::Time::getMillisecondCounterHiRes();
+                    juce::MessageManager::callAsync ([waits, asked] { waits->push_back (juce::Time::getMillisecondCounterHiRes() - asked); });
+                });
+            juce::Timer::callAfterDelay (10500, [this, path, waits, start] {
+                testFrames.reset();
+                const double cpuWall = juce::Time::getMillisecondCounterHiRes() - start;
+                // A module closed as its x closes it (callAsync, then removed).
+                const double asked = juce::Time::getMillisecondCounterHiRes();
+                juce::MessageManager::callAsync ([this, path, waits, asked, cpuWall] {
+                    const double ran = juce::Time::getMillisecondCounterHiRes();
+                    const int id = canvas.nodes.empty() ? -1 : canvas.nodes.rbegin()->first;
+                    canvas.removeModule (id);
+                    const double removed = juce::Time::getMillisecondCounterHiRes();
+                    auto sorted = *waits;
+                    std::sort (sorted.begin(), sorted.end());
+                    auto pct = [&] (double p) { return sorted.empty() ? 0.0 : sorted[(size_t) juce::jmin ((double) sorted.size() - 1, p * (double) sorted.size())]; };
+                    double worstFrame = 0, sumFrame = 0;
+                    for (auto& f : frames)
+                        worstFrame = juce::jmax (worstFrame, f.second), sumFrame += f.second;
+                    task_vm_info_data_t vm {};
+                    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+                    task_info (mach_task_self(), TASK_VM_INFO, (task_info_t) &vm, &count);
+                    rusage ru {};
+                    getrusage (RUSAGE_SELF, &ru);
+                    juce::String out;
+                    out << "{\"modules\":" << (int) canvas.nodes.size() + 1
+                        << ",\"press_wait_ms\":{\"median\":" << juce::String (pct (0.5), 1) << ",\"p90\":" << juce::String (pct (0.9), 1) << ",\"worst\":" << juce::String (pct (1.0), 1) << ",\"n\":" << (int) sorted.size() << "}"
+                        << ",\"frames\":" << (int) frames.size() << ",\"frame_mean_ms\":" << juce::String (frames.empty() ? 0.0 : sumFrame / (double) frames.size(), 1) << ",\"frame_worst_ms\":" << juce::String (worstFrame, 1)
+                        << ",\"close_wait_ms\":" << juce::String (ran - asked, 1) << ",\"close_ms\":" << juce::String (removed - ran, 1)
+                        << ",\"footprint_mb\":" << juce::String ((double) vm.phys_footprint / 1048576.0, 0)
+                        << ",\"cpu_s\":" << juce::String ((double) ru.ru_utime.tv_sec + (double) ru.ru_utime.tv_usec / 1e6, 1) << ",\"wall_s\":" << juce::String (cpuWall / 1000.0, 1) << "}";
+                    juce::File (path).replaceWithText (out);
+                    std::printf ("%s\n", out.toRawUTF8());
+                    juce::JUCEApplication::getInstance()->quit();
+                });
+            });
+        });
     }
 
     // IDMLAB_WHEEL_TEST=<file.json>: in the real window, turn the wheel as a
@@ -844,6 +910,95 @@ public:
         if (args.size() >= 2 && args[0] == "--bench" && args[1] == "edit")
         {
             setApplicationReturnValue (editBench (args));
+            return quit();
+        }
+        if (args.size() >= 1 && args[0] == "--fonts")
+        {
+            // Which faces and weights this Mac gives the pages' fonts (they differ between macOS versions).
+            for (const auto* name : { ".AppleSystemUIFontMonospaced", "SF Mono", "Menlo", ".AppleSystemUIFont" })
+            {
+                std::printf ("%s: styles", name);
+                for (const auto& st : juce::Font::findAllTypefaceStyles (name))
+                    std::printf (" [%s]", st.toRawUTF8());
+                std::printf ("\n");
+                for (const int w : { 400, 500, 600, 700 })
+                {
+                    const auto f = juce::String (name).contains ("Mono") || juce::String (name) == "Menlo" ? face::mono (12, w) : face::sans (12, w);
+                    std::printf ("  weight %d -> %s / %s, width of \"D1 OCT\" %.2f\n", w, f.getTypefacePtr()->getName().toRawUTF8(), f.getTypefacePtr()->getStyle().toRawUTF8(),
+                                 juce::GlyphArrangement::getStringWidth (f, "D1 OCT"));
+                }
+            }
+            return quit();
+        }
+        if (args.size() >= 2 && args[0] == "--bench" && args[1] == "seq")
+        {
+            // Seq's face: drawn whole, again, after a knob, a step and a scale;
+            // then each kind of control pressed where the page has it.
+            NaApp* a = na_new (48000.0f, 4096);
+            const auto id = (uint32_t) na_add (a, "seq", 0, 0);
+            SeqFace f (
+                [a, id] (const juce::String& key, const juce::String& value) { na_seq_set (a, id, key.toRawUTF8(), value.toRawUTF8()); },
+                [a, id] { return juce::String (naText ([&] (char* b, uint32_t c) { return na_seq_state (a, id, b, c); })); },
+                [a, id] (int& step, float& hz, int& degree) { return (int) na_seq_now (a, id, &step, &hz, &degree); });
+            juce::Image frame (juce::Image::ARGB, f.getWidth() * 2, f.getHeight() * 2, true);
+            auto draw = [&] {
+                juce::Graphics g (frame);
+                g.addTransform (juce::AffineTransform::scale (2.0f));
+                f.paintEntireComponent (g, true);
+            };
+            auto ms = [] (auto&& fn) {
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                fn();
+                return juce::Time::getMillisecondCounterHiRes() - t0;
+            };
+            const double whole = ms (draw), again = ms (draw);
+            double knob = 0, step = 0, scl = 0;
+            for (int i = 0; i < 10; ++i)
+                knob += ms ([&] { f.setKey ("cutoff", 40 + i); draw(); });
+            for (int i = 0; i < 10; ++i)
+                step += ms ([&] { f.setKey ("step3", i); draw(); });
+            for (int i = 0; i < 10; ++i)
+                scl += ms ([&] { f.setKey ("scale", i); draw(); });
+            f.setKey ("scale", 0);
+            auto press = [&] (juce::Point<float> at, juce::Point<float> to) {
+                auto src = juce::Desktop::getInstance().getMainMouseSource();
+                const auto now = juce::Time::getCurrentTime();
+                auto ev = [&] (juce::Point<float> p, bool dragged) {
+                    return juce::MouseEvent (src, p, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 1.0f, 0, 0, 0, 0, &f, &f, now, at, now, 1, dragged);
+                };
+                f.mouseDown (ev (at, false));
+                if (to != at)
+                    f.mouseDrag (ev (to, true));
+                f.mouseUp (ev (to, to != at));
+            };
+            // Where the page has them (its capture, in the page's pixels).
+            press ({ 956, 189 }, { 956, 139 });              // Cutoff, up 50 px
+            press ({ 633, 99 }, { 633, 99 });                // Direction: Ping-pong
+            press ({ 844, 99 }, { 844, 99 });                // Step len: 1/4
+            press ({ 155, 246 }, { 155, 246 });              // the scale list's third (Phrygian)
+            press ({ 469, 718 }, { 469, 718 });              // step 2: picked
+            press ({ 60, 92 }, { 60, 92 });                  // Play
+            std::vector<float> l (512), r (512);
+            for (int k = 0; k < 60; ++k)
+            {
+                na_settle (a);
+                na_render (a, l.data(), r.data(), 512);
+                na_collect (a);
+            }
+            f.poll();
+            std::printf ("{\"cutoff\":%s,\"dir\":\"%s\",\"stepLen\":\"%s\",\"scale\":%s,\"play\":%s}\n",
+                         f.valueOf ("cutoff").toRawUTF8(), f.valueOf ("dir").toRawUTF8(), f.valueOf ("stepLen").toRawUTF8(), f.valueOf ("scale").toRawUTF8(), f.valueOf ("play").toRawUTF8());
+            int s = -1, d = 0;
+            float hz = 0;
+            const int playing = na_seq_now (a, id, &s, &hz, &d);
+            std::printf ("engine: playing %d, step %d, %.2f Hz, degree %d\n", playing, s, hz, d);
+            const auto held = juce::String (naText ([&] (char* b, uint32_t c) { return na_seq_state (a, id, b, c); }));
+            std::printf ("engine: %s\n", held.fromFirstOccurrenceOf ("\"cutoff\"", true, false).upToFirstOccurrenceOf (",", false, false).toRawUTF8());
+            for (auto& [name, t] : f.profile (2.0f))
+                if (t > 1.0)
+                    std::printf ("  %-16s %.1f ms\n", name.toRawUTF8(), t);
+            std::printf ("{\"whole_ms\":%.1f,\"again_ms\":%.1f,\"knob_move_ms\":%.1f,\"step_edit_ms\":%.1f,\"scale_click_ms\":%.1f}\n", whole, again, knob / 10, step / 10, scl / 10);
+            na_free (a);
             return quit();
         }
         if (args.size() >= 2 && args[0] == "--bench" && args[1] == "atmos")
@@ -1266,6 +1421,53 @@ public:
                 image = prismSnapshot (args, scale);
             else if (page == "fx-face" || page == "fx-card" || page == "fx-reverb")
                 image = fxSnapshot (args, scale);
+            else if (page == "seq-face")
+            {
+                // The live face, a real Seq behind it (no sound card):
+                // --snapshot seq-face out.png scale [theme_label] [key=json;key=json | @file] [frames played]
+                if (args.size() > 4 && args[4] != "-")
+                {
+                    const auto label = args[4].unquoted().replace ("_", " ");
+                    const auto& list = face::themeChoices();
+                    for (int i = 0; i < (int) list.size(); ++i)
+                        if (list[(size_t) i].label == label)
+                            face::wear (i, "thinRing");
+                }
+                NaApp* a = na_new (48000.0f, 4096);
+                const auto id = (uint32_t) na_add (a, "seq", 0, 0);
+                const auto out = (uint32_t) na_add (a, "output", 0, 0);
+                na_connect (a, id, 0, out, 0);
+                SeqFace f (
+                    [a, id] (const juce::String& key, const juce::String& value) { na_seq_set (a, id, key.toRawUTF8(), value.toRawUTF8()); },
+                    [a, id] { return juce::String (naText ([&] (char* b, uint32_t c) { return na_seq_state (a, id, b, c); })); },
+                    [a, id] (int& step, float& hz, int& degree) { return (int) na_seq_now (a, id, &step, &hz, &degree); });
+                if (args.size() > 5 && args[5] != "-")
+                    for (const auto& kv : juce::StringArray::fromTokens (args[5].unquoted().startsWith ("@") ? juce::File (args[5].unquoted().substring (1)).loadFileAsString().trim() : args[5].unquoted(), ";\n", ""))
+                    {
+                        const auto text = kv.fromFirstOccurrenceOf ("=", false, false);
+                        auto value = juce::JSON::fromString (text);
+                        const auto key = kv.upToFirstOccurrenceOf ("=", false, false);
+                        if (key == "pick")
+                            f.pick (text.getIntValue());
+                        else
+                            f.setKey (key, value.isVoid() ? juce::var (text) : value);
+                    }
+                f.reload();
+                if (args.size() > 6)
+                {
+                    // Played a while, so the steps, the keys and the status show it.
+                    std::vector<float> l (512), r (512);
+                    for (int k = 0; k < args[6].getIntValue() / 512; ++k)
+                    {
+                        na_settle (a);
+                        na_render (a, l.data(), r.data(), 512);
+                        na_collect (a);
+                    }
+                    f.poll();
+                }
+                image = f.createComponentSnapshot (f.getLocalBounds(), true, scale);
+                na_free (a);
+            }
             else if (page == "atmos-face")
             {
                 // The live face, a real Atmosphere behind it (no sound card):

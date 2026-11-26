@@ -21,15 +21,25 @@ case "$MGL_REF" in
   *) MGL_REV="$MGL_REF" ;;
 esac
 R='~/idmlab-native'
+# Files go by rsync, by content (-c) and without their times: what has not
+# changed keeps its time there, so only what changed is rebuilt (and a branch
+# older than the last build is still rebuilt where it differs). The committed
+# crates go through a local copy of their commit on the 1 TB drive.
+BRANCH=$(git -C "$HERE" rev-parse --abbrev-ref HEAD | tr '/' '-')
+STAGE="/Volumes/1 TB Funtime/WORK DIR/native-build/stage-$BRANCH"
+send() { rsync -rlc --delete --exclude target --exclude build --exclude .git --exclude .DS_Store "$@"; }
+rm -rf "$STAGE/prism-fx.new" "$STAGE/mgl.new"; mkdir -p "$STAGE/prism-fx" "$STAGE/mgl" "$STAGE/prism-fx.new" "$STAGE/mgl.new"
+git -C "$FX" archive --format=tar HEAD | tar -x -f - -C "$STAGE/prism-fx.new"
+git -C "$MGL" archive --format=tar "$MGL_REV" core | tar -x -f - -C "$STAGE/mgl.new"
+rsync -rlc --delete "$STAGE/prism-fx.new/" "$STAGE/prism-fx/"
+rsync -rlc --delete "$STAGE/mgl.new/core/" "$STAGE/mgl/core/"
+rm -rf "$STAGE/prism-fx.new" "$STAGE/mgl.new"
 # The folders of the first layout (copies, replaced by the ones under GitHub/).
-ssh mbp "rm -rf $R/M\\ Clone $R/prism-fx"
-tar -C "$HERE" --exclude target --exclude build --exclude .git -cf - . | ssh mbp "mkdir -p $R/MultiGrainLive/native && cd $R/MultiGrainLive/native && rm -rf engine-core engine-capi engine-idmlab engine-mgl && tar -x -f - -C ."
-tar -C "$LAB/rust" --exclude target -cf - . | ssh mbp "rm -rf $R/GitHub/M\\ Clone/rust && mkdir -p $R/GitHub/M\\ Clone/rust && tar -x -f - -C $R/GitHub/M\\ Clone/rust"
-git -C "$FX" archive --format=tar HEAD | ssh mbp "rm -rf $R/GitHub/prism-fx && mkdir -p $R/GitHub/prism-fx && tar -x -f - -C $R/GitHub/prism-fx"
-git -C "$MGL" archive --format=tar "$MGL_REV" core | ssh mbp "rm -rf $R/MultiGrainLive/core && mkdir -p $R/MultiGrainLive && tar -x -f - -C $R/MultiGrainLive"
-# git archive dates every file at its commit; a branch older than the last
-# build in the same build folder would then reuse that build. Touch it all.
-ssh mbp "find ~/idmlab-native/native ~/idmlab-native/GitHub ~/idmlab-native/MultiGrainLive ~/idmlab-native/pg-check ~/idmlab-native/wsola-trial -type f -not -path '*/target/*' -not -path '*/build/*' -exec touch {} + 2>/dev/null; true"
+ssh mbp "rm -rf $R/M\\ Clone $R/prism-fx; mkdir -p $R/MultiGrainLive/native $R/MultiGrainLive/core $R/GitHub/M\\ Clone/rust $R/GitHub/prism-fx"
+send "$HERE/" "mbp:$R/MultiGrainLive/native/"
+send "$LAB/rust/" "mbp:$R/GitHub/M\\ Clone/rust/"
+send "$STAGE/prism-fx/" "mbp:$R/GitHub/prism-fx/"
+send "$STAGE/mgl/core/" "mbp:$R/MultiGrainLive/core/"
 until ssh mbp "mkdir ~/mgl-test/.lock 2>/dev/null"; do sleep 20; done
 trap 'ssh mbp "rm -rf ~/mgl-test/.lock"' EXIT
 ssh mbp "echo 'idmlab-native tests (coordinator)' > ~/mgl-test/.lock/who"

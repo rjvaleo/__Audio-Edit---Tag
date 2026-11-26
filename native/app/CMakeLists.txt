@@ -43,11 +43,12 @@ file(GLOB EDIT_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/edit/*
 file(GLOB WAVE_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/wave/*.json.gz")
 file(GLOB CHOP_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/chop/*.json.gz" "${CMAKE_CURRENT_SOURCE_DIR}/faces/chop/chop-page.json")
 file(GLOB PRISM_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/prism/*.json.gz")
+file(GLOB SEQ_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/seq/*.json.gz")
 file(GLOB FX_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/fx/*.json.gz")
 file(GLOB BROWSE_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/browse/*.json.gz")
 file(GLOB GRAIN_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/faces/grain/*.json.gz" "${CMAKE_CURRENT_SOURCE_DIR}/faces/grain/grain-page.json")
-juce_add_binary_data(idmlab_faces SOURCES faces/wave.json ${THEME_FILES} ${ATMOS_FILES} ${EDIT_FILES} ${WAVE_FILES} ${GRAIN_FILES} ${CHOP_FILES} ${PRISM_FILES} ${FX_FILES} ${BROWSE_FILES}
-  ../engine-app/data/atmos-page.json
+juce_add_binary_data(idmlab_faces SOURCES faces/wave.json ${THEME_FILES} ${ATMOS_FILES} ${EDIT_FILES} ${WAVE_FILES} ${GRAIN_FILES} ${CHOP_FILES} ${PRISM_FILES} ${FX_FILES} ${SEQ_FILES} ${BROWSE_FILES}
+  ../engine-app/data/atmos-page.json ../engine-app/data/seq-page.json ../../ui/sequencer/presets.json
   faces/idmlab/idmlab-bar.json faces/idmlab/idmlab-status.json faces/idmlab/idmlab-node-audio.json
   faces/idmlab/idmlab-node-notes.json faces/idmlab/idmlab-menu.json faces/idmlab/idmlab-style.json)
 target_sources(idMLab PRIVATE Source/Main.cpp Source/Host.cpp Source/Canvas.cpp Source/Face.cpp
@@ -59,7 +60,8 @@ target_sources(idMLab PRIVATE Source/Main.cpp Source/Host.cpp Source/Canvas.cpp 
   Source/ChopFace.cpp Source/ChopDraw.cpp Source/ChopBench.cpp
   Source/PrismFace.cpp Source/PrismDraw.cpp Source/PrismPictures.cpp Source/PrismBench.cpp
   Source/FxPictures.cpp Source/FxReverbDraw.cpp Source/FxCard.cpp Source/FxFace.cpp Source/FxReverb.cpp Source/FxBench.cpp
-  Source/MglLibrary.cpp Source/BrowseBase.cpp Source/BrowseFace.cpp Source/LibraryFace.cpp Source/BrowseBench.cpp)
+  Source/MglLibrary.cpp Source/BrowseBase.cpp Source/BrowseFace.cpp Source/LibraryFace.cpp Source/BrowseBench.cpp
+  Source/SeqFace.cpp)
 target_compile_definitions(idMLab PRIVATE
   JUCE_WEB_BROWSER=0
   JUCE_USE_CURL=0

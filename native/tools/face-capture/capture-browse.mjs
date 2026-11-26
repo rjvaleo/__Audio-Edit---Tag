@@ -72,7 +72,10 @@ const THEMES = [{ id: 'default' }, { id: 'studio-light' }, { id: 'layered-dark' 
 const browser = await chromium.launch();
 try {
   const list = only.length ? THEMES.filter((t) => only.includes(t.id)) : THEMES;
-  for (const t of list) {
+  // The first theme is done twice: the library's first answers (its types'
+  // files, the first sound's measures) come too late for the page's first
+  // draw, so the first pass only warms them and the second replaces it.
+  for (const t of [list[0], ...list]) {
     const scale = t.id === 'default' ? 2 : 1;
     const ctx = await browser.newContext({ viewport: { width: 1668, height: 1100 }, deviceScaleFactor: scale, reducedMotion: 'reduce' });
     const tab = await ctx.newPage();

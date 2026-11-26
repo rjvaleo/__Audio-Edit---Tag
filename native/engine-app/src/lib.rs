@@ -26,6 +26,7 @@ pub mod annot;
 pub mod browse_part;
 mod browse_link;
 pub mod atmos_part;
+pub mod seq_part;
 // MGL's Chop page, on the sound cabled into it.
 pub mod chop_part;
 mod chop_link;
@@ -46,6 +47,7 @@ use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
 pub use atmos_part::{fx_kinds_json, AtmosPart};
+pub use seq_part::SeqPart;
 pub use edit_part::EditPart;
 pub use sound_part::SoundPart;
 pub use wave_part::{frames_256, frames_for, read_table_wav, set_table_dirs, table_names, WavePart};
@@ -77,6 +79,10 @@ pub const SOUND_H: u32 = 132;
 pub const EDIT_W: u32 = 1500;
 pub const EDIT_H: u32 = 1100;
 
+/// Seq's face: MGL's Seq page at its own size (tools/face-capture/capture-seq.mjs).
+pub const SEQ_W: u32 = 1500;
+pub const SEQ_H: u32 = 1058;
+
 /// Atmosphere's face's height, in pixels.
 pub const ATMOS_HEIGHT: u32 = 998;
 
@@ -100,6 +106,17 @@ pub static KINDS: &[KindInfo] = &[
         height: ATMOS_HEIGHT,
         ins: &[("Notes", Kind::Notes)],
         outs: &[("Audio", Kind::Audio)],
+        keyboard: true,
+    },
+    KindInfo {
+        id: "seq",
+        title: "Seq",
+        // MGL's Seq page at its own size: the scale sequencer, its synth and
+        // its steps; the steps go out as notes too.
+        width: SEQ_W,
+        height: SEQ_H,
+        ins: &[("Notes", Kind::Notes)],
+        outs: &[("Audio", Kind::Audio), ("Notes", Kind::Notes)],
         keyboard: true,
     },
     // MGL's sound document: a file from disk or the library, and its edits.
@@ -371,6 +388,7 @@ impl std::fmt::Display for AppError {
 enum Part {
     Wave(Box<WavePart>),
     Atmos(Box<AtmosPart>),
+    Seq(Box<SeqPart>),
     /// Which channel it listens to: 0 all, 1 to 16 one.
     MidiIn { channel: u8 },
     Output,
@@ -478,6 +496,11 @@ impl Session {
                 self.ctl.connect(port(w, 0), port(f, 0))?;
                 part.lay(&mut self.ctl, f, self.rate, self.max_block)?;
                 Part::Atmos(Box::new(part))
+            }
+            "seq" => {
+                let mut part = SeqPart::new(saved.and_then(|s| s.get("seq")))?;
+                self.ctl.add(engine_id(id, 0), Box::new(part.module(self.rate)))?;
+                Part::Seq(Box::new(part))
             }
             "sound" => {
                 self.ctl.add(engine_id(id, 0), Box::new(engine_core::basics::SoundSource::new()))?;
@@ -678,7 +701,7 @@ impl Session {
                 *channel = (value.max(0.0) as u8).min(16);
                 Ok(())
             }
-            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Chop(_) | Part::Prism(_) | Part::Fx(_) | Part::Browse(_) => Err(AppError::NoSuchControl(index)),
+            Part::Output | Part::Atmos(_) | Part::Seq(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Chop(_) | Part::Prism(_) | Part::Fx(_) | Part::Browse(_) => Err(AppError::NoSuchControl(index)),
         }
     }
 
@@ -689,7 +712,7 @@ impl Session {
         Ok(match &m.part {
             Part::Wave(w) => w.values(),
             Part::MidiIn { channel } => vec![*channel as f32],
-            Part::Output | Part::Atmos(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Chop(_) | Part::Prism(_) | Part::Fx(_) | Part::Browse(_) => Vec::new(),
+            Part::Output | Part::Atmos(_) | Part::Seq(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Chop(_) | Part::Prism(_) | Part::Fx(_) | Part::Browse(_) => Vec::new(),
         })
     }
 
@@ -825,6 +848,10 @@ impl Session {
                         o.insert("atmos".into(), a.state());
                         o.insert("name".into(), a.name().into());
                     }
+                    Part::Seq(q) => {
+                        o.insert("seq".into(), q.state());
+                        o.insert("name".into(), q.name().into());
+                    }
                     Part::MidiIn { channel } => {
                         o.insert("channel".into(), (*channel).into());
                     }
@@ -895,6 +922,9 @@ impl Session {
             if let Some(p) = m.get("atmos") {
                 AtmosPart::new(Some(p))?;
             }
+            if let Some(p) = m.get("seq") {
+                SeqPart::new(Some(p))?;
+            }
             let at = |k: &str| m.get(k).and_then(Value::as_f64).unwrap_or(0.0) as f32;
             parsed.push((id as u32, kind_id, at("x"), at("y"), m));
         }
@@ -948,6 +978,10 @@ impl Session {
                     Part::Atmos(a) => {
                         o.insert("atmos".into(), a.state());
                         o.insert("name".into(), a.name().into());
+                    }
+                    Part::Seq(q) => {
+                        o.insert("seq".into(), q.state());
+                        o.insert("name".into(), q.name().into());
                     }
                     Part::Sound(s) => {
                         o.insert("sound".into(), s.edit_json());
@@ -1084,5 +1118,49 @@ impl Session {
     /// (peak, how hard it works), since the last reading.
     pub fn atmos_fx_meter(&self, id: u32) -> Result<(f32, Vec<(f32, f32)>), AppError> {
         Ok(self.atmos(id)?.fx_meter())
+    }
+
+    fn seq(&self, id: u32) -> Result<&SeqPart, AppError> {
+        match self.modules.get(&id).map(|m| &m.part) {
+            Some(Part::Seq(q)) => Ok(q),
+            _ => Err(AppError::NoSuchModule(id)),
+        }
+    }
+
+    /// Set one of Seq module `id`'s keys by the page's name for it (see
+    /// `seq_part`); `stop` stops the steps. A key it does not keep is ignored.
+    pub fn seq_set(&mut self, id: u32, key: &str, value: &Value) -> Result<(), AppError> {
+        match self.modules.get_mut(&id).map(|m| &mut m.part) {
+            Some(Part::Seq(q)) => q.set(&mut self.ctl, engine_id(id, 0), key, value),
+            _ => Err(AppError::NoSuchModule(id)),
+        }
+    }
+
+    /// Seq module `id`'s state: every key the page keeps, and its value.
+    pub fn seq_state(&self, id: u32) -> Result<Value, AppError> {
+        Ok(self.seq(id)?.state())
+    }
+
+    /// The step Seq module `id` is heard playing: (step, Hz, degree), and
+    /// whether its steps play.
+    pub fn seq_now(&self, id: u32) -> Result<(Option<(usize, f64, usize)>, bool), AppError> {
+        Ok(self.seq(id)?.now())
+    }
+
+    /// Seq module `id` as one of MGL's Seq presets, named `name`.
+    pub fn seq_preset(&mut self, id: u32, name: &str) -> Result<Value, AppError> {
+        let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+        match self.modules.get_mut(&id).map(|m| &mut m.part) {
+            Some(Part::Seq(q)) => Ok(q.preset(name, ms)),
+            _ => Err(AppError::NoSuchModule(id)),
+        }
+    }
+
+    /// Give Seq module `id` one of MGL's Seq presets. How many controls it set.
+    pub fn load_seq_preset(&mut self, id: u32, preset: &Value) -> Result<usize, AppError> {
+        match self.modules.get_mut(&id).map(|m| &mut m.part) {
+            Some(Part::Seq(q)) => q.load_preset(&mut self.ctl, engine_id(id, 0), preset),
+            _ => Err(AppError::NoSuchModule(id)),
+        }
     }
 }

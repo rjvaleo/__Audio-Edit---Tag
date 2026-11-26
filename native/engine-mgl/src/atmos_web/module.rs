@@ -10,7 +10,10 @@
 //!
 //! The graph runs a render quantum (128 frames) at a time, so the module is
 //! one quantum late (`latency` says so): every note and every input sample
-//! then lands on its own sample, whatever the host's blocks.
+//! then lands on its own sample, whatever the host's blocks. A note is laid
+//! on the graph just before the quantum it falls in is rendered, as the page
+//! lays its notes, never earlier: the graph prunes a parameter's past events
+//! when one is laid, so laying a note sooner could change what it plays.
 //!
 //! Knob `i` is the page's control [`KEYS`]`[i]`. Kinds and Sympathy's tuning
 //! are numbers: the kinds in `AT_KINDS` order, `symTune` 0 degrees, 1 root
@@ -46,6 +49,9 @@ pub fn knob(key: &str) -> Option<u32> {
 
 pub type AtmosWebState = engine_core::Preset<AtmosWebModule>;
 
+/// Notes that can wait at once for their quantum (more are laid at once).
+const PENDING: usize = 512;
+
 /// The seed of the module's own random numbers (`Math.random` in the page).
 const SEED: u32 = 0x41_74_6d_6f;
 
@@ -62,6 +68,8 @@ pub struct AtmosWebModule {
     pos: usize,
     /// The slot each held key plays in.
     held: [Option<usize>; 128],
+    /// Notes waiting for their quantum: (engine frame, note), in order.
+    pending: Vec<(u64, NoteEvent)>,
     /// The tuning given, if one was; Sympathy is then kept tuned.
     tuning: Option<Box<crate::atmos::Tuning>>,
     retune: bool,
@@ -79,6 +87,7 @@ impl AtmosWebModule {
             out: [[0.0; QUANTUM]; 2],
             pos: 0,
             held: [None; 128],
+            pending: Vec::with_capacity(PENDING),
             tuning: None,
             retune: false,
         }
@@ -123,6 +132,33 @@ impl AtmosWebModule {
         440.0 * 2f64.powf((note.note as f64 - 69.0) / 12.0 + note.detune_cents as f64 / 1200.0)
     }
 
+    /// A note to lay when its quantum is rendered (at once if the queue is
+    /// full, which only a flood of notes in one block can make it).
+    fn queue(&mut self, note: NoteEvent, frame: u64) {
+        self.base.get_or_insert(frame);
+        if self.pending.len() == self.pending.capacity() {
+            self.note(&note, frame);
+        } else {
+            self.pending.push((frame, note));
+        }
+    }
+
+    /// The notes that fall in the quantum about to be rendered, laid in the
+    /// order they came.
+    fn lay_due(&mut self) {
+        let Some(base) = self.base else { return };
+        let end = base + self.a.g.now().frame + QUANTUM as u64;
+        let mut k = 0;
+        while k < self.pending.len() {
+            if self.pending[k].0 < end {
+                let (frame, note) = self.pending.remove(k);
+                self.note(&note, frame);
+            } else {
+                k += 1;
+            }
+        }
+    }
+
     /// A note at engine frame `frame`.
     fn note(&mut self, note: &NoteEvent, frame: u64) {
         let base = *self.base.get_or_insert(frame);
@@ -158,6 +194,7 @@ impl AtmosWebModule {
         self.a = Box::new(a);
         self.rate = rate;
         self.base = None;
+        self.pending.clear();
         self.pos = 0;
         self.stage = [[0.0; QUANTUM]; 2];
         self.out = [[0.0; QUANTUM]; 2];
@@ -219,7 +256,7 @@ impl Module for AtmosWebModule {
             }
             EventKind::Note(note) => {
                 let frame = self.base.unwrap_or(0) + self.a.g.now().frame + self.pos as u64;
-                self.note(&note, frame);
+                self.queue(note, frame);
             }
             EventKind::Sound { .. } => {}
         }
@@ -252,7 +289,7 @@ impl Module for AtmosWebModule {
         // quantum already rendered, which ends where the last piece did.
         for note in io.ins.notes(0) {
             let n = *note;
-            self.note(&n, start + note.offset as u64);
+            self.queue(n, start + note.offset as u64);
         }
         let (il, ir) = io.ins.audio(1);
         let (ol, or) = io.outs.audio(0);
@@ -269,6 +306,7 @@ impl Module for AtmosWebModule {
                     self.retune = false;
                     self.a.retune_sympathy();
                 }
+                self.lay_due();
                 let [sl, sr] = self.stage;
                 let quiet = sl.iter().chain(sr.iter()).all(|v| *v == 0.0);
                 let input = if quiet { None } else { Some((&sl[..], &sr[..])) };

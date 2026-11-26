@@ -97,11 +97,10 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
     buildLayers();
     reload();
     startTimerHz (30);
-    // When idle, a view at a time.
-    juce::Timer::callAfterDelay (1500, [safe = juce::Component::SafePointer<WaveFace> (this)] {
-        if (safe != nullptr)
-            safe->warm (0);
-    });
+    // The other views are drawn when first shown, not warmed in advance:
+    // each takes hundreds of milliseconds on the message thread, and with a
+    // few Waves on the board that held every press for seconds (RJ, 26 Nov
+    // 2026; the board bench, IDMLAB_BOARD_TEST).
 }
 
 void WaveFace::warm (int which)

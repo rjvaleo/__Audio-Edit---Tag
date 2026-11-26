@@ -113,8 +113,34 @@ public:
                 if (ext->needsBackup() && !ext->canBackup())
                     valid.clear();
         if (!valid.containsRectangle (bounds))
-            render (image, step, valid, bounds, bounds);
-        valid = bounds;
+        {
+            // A module not being worked with (not selected, not under the
+            // mouse) shows what moves in it at most eight times a second:
+            // every face animates as its page does, and a board of them at
+            // full rate held the message thread (RJ, 26 Nov 2026).
+            const double now = juce::Time::getMillisecondCounterHiRes();
+            const bool quick = first || (live && live());
+            if (!quick && now - renderedAt < calmMs)
+            {
+                if (!later)
+                {
+                    later = true;
+                    juce::Timer::callAfterDelay ((int) (calmMs - (now - renderedAt)) + 1, [p = juce::Component::SafePointer<juce::Component> (owner.getParentComponent()), o = juce::Component::SafePointer<juce::Component> (&owner), this] {
+                        if (o == nullptr)
+                            return;
+                        later = false;
+                        if (p != nullptr)
+                            p->repaint (o->getBounds());
+                    });
+                }
+            }
+            else
+            {
+                render (image, step, valid, bounds, bounds);
+                renderedAt = now;
+                valid = bounds;
+            }
+        }
 
         // A sharper (or lighter) picture, made a band at a time in the time
         // each frame has to spare; the one it has is shown until it is whole.
@@ -170,8 +196,14 @@ public:
 
     // Set by the canvas while a zoom runs.
     bool held = false;
+    // True while the module is being worked with: what moves in it is shown
+    // every frame; otherwise at most every calmMs.
+    std::function<bool()> live;
 
 private:
+    static constexpr double calmMs = 125.0;
+    double renderedAt = 0;
+    bool later = false;
     juce::Component& owner;
     juce::Image image, next;
     juce::RectangleList<int> valid, nextValid;
@@ -302,7 +334,9 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
     accent = accentFor (kind.id);
     // A pan moves a finished picture of the module; a change inside it draws
     // only that part again.
-    setCachedComponentImage (new SteppedCache (*this));
+    auto* cache = new SteppedCache (*this);
+    cache->live = [this] { return selected || isMouseOverOrDragging (true); };
+    setCachedComponentImage (cache);
 
     for (int s = 0; s < (int) kind.ins.size(); ++s)
     {
@@ -369,6 +403,43 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         };
         atmos->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
         addAndMakeVisible (*atmos);
+    }
+    else if (kind.id == "seq")
+    {
+        // MGL's Seq page (SeqFace): its steps, its synth, its keys.
+        auto* host = &canvas.host;
+        const auto module = (uint32_t) id;
+        seq = std::make_unique<SeqFace> (
+            [host, module] (const juce::String& key, const juce::String& value) {
+                host->with ([&] (NaApp* a) { return na_seq_set (a, module, key.toRawUTF8(), value.toRawUTF8()); });
+            },
+            [host, module] {
+                return juce::String (host->with ([&] (NaApp* a) { return naText ([&] (char* b, uint32_t cap) { return na_seq_state (a, module, b, cap); }); }));
+            },
+            [host, module] (int& step, float& hz, int& degree) {
+                int32_t s = step, d = degree;
+                float h = hz;
+                const int r = (int) host->with ([&] (NaApp* a) { return na_seq_now (a, module, &s, &h, &d); });
+                step = s, hz = h, degree = d;
+                return r;
+            });
+        auto* cv = &canvas;
+        const int self = id;
+        seq->presetNames = [cv] {
+            juce::StringArray names;
+            for (const auto& [n, p] : cv->seqPresets())
+                names.add (n);
+            return names;
+        };
+        seq->loadPreset = [cv, self] (const juce::String& name) {
+            for (const auto& [n, p] : cv->seqPresets())
+                if (n == name)
+                    return cv->loadSeqPreset (self, p);
+        };
+        seq->savePreset = [cv, self] { cv->saveSeqPreset (self); };
+        seq->deletePreset = [cv] (const juce::String& name) { cv->deleteSeqPreset (name); };
+        seq->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
+        addAndMakeVisible (*seq);
     }
     else if (kind.id == "grain")
     {
@@ -859,7 +930,7 @@ void AddMenu::filter()
     const auto q = search.getText().trim().toLowerCase();
     // idMLab groups its modules by family; MGL's sit under their own.
     const std::vector<std::pair<juce::String, juce::StringArray>> groups {
-        { "MULTIGRAINLIVE", { "wave", "atmos", "sound", "edit", "grain", "chop", "prism", "fx", "browse", "library" } },
+        { "MULTIGRAINLIVE", { "wave", "atmos", "seq", "sound", "edit", "grain", "chop", "prism", "fx", "browse", "library" } },
         { "MIDI", { "midi-in" } },
         { "AUDIO", { "output" } },
     };
@@ -1834,6 +1905,68 @@ void Canvas::saveAtmosPreset (int id)
         refresh();
         report (0, ok ? "Saved the preset " + f.getFileName() : "Couldn't write " + f.getFullPathName());
     });
+}
+
+std::vector<std::pair<juce::String, juce::var>> Canvas::seqPresets()
+{
+    // MGL's own list first (the page's presets.json, as its recall menu
+    // starts), each by its name and date as the page shows it; then this
+    // app's, file by file.
+    std::vector<std::pair<juce::String, juce::var>> out;
+    // The page lists each by its name (which carries its date).
+    auto label = [] (const juce::var& p) { return p["name"].toString(); };
+    const auto builtIn = juce::JSON::parse (face::embeddedFile ("presets.json"));
+    if (auto* list = builtIn.getArray())
+        for (const auto& p : *list)
+            out.push_back ({ label (p), p });
+    auto files = places::seqPresets().findChildFiles (juce::File::findFiles, false, "*.json");
+    files.sort();
+    for (const auto& f : files)
+        for (const auto& p : presetsIn (f))
+            out.push_back ({ label (p), p });
+    return out;
+}
+
+void Canvas::loadSeqPreset (int id, const juce::var& preset)
+{
+    remember();
+    const auto text = juce::JSON::toString (preset, true).toStdString();
+    const int n = host.with ([&] (NaApp* a) { return na_load_seq_preset (a, (uint32_t) id, text.c_str()); });
+    if (n < 0)
+        return report (n, "Opening the preset " + preset["name"].toString());
+    if (auto it = nodes.find (id); it != nodes.end() && it->second->seq != nullptr)
+        it->second->seq->reload();
+    report (0, "Seq plays " + preset["name"].toString());
+}
+
+void Canvas::saveSeqPreset (int id)
+{
+    // `savePreset`: named as `generatePresetName` names them, kept with the rest.
+    static const char* adj[] = { "Unstuck", "Tralfamadorian", "Bokonist", "Chronosynclastic", "Fatalistic", "Granfalloon", "Karass", "Wampeterian", "Dresden", "Pilgrim", "Deadeye", "Timequake", "Harmonic", "Sinooká", "Nothingburger", "Ice-Nine", "Unglued", "Infundibulated", "Fata-Tisi", "Lamentable", "Earnest", "Peculiar", "Listless", "Sanguine", "Aberrant", "Tranquil", "Effervescent", "Lugubrious", "Sardonic", "Absurdist", "Galactic", "Rumfoordian", "Wakefield", "Parabolic", "Oscillating" };
+    static const char* noun[] = { "Groove", "Waltz", "Cascade", "Fugue", "Drift", "Requiem", "Passage", "Tremolo", "Sequence", "Interlude", "Oscillation", "Lullaby", "Elegy", "Resonance", "Reverie", "Soliloquy", "Prelude", "Coda", "Bop", "Aria", "Nocturne", "Fantasia", "March", "Toccata", "Overture", "Raga", "Étude", "Schmaltz", "Waltz", "Sérénade", "Episode", "Threshold", "Chronicle", "Transmission", "Broadcast", "Frequency", "Signal" };
+    auto& r = juce::Random::getSystemRandom();
+    const juce::String name = juce::String::fromUTF8 (adj[r.nextInt ((int) std::size (adj))]) + " " + juce::String::fromUTF8 (noun[r.nextInt ((int) std::size (noun))])
+                              + juce::String::fromUTF8 (" \xc2\xb7 ") + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H:%M");
+    const auto title = name.toStdString();
+    const auto preset = host.with ([&] (NaApp* a) { return naText ([&] (char* b, uint32_t c) { return na_seq_preset (a, (uint32_t) id, title.c_str(), b, c); }); });
+    if (preset.empty())
+        return report (-1, "Saving the preset");
+    const auto f = places::seqPresets().getChildFile (juce::File::createLegalFileName (name) + ".json");
+    const bool ok = f.replaceWithText ("[" + juce::String::fromUTF8 (preset.c_str()) + "]");
+    report (0, ok ? "Saved the preset " + name : "Couldn't write " + f.getFullPathName());
+}
+
+void Canvas::deleteSeqPreset (const juce::String& name)
+{
+    // Only this app's own, and to the bin: MGL's built-in list stays.
+    for (const auto& f : places::seqPresets().findChildFiles (juce::File::findFiles, false, "*.json"))
+        for (const auto& p : presetsIn (f))
+            if (p["name"].toString() == name)
+            {
+                f.moveToTrash();
+                return report (0, "Deleted the preset " + p["name"].toString());
+            }
+    report (0, name + " is one of MGL's own presets and stays");
 }
 
 void Canvas::set (int id, int index, float value)
