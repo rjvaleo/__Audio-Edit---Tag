@@ -840,6 +840,24 @@ public:
             setApplicationReturnValue (editBench (args));
             return quit();
         }
+        if (args.size() >= 1 && args[0] == "--fonts")
+        {
+            // Which faces and weights this Mac gives the pages' fonts (they differ between macOS versions).
+            for (const auto* name : { ".AppleSystemUIFontMonospaced", "SF Mono", "Menlo", ".AppleSystemUIFont" })
+            {
+                std::printf ("%s: styles", name);
+                for (const auto& st : juce::Font::findAllTypefaceStyles (name))
+                    std::printf (" [%s]", st.toRawUTF8());
+                std::printf ("\n");
+                for (const int w : { 400, 500, 600, 700 })
+                {
+                    const auto f = juce::String (name).contains ("Mono") || juce::String (name) == "Menlo" ? face::mono (12, w) : face::sans (12, w);
+                    std::printf ("  weight %d -> %s / %s, width of \"D1 OCT\" %.2f\n", w, f.getTypefacePtr()->getName().toRawUTF8(), f.getTypefacePtr()->getStyle().toRawUTF8(),
+                                 juce::GlyphArrangement::getStringWidth (f, "D1 OCT"));
+                }
+            }
+            return quit();
+        }
         if (args.size() >= 2 && args[0] == "--bench" && args[1] == "seq")
         {
             // Seq's face: drawn whole, again, after a knob, a step and a scale;
