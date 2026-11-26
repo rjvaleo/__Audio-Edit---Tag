@@ -123,6 +123,11 @@ private:
     std::vector<Seg> segs;          // the segmented switches' buttons
     std::vector<Node> stepNodes;    // the 64 steps, as the page lays them
     std::vector<Node> keyNodes;     // the 88 keys
+    std::vector<Node> statusDivs;   // the status line's items, laid out as they grow
+    void drawStatus (juce::Graphics&);
+    // Each step's look, drawn once at a scale and kept: (look, scale) -> picture.
+    std::map<std::pair<int, int>, juce::Image> stepLooks;
+    juce::Rectangle<float> stepLookBounds (const juce::var& tmpl) const;
     std::map<int, juce::String> texts;
     juce::Rectangle<float> listR, degreesR, rulerR, perfR;
     std::vector<std::pair<juce::Rectangle<float>, juce::String>> buttons;  // the page's buttons, by what they do

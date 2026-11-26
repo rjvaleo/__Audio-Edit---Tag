@@ -218,6 +218,13 @@ void SeqFace::index (const juce::var& n)
     }
     if (hasClass (n, "perf-header"))
         perfR = node.r;
+    if (hasClass (n, "status-bar"))
+        if (auto* kids = n["kids"].getArray())
+            for (const auto& k : *kids)
+            {
+                statusDivs.push_back ({ (int) k["i"], rectOf (k["rect"]), k });
+                page.skip.insert ((int) k["i"]);
+            }
     if (n["tag"].toString() == "button")
     {
         const auto t = firstText (n);
@@ -807,7 +814,26 @@ void SeqFace::drawStep (juce::Graphics& g, int i)
         if (hasClass (n, "step-note") || hasClass (n, "step-oct") || hasClass (n, "step-hz") || hasClass (n, "step-num") || hasClass (n, "step-rest"))
             words.insert ((int) n["i"]);
     });
-    grid.chrome->drawPart (g, *tmpl, offset, 1.0f, nullptr, &words);
+    {
+        // The step's look (its box, shadows, buttons) drawn once at this
+        // scale and kept; only its words are written each time.
+        const float scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
+        const auto key = std::make_pair (from, juce::roundToInt (scale * 100));
+        const auto bounds = stepLookBounds (*tmpl);
+        auto it = stepLooks.find (key);
+        if (it == stepLooks.end())
+        {
+            juce::Image img (juce::Image::ARGB, juce::jmax (1, juce::roundToInt (bounds.getWidth() * scale)), juce::jmax (1, juce::roundToInt (bounds.getHeight() * scale)), true);
+            {
+                juce::Graphics ig (img);
+                ig.addTransform (juce::AffineTransform::scale (scale));
+                grid.chrome->drawPart (ig, *tmpl, -bounds.getTopLeft(), 1.0f, nullptr, &words);
+            }
+            it = stepLooks.emplace (key, img).first;
+        }
+        const auto at = bounds.getTopLeft() + offset;
+        g.drawImageTransformed (it->second, juce::AffineTransform::scale (1.0f / scale).translated (at.x, at.y));
+    }
     // Its words, written where the staged step has them.
     const auto c = cents();
     const int n = juce::jmax (1, c.size());
@@ -1059,6 +1085,56 @@ void SeqFace::drawRuler (juce::Graphics& g)
     }
 }
 
+// The status line: each item its label and its reading, laid one after
+// another as the page's row lays them, so a longer reading moves the rest on.
+void SeqFace::drawStatus (juce::Graphics& g)
+{
+    if (statusDivs.empty())
+        return;
+    float x = statusDivs.front().r.getX();
+    for (size_t k = 0; k < statusDivs.size(); ++k)
+    {
+        const auto& d = statusDivs[k];
+        const float dx = x - d.r.getX();
+        juce::Graphics::ScopedSaveState keep (g);
+        g.addTransform (juce::AffineTransform::translation (dx, 0));
+        drawText (g, d.n, firstText (d.n), false);
+        float right = d.r.getRight();
+        if (auto* kids = d.n["kids"].getArray(); kids != nullptr && !kids->isEmpty())
+        {
+            const auto& span = kids->getReference (0);
+            const int si = (int) span["i"];
+            const auto text = texts.count (si) ? texts[si] : firstText (span);
+            drawText (g, span, text, false);
+            float w = rectOf (span["rect"]).getWidth();
+            if (texts.count (si))
+                if (auto* runs = span["text"].getArray(); runs != nullptr && !runs->isEmpty())
+                    w = juce::GlyphArrangement::getStringWidth (face::font (runs->getReference (0)["font"]), text);
+            right = rectOf (span["rect"]).getX() + w;
+        }
+        const float gap = k + 1 < statusDivs.size() ? statusDivs[k + 1].r.getX() - d.r.getRight() : 0.0f;
+        x = right + dx + gap;
+    }
+}
+
+namespace
+{
+// Every node's box in a captured subtree, together.
+juce::Rectangle<float> unionOf (const juce::var& n)
+{
+    auto u = rectOf (n["rect"]);
+    if (auto* kids = n["kids"].getArray())
+        for (const auto& k : *kids)
+            u = u.getUnion (unionOf (k));
+    return u;
+}
+} // namespace
+
+juce::Rectangle<float> SeqFace::stepLookBounds (const juce::var& tmpl) const
+{
+    return unionOf (tmpl).expanded (6);
+}
+
 // ── layers ─────────────────────────────────────────────────────────────────
 
 void SeqFace::addCanvas (const juce::String& id, juce::Rectangle<float> r, juce::StringArray deps, std::function<void (juce::Graphics&, float, float)> draw)
@@ -1155,10 +1231,13 @@ void SeqFace::buildLayers()
         drawRuler (g);
     });
     textLayer = addLayer ({}, getLocalBounds().toFloat(), { "*" }, [this] (juce::Graphics& g) {
+        drawStatus (g);
         for (const auto& [node, text] : texts)
             if (auto it = page.nodes.find (node); it != page.nodes.end())
             {
                 const auto id = it->second["id"].toString();
+                if (id.startsWith ("status"))
+                    continue;  // drawStatus lays them out
                 drawText (g, it->second, text, id.endsWith ("Val") && !id.startsWith ("delay") && !id.startsWith ("tape"));
             }
     });
