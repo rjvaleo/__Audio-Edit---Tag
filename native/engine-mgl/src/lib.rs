@@ -22,6 +22,7 @@ pub mod wave_view;
 
 pub use crate::atmos::{Atmos, AtmosState, AtmosView, Tuning};
 pub use crate::atmos_web::module::{AtmosWebModule, AtmosWebState};
+pub use crate::seq::module::{SeqModule, SeqState, SeqView};
 pub use crate::ceiling::Ceiling;
 pub use crate::chop::{Chop, ChopThing};
 pub use crate::rack::{Board, BoardThing, Rack, RackThing, Scope, SCOPE_LEN};

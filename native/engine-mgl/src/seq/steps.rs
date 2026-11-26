@@ -70,41 +70,61 @@ fn js_rem(a: i32, b: i32) -> i32 {
 }
 
 impl Scale {
-    /// `getFreqForDegree`: degree `d` of the scale, octaves above (or below)
-    /// for degrees past its end. A negative degree indexes as the page's
-    /// does (`deg[d]` of a negative `d` is undefined there, so NaN).
+    /// `getFreqForDegree`: see [`degree_hz`].
     pub fn freq_for_degree(&self, degree: i32) -> f64 {
-        let n = self.cents.len() as i32;
-        let oct = (degree as f64 / n as f64).floor();
-        let d = js_rem(degree, n);
-        if d < 0 {
-            return f64::NAN;
-        }
-        let cents = self.cents[d as usize] + oct * 1200.0;
-        cents_to_hz(self.root_hz, cents)
+        degree_hz(&self.cents, self.root_hz, degree)
     }
 
-    /// `compute88Notes`' pitch for MIDI key `midi`, with the root's MIDI note
-    /// `root_midi + (root_octave + 1) * 12`, or `None` outside A0..C8.
+    /// `compute88Notes`' pitch for a key: see [`key_hz`].
     pub fn key_hz(&self, midi: i32, root_midi: i32, root_octave: i32) -> Option<f64> {
-        if !(21..=108).contains(&midi) {
-            return None;
-        }
-        let root_midi_num = root_midi + (root_octave + 1) * 12;
-        let diff = midi - root_midi_num;
-        let total = (diff * 100) as f64;
-        let scale_octave = (total / 1200.0).floor();
-        let mut best = 0usize;
-        let mut best_dist = f64::INFINITY;
-        for (d, c) in self.cents.iter().enumerate() {
-            let dist = (total - (c + scale_octave * 1200.0)).abs();
-            if dist < best_dist {
-                best_dist = dist;
-                best = d;
-            }
-        }
-        Some(cents_to_hz(self.root_hz, self.cents[best] + scale_octave * 1200.0))
+        key_hz(&self.cents, self.root_hz, midi, root_midi, root_octave)
     }
+}
+
+/// `getFreqForDegree`: degree `d` of the scale `cents` from `root_hz`,
+/// octaves above (or below) for degrees past its end. A negative degree
+/// indexes as the page's does (`deg[d]` of a negative `d` is undefined
+/// there, so NaN).
+pub fn degree_hz(cents: &[f64], root_hz: f64, degree: i32) -> f64 {
+    let n = cents.len() as i32;
+    if n == 0 {
+        return f64::NAN;
+    }
+    let oct = (degree as f64 / n as f64).floor();
+    let d = js_rem(degree, n);
+    if d < 0 {
+        return f64::NAN;
+    }
+    cents_to_hz(root_hz, cents[d as usize] + oct * 1200.0)
+}
+
+/// `compute88Notes`' pitch for MIDI key `midi` in the scale `cents` from
+/// `root_hz`, with the root's MIDI note `root_midi + (root_octave + 1) *
+/// 12`, or `None` outside A0..C8.
+pub fn key_hz(cents: &[f64], root_hz: f64, midi: i32, root_midi: i32, root_octave: i32) -> Option<f64> {
+    if !(21..=108).contains(&midi) || cents.is_empty() {
+        return None;
+    }
+    let root_midi_num = root_midi + (root_octave + 1) * 12;
+    let diff = midi - root_midi_num;
+    let total = (diff * 100) as f64;
+    let scale_octave = (total / 1200.0).floor();
+    let mut best = 0usize;
+    let mut best_dist = f64::INFINITY;
+    for (d, c) in cents.iter().enumerate() {
+        let dist = (total - (c + scale_octave * 1200.0)).abs();
+        if dist < best_dist {
+            best_dist = dist;
+            best = d;
+        }
+    }
+    Some(cents_to_hz(root_hz, cents[best] + scale_octave * 1200.0))
+}
+
+/// `updateRoot`: the root's pitch, A4 (MIDI 69) at 440 Hz.
+pub fn root_hz(root_midi: i32, root_octave: i32) -> f64 {
+    let midi_num = root_midi + (root_octave + 1) * 12;
+    440.0 * fdlibm::pow(2.0, (midi_num - 69) as f64 / 12.0)
 }
 
 /// `stepAtBoundary`: the step a film plays at boundary `k` of `n` steps.

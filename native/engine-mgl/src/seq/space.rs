@@ -185,7 +185,7 @@ impl Space {
     /// changed (at once, as offline). Allocates when it makes a response.
     pub fn apply(&mut self, g: &mut Graph, s: &SpaceSettings) {
         let now = g.current_time();
-        let mut smooth = |g: &mut Graph, n: NodeId, k: u8, v: f64| g.set_target_at_time(n, k, v as f32, now, 0.03);
+        let smooth = |g: &mut Graph, n: NodeId, k: u8, v: f64| g.set_target_at_time(n, k, v as f32, now, 0.03);
         smooth(g, self.wet, GAIN, (s.wet / 100.0) * 1.4);
         smooth(g, self.pre, DELAY_TIME, (s.pre * 1.5) / 1000.0);
         smooth(g, self.low, FREQUENCY, if s.low_cut <= 0.0 { 10.0 } else { at_exp(s.low_cut, 20.0, 1000.0) });

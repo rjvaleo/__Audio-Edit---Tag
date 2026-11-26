@@ -14,6 +14,7 @@
 //! channels and the scopes share the page's graph but are silent in Seq's
 //! cases and are not built.
 
+pub mod module;
 pub mod space;
 pub mod steps;
 
@@ -42,6 +43,14 @@ const KEY_FOLLOW_REF_MIDI: f64 = 60.0;
 pub const TAPE_ACCEL: f64 = 12.0;
 /// `TAPE_HEADGAP_S`: the head gap, sized so nominal speed gives 0.5 s.
 pub const TAPE_HEADGAP_S: f64 = 0.5;
+/// The longest tape glide curve (`Math.min(48000, …)`).
+const TAPE_CURVE_MAX: usize = 48000;
+/// `BPM_SLEW_DELAY_S`, `BPM_SLEW_TAU`, `BPM_SLEW_MAX_RATE`.
+pub const BPM_SLEW_DELAY_S: f64 = 0.12;
+const BPM_SLEW_TAU: f64 = 0.45;
+const BPM_SLEW_MAX_RATE: f64 = 90.0;
+/// The slew's ticker (`setInterval(…, 30)`), in seconds.
+pub const BPM_SLEW_TICK: f64 = 0.03;
 
 /// Classic's oscillator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -188,6 +197,20 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// What the page plays as it opens, before a control is touched: its
+    /// literals (`filterCutoff = 2046`, `filterRes = 2.09`, `delayWet =
+    /// 0.25`, the `lfos` array), not the reference renders' baseline.
+    pub fn page() -> Self {
+        let lfo = |rate, depth, target| Lfo { rate, depth, wave: Shape::Sine, target };
+        Settings {
+            cutoff: 2046.0,
+            q: 2.09,
+            lfos: [lfo(1.0, 0.2, Target::Filter), lfo(0.55, 0.25, Target::Pw), lfo(0.55, 0.0, Target::None)],
+            delay: Delay { subdiv: 0.5, feedback: 0.35, wet: 0.25, spread: 1.0, hi_cut: 6300.0 },
+            ..Settings::default()
+        }
+    }
+
     /// One step's length in seconds (`(60 / bpm) * stepBeats`).
     pub fn step_dur(&self) -> f64 {
         (60.0 / self.bpm) * self.step_beats
@@ -291,6 +314,12 @@ pub struct Classic {
     delay_wet: NodeId,
     delay_l: NodeId,
     delay_r: NodeId,
+    pan_l: NodeId,
+    pan_r: NodeId,
+    hi_lr: NodeId,
+    hi_rl: NodeId,
+    fb_lr: NodeId,
+    fb_rl: NodeId,
     lfo_osc: [NodeId; 3],
     lfo_gain: [NodeId; 3],
     pulses: [WaveId; PULSE_WAVES],
@@ -302,6 +331,12 @@ pub struct Classic {
     /// The tempo a glide is heading for (`bpmTarget`).
     pub bpm_target: f64,
     glide: Option<Glide>,
+    /// The tape glide's curve, made here so a glide never allocates.
+    curve: Vec<f32>,
+    /// The tempo slew (`startBpmSlew`): running, and the hold after the
+    /// last knob move, in context seconds.
+    slewing: bool,
+    slew_hold_until: f64,
     pub space: space::Space,
 }
 
@@ -428,6 +463,12 @@ impl Classic {
             delay_wet,
             delay_l,
             delay_r,
+            pan_l,
+            pan_r,
+            hi_lr,
+            hi_rl,
+            fb_lr,
+            fb_rl,
             lfo_osc,
             lfo_gain,
             pulses,
@@ -437,8 +478,14 @@ impl Classic {
             current_pw,
             bpm_target,
             glide: None,
+            curve: Vec::with_capacity(TAPE_CURVE_MAX),
+            slewing: false,
+            slew_hold_until: 0.0,
             space,
         };
+        for d in [delay_l, delay_r] {
+            c.g.reserve_value_curves(d, DELAY_TIME, TAPE_CURVE_MAX);
+        }
         for i in 0..3 {
             c.connect_lfo(i);
         }
@@ -660,17 +707,120 @@ impl Classic {
         let mut t = 10f64.min(0.02f64.max((v1 - v0).abs() / TAPE_ACCEL));
         t = t.max((d_target - d_now).abs() / 0.85);
         let start = now + start_delay;
-        let n = 48000usize.min(16usize.max((t * 2000.0).ceil() as usize));
-        let mut curve = Vec::with_capacity(n);
+        let n = TAPE_CURVE_MAX.min(16usize.max((t * 2000.0).ceil() as usize));
+        self.curve.clear();
         for i in 0..n {
-            curve.push((l / (v0 + ((v1 - v0) * i as f64) / (n - 1) as f64)) as f32);
+            self.curve.push((l / (v0 + ((v1 - v0) * i as f64) / (n - 1) as f64)) as f32);
         }
         for d in [self.delay_l, self.delay_r] {
             self.g.cancel_and_hold_at_time(d, DELAY_TIME, now);
             self.g.set_value_at_time(d, DELAY_TIME, d_now as f32, now);
-            self.g.set_value_curve_at_time(d, DELAY_TIME, &curve, start, t);
+            self.g.set_value_curve_at_time(d, DELAY_TIME, &self.curve, start, t);
         }
         self.glide = Some(Glide { v0, v1, l, start, t, d_end: d_target });
+    }
+
+    // ── The page's controls, each as its update function does it ──────────
+
+    /// `updateVol`: `seqVol.gain.value = volume`.
+    pub fn set_volume(&mut self, volume: f64) {
+        self.s.volume = volume;
+        self.g.set(self.seq_vol, GAIN, volume as f32);
+    }
+
+    /// `updateFilter`: the base cutoff glides there (the note's envelope
+    /// keeps running), Q is set, and the filter LFOs' depths follow.
+    pub fn set_filter(&mut self, cutoff: f64, q: f64) {
+        self.s.cutoff = cutoff;
+        self.s.q = q;
+        let now = self.g.current_time();
+        self.g.cancel_and_hold_at_time(self.cutoff_base, OFFSET, now);
+        self.g.set_target_at_time(self.cutoff_base, OFFSET, cutoff as f32, now, 0.015);
+        self.g.set(self.filter, Q, q as f32);
+        for i in 0..3 {
+            if self.s.lfos[i].target == Target::Filter {
+                let v = self.lfo_gain_value(i);
+                self.g.set(self.lfo_gain[i], GAIN, v as f32);
+            }
+        }
+    }
+
+    /// `updateLFO(i)`: its wave, rate and depth.
+    pub fn set_lfo(&mut self, i: usize, rate: f64, depth: f64, wave: Shape) {
+        let l = &mut self.s.lfos[i];
+        l.rate = rate;
+        l.depth = depth;
+        l.wave = wave;
+        if let Some(w) = wave.builtin() {
+            self.g.set_oscillator_wave(self.lfo_osc[i], w);
+        }
+        self.g.set(self.lfo_osc[i], FREQUENCY, rate as f32);
+        let v = self.lfo_gain_value(i);
+        self.g.set(self.lfo_gain[i], GAIN, v as f32);
+    }
+
+    /// `changeLFOTarget(i, target)`.
+    pub fn set_lfo_target(&mut self, i: usize, target: Target) {
+        self.s.lfos[i].target = target;
+        self.connect_lfo(i);
+    }
+
+    /// `updateDelay`: a new subdivision glides the tape there, the rest is
+    /// set at once.
+    pub fn set_delay(&mut self, d: Delay) {
+        let prev = self.s.delay.subdiv;
+        self.s.delay = d;
+        if d.subdiv != prev {
+            self.tape_glide(0.0);
+        }
+        let g = &mut self.g;
+        g.set(self.fb_lr, GAIN, d.feedback as f32);
+        g.set(self.fb_rl, GAIN, d.feedback as f32);
+        g.set(self.pan_l, PAN, (-d.spread) as f32);
+        g.set(self.pan_r, PAN, d.spread as f32);
+        g.set(self.hi_lr, FREQUENCY, d.hi_cut as f32);
+        g.set(self.hi_rl, FREQUENCY, d.hi_cut as f32);
+        g.set(self.delay_dry, GAIN, (1.0 - d.wet) as f32);
+        g.set(self.delay_wet, GAIN, d.wet as f32);
+    }
+
+    /// `updateBPM`: the tempo heads for `bpm`; the delay's loop glides
+    /// there after the hold, and the steps' tempo slews ([`Self::slew`]).
+    pub fn set_bpm(&mut self, bpm: f64) {
+        self.bpm_target = bpm;
+        self.slew_hold_until = self.g.current_time() + BPM_SLEW_DELAY_S;
+        self.tape_glide(BPM_SLEW_DELAY_S);
+        self.slewing = true;
+    }
+
+    /// One tick of the tempo slew, `dt` seconds after the last
+    /// (`startBpmSlew`'s interval).
+    pub fn slew(&mut self, dt: f64) {
+        if !self.slewing || self.g.current_time() < self.slew_hold_until {
+            return;
+        }
+        let dt = dt.max(0.001);
+        let mut step = (self.bpm_target - self.s.bpm) * (1.0 - fdlibm::exp(-dt / BPM_SLEW_TAU));
+        let max_step = BPM_SLEW_MAX_RATE * dt;
+        step = (-max_step).max(max_step.min(step));
+        self.s.bpm += step;
+        if (self.bpm_target - self.s.bpm).abs() < 0.05 {
+            self.s.bpm = self.bpm_target;
+        }
+        if self.s.bpm == self.bpm_target {
+            self.slewing = false;
+        }
+    }
+
+    /// Every note let go now (the page's Stop leaves sounding notes to
+    /// their release; this is for a module taken out of a patch).
+    pub fn release_all(&mut self, at: f64) {
+        for slot in 0..MAX_VOICES {
+            let v = self.voices[slot];
+            if v.used && v.end == f64::INFINITY {
+                self.release(Held(v.id), at);
+            }
+        }
     }
 
     /// Freeze (`atFrozen = true; atmosFreezeApply()`): Space's gate closes
