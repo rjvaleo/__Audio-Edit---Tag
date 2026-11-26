@@ -143,6 +143,8 @@ private:
     const juce::Font& fontOf (const juce::var& f);
     // The scale's degrees now, in cents.
     std::vector<double> centsNow;
+    // How opaque the words drawText writes are (a dimmed step's).
+    float textAlpha = 1.0f;
     std::map<int, juce::String> texts;
     juce::Rectangle<float> listR, degreesR, rulerR, perfR;
     std::vector<std::pair<juce::Rectangle<float>, juce::String>> buttons;  // the page's buttons, by what they do

@@ -570,7 +570,7 @@ void SeqFace::drawText (juce::Graphics& g, const juce::var& n, const juce::Strin
     const auto r = rectOf (n["rect"]);
     const auto& font = fontOf (f);
     g.setFont (font);
-    g.setColour (face::colour (f["colour"]));
+    g.setColour (face::colour (f["colour"]).withMultipliedAlpha (textAlpha));
     const float w = juce::GlyphArrangement::getStringWidth (font, text);
     float x = centre ? r.getCentreX() - w / 2 : run.getX();
     const auto align = f["align"].toString();
@@ -868,10 +868,7 @@ void SeqFace::drawStep (juce::Graphics& g, int i)
     const int oct = (int) std::floor ((double) degree / n) + 1;
     juce::Graphics::ScopedSaveState keep (g);
     g.addTransform (juce::AffineTransform::translation (offset.x, offset.y));
-    const float opacity = numOf ((*tmpl)["opacity"], 1.0f);
-    const bool dim = opacity < 0.999f;
-    if (dim)
-        g.beginTransparencyLayer (opacity);
+    textAlpha = numOf ((*tmpl)["opacity"], 1.0f);
     if (sw->num != nullptr)
         drawText (g, *sw->num, juce::String (i + 1).paddedLeft ('0', 2), false);
     if (!rest)
@@ -894,8 +891,7 @@ void SeqFace::drawStep (juce::Graphics& g, int i)
         g.addTransform (juce::AffineTransform::translation (-delta.x, -delta.y));
         drawText (g, *rw->rest, firstText (*rw->rest), false);
     }
-    if (dim)
-        g.endTransparencyLayer();
+    textAlpha = 1.0f;
 }
 
 void SeqFace::drawSteps (juce::Graphics& g)
