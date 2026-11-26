@@ -340,15 +340,14 @@ double SeqFace::rootHz() const
 // `getFreqForDegree`.
 double SeqFace::degreeHz (int degree) const
 {
-    const auto c = cents();
-    const int n = c.size();
+    const int n = (int) centsNow.size();
     if (n == 0)
         return 0;
     const int oct = (int) std::floor ((double) degree / n);
     const int d = degree % n;
     if (d < 0)
         return std::nan ("");
-    return rootHz() * std::pow (2.0, ((double) c[d] + oct * 1200.0) / 1200.0);
+    return rootHz() * std::pow (2.0, (centsNow[(size_t) d] + oct * 1200.0) / 1200.0);
 }
 
 // `compute88Notes`.
@@ -444,6 +443,9 @@ juce::StringArray SeqFace::optionValues (const juce::String& key, juce::StringAr
 // The readings, the switches, the selects, as the page writes them.
 void SeqFace::sync()
 {
+    centsNow.clear();
+    for (const auto& c : cents())
+        centsNow.push_back ((double) c);
     texts.clear();
     auto txt = [this] (const juce::String& id, const juce::String& t) {
         auto it = byId.find (id);
@@ -549,6 +551,15 @@ void SeqFace::sync()
 
 // ── drawing ────────────────────────────────────────────────────────────────
 
+const juce::Font& SeqFace::fontOf (const juce::var& f)
+{
+    const void* key = f.getDynamicObject();
+    auto it = fonts.find (key);
+    if (it == fonts.end())
+        it = fonts.emplace (key, face::font (f)).first;
+    return it->second;
+}
+
 void SeqFace::drawText (juce::Graphics& g, const juce::var& n, const juce::String& text, bool centre)
 {
     auto* runs = n["text"].getArray();
@@ -557,7 +568,7 @@ void SeqFace::drawText (juce::Graphics& g, const juce::var& n, const juce::Strin
     const auto f = runs->getReference (0)["font"];
     const auto run = rectOf (runs->getReference (0)["rect"]);
     const auto r = rectOf (n["rect"]);
-    const auto font = face::font (f);
+    const auto& font = fontOf (f);
     g.setFont (font);
     g.setColour (face::colour (f["colour"]));
     const float w = juce::GlyphArrangement::getStringWidth (font, text);
@@ -788,6 +799,28 @@ const juce::var* gridStep (const juce::var& tree, int i)
 }
 } // namespace
 
+const SeqFace::StepWords* SeqFace::wordsOf (int look)
+{
+    auto it = stepWords.find (look);
+    if (it != stepWords.end())
+        return &it->second;
+    StepWords w;
+    w.tmpl = gridStep (grid.tree, look);
+    if (w.tmpl == nullptr)
+        return nullptr;
+    w.bounds = stepLookBounds (*w.tmpl);
+    eachNode (*w.tmpl, [&w] (const juce::var& n) {
+        const juce::var** slot = hasClass (n, "step-note") ? &w.note : hasClass (n, "step-oct") ? &w.oct : hasClass (n, "step-hz") ? &w.hz
+                               : hasClass (n, "step-num") ? &w.num : hasClass (n, "step-rest") ? &w.rest : nullptr;
+        if (slot != nullptr)
+        {
+            *slot = &n;
+            w.words.insert ((int) n["i"]);
+        }
+    });
+    return &stepWords.emplace (look, w).first->second;
+}
+
 void SeqFace::drawStep (juce::Graphics& g, int i)
 {
     if (i < 0 || i >= (int) stepNodes.size() || grid.chrome == nullptr)
@@ -804,75 +837,63 @@ void SeqFace::drawStep (juce::Graphics& g, int i)
         from = 2;
     if (i == picked)
         from = 0;
-    const auto* tmpl = gridStep (grid.tree, from);
-    if (tmpl == nullptr)
+    const auto* sw = wordsOf (from);
+    if (sw == nullptr)
         return;
+    const auto* tmpl = sw->tmpl;
     const auto tr = rectOf ((*tmpl)["rect"]) + grid.at;
     const auto offset = stepNodes[(size_t) i].r.getTopLeft() - tr.getTopLeft() + grid.at;
-    std::set<int> words;
-    eachNode (*tmpl, [&words] (const juce::var& n) {
-        if (hasClass (n, "step-note") || hasClass (n, "step-oct") || hasClass (n, "step-hz") || hasClass (n, "step-num") || hasClass (n, "step-rest"))
-            words.insert ((int) n["i"]);
-    });
     {
         // The step's look (its box, shadows, buttons) drawn once at this
         // scale and kept; only its words are written each time.
         const float scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
         const auto key = std::make_pair (from, juce::roundToInt (scale * 100));
-        const auto bounds = stepLookBounds (*tmpl);
         auto it = stepLooks.find (key);
         if (it == stepLooks.end())
         {
-            juce::Image img (juce::Image::ARGB, juce::jmax (1, juce::roundToInt (bounds.getWidth() * scale)), juce::jmax (1, juce::roundToInt (bounds.getHeight() * scale)), true);
+            juce::Image img (juce::Image::ARGB, juce::jmax (1, juce::roundToInt (sw->bounds.getWidth() * scale)), juce::jmax (1, juce::roundToInt (sw->bounds.getHeight() * scale)), true);
             {
                 juce::Graphics ig (img);
                 ig.addTransform (juce::AffineTransform::scale (scale));
-                grid.chrome->drawPart (ig, *tmpl, -bounds.getTopLeft(), 1.0f, nullptr, &words);
+                grid.chrome->drawPart (ig, *tmpl, -sw->bounds.getTopLeft(), 1.0f, nullptr, &sw->words);
             }
             it = stepLooks.emplace (key, img).first;
         }
-        const auto at = bounds.getTopLeft() + offset;
+        const auto at = sw->bounds.getTopLeft() + offset;
         g.drawImageTransformed (it->second, juce::AffineTransform::scale (1.0f / scale).translated (at.x, at.y));
     }
-    // Its words, written where the staged step has them.
-    const auto c = cents();
-    const int n = juce::jmax (1, c.size());
+    // Its words, written where the staged step has them, as dim as its box.
+    const int n = juce::jmax (1, (int) centsNow.size());
     const int d = ((degree % n) + n) % n;
     const int oct = (int) std::floor ((double) degree / n) + 1;
     juce::Graphics::ScopedSaveState keep (g);
     g.addTransform (juce::AffineTransform::translation (offset.x, offset.y));
-    // Its words as dim as its box (the frame dims the box by its opacity).
     const float opacity = numOf ((*tmpl)["opacity"], 1.0f);
     const bool dim = opacity < 0.999f;
     if (dim)
         g.beginTransparencyLayer (opacity);
-    const auto* restTmpl = gridStep (grid.tree, active ? 1 : 9);
-    eachNode (*tmpl, [&] (const juce::var& node) {
-        if (hasClass (node, "step-num"))
-            drawText (g, node, juce::String (i + 1).paddedLeft ('0', 2), false);
-        if (rest)
-            return;
-        if (hasClass (node, "step-note"))
-            drawText (g, node, "D" + juce::String (d + 1), false);
-        else if (hasClass (node, "step-oct"))
-            drawText (g, node, "OCT" + juce::String (oct), false);
-        else if (hasClass (node, "step-hz"))
-            drawText (g, node, fixed (degreeHz (degree), 1) + "Hz", false);
-    });
-    // A rest's words, when its look is a playing note's (the picked or playing step).
-    if (rest && restTmpl != nullptr && from != 1 && from != 9)
-        if (const auto* w = findNode (*restTmpl, [] (const juce::var& x) { return hasClass (x, "step-rest"); }))
-        {
-            juce::Graphics::ScopedSaveState k2 (g);
-            const auto delta = rectOf ((*restTmpl)["rect"]).getTopLeft() - tr.getTopLeft() + grid.at;
-            g.addTransform (juce::AffineTransform::translation (-delta.x, -delta.y));
-            drawText (g, *w, firstText (*w), false);
-        }
-    if (rest && (from == 1 || from == 9))
-        eachNode (*tmpl, [&] (const juce::var& node) {
-            if (hasClass (node, "step-rest"))
-                drawText (g, node, firstText (node), false);
-        });
+    if (sw->num != nullptr)
+        drawText (g, *sw->num, juce::String (i + 1).paddedLeft ('0', 2), false);
+    if (!rest)
+    {
+        if (sw->note != nullptr)
+            drawText (g, *sw->note, "D" + juce::String (d + 1), false);
+        if (sw->oct != nullptr)
+            drawText (g, *sw->oct, "OCT" + juce::String (oct), false);
+        if (sw->hz != nullptr)
+            drawText (g, *sw->hz, fixed (degreeHz (degree), 1) + "Hz", false);
+    }
+    else if (sw->rest != nullptr)
+        drawText (g, *sw->rest, firstText (*sw->rest), false);
+    else if (const auto* rw = wordsOf (active ? 1 : 9); rw != nullptr && rw->rest != nullptr)
+    {
+        // A rest whose look is a sounding step's (picked, or playing): the
+        // resting step's words, where they sit on it.
+        const auto delta = rectOf ((*rw->tmpl)["rect"]).getTopLeft() - rectOf ((*tmpl)["rect"]).getTopLeft();
+        juce::Graphics::ScopedSaveState k2 (g);
+        g.addTransform (juce::AffineTransform::translation (-delta.x, -delta.y));
+        drawText (g, *rw->rest, firstText (*rw->rest), false);
+    }
     if (dim)
         g.endTransparencyLayer();
 }

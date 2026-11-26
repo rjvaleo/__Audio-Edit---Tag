@@ -19,6 +19,7 @@
 
 #include <functional>
 #include <map>
+#include <set>
 #include <memory>
 #include <vector>
 
@@ -128,6 +129,20 @@ private:
     // Each step's look, drawn once at a scale and kept: (look, scale) -> picture.
     std::map<std::pair<int, int>, juce::Image> stepLooks;
     juce::Rectangle<float> stepLookBounds (const juce::var& tmpl) const;
+    // Each staged step's words' nodes, found once: (look, kind) -> node.
+    struct StepWords
+    {
+        const juce::var *tmpl = nullptr, *note = nullptr, *oct = nullptr, *hz = nullptr, *num = nullptr, *rest = nullptr;
+        juce::Rectangle<float> bounds;
+        std::set<int> words;
+    };
+    std::map<int, StepWords> stepWords;
+    const StepWords* wordsOf (int look);
+    // Fonts made once, by the captured run they are for.
+    std::map<const void*, juce::Font> fonts;
+    const juce::Font& fontOf (const juce::var& f);
+    // The scale's degrees now, in cents.
+    std::vector<double> centsNow;
     std::map<int, juce::String> texts;
     juce::Rectangle<float> listR, degreesR, rulerR, perfR;
     std::vector<std::pair<juce::Rectangle<float>, juce::String>> buttons;  // the page's buttons, by what they do
