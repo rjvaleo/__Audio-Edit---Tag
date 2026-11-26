@@ -184,8 +184,9 @@ fn prism_entry(d: &'static prism_fx::Descriptor) -> Value {
 
 /// One effect the canvas offers as a module of its own: a mode of a module
 /// MGL's picker offers (its 90 listed modes, and the 11 it keeps unlisted, so
-/// every one of prism-fx's 101 effects is there), or one of the rack's three
-/// built-ins.
+/// every one of prism-fx's 101 effects is there; the Parametric EQ and the
+/// Compressor are modes too, of Filter and Dynamics, played by MGL's own
+/// built-ins), and the rack's Gain, which no module offers.
 #[derive(Clone, Debug)]
 pub struct EffectKind {
     /// The canvas kind: `fx:<slot kind>`.
@@ -202,15 +203,12 @@ pub struct EffectKind {
     pub listed: bool,
 }
 
-/// Every effect module, in the Add menu's order: the three built-ins, then
-/// each offered module's modes (listed, then unlisted).
+/// Every effect module, in the Add menu's order: each offered module's modes
+/// (listed, then unlisted), then the rack's Gain.
 pub fn effects() -> &'static [EffectKind] {
     static ALL: std::sync::OnceLock<Vec<EffectKind>> = std::sync::OnceLock::new();
     ALL.get_or_init(|| {
-        let mut out: Vec<EffectKind> = [("eq", "Parametric EQ"), ("comp", "Compressor"), ("gain", "Gain")]
-            .iter()
-            .map(|(k, l)| EffectKind { id: format!("fx:{k}"), kind: (*k).into(), suite: None, mode: None, rev: 0, label: (*l).into(), group: "Rack".into(), listed: true })
-            .collect();
+        let mut out = Vec::new();
         for listed in [true, false] {
             for s in prism_fx::suite::SUITES.iter().filter(|s| s.offered()) {
                 for f in s.families {
@@ -221,6 +219,7 @@ pub fn effects() -> &'static [EffectKind] {
                 }
             }
         }
+        out.push(EffectKind { id: "fx:gain".into(), kind: "gain".into(), suite: None, mode: None, rev: 0, label: "Gain".into(), group: "Rack".into(), listed: false });
         out
     })
 }

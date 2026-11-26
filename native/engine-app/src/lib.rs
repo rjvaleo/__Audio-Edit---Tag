@@ -250,6 +250,11 @@ pub fn kinds_json() -> Value {
                 o.insert("ins".into(), sockets(k.ins));
                 o.insert("outs".into(), sockets(k.outs));
                 o.insert("keyboard".into(), k.keyboard.into());
+                // An effect module's module and whether MGL's Add menu lists it.
+                if let Some(e) = fx::effect(k.id) {
+                    o.insert("group".into(), e.group.clone().into());
+                    o.insert("listed".into(), e.listed.into());
+                }
                 Value::Object(o)
             })
             .collect(),

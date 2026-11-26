@@ -5,6 +5,17 @@ use crate::{engine_id, AppError, Part, Session};
 use engine_core::port;
 use serde_json::{json, Value};
 
+fn op_is(v: &Value, op: &str) -> bool {
+    v.get("op").and_then(Value::as_str) == Some(op)
+}
+
+/// A new slot's id, as the page makes one (`fx-<time>-<random>`), unique here.
+fn fresh_id() -> String {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    format!("{:x}-{}", t, N.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+}
+
 fn bad(why: impl Into<String>) -> AppError {
     AppError::BadFile(why.into())
 }
@@ -90,7 +101,66 @@ impl Session {
                 self.fx(id)?.ui = v.clone();
                 Ok(Value::Bool(true))
             }
+            "presets" => self.fx_presets(id, rack, max_block, v),
             other => Err(bad(format!("no FX call {other:?}"))),
+        }
+    }
+
+    /// The page's preset bar (Grain's, MGL's `PRESETS.json` shape): `{op:
+    /// "places", mine, mgl}`, `list`, `save` (the rack, under `name`), `apply`
+    /// (a preset's rack settings onto the slots there, as MGL's apply moves
+    /// them; the stretch is Grain's, for the document, and stays there),
+    /// `update`, `delete`, and A/B: `{op: "ab", to: "a" | "b"}` (the rack
+    /// kept for the side left, the other side's put back).
+    fn fx_presets(&mut self, id: u32, rack: u32, max_block: usize, v: &Value) -> Result<Value, AppError> {
+        use crate::grain::presets::{self, Places, Preset};
+        let op = v.get("op").and_then(Value::as_str).unwrap_or("list");
+        let (ctl, f) = self.ctl_and_fx(id)?;
+        if op == "places" {
+            f.places = Places::from_json(v);
+            return Ok(f.places.list());
+        }
+        let places = f.places.clone();
+        match op {
+            "list" => Ok(places.list()),
+            "save" => {
+                let name = v.get("name").and_then(Value::as_str).unwrap_or("").trim().to_string();
+                if name.is_empty() {
+                    return Err(bad("a preset needs a name"));
+                }
+                let note = v.get("note").and_then(Value::as_str).unwrap_or("").to_string();
+                let out = places.store(Preset { name: name.clone(), note, path: String::new(), stretch: Default::default(), rack: f.rack.clone() }).map_err(bad)?;
+                f.preset = name;
+                Ok(out)
+            }
+            "apply" => {
+                let name = v.get("name").and_then(Value::as_str).ok_or_else(|| bad("no name given"))?;
+                let p = places.find(name).ok_or_else(|| bad("no such preset"))?;
+                let next = presets::rack_with(&f.rack, &p.rack);
+                f.rack = next;
+                f.preset = name.to_string();
+                f.lay(ctl, rack, max_block)?;
+                Ok(json!({ "rack": f.rack.to_json(), "preset": f.preset }))
+            }
+            "ab" => {
+                let to = if v.get("to").and_then(Value::as_str) == Some("b") { 1 } else { 0 };
+                if to != f.side {
+                    let keep = f.rack.clone();
+                    let other = f.ab[to].take();
+                    f.ab[f.side] = Some(keep.clone());
+                    f.side = to;
+                    if let Some(r) = other {
+                        f.rack = r;
+                        f.lay(ctl, rack, max_block)?;
+                    } else {
+                        f.ab[to] = Some(keep);
+                    }
+                }
+                Ok(json!({ "side": if f.side == 1 { "b" } else { "a" }, "rack": f.rack.to_json() }))
+            }
+            "update" => places.update(v).map_err(bad),
+            "delete" => places.delete(v.get("name").and_then(Value::as_str).unwrap_or("")).map_err(bad),
+            other => Err(bad(format!("no preset op {other:?}"))),
         }
     }
 
@@ -120,6 +190,40 @@ impl Session {
                     return Err(bad("no such slot"));
                 }
                 Ok(f.rack.to_json())
+            }
+            // MGL's Add menu (`addFxModule`): a mode of a module, at its defaults.
+            "add" if v.get("suite").is_some() || v.get("mode").is_some() => {
+                let kind = v.get("kind").and_then(Value::as_str).unwrap_or("");
+                let mut slot = super::default_slot(kind).ok_or_else(|| bad("no such effect"))?;
+                slot["id"] = json!(format!("fx-{}", fresh_id()));
+                if let (Some(s), Some(m)) = (v.get("suite"), v.get("mode")) {
+                    slot["suite"] = s.clone();
+                    slot["mode"] = m.clone();
+                    slot["rev"] = v.get("rev").cloned().unwrap_or(json!(1.0));
+                }
+                let mut all = f.rack.to_json();
+                let slots = all["slots"].as_array_mut().ok_or_else(|| bad("the rack could not do that"))?;
+                let i = at("at").unwrap_or(slots.len()).min(slots.len());
+                slots.insert(i, slot);
+                Ok(f.rack_set(ctl, rack, max_block, &all)?)
+            }
+            // The card's Mode (`fxSwitchMode`), and its look (`face`).
+            "mode" | "face" => {
+                let i = at("at").ok_or_else(|| bad("no slot given"))?;
+                let mut all = f.rack.to_json();
+                let old = all["slots"].get(i).cloned().ok_or_else(|| bad("no such slot"))?;
+                let next = if op_is(v, "mode") {
+                    match super::switch_mode(&old, v.get("suite").and_then(Value::as_str).unwrap_or(""), v.get("mode").and_then(Value::as_str).unwrap_or("")) {
+                        Some(n) => n,
+                        None => return Ok(f.rack.to_json()),
+                    }
+                } else {
+                    let mut n = old;
+                    n["face"] = json!(if v.get("face").and_then(Value::as_str) == Some("mgl") { "mgl" } else { "original" });
+                    n
+                };
+                all["slots"][i] = next;
+                Ok(f.rack_set(ctl, rack, max_block, &all)?)
             }
             op @ ("add" | "remove" | "move") => {
                 let mut spec = f.rack.clone();

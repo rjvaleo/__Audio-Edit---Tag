@@ -195,6 +195,24 @@ impl Session {
                 let live = matches!(v.get("live"), Some(Value::Bool(true)));
                 g.rack_param(slot, key, value, live).map_err(bad)
             }
+            // A card's Mode and look (the FX page's cards, `fxSwitchMode`).
+            op @ ("mode" | "face") => {
+                let i = at("at").ok_or_else(|| bad("no slot given"))?;
+                let mut all = g.rack.to_json();
+                let old = all["slots"].get(i).cloned().ok_or_else(|| bad("no such slot"))?;
+                let next = if op == "mode" {
+                    match crate::fx::switch_mode(&old, v.get("suite").and_then(Value::as_str).unwrap_or(""), v.get("mode").and_then(Value::as_str).unwrap_or("")) {
+                        Some(n) => n,
+                        None => return Ok(g.rack_json()),
+                    }
+                } else {
+                    let mut n = old;
+                    n["face"] = json!(if v.get("face").and_then(Value::as_str) == Some("mgl") { "mgl" } else { "original" });
+                    n
+                };
+                all["slots"][i] = next;
+                Ok(g.rack_set(&all))
+            }
             op @ ("add" | "remove" | "move" | "bypass") => {
                 let mut rack = g.rack.clone();
                 let ok = match op {

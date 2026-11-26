@@ -37,10 +37,12 @@ use std::sync::Arc;
 
 pub use catalogue::{catalogue_json, effect, effects, EffectKind};
 
-/// The FX page's size: MGL's page (1388 x 990, as Grain's) and the Now bar
-/// under it (48), which MGL lays over the page's foot.
-pub const FX_W: u32 = 1388;
-pub const FX_H: u32 = 1038;
+/// The FX page's size, as RJ's window shows it: MGL's page (1388 x 990, as
+/// Grain's) centred over the 1500 wide middle of the window, its top 927
+/// rows above the Now bar (48), which MGL lays over the page's foot; the
+/// rest of the page is below the window.
+pub const FX_W: u32 = 1500;
+pub const FX_H: u32 = 975;
 /// An effect module's height: a card in the FX view's row.
 pub const CARD_H: u32 = 400;
 
@@ -74,6 +76,12 @@ pub struct FxPart {
     pub meters: Arc<RackMeters>,
     /// The last frames out, for OUT, SPECTRUM and the meters.
     pub scope: Arc<Scope>,
+    /// The preset bar: where presets are kept, the name last applied or
+    /// saved, and A/B (the side shown and the rack kept for the other).
+    pub places: crate::grain::presets::Places,
+    pub preset: String,
+    pub side: usize,
+    pub ab: [Option<RackSpec>; 2],
     /// For each slot as laid, its controls' keys in the knob numbers' order.
     laid: Vec<Vec<String>>,
     rate: f32,
@@ -98,6 +106,10 @@ impl FxPart {
             side_r: num("sideR", UNITY).clamp(0.0, 1.0),
             meters: Arc::new(RackMeters::new()),
             scope: Scope::new(),
+            places: Default::default(),
+            preset: saved.and_then(|s| s.get("preset")).and_then(Value::as_str).unwrap_or("").to_string(),
+            side: 0,
+            ab: [None, None],
             laid: Vec::new(),
             rate,
         }
@@ -111,6 +123,7 @@ impl FxPart {
     pub fn state(&self) -> Value {
         let mut o = json!({ "rack": self.rack.to_json(), "ui": self.ui });
         if self.is_page() {
+            o["preset"] = json!(self.preset);
             o["volume"] = json!(self.volume);
             o["sideL"] = json!(self.side_l);
             o["sideR"] = json!(self.side_r);
@@ -266,6 +279,8 @@ impl FxPart {
             "rack": self.rack.to_json(),
             "ui": self.ui,
             "transport": self.transport_json(),
+            "preset": self.preset,
+            "side": if self.side == 1 { "b" } else { "a" },
             "effect": self.effect.map(|e| json!({ "id": e.id, "kind": e.kind, "suite": e.suite, "mode": e.mode, "label": e.label, "group": e.group })),
         })
     }
@@ -274,24 +289,157 @@ impl FxPart {
 /// A rack of one slot of `e`, as MGL's Add menu makes it (`addFxModule`): the
 /// kind's defaults, and its module, mode and revision.
 pub fn one_slot(e: &EffectKind) -> RackSpec {
-    let mut slot = json!({ "id": "fx-1", "kind": e.kind, "bypassed": false });
+    let mut slot = default_slot(&e.kind).unwrap_or_else(|| json!({ "kind": e.kind, "bypassed": false }));
+    slot["id"] = json!("fx-1");
     if let (Some(s), Some(m)) = (e.suite, e.mode) {
         slot["suite"] = json!(s);
         slot["mode"] = json!(m);
         slot["rev"] = json!(e.rev as f64);
     }
-    // The built-ins' defaults are on the slot itself (`defaultFxSlot`); the
-    // rest take theirs from the effect.
-    match e.kind.as_str() {
-        "gain" => slot["db"] = json!(0.0),
-        "comp" => {
-            for (k, v) in [("thresholdDb", -18.0), ("ratio", 4.0), ("attackMs", 10.0), ("releaseMs", 100.0), ("kneeDb", 6.0), ("makeupDb", 0.0)] {
-                slot[k] = json!(v);
+    RackSpec::from_json(&json!({ "slots": [slot] }))
+}
+
+/// `defaultFxSlot(kind)` without its id: the built-ins' own fields, or the
+/// shaper's every control at its default. None for a kind not in `/api/fx`.
+pub fn default_slot(kind: &str) -> Option<Value> {
+    Some(match kind {
+        "gain" => json!({ "kind": kind, "bypassed": false, "db": 0.0 }),
+        "eq" => json!({ "kind": kind, "bypassed": false, "bands": default_eq_bands() }),
+        "comp" => json!({ "kind": kind, "bypassed": false, "thresholdDb": -18.0, "ratio": 4.0, "attackMs": 10.0, "releaseMs": 100.0, "kneeDb": 6.0, "makeupDb": 0.0 }),
+        _ => {
+            let sh = shaper(kind)?;
+            let mut params = serde_json::Map::new();
+            for p in sh["params"].as_array()? {
+                params.insert(p["key"].as_str()?.to_string(), p["default"].clone());
+            }
+            json!({ "kind": kind, "bypassed": false, "params": params })
+        }
+    })
+}
+
+/// A shaper's entry in `/api/fx`.
+pub fn shaper(kind: &str) -> Option<&'static Value> {
+    static BY: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    let all = BY.get_or_init(catalogue_json);
+    all["shapers"].as_array()?.iter().find(|s| s["kind"] == kind)
+}
+
+/// A mode of a module, by ids: its entry in `/api/fx`'s suites.
+fn mode_entry(suite: &str, mode: &str) -> Option<Value> {
+    let all = catalogue_json();
+    let s = all["suites"].as_array()?.iter().find(|s| s["id"] == suite)?.clone();
+    s["families"].as_array()?.iter().flat_map(|f| f["modes"].as_array().cloned().unwrap_or_default()).find(|m| m["id"] == mode)
+}
+
+/// `fxSlotMode(slot)`'s mode: by the slot's module and mode, or by its kind.
+fn slot_mode(slot: &Value) -> Option<Value> {
+    if let (Some(s), Some(m)) = (slot["suite"].as_str(), slot["mode"].as_str()) {
+        return mode_entry(s, m);
+    }
+    let all = catalogue_json();
+    all["suites"].as_array()?.iter().flat_map(|s| s["families"].as_array().cloned().unwrap_or_default()).flat_map(|f| f["modes"].as_array().cloned().unwrap_or_default()).find(|m| m["kind"] == slot["kind"])
+}
+
+const SLOT_OWN: [&str; 11] = ["id", "kind", "bypassed", "suite", "mode", "rev", "memory", "face", "wet", "level", "place"];
+
+/// `fxModeValues(slot)`.
+fn mode_values(slot: &Value) -> Value {
+    if slot["params"].is_object() {
+        return slot["params"].clone();
+    }
+    let mut out = serde_json::Map::new();
+    for (k, v) in slot.as_object().into_iter().flatten() {
+        if !SLOT_OWN.contains(&k.as_str()) {
+            out.insert(k.clone(), v.clone());
+        }
+    }
+    Value::Object(out)
+}
+
+/// `fxCarries(p)`.
+fn carries(p: &Value) -> bool {
+    let key = p["key"].as_str().unwrap_or("");
+    let lower = key.to_lowercase();
+    let pre = lower.starts_with("predelay") || lower.starts_with("pre-delay");
+    match p["role"].as_str() {
+        Some("output") => lower.contains("mix") || lower.contains("wet") || lower.contains("dry"),
+        Some("time") => lower.contains("predelay") || lower.contains("pre-delay"),
+        _ => ["mix", "wet", "dry"].contains(&key) || pre,
+    }
+}
+
+/// `fxSwitchMode(index, mode, suiteId)` on a slot's JSON: the new mode at its
+/// defaults, or as it was last left (the slot's memory), Mix and Pre-delay
+/// carried between two modes of our own, and the slot's own kept (its id,
+/// On, footer, look, Place). None if it is that mode already, or no such mode.
+pub fn switch_mode(old: &Value, suite: &str, mode: &str) -> Option<Value> {
+    let to = mode_entry(suite, mode)?;
+    let at = slot_mode(old);
+    if at.as_ref().is_some_and(|a| a["id"] == mode && old["suite"].as_str().is_none_or(|s| s == suite)) {
+        return None;
+    }
+    let kind = to["kind"].as_str()?;
+    let mut fresh = default_slot(kind)?;
+    let mut memory = old["memory"].as_object().cloned().unwrap_or_default();
+    if let Some(a) = &at {
+        memory.insert(a["id"].as_str().unwrap_or("").to_string(), mode_values(old));
+    }
+    if let Some(back) = memory.get(mode).cloned() {
+        if fresh["params"].is_object() {
+            let keys: Vec<String> = fresh["params"].as_object().unwrap().keys().cloned().collect();
+            for k in keys {
+                if let Some(v) = back.get(&k) {
+                    fresh["params"][&k] = v.clone();
+                }
+            }
+        } else {
+            let keys: Vec<String> = fresh.as_object().unwrap().keys().cloned().collect();
+            for k in keys {
+                if !SLOT_OWN.contains(&k.as_str()) {
+                    if let Some(v) = back.get(&k) {
+                        fresh[&k] = v.clone();
+                    }
+                }
             }
         }
-        _ => {}
     }
-    RackSpec::from_json(&json!({ "slots": [slot] }))
+    if at.as_ref().is_some_and(|a| a["class"] == "ours") && to["class"] == "ours" && old["params"].is_object() && fresh["params"].is_object() {
+        for p in shaper(kind).and_then(|s| s["params"].as_array()).into_iter().flatten() {
+            let k = p["key"].as_str().unwrap_or("");
+            if carries(p) {
+                if let Some(v) = old["params"].get(k) {
+                    fresh["params"][k] = v.clone();
+                }
+            }
+        }
+    }
+    fresh["id"] = old["id"].clone();
+    fresh["bypassed"] = old["bypassed"].clone();
+    fresh["suite"] = json!(suite);
+    fresh["mode"] = json!(mode);
+    fresh["rev"] = to["rev"].clone();
+    fresh["memory"] = Value::Object(memory);
+    for k in ["wet", "level", "face", "place"] {
+        if !old[k].is_null() {
+            fresh[k] = old[k].clone();
+        }
+    }
+    Some(fresh)
+}
+
+/// MGL's new EQ's bands (`defaultEqBands`, 071-rack-controls.js).
+pub fn default_eq_bands() -> Value {
+    let band = |t: &str, on: bool, f: f64, q: f64| json!({ "type": t, "enabled": on, "freq": f, "q": q, "gainDb": 0.0 });
+    json!([
+        band("highpass", false, 30.0, 0.71),
+        band("lowshelf", true, 100.0, 0.7),
+        band("bell", true, 250.0, 1.0),
+        band("bell", false, 500.0, 1.0),
+        band("bell", false, 2000.0, 1.0),
+        band("bell", false, 4000.0, 1.0),
+        band("highshelf", true, 10000.0, 0.7),
+        band("lowpass", false, 18000.0, 0.71),
+    ])
 }
 
 /// Each slot's control keys, by knob number (`fx::ControlMap`).
