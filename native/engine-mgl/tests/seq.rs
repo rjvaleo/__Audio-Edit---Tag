@@ -13,7 +13,7 @@
 //! Accelerate's FFT: its rounding cannot be followed exactly, so that case is
 //! held to a null below -120 dB instead.
 
-use engine_mgl::seq::{Adsr, Classic, Delay, Lfo, Settings, Shape, Target};
+use engine_mgl::seq::{Adsr, Classic, Delay, Lfo, Settings, Shape, SpaceSettings, Target};
 use serde_json::Value;
 
 const RATE: f32 = 48_000.0;
@@ -74,6 +74,7 @@ fn settings(state: &Value) -> Settings {
     let q = &state["seq"];
     let c = &state["classic"];
     let mel = &state["band"]["ch"]["Mel"];
+    let at = &state["atmos"];
     let lfos: Vec<Lfo> = c["lfos"]
         .as_array()
         .unwrap()
@@ -104,6 +105,16 @@ fn settings(state: &Value) -> Settings {
         mel_level: mel["lv"].as_f64().unwrap_or(80.0),
         mel_pan: mel["pan"].as_f64().unwrap_or(0.0),
         mel_dly: mel["dly"].as_f64().unwrap_or(100.0),
+        mel_spc: mel["spc"].as_f64().unwrap_or(100.0),
+        space: SpaceSettings {
+            wet: f(at, "atRevWet"),
+            size: f(at, "atRevSize"),
+            pre: f(at, "atRevPre"),
+            damp: f(at, "atRevDamp"),
+            shim: f(at, "atRevShim"),
+            spread: f(at, "atRevSpread"),
+            low_cut: f(at, "atLowCut"),
+        },
     }
 }
 
@@ -125,6 +136,7 @@ fn play(m: &Value, case: &Value) -> Vec<f32> {
                 assert!(c.play_note(f(e, "hz"), f(e, "t"), e["hold"].as_f64().unwrap_or(1.0)));
             }
             "key" => later.push((f(e, "t"), e.clone())),
+            "freeze" => later.push((f(e, "t"), e.clone())),
             "tapeGlide" => {
                 c.bpm_target = f(e, "bpm");
                 c.tape_glide(f(e, "t"));
@@ -136,9 +148,12 @@ fn play(m: &Value, case: &Value) -> Vec<f32> {
     let (mut l, mut r) = ([0.0f32; 128], [0.0f32; 128]);
     while out.len() < frames * 2 {
         let now = c.g.current_time();
-        for (t, e) in later.iter().filter(|(t, _)| *t == now) {
+        for (_, e) in later.iter().filter(|(t, _)| *t == now) {
+            if e["type"] == "freeze" {
+                c.freeze(true);
+                continue;
+            }
             let held = c.key_on(f(e, "hz"), f(e, "vel")).expect("room for the key");
-            let _ = t;
             c.release(held, f(e, "release"));
         }
         c.render(&mut l, &mut r);
@@ -200,7 +215,7 @@ fn run(only: impl Fn(&str) -> bool) {
     let mut failed = Vec::new();
     for case in m["cases"].as_array().unwrap() {
         let id = case["id"].as_str().unwrap();
-        if case["instrument"] != "classic" || !only(id) {
+        if !(case["instrument"] == "classic" || case["instrument"] == "space") || !only(id) {
             continue;
         }
         match compare(id, &play(&m, case)) {
@@ -272,5 +287,10 @@ fn probe_cases() {
             }
         }
         println!("{id}: {vals} values differ (first at frame {:?}), {signs} signs of zero", first.map(|i| i / 2));
+        if let Some(i) = first {
+            for j in i..(i + 12).min(ours.len()) {
+                println!("  frame {} {}: ours {:e} theirs {:e}", j / 2, if j % 2 == 0 { "L" } else { "R" }, ours[j], theirs[j]);
+            }
+        }
     }
 }

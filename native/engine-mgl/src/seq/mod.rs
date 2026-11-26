@@ -7,12 +7,17 @@
 //! (`dsp_core::chromium`), so it plays what the page plays, sample for
 //! sample.
 //!
-//! Only what reaches the destination is built. Atmosphere, the Band's other
+//! Space (`atRev`, [`space`]), fed from the melody channel, is built as the
+//! page builds it: even at a wet level of 0 its wet gain multiplies at audio
+//! rate (its glide to 0 never leaves the timeline), which sets the sign of
+//! the destination's zeros. Atmosphere's own voice, the Band's other
 //! channels and the scopes share the page's graph but are silent in Seq's
-//! cases; Space (`atRev`) is fed from the melody channel and is silent while
-//! its wet level is 0, as it is in every case here.
+//! cases and are not built.
 
+pub mod space;
 pub mod steps;
+
+pub use space::SpaceSettings;
 
 use dsp_core::chromium::graph::{params::*, FilterType, Graph, NodeId, WaveId};
 use dsp_core::chromium::wave::Wave;
@@ -148,6 +153,10 @@ pub struct Settings {
     pub mel_level: f64,
     pub mel_pan: f64,
     pub mel_dly: f64,
+    /// Its send into Space (0..100).
+    pub mel_spc: f64,
+    /// Space's knobs.
+    pub space: SpaceSettings,
 }
 
 impl Default for Settings {
@@ -172,6 +181,8 @@ impl Default for Settings {
             mel_level: 80.0,
             mel_pan: 0.0,
             mel_dly: 100.0,
+            mel_spc: 100.0,
+            space: SpaceSettings::default(),
         }
     }
 }
@@ -291,12 +302,15 @@ pub struct Classic {
     /// The tempo a glide is heading for (`bpmTarget`).
     pub bpm_target: f64,
     glide: Option<Glide>,
+    pub space: space::Space,
 }
 
 impl Classic {
     /// Built as `initAudio` and `bandInit` build it, with `s` in place.
     /// Allocates: make it off the audio thread.
     pub fn new(sample_rate: f32, s: Settings) -> Self {
+        // The page's FFTs and convolutions are vDSP's on a Mac.
+        crate::accelerate::install();
         let mut g = Graph::new(sample_rate, 1024, 2048);
         let room = "a fresh graph has room";
         // The destination.
@@ -376,23 +390,30 @@ impl Classic {
             lfo_osc[i] = osc;
             lfo_gain[i] = gain;
         }
+        // atmosInit: Space, its settings applied as the init ends.
+        let mut space = space::Space::build(&mut g, seq_vol);
+        space.apply(&mut g, &s.space);
         // bandInit: the melody leaves the bus into its own channel (in,
-        // fader, pan), whose dry goes to the delay's dry side and whose send
-        // feeds the delay.
+        // fader, pan), whose dry goes to the delay's dry side and whose sends
+        // feed the delay and Space.
         let ch_in = g.gain().expect(room);
         let fader = g.gain().expect(room);
         let pan = g.panner().expect(room);
         let dly = g.gain().expect(room);
+        let spc = g.gain().expect(room);
         g.connect(ch_in, fader);
         g.connect(fader, pan);
         g.connect(pan, delay_dry);
         g.connect(pan, dly);
+        g.connect(pan, spc);
         g.connect(dly, delay_l);
+        g.connect(spc, space.gate);
         g.connect(mel_bus, ch_in);
         // bandApply(true).
         g.set(fader, GAIN, bd_gain(s.mel_level) as f32);
         g.set(pan, PAN, (s.mel_pan / 100.0) as f32);
         g.set(dly, GAIN, (s.mel_dly / 100.0) as f32);
+        g.set(spc, GAIN, (s.mel_spc / 100.0) as f32);
         let bpm_target = s.bpm;
         let current_pw = s.pulse_width;
         let mut c = Classic {
@@ -416,6 +437,7 @@ impl Classic {
             current_pw,
             bpm_target,
             glide: None,
+            space,
         };
         for i in 0..3 {
             c.connect_lfo(i);
@@ -649,6 +671,14 @@ impl Classic {
             self.g.set_value_curve_at_time(d, DELAY_TIME, &curve, start, t);
         }
         self.glide = Some(Glide { v0, v1, l, start, t, d_end: d_target });
+    }
+
+    /// Freeze (`atFrozen = true; atmosFreezeApply()`): Space's gate closes
+    /// and its tail goes round the loop, from now.
+    pub fn freeze(&mut self, on: bool) {
+        self.space.frozen = on;
+        let s = self.s.space;
+        self.space.apply(&mut self.g, &s);
     }
 
     /// Notes that are over, and silent for good, give their nodes back.
