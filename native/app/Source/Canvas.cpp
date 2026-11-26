@@ -392,6 +392,34 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         prism->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
         addAndMakeVisible (*prism);
     }
+    else if (kind.id == "fx" || kind.id.startsWith ("fx:"))
+    {
+        // MGL's FX page, or one effect of its rack on its own (FxFace).
+        auto* host = &canvas.host;
+        fxFace = std::make_unique<FxFace> ([host] (const std::function<int64_t (NaApp*)>& f) { return host->with ([&] (NaApp* a) { return f (a); }); }, (uint32_t) id, kind.id == "fx");
+        fxFace->onMessage = [cv = &canvas] (const juce::String& m) { if (cv->status) cv->status (m); };
+        fxFace->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
+        // A sound for its Sound socket: the one cabled in, or a Sound module
+        // added beside it and cabled; a sound of MGL's library opened in it.
+        fxFace->wantSound = [cv = &canvas, mine = id] (const juce::String& path) {
+            juce::MessageManager::callAsync ([cv, mine, path] {
+                int s = cv->host.with ([&] (NaApp* a) { return na_sound_of (a, (uint32_t) mine); });
+                if (s < 0)
+                {
+                    auto it = cv->nodes.find (mine);
+                    const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) it->second->getX() - 380, (float) it->second->getY()) : juce::Point<float>();
+                    s = cv->host.with ([&] (NaApp* a) { const int n = na_add (a, "sound", at.x, at.y); if (n > 0) na_connect (a, (uint32_t) n, 0, (uint32_t) mine, 0); return n; });
+                    cv->refresh();
+                }
+                if (s > 0 && path.isNotEmpty())
+                    if (auto it = cv->nodes.find (s); it != cv->nodes.end() && it->second->sound != nullptr)
+                        it->second->sound->openLibrary (path, path.fromLastOccurrenceOf ("/", false, false));
+                if (cv->status)
+                    cv->status (path.isNotEmpty() ? "Opening " + path + " from MGL's library in the Sound module cabled into FX" : juce::String ("Open a sound in the Sound module cabled into FX"));
+            });
+        };
+        addAndMakeVisible (*fxFace);
+    }
     else if (kind.id == "chop")
     {
         // MGL's Chop page, on the sound cabled into it (ChopFace).
@@ -767,12 +795,38 @@ void AddMenu::filter()
     const auto q = search.getText().trim().toLowerCase();
     // idMLab groups its modules by family; MGL's sit under their own.
     const std::vector<std::pair<juce::String, juce::StringArray>> groups {
-        { "MULTIGRAINLIVE", { "wave", "atmos", "sound", "edit", "grain", "chop", "prism" } },
+        { "MULTIGRAINLIVE", { "wave", "atmos", "sound", "edit", "grain", "chop", "prism", "fx" } },
         { "MIDI", { "midi-in" } },
         { "AUDIO", { "output" } },
     };
+    // Every effect as a module of its own, under its module (MGL's Add menu's),
+    // the listed ones; the unlisted ones under UNLISTED EFFECTS.
+    auto all = groups;
+    {
+        std::vector<std::pair<juce::String, juce::StringArray>> fx;
+        juce::StringArray unlisted;
+        for (const auto& k : canvas.kinds)
+        {
+            if (! k.id.startsWith ("fx:"))
+                continue;
+            if (! k.listed)
+            {
+                unlisted.add (k.id);
+                continue;
+            }
+            const auto g = k.group.isEmpty() ? juce::String ("Rack") : k.group;
+            auto it = std::find_if (fx.begin(), fx.end(), [&] (const auto& p) { return p.first == g; });
+            if (it == fx.end())
+                fx.push_back ({ g, {} }), it = fx.end() - 1;
+            it->second.add (k.id);
+        }
+        for (const auto& [g, ids] : fx)
+            all.push_back ({ "EFFECTS: " + g.toUpperCase(), ids });
+        if (! unlisted.isEmpty())
+            all.push_back ({ "UNLISTED EFFECTS", unlisted });
+    }
     float y = 63;
-    for (const auto& [label, ids] : groups)
+    for (const auto& [label, ids] : all)
     {
         std::vector<Row> items;
         for (const auto& kid : ids)
@@ -932,6 +986,8 @@ Canvas::Canvas (Host& h) : host (h)
             KindInfo info;
             info.id = k["id"].toString();
             info.title = k["title"].toString();
+            info.group = k["group"].toString();
+            info.listed = ! k.hasProperty ("listed") || (bool) k["listed"];
             info.width = (int) k["width"];
             info.height = (int) k["height"];
             info.keyboard = (bool) k["keyboard"];

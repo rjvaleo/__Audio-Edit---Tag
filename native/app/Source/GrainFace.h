@@ -18,6 +18,7 @@
 #pragma once
 
 #include "Face.h"
+#include "FxCard.h"
 #include "GrainPictures.h"
 #include "na.h"
 
@@ -256,6 +257,16 @@ private:
     void drawLens (juce::Graphics&, float w, float h);
     void drawTexts (juce::Graphics&);
     void drawFxView (juce::Graphics&);
+    // The effects view's cards: the FX page's (FxCard), one per rack slot,
+    // along the rail where the page has it, scrolled sideways.
+    std::vector<std::unique_ptr<FxCard>> fxCards;
+    juce::var fxApi;
+    int fxDrag = -1;
+    float fxScroll = 0;
+    juce::String fxCardsFor;
+    void syncFxCards();
+    juce::Point<float> fxCardAt (int i) const;
+    bool fxCardMouse (const juce::MouseEvent&, int kind);
     double sideL = 0.8, sideR = 0.8;      // GS.out: the side faders, unity at 0.8
     double peakL = -120, peakR = -120, vuL = -120, vuR = -120, corr = 0;
     // Which part a layer draws (one of the page's ids); empty: all of them.

@@ -11,6 +11,7 @@
 #include "WaveApi.h"
 #include "ChopBench.h"
 #include "PrismBench.h"
+#include "FxBench.h"
 #include "GrainBench.h"
 #include "Host.h"
 #include "Places.h"
@@ -813,6 +814,16 @@ public:
             setApplicationReturnValue (chopBench (args));
             return quit();
         }
+        if (args.size() >= 2 && args[0] == "--bench" && args[1] == "fx")
+        {
+            setApplicationReturnValue (fxBench (args));
+            return quit();
+        }
+        if (args.size() >= 3 && args[0] == "--snapshot" && args[1] == "fx-cards")
+        {
+            setApplicationReturnValue (fxCards (args));
+            return quit();
+        }
         if (args.size() >= 2 && args[0] == "--bench" && args[1] == "prism")
         {
             setApplicationReturnValue (prismBench (args));
@@ -1244,6 +1255,8 @@ public:
                 image = chopSnapshot (args, scale);
             else if (page == "prism-face")
                 image = prismSnapshot (args, scale);
+            else if (page == "fx-face" || page == "fx-card" || page == "fx-reverb")
+                image = fxSnapshot (args, scale);
             else if (page == "atmos-face")
             {
                 // The live face, a real Atmosphere behind it (no sound card):

@@ -96,6 +96,8 @@ public:
     // of those it leaves out of its own picture): a part of the page a face
     // draws live, lit or not, dimmed or not.
     void drawPart (juce::Graphics&, const juce::var& node, juce::Point<float> offset = {}, float opacity = 1.0f, const std::set<int>* without = nullptr);
+    // The same, leaving out these nodes' text too (a reading the face writes).
+    void drawPart (juce::Graphics&, const juce::var& node, juce::Point<float> offset, float opacity, const std::set<int>* without, const std::set<int>* withoutText);
 
     // Every node with a canvas, by its id, and every node by its index.
     std::map<juce::String, juce::var> canvases;

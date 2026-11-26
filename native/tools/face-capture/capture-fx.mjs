@@ -106,7 +106,8 @@ const open = (rack, named) => {
 // (listed or not: all of prism-fx's 101 effects), and the three built-ins.
 const kindsOf = () => {
   const out = [{ kind: 'eq', label: 'Parametric EQ' }, { kind: 'comp', label: 'Compressor' }, { kind: 'gain', label: 'Gain' }];
-  for (const s of state.suites.filter((x) => x.offered)) {
+  const suites = (window.__fxCatalogue?.suites || state.suites);
+  for (const s of suites.filter((x) => x.offered)) {
     for (const f of s.families) for (const m of f.modes) out.push({ kind: m.kind, label: m.label, suite: s.id, suiteLabel: s.label, family: f.label, mode: m.id, rev: m.rev });
   }
   return out;
@@ -196,6 +197,8 @@ try {
     const face = { size: [rect[2], rect[3]], theme: t.id, captured: new Date().toISOString(), cards: {}, picker: {} };
     face.cl = await tab.evaluate(`(${colours})()`);
     if (scale === 2) await tab.screenshot({ path: path.join(out, 'fx-reference.png'), clip });
+    // FX_SHOTS=1: every theme's page as a picture too (1x), to hold the app against.
+    else if (process.env.FX_SHOTS) await tab.screenshot({ path: path.join(out, `fx-reference-${t.id}.png`), clip });
     face.page = await walkOf('#grainView .gs-app');
     await tab.evaluate(`(${open})(${JSON.stringify(FACTORY_RACK)}, true)`);
     await tab.evaluate((l) => { FX.list = l; fxDrawPc(); fxShowOpen(); }, PC_LIST);
@@ -222,6 +225,7 @@ try {
     await tab.evaluate(() => closeFxPicker());
 
     // Every card alone.
+    await tab.evaluate((j) => { window.__fxCatalogue = JSON.parse(j); }, FX_JSON);
     const kinds = await tab.evaluate(`(${kindsOf})()`);
     const data = [];
     for (const k of kinds) {
@@ -231,6 +235,34 @@ try {
       const tree = await walkOf('#fxModuleRail > .fx-module');
       if (scale === 2) await tab.screenshot({ path: path.join(out, `fx-card-${k.kind.replace(/[^a-z0-9-]/gi, '_')}.png`), clip: { x: rect[0] + r[0], y: rect[1] + r[1], width: r[2], height: r[3] }, scale: 'css' });
       face.cards[k.kind] = { rect: r, tree };
+      // Every switch flipped (tiles, LEDs, choices one on): the lit look.
+      const flipped = await tab.evaluate(() => {
+        const slot = state.rack.slots[0], m = fxModel(slot);
+        let n = 0;
+        for (const p of m.specs) if (fxIsSwitch(p)) { const v = m.get(p.key); slot.params ? (slot.params[p.key] = v >= .5 ? 0 : 1) : (slot[p.key] = v >= .5 ? 0 : 1); n++; }
+        if (n) { renderRack(); gsFxDress(); document.querySelectorAll('#gsFxAddCard').forEach((e) => e.remove()); }
+        return n;
+      });
+      if (flipped) {
+        await tab.waitForTimeout(20);
+        face.cards[k.kind].lit = await walkOf('#fxModuleRail > .fx-module');
+        await tab.evaluate(`(${lone})(${JSON.stringify(k)})`);
+      }
+      // A Hyperprism, SoundHack or Lexicon mode in MGL's own face.
+      const alt = await tab.evaluate(() => { const slot = state.rack.slots[0]; if (!fxFaceStyle(slot)) return false; slot.face = 'mgl'; renderRack(); gsFxDress(); document.querySelectorAll('#gsFxAddCard').forEach((e) => e.remove()); return true; });
+      if (alt) {
+        await tab.waitForTimeout(20);
+        const rr = await tab.evaluate(() => { const c = document.querySelector('#fxModuleRail > .fx-module'), a = document.querySelector('#grainView .gs-app').getBoundingClientRect(), b = c.getBoundingClientRect(); return [b.x - a.x, b.y - a.y, b.width, b.height]; });
+        face.cards[k.kind].mgl = { rect: rr, tree: await walkOf('#fxModuleRail > .fx-module') };
+        await tab.evaluate(`(${lone})(${JSON.stringify(k)})`);
+      }
+      // Advanced: each knob's own range.
+      const adv = await tab.evaluate(() => { const b = document.querySelector('#fxModuleRail > .fx-module .fx-adv-btn'); if (!b) return false; b.click(); return true; });
+      if (adv) {
+        await tab.waitForTimeout(30);
+        face.cards[k.kind].adv = await walkOf('#fxModuleRail > .fx-module');
+        await tab.evaluate(`(${lone})(${JSON.stringify(k)})`);
+      }
       // Switched off: the header's look (the body is drawn faded, as the CSS fades it).
       if (k.kind === 'eq') {
         await tab.evaluate(() => { state.rack.slots[0].bypassed = true; renderRack(); gsFxDress(); });
@@ -259,7 +291,30 @@ try {
           await tab.screenshot({ path: path.join(out, 'fx-reverb-reference.png'), clip: b });
         }
       }
+      face.reverbModes = {};
+      for (const m of kinds.filter((x) => x.suite === 'reverb')) {
+        await tab.evaluate(() => reverbClose());
+        await tab.evaluate(`(${lone})(${JSON.stringify(m)})`);
+        await tab.evaluate(() => reverbOpen('fx-card'));
+        await tab.waitForTimeout(80);
+        face.reverbModes[m.mode] = { band: await walkOf('#reverbWindow .rv-band'), bar: await walkOf('#reverbWindow .rv-bar') };
+      }
+      // A Reverb with Place on (the section lit).
+      await tab.evaluate(() => { const s = state.rack.slots[0]; rvPlace(s).on = 1; rvRender(); });
+      await tab.waitForTimeout(60);
+      face.reverbPlaceOn = await walkOf('#reverbWindow .rv-band');
       await tab.evaluate(() => reverbClose());
+    }
+    // A mode menu open (the card's Mode drop), on the first reverb.
+    if (rv) {
+      await tab.evaluate(`(${lone})(${JSON.stringify(rv)})`);
+      const opened = await tab.evaluate(() => { const b = document.querySelector('#fxModuleRail > .fx-module .fx-mode-drop .ui-dd'); if (!b) return false; b.click(); return true; });
+      if (opened) {
+        await tab.waitForTimeout(120);
+        const sel = await tab.evaluate(() => { const m = document.querySelector('.ui-menu, .ui-dd-menu, [class*="ui-dm"]'); return m ? (m.id ? '#' + m.id : '.' + [...m.classList].join('.')) : null; });
+        if (sel) face.modeMenu = await walkOf(sel);
+        await tab.keyboard.press('Escape');
+      }
     }
     if (scale === 2) fs.writeFileSync(path.join(out, 'fx-page.json'), JSON.stringify({ kinds: data, catalogue: JSON.parse(FX_JSON) }));
     write(path.join(out, `mgl-fx-${t.id}.json.gz`), face);

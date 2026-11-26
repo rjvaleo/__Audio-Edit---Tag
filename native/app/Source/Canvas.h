@@ -21,6 +21,7 @@
 #include "AtmosFace.h"
 #include "ChopFace.h"
 #include "PrismFace.h"
+#include "FxFace.h"
 #include "EditFace.h"
 #include "GrainFace.h"
 #include "SoundFace.h"
@@ -62,6 +63,8 @@ struct SocketInfo
 struct KindInfo
 {
     juce::String id, title;
+    juce::String group;   // an effect module's module (Reverb, Delay, ...)
+    bool listed = true;
     int width = 0, height = 0;
     std::vector<SocketInfo> ins, outs;
     bool keyboard = false;
@@ -104,11 +107,14 @@ public:
     std::unique_ptr<GrainFace> grain;
     std::unique_ptr<ChopFace> chop;
     std::unique_ptr<PrismFace> prism;
+    std::unique_ptr<FxFace> fxFace;
     // The page that is this module's face, if it has one.
     juce::Component* body() const
     {
         if (chop != nullptr)
             return chop.get();
+        if (fxFace != nullptr)
+            return fxFace.get();
         if (prism != nullptr)
             return prism.get();
         if (grain != nullptr)

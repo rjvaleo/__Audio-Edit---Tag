@@ -1457,6 +1457,21 @@ void GrainFace::drawFxView (juce::Graphics& g)
 {
     if (!fxView)
         return;
+    // The rack's cards, the FX page's own (FxCard), and the ADD card after them.
+    syncFxCards();
+    if (cur().ids.count ("fxModuleRail") > 0)
+    {
+        const auto rail = cur().ids["fxModuleRail"].r;
+        juce::Graphics::ScopedSaveState keep (g);
+        g.reduceClipRegion (juce::Rectangle<float> (rail.getX(), rail.getY() - 4, 1360, 412).toNearestInt());
+        for (int i = 0; i < (int) fxCards.size(); ++i)
+            fxCards[(size_t) i]->paint (g, fxCardAt (i));
+        if (cur().ids.count ("gsFxAddCard") > 0)
+        {
+            const auto& add = cur().ids["gsFxAddCard"];
+            pages["fx"]->drawPart (g, add.n, { fxCardAt ((int) fxCards.size()).x - add.r.getX(), 0 });
+        }
+    }
     auto& ids = cur().ids;
     const auto cl = colours (captured["cl"]);
     auto at = [&] (const char* k) -> const Node* { auto it = ids.find (k); return it == ids.end() ? nullptr : &it->second; };

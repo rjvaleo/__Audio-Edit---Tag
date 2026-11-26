@@ -137,8 +137,71 @@ struct Worn
     juce::var grain;         // the Grain page in the MGL theme
     juce::var chop;          // the Chop page in the MGL theme
     juce::var prism;         // the Prism page in the MGL theme
+    juce::var fx;            // the FX page and every effect card in the MGL theme
     int stamp = 0;
 };
+// The FX capture in MGL theme `id`: the default theme whole, and another
+// theme as what differs from it (tools/face-capture/fx-slim.mjs): [path,
+// value] pairs, the path's parts joined by "/"; {c: [...]} is the default's
+// string with these colours in its rgb()/rgba() ones' places, in order.
+juce::var fxTheme (const juce::String& id)
+{
+    auto base = juce::JSON::parse (embedded ("mgl-fx-default.json.gz"));
+    if (id == "default" || !base.isObject())
+        return base;
+    const auto patch = juce::JSON::parse (embedded ("mgl-fx-" + id + ".patch.json.gz"));
+    auto* list = patch.getArray();
+    if (list == nullptr)
+        return base;
+    for (const auto& item : *list)
+    {
+        const auto parts = juce::StringArray::fromTokens (item[0].toString(), "/", "");
+        if (parts.isEmpty())
+            continue;
+        juce::var at = base;
+        for (int k = 0; k < parts.size() - 1 && !at.isVoid(); ++k)
+            at = at.isArray() ? (at.getArray()->size() > parts[k].getIntValue() ? at[parts[k].getIntValue()] : juce::var()) : at[juce::Identifier (parts[k])];
+        if (at.isVoid())
+            continue;
+        const auto& last = parts[parts.size() - 1];
+        juce::var value = item[1];
+        if (value.isObject() && value.hasProperty ("c"))
+        {
+            const auto was = at.isArray() ? at[last.getIntValue()].toString() : at[juce::Identifier (last)].toString();
+            juce::String out;
+            int from = 0, n = 0;
+            auto* cols = value["c"].getArray();
+            while (true)
+            {
+                const int a = was.indexOf (from, "rgb");
+                if (a < 0 || cols == nullptr || n >= cols->size())
+                    break;
+                const int b = was.indexOfChar (a, ')');
+                if (b < 0)
+                    break;
+                out << was.substring (from, a) << (*cols)[n++].toString();
+                from = b + 1;
+            }
+            out << was.substring (from);
+            value = out;
+        }
+        if (auto* arr = at.getArray())
+        {
+            const int i = last.getIntValue();
+            if (i >= 0 && i < arr->size())
+                arr->set (i, value);
+        }
+        else if (auto* o = at.getDynamicObject())
+        {
+            if (value.isVoid())
+                o->removeProperty (juce::Identifier (last));
+            else
+                o->setProperty (juce::Identifier (last), value);
+        }
+    }
+    return base;
+}
+
 Worn& wornState()
 {
     static Worn w;
@@ -202,6 +265,13 @@ const juce::var& page (const juce::String& name)
         if (!w.grain.isObject())
             w.grain = juce::JSON::parse (embedded ("mgl-grain-default.json.gz"));
         return w.grain;
+    }
+    if (name == "fx")
+    {
+        auto& w = wornState();
+        if (!w.fx.isObject())
+            w.fx = fxTheme (w.choice >= 0 ? themeChoices()[(size_t) w.choice].mgl : juce::String ("default"));
+        return w.fx;
     }
     if (name == "prism")
     {
@@ -337,6 +407,7 @@ void wear (int choice, const juce::String& kit)
         w.grain = juce::var();
         w.chop = juce::var();
         w.prism = juce::var();
+        w.fx = juce::var();
         w.choice = choice;
     }
     w.kit = kit.isEmpty() ? juce::String ("thinRing") : kit;
@@ -772,6 +843,11 @@ juce::Colour firstColour (const juce::String& svg)
 
 void Chrome::drawPart (juce::Graphics& g, const juce::var& node, juce::Point<float> offset, float opacity, const std::set<int>* without)
 {
+    drawPart (g, node, offset, opacity, without, nullptr);
+}
+
+void Chrome::drawPart (juce::Graphics& g, const juce::var& node, juce::Point<float> offset, float opacity, const std::set<int>* without, const std::set<int>* withoutText)
+{
     juce::Graphics::ScopedSaveState keep (g);
     g.addTransform (juce::AffineTransform::translation (offset));
     if (opacity < 1.0f)
@@ -779,7 +855,7 @@ void Chrome::drawPart (juce::Graphics& g, const juce::var& node, juce::Point<flo
     auto savedSkip = std::move (skip);
     auto savedText = std::move (skipText);
     skip = without != nullptr ? *without : std::set<int>();
-    skipText.clear();
+    skipText = withoutText != nullptr ? *withoutText : std::set<int>();
     drawNode (g, node);
     skip = std::move (savedSkip);
     skipText = std::move (savedText);

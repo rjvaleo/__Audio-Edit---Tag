@@ -121,6 +121,10 @@ GrainFace::GrainFace (Call c, uint32_t i)
     {
         auto p = std::make_unique<face::Chrome> (captured["fx"]);
         index (captured["fx"]["tree"], pageNodes["fx"]);
+        // The rack's cards are drawn live (FxCard), the ADD card after them.
+        for (const char* k : { "fxModuleRail", "gsFxAddCard" })
+            if (pageNodes["fx"].ids.count (k) > 0)
+                p->skip.insert (pageNodes["fx"].ids[k].i);
         addChildComponent (*p);
         pages["fx"] = std::move (p);
     }
@@ -1658,7 +1662,9 @@ void GrainFace::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    // The effects view: back, add, the three faders.
+    // The effects view: its cards, back, add, the three faders.
+    if (fxView && fxCardMouse (e, 0))
+        return;
     if (fxView)
     {
         if (in ("gsFxBack"))
@@ -2168,6 +2174,8 @@ void GrainFace::mouseDown (const juce::MouseEvent& e)
 
 void GrainFace::mouseDrag (const juce::MouseEvent& e)
 {
+    if (fxDrag >= 0 && fxCardMouse (e, 1))
+        return;
     const auto p = e.position;
     const float dx = p.x - last.x, dy = p.y - last.y;
     moved += std::abs (dx) + std::abs (dy);
@@ -2356,8 +2364,10 @@ void GrainFace::mouseDrag (const juce::MouseEvent& e)
     }
 }
 
-void GrainFace::mouseUp (const juce::MouseEvent&)
+void GrainFace::mouseUp (const juce::MouseEvent& e)
 {
+    if (fxDrag >= 0 && fxCardMouse (e, 2))
+        return;
     switch (grab)
     {
         case Grab::bar:
@@ -2414,6 +2424,8 @@ void GrainFace::mouseUp (const juce::MouseEvent&)
 
 void GrainFace::mouseDoubleClick (const juce::MouseEvent& e)
 {
+    if (fxView && fxCardMouse (e, 4))
+        return;
     const auto p = e.position;
     // A bar's well: back to its default.
     if (const auto k = barAt (p, true); k.isNotEmpty() && !dimmed (k))
@@ -2434,6 +2446,30 @@ void GrainFace::mouseDoubleClick (const juce::MouseEvent& e)
 
 void GrainFace::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
+    if (fxView && ! fxCards.empty())
+    {
+        const auto rail = cur().ids.count ("fxModuleRail") ? cur().ids["fxModuleRail"].r.withWidth (1360) : juce::Rectangle<float>();
+        for (int i = 0; i < (int) fxCards.size(); ++i)
+        {
+            const auto at = fxCardAt (i);
+            if (juce::Rectangle<float> (at.x, at.y, fxCards[(size_t) i]->width(), 400).contains (e.position) && std::abs (w.deltaY) >= std::abs (w.deltaX)
+                && fxCards[(size_t) i]->wheel (e.position - at, w.deltaY, e.mods.isShiftDown()))
+            {
+                repaintLayer ("fxview");
+                return;
+            }
+        }
+        if (rail.contains (e.position))
+        {
+            float most = 0;
+            for (auto& c : fxCards)
+                most += c->width() + 10;
+            most = juce::jmax (0.0f, most + 196 - rail.getWidth());
+            fxScroll = juce::jlimit (0.0f, most, fxScroll - (std::abs (w.deltaX) > 0 ? w.deltaX : (e.mods.isShiftDown() ? w.deltaY : 0)) * 200);
+            repaintLayer ("fxview");
+            return;
+        }
+    }
     const auto cr = pageNodes["wsola"].ids["gsCloud"].r;
     if (fxView || !cr.contains (e.position))
     {
@@ -2690,4 +2726,112 @@ void GrainFace::savePreset (bool asNew)
         if (ok == 1 && w->getTextEditorContents ("name").trim().isNotEmpty())
             store (w->getTextEditorContents ("name").trim());
     }), true);
+}
+
+// ───────────────────────────────────────────────────── the effects view's cards
+
+void GrainFace::syncFxCards()
+{
+    const auto now = juce::JSON::toString (rack);
+    if (now == fxCardsFor && (int) fxCards.size() == (rack["slots"].isArray() ? rack["slots"].getArray()->size() : 0))
+        return;
+    fxCardsFor = now;
+    if (! fxApi.isObject())
+    {
+        // MGL's /api/fx: the FX modules' call answers it for any module.
+        std::vector<char> b (1u << 20);
+        const auto n = call ([&] (NaApp* a) { return (int64_t) na_fx_call (a, id, "catalogue", nullptr, b.data(), (uint32_t) b.size()); });
+        if (n > 0 && n < (int64_t) b.size())
+            fxApi = juce::JSON::parse (juce::String::fromUTF8 (b.data(), (int) n));
+    }
+    const auto* slots = rack["slots"].getArray();
+    const int n = slots == nullptr ? 0 : slots->size();
+    while ((int) fxCards.size() > n)
+        fxCards.pop_back();
+    while ((int) fxCards.size() < n)
+        fxCards.push_back (std::make_unique<FxCard> (fxApi));
+    for (int i = 0; i < n; ++i)
+    {
+        auto& c = *fxCards[(size_t) i];
+        c.set (juce::JSON::parse (juce::JSON::toString ((*slots)[i])), rack["ranges"]);
+        c.send = [this, i] (const juce::var& msg) {
+            auto m = juce::JSON::parse (juce::JSON::toString (msg));
+            const auto op = m["op"].toString();
+            if (op == "open" || op == "advanced")
+                return;
+            if (op == "slot")
+            {
+                // A slot's own fields (an EQ band's switch or type): the rack set again.
+                auto all = juce::JSON::parse (juce::JSON::toString (rack));
+                if (auto* slots = all["slots"].getArray(); slots != nullptr && i < slots->size())
+                    slots->set (i, m["slot"]);
+                put (all, "op", "set");
+                m = all;
+            }
+            put (m, "at", i);
+            // Grain's rack takes "on" as the slot's bypass.
+            if (op == "bypass")
+                put (m, "on", ! (bool) m["on"]);
+            const auto r = grainCall ("rack", m);
+            if (op != "param" && r.isObject())
+                rack = r.hasProperty ("slots") ? r : grainCall ("rack", [] { auto o = obj(); put (o, "op", "get"); return o; }());
+            else if (op == "param")
+            {
+                // The card has its value already; the rack's copy follows.
+                auto o = obj();
+                put (o, "op", "get");
+                rack = grainCall ("rack", o);
+                fxCardsFor = juce::JSON::toString (rack);
+            }
+            repaintLayer ("fxview");
+        };
+        c.changed = [this] { repaintLayer ("fxview"); };
+    }
+}
+
+juce::Point<float> GrainFace::fxCardAt (int i) const
+{
+    auto it = pageNodes.find ("fx");
+    if (it == pageNodes.end() || it->second.ids.count ("fxModuleRail") == 0)
+        return {};
+    const auto rail = it->second.ids.at ("fxModuleRail").r;
+    float x = rail.getX() - fxScroll;
+    for (int k = 0; k < i && k < (int) fxCards.size(); ++k)
+        x += fxCards[(size_t) k]->width() + 10;
+    return { x, rail.getY() };
+}
+
+bool GrainFace::fxCardMouse (const juce::MouseEvent& e, int kind)
+{
+    syncFxCards();
+    if (kind == 1 || kind == 2)
+    {
+        if (fxDrag < 0 || fxDrag >= (int) fxCards.size())
+            return false;
+        auto& c = *fxCards[(size_t) fxDrag];
+        if (kind == 1)
+            c.mouseDrag (e.position - fxCardAt (fxDrag), e.mods);
+        else
+        {
+            c.mouseUp();
+            fxDrag = -1;
+        }
+        repaintLayer ("fxview");
+        return true;
+    }
+    for (int i = 0; i < (int) fxCards.size(); ++i)
+    {
+        const auto at = fxCardAt (i);
+        auto& c = *fxCards[(size_t) i];
+        if (! juce::Rectangle<float> (at.x, at.y, c.width(), 400).contains (e.position))
+            continue;
+        if (kind == 4 ? c.doubleClick (e.position - at) : c.mouseDown (e.position - at, e.mods))
+        {
+            if (kind == 0)
+                fxDrag = i;
+            repaintLayer ("fxview");
+            return true;
+        }
+    }
+    return false;
 }
