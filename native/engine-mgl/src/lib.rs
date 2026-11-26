@@ -5,6 +5,7 @@
 mod ceiling;
 pub mod atmos;
 pub mod atmos_web;
+pub mod seq;
 pub mod chop;
 pub mod demo;
 pub mod edit_player;
