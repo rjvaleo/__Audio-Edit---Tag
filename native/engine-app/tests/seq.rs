@@ -70,6 +70,8 @@ fn its_state_is_the_pages_keys_and_it_plays() {
     assert!(playing);
     assert!(now.is_some());
     s.seq_set(seq, "stop", &json!(true)).unwrap();
+    // Taken at the module's next block.
+    play(&mut s, &mut audio, 1);
     assert!(!s.seq_now(seq).unwrap().1);
     assert_eq!(s.seq_state(seq).unwrap()["play"], false);
 }
