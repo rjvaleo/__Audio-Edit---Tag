@@ -44,7 +44,9 @@ struct LibraryFace::Impl
     juce::Point<float> at;
 
     N sync, count, pcount, q, groups, gname, gmeta, tiles, detail, dwave, dplay, dlen, dprompt, dseed, dmodel, dtime, dfile, dpill, dnote, acts, refresh;
-    N grp, grpOn, tile, tileOn, pillHit, pillLoop;
+    N grp, grpOn, tile, tileOn, pillHit, pillLoop, facts, useCap;
+    // What sits under the prompt's words, and moves with their height.
+    float promptLine = 17.55f, promptWas = 52.64f;
     std::vector<N> segKind, segOrder, segLoop, actButtons;
     float grpPitch = 30, tileStepX = 230, tileStepY = 120;
     int tilesPerRow = 3;
@@ -107,17 +109,36 @@ struct LibraryFace::Impl
             tileStepX = tile.r.getX() - tileOn.r.getX();
         if (auto t3 = find (".lb-tile", 3); t3.ok() && tileOn.ok())
             tileStepY = t3.r.getY() - tileOn.r.getY();
-        if (tileStepX > 0)
-            tilesPerRow = juce::jmax (1, (int) std::floor ((tiles.r.getWidth() + 4) / tileStepX));
+        // The grid's columns: the tiles the page put on its first row.
+        {
+            std::vector<N> all;
+            browse::Base::findAll (tiles.n, ".lb-tile", all);
+            int across = 0;
+            for (const auto& x : all)
+                across += !all.empty() && std::abs (x.r.getY() - all[0].r.getY()) < 1.0f ? 1 : 0;
+            tilesPerRow = across >= 2 ? across : 3;
+        }
+        facts = find (".lb-facts");
+        useCap = N {};
+        {
+            std::vector<N> caps;
+            browse::Base::findAll (detail.n, ".lb-cap", caps);
+            if (!caps.empty())
+                useCap = { caps.back().n, caps.back().r + at };
+        }
+        if (auto* runs = dprompt.n["text"].getArray(); runs != nullptr && !runs->isEmpty())
+        {
+            promptWas = dprompt.r.getHeight();
+            promptLine = runs->size() > 1 ? rectOf ((*runs)[1]["rect"]).getY() - rectOf ((*runs)[0]["rect"]).getY() : promptWas / (float) runs->size();
+        }
         pillLoop = find (".lb-pill.loop");
         auto segs = [&] (const juce::String& id, std::vector<N>& out) {
             const auto box = find (id);
-            std::vector<N> b;
-            browse::Base::findAll (box.n, "button", b);
-            if (b.empty())
-                browse::Base::findAll (box.n, ".ui-seg-b", b);
-            for (auto& x : b)
-                out.push_back ({ x.n, x.r + at });
+            // Its choices: the children of the page's `.ui-seg`.
+            const auto seg = browse::Base::find (box.n, ".ui-seg");
+            if (auto* kids = seg.n["kids"].getArray())
+                for (const auto& k : *kids)
+                    out.push_back ({ k, rectOf (k["rect"]) + at });
         };
         segs ("#lbKind", segKind);
         segs ("#lbOrder", segOrder);
@@ -145,6 +166,58 @@ struct LibraryFace::Impl
             }
         if (sync.ok())
             frame->skip.insert ((int) sync.n["i"]);
+        // Drawn here, under the prompt's words wherever they end.
+        for (const N* n : { &facts, &useCap, &acts })
+            if (n->ok())
+                frame->skip.insert ((int) n->n["i"]);
+    }
+
+    // lbPill (430): the kind in its colour, ringed; its right edge at `right`.
+    // Gives back its left edge.
+    float pill (juce::Graphics& g, const N& tpl, juce::Point<float> by, float right, const juce::String& type)
+    {
+        if (!tpl.ok() || type.isEmpty())
+            return right;
+        const auto ts = browse::Base::texts (tpl.n);
+        if (ts.empty())
+            return right;
+        const auto& run = ts[0]["text"][0];
+        const auto rr = rectOf (run["rect"]);
+        const auto raw = rectOf (tpl.n["rect"]);
+        const auto fnt = face::font (run["font"]);
+        const auto say = type.toUpperCase();
+        const float w = juce::GlyphArrangement::getStringWidth (fnt, say) + (raw.getWidth() - rr.getWidth());
+        const juce::Rectangle<float> r (right - w, raw.getY() + by.y, w, raw.getHeight());
+        auto col = c2dColour (type == "hit" ? "--f-attack" : "--f-tone");
+        g.setColour (col.withMultipliedAlpha (0.6f));
+        g.drawRoundedRectangle (r.reduced (0.5f), r.getHeight() / 2, 1.0f);
+        browse::Base::write (g, run, { r.getX() + (rr.getX() - raw.getX()) - rr.getX(), by.y }, say, 0, &col);
+        return r.getX();
+    }
+
+    // The prompt's words on the lines the box gives them (it shows 76 px of them).
+    juce::StringArray promptLines (const juce::String& text) const
+    {
+        juce::StringArray lines;
+        auto* runs = dprompt.n["text"].getArray();
+        if (runs == nullptr || runs->isEmpty())
+            return lines;
+        const auto fnt = face::font ((*runs)[0]["font"]);
+        juce::String line;
+        for (const auto& word : juce::StringArray::fromTokens (text, " ", ""))
+        {
+            const auto tried = line.isEmpty() ? word : line + " " + word;
+            if (line.isNotEmpty() && juce::GlyphArrangement::getStringWidth (fnt, tried) > dprompt.r.getWidth())
+            {
+                lines.add (line);
+                line = word;
+            }
+            else
+                line = tried;
+        }
+        if (line.isNotEmpty())
+            lines.add (line);
+        return lines;
     }
 
     void ask (const juce::String& m, const juce::String& t, const juce::String& b, std::function<void (const mgllib::Answer&)> done)
@@ -291,10 +364,11 @@ struct LibraryFace::Impl
             g.fillRect (juce::jmin (W - 2, (float) ((double) f.info["at"] / (double) f.info["frames"]) * W), 0.0f, 2.0f, H);
         }
     }
+    float syncGrew = 0, actsDown = 0;
     juce::Colour c2dColour (const char* key) const
     {
         const auto s = cap["cl"][key].toString();
-        return s.isEmpty() ? juce::Colour (0xff77ddcc) : c2d::css (s);
+        return s.isEmpty() ? juce::Colour (0xff77ddcc) : browse::Base::colourOf (s);
     }
 
     void write (juce::Graphics& g, const N& n, const juce::String& text, float room = 0)
@@ -319,9 +393,15 @@ struct LibraryFace::Impl
             const auto say = busy ? juce::String::fromUTF8 ("READING THE PC\xe2\x80\xa6") : err.isNotEmpty() ? juce::String::fromUTF8 ("\xe2\x97\x8f THE PC DID NOT ANSWER") : juce::String::fromUTF8 ("\xe2\x97\x8f THE PC \xc2\xb7 CONNECTED");
             juce::Colour tint = err.isNotEmpty() ? c2dColour ("--bad") : busy ? c2dColour ("--look-text-3") : face::colour (browse::Base::texts (sync.n).empty() ? juce::var() : browse::Base::texts (sync.n)[0]["text"][0]["font"]["colour"]);
             if (auto ts = browse::Base::texts (sync.n); !ts.empty())
+            {
                 browse::Base::write (g, ts[0]["text"][0], at, say, 0, &tint);
+                // The count follows it, as the page's row lays them.
+                syncGrew = juce::GlyphArrangement::getStringWidth (face::font (ts[0]["text"][0]["font"]), say) - sync.r.getWidth();
+            }
         }
-        write (g, count, list.isEmpty() && busy ? juce::String() : juce::String (sounds().size()) + " SOUNDS");
+        if (count.ok())
+            if (auto ts = browse::Base::texts (count.n); !ts.empty())
+                browse::Base::write (g, ts[0]["text"][0], at + juce::Point<float> (syncGrew, 0), list.isEmpty() && busy ? juce::String() : juce::String (sounds().size()) + " SOUNDS", 0);
         write (g, pcount, juce::String ((int) gs.size()));
         // The prompts.
         if (groups.ok() && grpOn.ok())
@@ -385,20 +465,43 @@ struct LibraryFace::Impl
                 if (ty > tiles.r.getBottom())
                     break;
                 const juce::Point<float> by (tx - tpl.r.getX(), ty - tpl.r.getY());
+                // The row's end is laid from the right: the seconds, then the pill.
+                const auto tilePill = browse::Base::find (tpl.n, ".lb-pill");
+                juce::var secsRun;
+                f.rowSkip.clear();
+                if (tilePill.ok())
+                    f.rowSkip.insert ((int) tilePill.n["i"]);
                 f.drawRow (g, *frame, tpl.n, by + at, [&] (const juce::var& tn, const juce::String& captured) -> juce::String {
                     if (tn["tag"].toString() == "b")
                         return "seed " + (x["seed"].isVoid() ? juce::String::fromUTF8 ("\xe2\x80\x94") : x["seed"].toString());
                     if (tn["cls"].toString().contains ("lb-pill"))
-                        return x["type"].toString().toUpperCase();
+                        return {};
                     if (captured.endsWith (" s"))
-                        return secs (x);
+                    {
+                        secsRun = tn["text"][0];
+                        return {};
+                    }
                     return captured;
                 });
+                f.rowSkip.clear();
+                {
+                    const auto shift = by + at;
+                    float right = tilePill.ok() ? tilePill.r.getRight() + shift.x : 0.0f;
+                    if (secsRun.isObject())
+                    {
+                        const auto sr = rectOf (secsRun["rect"]);
+                        const auto say = secs (x);
+                        const float w = say.isEmpty() ? 0.0f : juce::GlyphArrangement::getStringWidth (face::font (secsRun["font"]), say);
+                        browse::Base::write (g, secsRun, shift + juce::Point<float> (sr.getWidth() - w, 0), say, 0);
+                        if (tilePill.ok())
+                            right = sr.getRight() + shift.x - w - (sr.getX() - tilePill.r.getRight());
+                    }
+                    pill (g, tilePill, shift, right, x["type"].toString());
+                }
                 want (x);
-                std::vector<N> cv;
-                browse::Base::findAll (tpl.n, "canvas", cv);
-                if (!cv.empty())
-                    wave (g, cv[0].r + by + at, x, 212, 54);
+                // Its picture, in the tile's well (the page's 212 x 54 canvas).
+                if (const auto well = browse::Base::find (tpl.n, ".lb-wv"); well.ok())
+                    wave (g, well.r + by + at, x, 212, 54);
                 const auto tr = tpl.r + by;
                 Hit h;
                 h.r = tr;
@@ -422,29 +525,55 @@ struct LibraryFace::Impl
         if (f.pick >= 0 && f.pick < xs.size())
         {
             const auto& x = xs[f.pick];
-            write (g, dprompt, words (x), dprompt.r.getWidth());
-            write (g, dseed, x["seed"].isVoid() ? juce::String::fromUTF8 ("\xe2\x80\x94") : x["seed"].toString());
+            // The words wrap; what is under them sits where they end.
+            const auto lines = promptLines (words (x));
+            const float promptH = juce::jmin (76.0f, (float) lines.size() * promptLine);
+            const juce::Point<float> down (0, promptH - promptWas);
+            if (auto* runs = dprompt.n["text"].getArray(); runs != nullptr && !runs->isEmpty())
+            {
+                juce::Graphics::ScopedSaveState keep (g);
+                g.reduceClipRegion (dprompt.r.withHeight (promptH).toNearestInt());
+                for (int k = 0; k < lines.size(); ++k)
+                    browse::Base::write (g, (*runs)[0], at + juce::Point<float> (0, (float) k * promptLine), lines[k], 0);
+            }
+            {
+                std::set<int> noWords;
+                for (const N* n : { &dseed, &dmodel, &dtime, &dfile })
+                    for (const auto& t : browse::Base::texts (n->n))
+                        noWords.insert ((int) t["i"]);
+                for (const N* n : { &facts, &useCap, &acts })
+                    if (n->ok())
+                        frame->drawPart (g, n->n, at + down, 1.0f, nullptr, &noWords);
+            }
+            auto under = [&] (const N& n, const juce::String& text, float room = 0) {
+                if (const auto ts = browse::Base::texts (n.n); n.ok() && !ts.empty())
+                    browse::Base::write (g, ts[0]["text"][0], at + down, text, room);
+            };
+            under (dseed, x["seed"].isVoid() ? juce::String::fromUTF8 ("\xe2\x80\x94") : x["seed"].toString());
             const auto m = x["model"].toString();
-            write (g, dmodel, models().count (m) ? models().at (m) : m.isNotEmpty() ? m : juce::String::fromUTF8 ("\xe2\x80\x94"), dmodel.r.getWidth());
+            under (dmodel, models().count (m) ? models().at (m) : m.isNotEmpty() ? m : juce::String::fromUTF8 ("\xe2\x80\x94"), dmodel.r.getWidth());
             juce::String made = juce::String::fromUTF8 ("\xe2\x80\x94");
             if (x["time"].toString().isNotEmpty())
             {
                 const auto t = juce::Time::fromISO8601 (x["time"].toString());
                 made = juce::String (t.getDayOfMonth()) + " " + t.getMonthName (true) + ", " + juce::String (t.getHours()).paddedLeft ('0', 2) + ":" + juce::String (t.getMinutes()).paddedLeft ('0', 2);
             }
-            write (g, dtime, made);
-            write (g, dfile, x["file"].toString().fromLastOccurrenceOf ("/", false, false), dfile.r.getWidth());
+            under (dtime, made);
+            under (dfile, x["file"].toString().fromLastOccurrenceOf ("/", false, false), dfile.r.getWidth());
             write (g, dlen, secs (x));
             write (g, dnote, acting.isNotEmpty() ? juce::String::fromUTF8 ("copying it from the PC\xe2\x80\xa6") : juce::String::fromUTF8 ("from the PC \xc2\xb7 nothing is copied until you ask"));
+            if (dpill.ok())
+                pill (g, browse::Base::find (dpill.n, ".lb-pill"), at, dpill.r.getRight(), x["type"].toString());
             if (dwave.ok())
                 wave (g, dwave.r, x, 376, 150);
             if (dplay.ok())
                 hits.push_back ({ dplay.r, [this] { f.play (f.pick); } });
             static const char* names[] = { "grain", "chop", "edit", "copy" };
+            actsDown = down.y;
             for (size_t k = 0; k < actButtons.size() && k < 4; ++k)
             {
                 const juce::String act = names[k];
-                hits.push_back ({ actButtons[k].r, [this, act] { f.use (act); } });
+                hits.push_back ({ actButtons[k].r + down, [this, act] { f.use (act); } });
             }
         }
         // The segs and Refresh.
@@ -622,7 +751,7 @@ juce::Rectangle<float> LibraryFace::where (const juce::String& part) const
     if (part.startsWith ("loop:") && d->segLoop.size() >= 2)
         return d->segLoop[(size_t) part.getTrailingIntValue()].r;
     if (part.startsWith ("act:") && d->actButtons.size() >= 4)
-        return d->actButtons[(size_t) part.getTrailingIntValue()].r;
+        return d->actButtons[(size_t) part.getTrailingIntValue()].r.translated (0, d->actsDown);
     return {};
 }
 

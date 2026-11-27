@@ -65,7 +65,7 @@ juce::String fmtBytes (double b)
 juce::Colour css (const juce::var& cl, const char* key, const char* fallback)
 {
     const auto s = cl[key].toString();
-    return c2d::css (s.isEmpty() ? juce::String (fallback) : s);
+    return browse::Base::colourOf (s.isEmpty() ? juce::String (fallback) : s);
 }
 
 struct Hit
@@ -118,7 +118,14 @@ struct BrowseFace::Impl
     // ── the page's parts, by name (module pixels) ──
     N tree, treeFilter, playAll, laneW, laneEmpty, statsGrid, whyBox, tagSource, dirty, yourTags, learned, heardTags, sonicTags,
         btTotal, btTypeName, btCount, btTypeList, btChips, btFind, btFileList, btSortName, btSortLen, leftTitle, rescan,
-        lvl1, lvl2, tags, notes, addTag, avOpen, discard, commit, nowPlay, nowStop, nowName;
+        lvl1, lvl2, tags, notes, addTag, avOpen, discard, commit, nowPlay, nowStop, nowName, nowMeta, timeNow, playAllBox, volume;
+    // The confidence dots' colours, as the page paints them (low, medium, high).
+    std::map<juce::String, juce::Colour> dotColours;
+    juce::Colour dotColour (const juce::String& confidence) const
+    {
+        auto it = dotColours.find (confidence == "high" || confidence == "medium" ? confidence : juce::String ("low"));
+        return it != dotColours.end() ? it->second : css (cap["cl"], "--bad", "#ed5350");
+    }
     // ── templates ──
     N folderRow, folderRowClosed, fileRow, fileRowSel, loading, btType, btTypeOn, btChip, btChipOn, btFileRow, statCard, statCardWide,
         sonicTag, heardTag, userTag, learnedTag;
@@ -187,6 +194,9 @@ struct BrowseFace::Impl
             return n;
         };
         tree = at ("#tree");
+        // The list is as long as its folders; what shows of it is its pane.
+        if (auto pane = at ("#paneBrowse"); pane.ok() && tree.ok())
+            tree.r = tree.r.getIntersection (pane.r);
         treeFilter = at ("#treeFilter");
         playAll = at (".tree-opt");
         laneW = at ("#waveCanvas");
@@ -219,7 +229,19 @@ struct BrowseFace::Impl
         commit = at ("#commitBtn");
         nowPlay = at ("#playBtn");
         nowStop = at ("#stopBtn");
-        nowName = at ("#nowName");
+        nowName = at ("#nbName");
+        nowMeta = at ("#nbMeta");
+        timeNow = at ("#timeNow");
+        playAllBox = at ("#playAll");
+        volume = at ("#volume");
+        {
+            std::vector<N> dots;
+            browse::Base::findAll (page, ".dot", dots);
+            for (const auto& dn : dots)
+                for (auto k : { "low", "medium", "high" })
+                    if (juce::StringArray::fromTokens (dn.n["cls"].toString(), " ", "").contains (k) && dn.n["bg"].isArray())
+                        dotColours.emplace (k, face::colour (dn.n["bg"]));
+        }
         {
             std::vector<N> sorts;
             browse::Base::findAll (page, "#btSort", sorts);
@@ -281,7 +303,7 @@ struct BrowseFace::Impl
         };
         for (const N* n : { &tree, &statsGrid, &yourTags, &learned, &heardTags, &sonicTags, &btTypeList, &btChips, &btFileList })
             skipKids (*n);
-        for (const N* n : { &whyBox, &tagSource, &dirty, &btTotal, &btTypeName, &btCount, &treeFilter, &btFind, &lvl1, &lvl2, &tags, &notes, &addTag, &nowName })
+        for (const N* n : { &whyBox, &tagSource, &dirty, &btTotal, &btTypeName, &btCount, &treeFilter, &btFind, &lvl1, &lvl2, &tags, &notes, &addTag, &nowName, &nowMeta, &timeNow })
             if (n->ok())
             {
                 frame->skipText.insert ((int) n->n["i"]);
@@ -290,6 +312,9 @@ struct BrowseFace::Impl
             }
         if (auto rail = browse::Base::find (page, "#leftRail"); rail.ok())
             frame->skip.insert ((int) rail.n["i"]);
+        // The volume (a range input) is drawn here, as the bar's is on Edit.
+        if (volume.ok())
+            frame->skip.insert ((int) volume.n["i"]);
     }
 
     // ── loading ──
@@ -350,14 +375,18 @@ struct BrowseFace::Impl
     {
         ask ("GET", "/api/state", {}, [this] (const mgllib::Answer& a) { libState = a.json(); });
         ask ("GET", "/api/order", {}, [this] (const mgllib::Answer& a) {
+            // An answer is kept while its list is read: `a.json()` alone is gone
+            // by the next line, and its list with it.
             order.clear();
-            if (auto* o = a.json()["order"].getArray())
+            const auto v = a.json();
+            if (auto* o = v.isArray() ? v.getArray() : v["order"].getArray())
                 for (const auto& n : *o)
                     order.add (n.toString());
         });
         ask ("GET", "/api/folders", {}, [this] (const mgllib::Answer& a) {
             folders.clear();
-            if (auto* fs = a.json().getArray())
+            const auto v = a.json();
+            if (auto* fs = v.getArray())
                 folders.addArray (*fs);
             for (const auto& name : f.openFolders)
                 loadFiles (name);
@@ -369,12 +398,14 @@ struct BrowseFace::Impl
     {
         ask ("GET", "/api/files?folder=" + mgllib::esc (name), {}, [this, name] (const mgllib::Answer& a) {
             juce::Array<juce::var> list;
-            if (auto* fs = a.json().getArray())
+            const auto v = a.json();
+            if (auto* fs = v.getArray())
                 list.addArray (*fs);
             files[name] = list;
             wantThumbs();
             ask ("GET", "/api/labels?folder=" + mgllib::esc (name), {}, [this] (const mgllib::Answer& l) {
-                if (auto* o = l.json()["files"].getDynamicObject())
+                const auto lv = l.json();
+                if (auto* o = lv["files"].getDynamicObject())
                     for (const auto& p : o->getProperties())
                         heard[p.name.toString()] = p.value;
             });
@@ -404,7 +435,8 @@ struct BrowseFace::Impl
         o->setProperty ("paths", paths);
         o->setProperty ("cols", 54);
         ask ("POST", "/api/thumbs", juce::JSON::toString (juce::var (o.get()), true), [this] (const mgllib::Answer& a) {
-            if (auto* m = a.json().getDynamicObject())
+            const auto v = a.json();
+            if (auto* m = v.getDynamicObject())
                 for (const auto& p : m->getProperties())
                 {
                     juce::MemoryOutputStream out;
@@ -577,10 +609,14 @@ struct BrowseFace::Impl
                 return sim["saved"][k].toString();
             return sim["suggest"][k].toString();
         };
-        f.field ("level1", lvl1, "snare, sine wave, voice\xe2\x80\xa6").setText (pick ("level1"), false);
-        f.field ("level2", lvl2, "bright, repetitive, gritty\xe2\x80\xa6").setText (pick ("level2"), false);
-        f.field ("tags", tags, "words you'd search for\xe2\x80\xa6").setText (pick ("tags"), false);
-        f.field ("notes", notes, "where it came from, what it's for\xe2\x80\xa6", true).setText (pick ("notes"), false);
+        // Each field shows its words from their start, as the page's does.
+        for (auto [key, n] : { std::pair<const char*, const N*> { "level1", &lvl1 }, { "level2", &lvl2 }, { "tags", &tags }, { "notes", &notes } })
+        {
+            auto& ed = f.field (key, *n, {}, juce::String (key) == "notes");
+            ed.setText (pick (key), false);
+            ed.setCaretPosition (0);
+            ed.scrollEditorToPositionCaret (0, 0);
+        }
         sourceSay = !e.empty() ? "Edited" : sim["saved"].isObject() ? "Saved" : "Suggested";
     }
 
@@ -650,14 +686,12 @@ struct BrowseFace::Impl
             if (captured.contains (":") && captured.length() <= 6)
                 return fmtDur ((double) file["duration"]);
             return captured;
-        });
+        }, 1.0f, browse::Base::find (t.n, ".info").ok() ? browse::Base::find (t.n, ".info").r.getRight() : t.r.getRight() + RAIL - 20.0f);
         // The confidence dot, in the file's own colour.
         if (auto dot = browse::Base::find (t.n, ".dot"); dot.ok())
         {
-            const auto conf = file["confidence"].toString();
-            const auto col = css (cap["cl"], conf == "high" ? "--good" : conf == "medium" ? "--warn" : "--bad", "#e05a4a");
-            g.setColour (col);
-            g.fillRoundedRectangle (dot.r.translated (-RAIL, by.y), 2);
+            g.setColour (dotColour (file["confidence"].toString()));
+            g.fillEllipse (dot.r.translated (-RAIL, by.y));
         }
         if (auto th = browse::Base::find (t.n, ".thumb"); th.ok())
             thumb (g, th.r.translated (-RAIL, by.y), file["path"].toString(), sel);
@@ -711,9 +745,8 @@ struct BrowseFace::Impl
                 });
                 if (auto dot = browse::Base::find (t.n, ".dot"); dot.ok())
                 {
-                    const auto conf = fo["confidence"].toString();
-                    g.setColour (css (cap["cl"], conf == "high" ? "--good" : conf == "medium" ? "--warn" : "--bad", "#e05a4a"));
-                    g.fillRoundedRectangle (dot.r.translated (by.x, by.y), 2);
+                    g.setColour (dotColour (fo["confidence"].toString()));
+                    g.fillEllipse (dot.r.translated (by.x, by.y));
                 }
                 Hit h;
                 h.r = t.r.translated (0, by.y).getIntersection (clip);
@@ -941,6 +974,14 @@ struct BrowseFace::Impl
         }
         if (!sim.isObject())
             return;
+        // The page's quiet words where a list is empty, written as its "none yet".
+        const auto quiet = browse::Base::find (yourTags.n, ".dim");
+        auto dim = [&] (const N& box, const juce::String& text) {
+            if (!box.ok() || !quiet.ok())
+                return;
+            if (const auto ts = browse::Base::texts (quiet.n); !ts.empty())
+                browse::Base::write (g, ts[0]["text"][0], { box.r.getX() - yourTags.r.getX() - RAIL, box.r.getY() - yourTags.r.getY() }, text, box.r.getWidth());
+        };
         juce::StringArray sonic, heardW, mine;
         if (auto* a = sim["tags"].getArray())
             for (const auto& t : *a)
@@ -954,6 +995,12 @@ struct BrowseFace::Impl
         chips (g, sonicTags, sonicTag, sonic, 0);
         chips (g, heardTags, heardTag.ok() ? heardTag : sonicTag, heardW, 0);
         chips (g, yourTags, userTag.ok() ? userTag : sonicTag, mine, 0);
+        if (sonic.isEmpty())
+            dim (sonicTags, "not measured");
+        if (heardW.isEmpty())
+            dim (heardTags, "nothing recognised");
+        if (mine.isEmpty())
+            dim (yourTags, "none yet");
     }
 
     void drawTypes (juce::Graphics& g)
@@ -989,9 +1036,12 @@ struct BrowseFace::Impl
                     if (auto* kids = fill.n["kids"].getArray(); kids != nullptr && !kids->isEmpty())
                     {
                         const auto r = fill.r.translated (by.x, by.y);
-                        g.setColour (face::colour ((*kids)[0]["bg"].isArray() && (*kids)[0]["bg"].size() > 0 ? (*kids)[0]["bg"][0]["colour"] : juce::var()));
-                        const auto c = face::colour ((*kids)[0]["bg"][0]["colour"]);
-                        g.setColour (c.isTransparent() ? css (cap["cl"], "--look-accent", "#ffb547") : c);
+                        const auto c = face::colour ((*kids)[0]["bg"]);
+                        g.setColour (c.isTransparent() ? css (cap["cl"], "--look-text-3", "#858b94") : c);
+                        juce::Graphics::ScopedSaveState round (g);
+                        juce::Path track;
+                        track.addRoundedRectangle (r, r.getHeight() / 2);
+                        g.reduceClipRegion (track);
                         g.fillRect (r.withWidth (r.getWidth() * (float) juce::jmax (2.0, std::sqrt (t.files / most) * 100) / 100.0f));
                     }
                 Hit h;
@@ -1036,6 +1086,8 @@ struct BrowseFace::Impl
                     cs.push_back ({ "-", { "Not named", none } });
             }
             float x = btChips.r.getX(), y = btChips.r.getY();
+            // The gap between two chips, as the page laid the first two.
+            const float chipGap = btChip.ok() && btChipOn.ok() && btChip.r.getX() > btChipOn.r.getRight() ? btChip.r.getX() - btChipOn.r.getRight() : 4.0f;
             for (auto& [key, lc] : cs)
             {
                 const bool on = key == f.instrument;
@@ -1052,7 +1104,7 @@ struct BrowseFace::Impl
                 if (x + w > btChips.r.getRight() && x > btChips.r.getX())
                 {
                     x = btChips.r.getX();
-                    y += tpl.r.getHeight() + 6;
+                    y += tpl.r.getHeight() + chipGap;
                 }
                 const juce::Rectangle<float> r (x, y, w, tpl.r.getHeight());
                 face::paintBox (g, tpl.n, r);
@@ -1077,7 +1129,7 @@ struct BrowseFace::Impl
                     f.saveUi();
                 };
                 hits.push_back (h);
-                x += w + 6;
+                x += w + chipGap;
             }
         }
         // The sort.
@@ -1114,15 +1166,44 @@ struct BrowseFace::Impl
         }
     }
 
+    // nbSetFile (410): the sound picked, its length and its category after it;
+    // the clock at where it is being heard.
     void drawNow (juce::Graphics& g)
     {
-        if (!nowName.ok())
-            return;
-        if (auto ts = browse::Base::texts (nowName.n); !ts.empty())
-        {
-            const auto heardName = f.info["heard"]["name"].toString();
-            browse::Base::write (g, ts[0]["text"][0], { -RAIL, 0 }, heardName.isNotEmpty() ? heardName : juce::String ("no sound"), nowName.r.getWidth());
-        }
+        const bool has = pickedFile.isObject();
+        float nameW = 0;
+        if (nowName.ok())
+            if (auto ts = browse::Base::texts (nowName.n); !ts.empty())
+            {
+                const auto name = has ? (pickedFile["name"].toString().isNotEmpty() ? pickedFile["name"].toString() : f.picked.fromLastOccurrenceOf ("/", false, false)) : juce::String ("no sound");
+                const auto& run = ts[0]["text"][0];
+                const float room = 520.0f;
+                browse::Base::write (g, run, { -RAIL, 0 }, name, room);
+                nameW = juce::jmin (room, juce::GlyphArrangement::getStringWidth (face::font (run["font"]), name));
+            }
+        if (nowMeta.ok() && nowName.ok() && has)
+            if (auto ts = browse::Base::texts (nowMeta.n); !ts.empty())
+            {
+                juce::StringArray bits;
+                bits.add (fmtDur ((double) pickedFile["duration"]));
+                if (pickedFile["category"].toString().isNotEmpty())
+                    bits.add (pickedFile["category"].toString());
+                const auto& run = ts[0]["text"][0];
+                const float gap = nowMeta.r.getX() - nowName.r.getRight();
+                browse::Base::write (g, run, { -RAIL + (nowName.r.getX() + nameW + gap) - nowMeta.r.getX(), 0 }, bits.joinIntoString (juce::String::fromUTF8 (" \xc2\xb7 ")), 0);
+            }
+        if (timeNow.ok())
+            if (auto ts = browse::Base::texts (timeNow.n); !ts.empty())
+            {
+                double secs = 0;
+                const double rate = stats.isObject() ? (double) stats["sampleRate"] : 0.0;
+                if (f.info["heard"]["path"].toString() == f.picked && f.picked.isNotEmpty() && rate > 0)
+                    secs = (double) f.info["at"] / rate;
+                const int m = (int) (secs / 60);
+                const double rest = secs - m * 60;
+                const auto say = juce::String (m).paddedLeft ('0', 2) + ":" + juce::String ((int) rest).paddedLeft ('0', 2) + "." + juce::String ((int) std::floor ((rest - std::floor (rest)) * 1000)).paddedLeft ('0', 3);
+                browse::Base::write (g, ts[0]["text"][0], { -RAIL, 0 }, say, 0);
+            }
     }
 
     void draw (juce::Graphics& g)
@@ -1146,6 +1227,41 @@ struct BrowseFace::Impl
         drawTags (g);
         drawTypes (g);
         drawNow (g);
+        // "Play all files": the page's checkbox, as the browser draws it.
+        if (playAllBox.ok())
+        {
+            const auto r = playAllBox.r;
+            if (f.playAll)
+            {
+                g.setColour (juce::Colour (0xff0075ff));
+                g.fillRoundedRectangle (r, 2.5f);
+                juce::Path tick;
+                tick.startNewSubPath (r.getX() + 3.0f, r.getY() + 6.8f);
+                tick.lineTo (r.getX() + 5.4f, r.getY() + 9.2f);
+                tick.lineTo (r.getX() + 10.0f, r.getY() + 3.8f);
+                g.setColour (juce::Colours::white);
+                g.strokePath (tick, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
+            else
+            {
+                g.setColour (juce::Colours::white);
+                g.fillRoundedRectangle (r, 2.5f);
+                g.setColour (juce::Colour (0xff767676));
+                g.drawRoundedRectangle (r.reduced (0.5f), 2.5f, 1.0f);
+            }
+        }
+        // The volume: its track, and how far up it is (0.85), as on Edit's bar.
+        if (volume.ok())
+        {
+            const auto r = volume.r;
+            const auto track = juce::Rectangle<float> (r.getX(), r.getCentreY() - 2, r.getWidth(), 4);
+            g.setColour (css (cap["cl"], "--look-well", "#06070a"));
+            g.fillRoundedRectangle (track, 2);
+            g.setColour (css (cap["cl"], "--look-text-2", "#b9bec6"));
+            g.fillRoundedRectangle (track.withWidth (r.getWidth() * 0.85f), 2);
+            g.setColour (css (cap["cl"], "--look-text", "#e8eaee"));
+            g.fillEllipse (juce::Rectangle<float> (10, 10).withCentre ({ r.getX() + r.getWidth() * 0.85f, r.getCentreY() }));
+        }
         // The chrome's own buttons.
         auto button = [&] (const N& n, std::function<void()> go) {
             if (n.ok())
@@ -1393,7 +1509,10 @@ BrowseFace::BrowseFace (Call c, uint32_t i) : browse::Base (std::move (c), i)
     };
     for (auto [key, n] : { std::pair<const char*, browse::N*> { "level1", &d->lvl1 }, { "level2", &d->lvl2 }, { "tags", &d->tags }, { "notes", &d->notes } })
     {
-        auto& e = field (key, *n, {}, juce::String (key) == "notes");
+        static const std::map<juce::String, const char*> hints {
+            { "level1", "snare, sine wave, voice\xe2\x80\xa6" }, { "level2", "bright, repetitive, gritty\xe2\x80\xa6" },
+            { "tags", "words you'd search for\xe2\x80\xa6" }, { "notes", "where it came from, what it's for\xe2\x80\xa6" } };
+        auto& e = field (key, *n, juce::String::fromUTF8 (hints.at (key)), juce::String (key) == "notes");
         const auto k = juce::String (key);
         e.onTextChange = [this, k, &e] {
             const auto name = picked.isNotEmpty() ? picked : d->selectedFolder;
@@ -1465,7 +1584,8 @@ void BrowseFace::refresh()
         // The sound picked, as the library lists it.
         const auto folder = picked.upToFirstOccurrenceOf ("/", false, false);
         d->ask ("GET", "/api/files?folder=" + mgllib::esc (folder), {}, [this] (const mgllib::Answer& a) {
-            if (auto* fs = a.json().getArray())
+            const auto v = a.json();
+            if (auto* fs = v.getArray())
                 for (const auto& file : *fs)
                     if (file["path"].toString() == picked)
                     {
@@ -1584,7 +1704,10 @@ void BrowseFace::tick()
     const bool was = (bool) info["playing"];
     module ("info");
     if (was || (bool) info["playing"])
+    {
         d->over.repaint (d->laneW.r.toNearestInt().expanded (2));
+        d->over.repaint (d->timeNow.r.toNearestInt().expanded (4));
+    }
     if (was != (bool) info["playing"])
         d->over.repaint();
     if (scanning && ++scanTicks % 12 == 0)

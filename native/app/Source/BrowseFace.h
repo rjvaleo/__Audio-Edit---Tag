@@ -23,6 +23,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 namespace browse
@@ -57,6 +58,8 @@ public:
     virtual juce::Rectangle<float> where (const juce::String& part) const = 0;
     // The time the last change took to draw again, at `scale`, as the window would.
     double paintTimed (float scale);
+    // A colour as the page's stylesheet gives it: c2d's, and oklch() as well.
+    static juce::Colour colourOf (const juce::String& css);
 
 protected:
     Call call;
@@ -74,11 +77,18 @@ protected:
     static void findAll (const juce::var& tree, const juce::String& cls, std::vector<N>& out);
     static std::vector<juce::var> texts (const juce::var& node);
     // `node` drawn moved by `by`, its runs of text written as `words` gives
-    // them (the run's own words when `words` gives nothing).
+    // them (the run's own words when `words` gives nothing). A count keeps its
+    // right edge. With `flowRight` (the row's right edge, in the capture's
+    // pixels) the words on a line follow one another as the page flows them,
+    // each moved by what the ones before it gained or lost, cut at that edge.
     void drawRow (juce::Graphics&, face::Chrome&, const juce::var& node, juce::Point<float> by,
-                  const std::function<juce::String (const juce::var& textNode, const juce::String& captured)>& words, float opacity = 1.0f);
+                  const std::function<juce::String (const juce::var& textNode, const juce::String& captured)>& words, float opacity = 1.0f,
+                  float flowRight = 0.0f);
     // Words in a captured run's font and colour, cut short with "…" to `room`.
+    // Words the page writes in capitals (`text-transform`) are written so here.
     static void write (juce::Graphics&, const juce::var& run, juce::Point<float> by, const juce::String& text, float room, juce::Colour* tint = nullptr);
+    // Parts of a row the next drawRow leaves out (the face draws them itself).
+    std::set<int> rowSkip;
     juce::TextEditor& field (const juce::String& key, const N& at, const juce::String& hint, bool multi = false);
     std::map<juce::String, std::unique_ptr<juce::TextEditor>> fields;
 };

@@ -55,7 +55,8 @@ struct Rig
 juce::var captureUi()
 {
     const auto folders = mgllib::call ("GET", "/api/folders").json();
-    const auto order = mgllib::call ("GET", "/api/order").json()["order"];
+    const auto orderAnswer = mgllib::call ("GET", "/api/order").json();
+    const auto order = orderAnswer.isArray() ? orderAnswer : orderAnswer["order"];
     juce::String first;
     if (auto* o = order.getArray())
         for (const auto& n : *o)
@@ -66,7 +67,8 @@ juce::var captureUi()
     if (first.isEmpty() && folders.size() > 0)
         first = folders[0]["name"].toString();
     juce::String picked;
-    if (auto* fs = mgllib::call ("GET", "/api/files?folder=" + mgllib::esc (first)).json().getArray())
+    const auto listed = mgllib::call ("GET", "/api/files?folder=" + mgllib::esc (first)).json();
+    if (auto* fs = listed.getArray())
         for (const auto& f : *fs)
         {
             const auto fmt = f["format"].toString();
