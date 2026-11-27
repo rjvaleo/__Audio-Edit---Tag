@@ -742,7 +742,19 @@ double PrismFace::fromU (const Spec& s, double u) const
     double v = lg ? s.min * std::pow (s.max / s.min, u) : s.min + u * (s.max - s.min);
     if (step > 0)
         v = jsRound (v / step) * step;
-    return stepped ? jsRound (v) : v;
+    if (stepped)
+        return jsRound (v);
+    // Then through the page's hidden range input, whose value is what is sent:
+    // a thousand ticks along a log control, min + n steps along a linear one,
+    // never under min or over max (so Stretch stops at 0.01, not 0).
+    if (lg)
+    {
+        const double t = jsRound (std::log (juce::jlimit (s.min, s.max, v) / s.min) / std::log (s.max / s.min) * 1000) / 1000;
+        return s.min * std::pow (s.max / s.min, t);
+    }
+    if (step > 0)
+        v = s.min + jsRound ((v - s.min) / step) * step;
+    return juce::jlimit (s.min, s.max, v);
 }
 
 namespace

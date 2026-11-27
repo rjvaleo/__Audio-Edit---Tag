@@ -62,6 +62,8 @@ public:
 
     bool keyPressed (const juce::KeyPress&) override;
     bool keyStateChanged (bool isKeyDown) override;
+    void focusLost (FocusChangeType) override;
+    juce::juce_wchar octKey = 0;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;

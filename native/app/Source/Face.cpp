@@ -989,7 +989,13 @@ void Chrome::drawNode (juce::Graphics& g, const juce::var& n, const juce::var* l
         int chosen = (int) n["select"]["value"];
         if (auto it = selectValue.find (i); it != selectValue.end())
             chosen = it->second;
-        if (options != nullptr && chosen >= 0 && chosen < options->size())
+        if (auto st = selectText.find (i); st != selectText.end())
+        {
+            g.setFont (font (n["font"]));
+            g.setColour (colour (n["font"]["colour"]));
+            g.drawText (st->second, r.reduced (8.0f, 0.0f).withTrimmedRight (14.0f), juce::Justification::centredLeft, true);
+        }
+        else if (options != nullptr && chosen >= 0 && chosen < options->size())
         {
             const auto f = font (n["font"]);
             g.setFont (f);

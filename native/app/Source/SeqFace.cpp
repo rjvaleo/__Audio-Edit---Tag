@@ -490,7 +490,7 @@ void SeqFace::sync()
     }
     // The name the page last wrote there: the preset picked, else the patch's own.
     if (shownPreset.isNotEmpty())
-        txt ("presetNameDisplay", shownPreset.toUpperCase());
+        txt ("presetNameDisplay", shownPreset);
     else if (str ("presetName").isNotEmpty() || str ("name").isNotEmpty())
         txt ("presetNameDisplay", (str ("name").isNotEmpty() ? str ("name") : str ("presetName")).toUpperCase());
     // Play, lit while playing: the captured lit button drawn over it.
@@ -528,7 +528,22 @@ void SeqFace::sync()
     for (const auto& s : selects)
     {
         const auto key = dataOf (s.n, "k");
-        if (key == "preset" || key == "morph")
+        if (key == "preset")
+        {
+            // The recall box shows the preset loaded (the page's select does).
+            const bool has = shownPreset.isNotEmpty() && shownPreset != "NO PRESET";
+            const auto was = page.selectText.count (s.i) ? page.selectText[s.i] : juce::String();
+            if ((has ? shownPreset : juce::String()) != was)
+            {
+                if (has)
+                    page.selectText[s.i] = shownPreset;
+                else
+                    page.selectText.erase (s.i);
+                page.redraw (s.r);
+            }
+            continue;
+        }
+        if (key == "morph")
             continue;
         const int at = optionValues (key).indexOf (str (key));
         const int shown = page.selectValue.count (s.i) ? page.selectValue[s.i] : (int) s.n["select"]["value"];
@@ -1298,7 +1313,7 @@ void SeqFace::timerCallback()
         const int r = readNow (step, hz, deg);
         const bool was = playing;
         playing = r >= 0;
-        const int nowStep = r > 0 ? step : -1;
+        const int nowStep = r > 0 ? step : (paused && !playing ? heard : -1);
         if (nowStep != heard || was != playing || (r > 0 && hz != heardHz))
         {
             heard = nowStep, heardHz = hz, heardDeg = deg;
@@ -1333,6 +1348,9 @@ void SeqFace::menu (const juce::String& key, juce::Rectangle<float> near)
                                  loadPreset (value);
                                  readBack();
                                  shownPreset = value;
+                                 // Applying a preset writes the root again (`updateRoot`).
+                                 v["rootTouched"] = true;
+                                 paused = false;
                                  sync();
                              }
                              for (auto& l : layers)
@@ -1361,11 +1379,17 @@ void SeqFace::mouseDown (const juce::MouseEvent& e)
         if (r.contains (at))
         {
             if (act == "play")
+            {
+                // A pause leaves the lit step, the key and the readings where they
+                // are (`togglePlay`); only Stop clears them.
+                paused = playing;
                 return set ("play", !playing);
+            }
             if (act == "stop")
             {
                 if (send)
                     send ("stop", "true");
+                paused = false;
                 playing = false;
                 heard = -1;
                 sync();
@@ -1376,12 +1400,21 @@ void SeqFace::mouseDown (const juce::MouseEvent& e)
             {
                 if (savePreset)
                     savePreset();
+                // The page shows the preset just saved.
+                readBack();
+                if (str ("name").isNotEmpty())
+                    shownPreset = str ("name");
+                sync();
                 return;
             }
             if (act == "delete")
             {
                 if (deletePreset && str ("name").isNotEmpty())
                     deletePreset (str ("name"));
+                // "NO PRESET", as the page shows after a delete.
+                readBack();
+                shownPreset = "NO PRESET";
+                sync();
                 return;
             }
             if (act == "copyRow" || act == "clear")
@@ -1502,7 +1535,7 @@ bool SeqFace::keyPressed (const juce::KeyPress& k)
     else if (code == juce::KeyPress::returnKey)
         stepEdit (picked, "preview");
     else if (code == juce::KeyPress::escapeKey)
-        picked = -1, repaintNamed ("steps");
+        ; // The page's Escape unpicks and picks the step again: nothing changes.
     else
         return false;
     return true;

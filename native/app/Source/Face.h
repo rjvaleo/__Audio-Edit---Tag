@@ -112,6 +112,8 @@ public:
     std::map<int, int> styleFrom;
     // Show this option of a select node (by its number), not the captured one.
     std::map<int, int> selectValue;
+    // A select showing words its captured options lack (a list made later).
+    std::map<int, juce::String> selectText;
     // Draw this node (and what is in it) at this opacity, not the captured one.
     std::map<int, float> opacityOf;
 

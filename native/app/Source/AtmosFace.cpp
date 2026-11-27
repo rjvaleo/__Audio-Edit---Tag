@@ -1391,6 +1391,10 @@ bool AtmosFace::keyPressed (const juce::KeyPress& k)
     const auto c = juce::CharacterFunctions::toLowerCase (k.getTextCharacter());
     if (c == 'z' || c == 'x')
     {
+        // Held, the key repeats: one octave a press (the page ignores repeats).
+        if (octKey == c)
+            return true;
+        octKey = c;
         kbLo = juce::jlimit (12, 72, kbLo + (c == 'z' ? -12 : 12));
         repaintNamed ("adKeys");
         if (textLayer != nullptr)
@@ -1409,9 +1413,20 @@ bool AtmosFace::keyPressed (const juce::KeyPress& k)
     return true;
 }
 
+void AtmosFace::focusLost (FocusChangeType)
+{
+    // Every held note let go when the keys go elsewhere (the page's blur).
+    for (const auto& [c, n] : keyNotes)
+        note (n, 0, false);
+    keyNotes.clear();
+    octKey = 0;
+}
+
 bool AtmosFace::keyStateChanged (bool)
 {
     bool used = false;
+    if (octKey != 0 && !juce::KeyPress::isKeyCurrentlyDown ((int) octKey) && !juce::KeyPress::isKeyCurrentlyDown ((int) juce::CharacterFunctions::toUpperCase (octKey)))
+        octKey = 0;
     for (auto it = keyNotes.begin(); it != keyNotes.end();)
     {
         if (!juce::KeyPress::isKeyCurrentlyDown ((int) it->first))

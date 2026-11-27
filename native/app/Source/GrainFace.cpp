@@ -1264,6 +1264,10 @@ bool GrainFace::keyPressed (const juce::KeyPress& k)
     }
     if (c == 'z' || c == 'x')
     {
+        // Held, the key repeats: one octave a press (the page ignores repeats).
+        if (octKey == c)
+            return true;
+        octKey = c;
         setOct (oct + (c == 'z' ? -1 : 1));
         return true;
     }
@@ -1283,6 +1287,8 @@ bool GrainFace::keyPressed (const juce::KeyPress& k)
 
 bool GrainFace::keyStateChanged (bool isKeyDown)
 {
+    if (octKey != 0 && !juce::KeyPress::isKeyCurrentlyDown ((int) octKey) && !juce::KeyPress::isKeyCurrentlyDown ((int) juce::CharacterFunctions::toUpperCase (octKey)))
+        octKey = 0;
     if (isKeyDown)
         return false;
     for (auto it = kbd.begin(); it != kbd.end();)
@@ -2834,4 +2840,13 @@ bool GrainFace::fxCardMouse (const juce::MouseEvent& e, int kind)
         }
     }
     return false;
+}
+
+// Every held note let go when the keys go elsewhere (`gsReleaseAll` on blur).
+void GrainFace::focusLost (FocusChangeType)
+{
+    for (const auto& [c, n] : kbd)
+        note (n, 0, false);
+    kbd.clear();
+    octKey = 0;
 }

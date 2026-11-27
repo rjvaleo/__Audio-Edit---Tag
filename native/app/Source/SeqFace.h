@@ -40,6 +40,7 @@ public:
     std::function<juce::StringArray()> presetNames;
     // The preset last picked here, as the page's display keeps it.
     juce::String shownPreset;
+    bool paused = false;
     std::function<void (const juce::String&)> loadPreset, deletePreset;
     std::function<void()> savePreset;
     // True for a press that belongs to the canvas (Space held, the middle button).
