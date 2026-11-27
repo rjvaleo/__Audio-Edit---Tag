@@ -16,6 +16,8 @@
 //   own fixed size.
 #pragma once
 
+#include <set>
+
 #include "Face.h"
 #include "Host.h"
 #include "AtmosFace.h"
@@ -151,6 +153,8 @@ public:
 
     static constexpr int header = 20, border = 1;
     juce::Rectangle<int> bodyBounds() const;
+    // A press on something inside it, as its listener hears it (the check).
+    void pressedInside (const juce::MouseEvent& e) { raise.mouseDown (e); }
 
 private:
     Canvas& canvas;
@@ -158,6 +162,14 @@ private:
     std::unique_ptr<juce::ComboBox> channel;
     juce::Point<int> grabbedAt;
     bool moving = false;
+    // A press on what is inside it (its face, a socket) selects the module
+    // and brings it to the front; the press itself stays the face's.
+    struct Raise final : juce::MouseListener
+    {
+        explicit Raise (Node& n) : node (n) {}
+        Node& node;
+        void mouseDown (const juce::MouseEvent& e) override;
+    } raise { *this };
     juce::Rectangle<float> collapseR, powerR, menuR, handleR, nameR, closeR;
     juce::Image frame;
     juce::String frameKey;
@@ -182,7 +194,13 @@ class Stage final : public juce::Component
 {
 public:
     explicit Stage (Canvas&) {}
-    static constexpr int size = 20000;
+    // The board runs every way from the patch's (0, 0): the stage is this far
+    // either side of it, and a module at the patch's (x, y) sits at
+    // (x + origin, y + origin) on the stage. With the patch's origin at the
+    // stage's corner nothing could be moved up or left of where it started
+    // (RJ, 26 Nov 2026: "you can't move it up past where you first show it").
+    static constexpr int origin = 100000;
+    static constexpr int size = 2 * origin;
 };
 
 // idMLab's Add module panel, with its search.
@@ -197,6 +215,9 @@ public:
     void mouseExit (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     const juce::Point<float> at;
+    float scrolledBy() const { return scroll; }
+    // Every group opened, then all but the first shut again (the check).
+    void openEveryGroup (bool all);
 
 private:
     Canvas& canvas;
@@ -206,7 +227,13 @@ private:
         juce::String label, kind;
         bool group;
         juce::Rectangle<float> r;
+        int count = 0;     // a group's modules
+        bool open = false; // a group shown with its modules
     };
+    // The groups shown open: each is shut until it is pressed, and stays as
+    // it was left the next time the menu opens (RJ, 26 Nov 2026). A search
+    // shows every group that has a match, open.
+    static std::set<juce::String>& openGroups();
     std::vector<Row> rows;
     int hover = -1;
     // The list scrolls under the title and the search (the first 63 px).
@@ -239,6 +266,9 @@ public:
     };
     std::vector<Wire> wires;
     int selectedWire = -1, selectedNode = -1;
+    // The Add menu, opened at a place on the canvas (the check).
+    AddMenu* openMenuForCheck (juce::Point<float> onCanvas) { openMenu (onCanvas); return menu.get(); }
+    juce::String patchForCheck() { return snapshot(); }
     std::map<int, std::unique_ptr<Node>> nodes;
 
     // The menus' and the bar's commands (appMenus.ts).
@@ -302,7 +332,7 @@ public:
     void refresh();
     void closeMenu();
 
-    juce::Point<float> stagePoint (juce::Point<float> onCanvas) const { return camera::toCanvas (cam, onCanvas); }
+    juce::Point<float> stagePoint (juce::Point<float> onCanvas) const { return camera::toCanvas (cam, onCanvas) + juce::Point<float> ((float) Stage::origin, (float) Stage::origin); }
     Stage stage { *this };
     Cables cables { *this };
 

@@ -841,6 +841,73 @@ public:
         }
         // --bench: how long the Wave face takes to draw whole, and to draw
         // again after one knob moves, as a drag does on every step.
+        // --check move <out.png>: a module dragged by its title bar up and left
+        // past the patch's (0, 0), brought to the front by a press inside it,
+        // and the Add menu scrolled; what happened printed, the window drawn.
+        if (args.size() >= 3 && args[0] == "--check" && args[1] == "move")
+        {
+            MainComponent main;
+            auto& cv = main.canvasForBench();
+            cv.addModule ("atmos", { 400.0f, 300.0f });
+            cv.fit();
+            auto press = [] (juce::Component& c, juce::Point<float> p, int kind) {
+                auto src = juce::Desktop::getInstance().getMainMouseSource();
+                const auto t = juce::Time::getCurrentTime();
+                juce::MouseEvent e (src, p, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 0, 0, 0, 0, 0, &c, &c, t, p, t, 1, kind == 1);
+                kind == 0 ? c.mouseDown (e) : kind == 1 ? c.mouseDrag (e) : c.mouseUp (e);
+            };
+            int bad = 0;
+            auto say = [&] (const char* what, bool ok) { std::printf ("%-52s %s\n", what, ok ? "ok" : "FAIL"); bad += ok ? 0 : 1; };
+            auto* first = cv.nodes.begin()->second.get();
+            auto* last = cv.nodes.rbegin()->second.get();
+            const auto was = first->getPosition();
+            press (*first, { 200, 10 }, 0);
+            press (*first, { 200 - 900, 10 - 1200 }, 1);
+            press (*first, { 200, 10 }, 2);
+            const auto now = first->getPosition();
+            say ("a drag by the title bar moves the module", now == was + juce::Point<int> (-900, -1200));
+            say ("above and left of the patch's (0, 0)", now.x < Stage::origin && now.y < Stage::origin && now.x > 0 && now.y > 0);
+            const auto saved = juce::JSON::parse (cv.patchForCheck());
+            bool kept = false;
+            if (auto* ms = saved["modules"].getArray())
+                for (const auto& m : *ms)
+                    kept = kept || ((int) m["id"] == first->id && (int) (double) m["y"] == now.y - Stage::origin && (int) (double) m["x"] == now.x - Stage::origin);
+            say ("and the patch keeps where it is", kept);
+            // A press inside another module's face raises it.
+            if (auto* kid = last->getChildComponent (last->getNumChildComponents() - 1))
+            {
+                first->toFront (false);
+                juce::MouseEvent e (juce::Desktop::getInstance().getMainMouseSource(), { 5, 5 }, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 0, 0, 0, 0, 0, kid, kid, juce::Time::getCurrentTime(), { 5, 5 }, juce::Time::getCurrentTime(), 1, false);
+                last->pressedInside (e);
+                say ("a press inside a module brings it to the front", last->getParentComponent()->getIndexOfChildComponent (last) > first->getParentComponent()->getIndexOfChildComponent (first) && cv.selectedNode == last->id);
+            }
+            cv.fit();
+            auto* menu = cv.openMenuForCheck ({ 300, 300 });
+            say ("the Add menu fits inside the canvas", menu != nullptr && menu->getBottom() <= cv.getHeight() && menu->getY() >= 0);
+            if (menu != nullptr)
+            {
+                const int shut = menu->getHeight();
+                menu->openEveryGroup (true);
+                say ("its groups start shut but the first", shut < cv.getHeight() - 16 && menu->getHeight() > shut);
+                say ("with every group open it is as tall as the canvas allows", menu->getBottom() <= cv.getHeight());
+                juce::MouseWheelDetails w {};
+                w.deltaY = -1.0f;
+                juce::MouseEvent e (juce::Desktop::getInstance().getMainMouseSource(), { 50, 120 }, {}, 0, 0, 0, 0, 0, menu, menu, juce::Time::getCurrentTime(), { 50, 120 }, juce::Time::getCurrentTime(), 1, false);
+                menu->mouseWheelMove (e, w);
+                say ("and its list scrolls with the wheel", menu->scrolledBy() > 0);
+            }
+            if (menu != nullptr)
+                menu->openEveryGroup (false);
+            auto image = main.createComponentSnapshot (main.getLocalBounds(), true, 1.0f);
+            juce::File out (args[2]);
+            out.deleteFile();
+            if (auto stream = out.createOutputStream())
+                juce::PNGImageFormat().writeImageToStream (image, *stream);
+            std::printf ("%s\n", bad == 0 ? "all ok" : "some failed");
+            setApplicationReturnValue (bad == 0 ? 0 : 1);
+            quit();
+            return;
+        }
         if (args.size() >= 2 && args[0] == "--bench" && args[1] == "canvas")
         {
             // The whole window: drawn once, then after a pan step and a zoom step.

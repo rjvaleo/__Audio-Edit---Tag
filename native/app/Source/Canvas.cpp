@@ -341,8 +341,8 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
     auto* cache = new SteppedCache (*this);
     cache->live = [this] { return selected || isMouseOverOrDragging (true); };
     setCachedComponentImage (cache);
-    // Presses on its children are heard here too (mouseDown).
-    addMouseListener (this, true);
+    // Presses on its children are heard too (raise).
+    addMouseListener (&raise, true);
 
     for (int s = 0; s < (int) kind.ins.size(); ++s)
     {
@@ -472,7 +472,7 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         auto choose = [cv = &canvas, mine = id] (const juce::String& file, const juce::String& rel, const juce::String& name, const juce::String& then) {
             juce::MessageManager::callAsync ([cv, mine, file, rel, name, then] {
                 auto it = cv->nodes.find (mine);
-                const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) it->second->getX() + (float) it->second->getWidth() + 60, (float) it->second->getY()) : juce::Point<float>();
+                const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() - Stage::origin) + (float) it->second->getWidth() + 60, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
                 juce::DynamicObject::Ptr o = new juce::DynamicObject();
                 o->setProperty ("file", file);
                 o->setProperty ("path", rel);
@@ -548,7 +548,7 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
                 if (s < 0)
                 {
                     auto it = cv->nodes.find (mine);
-                    const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) it->second->getX() - 380, (float) it->second->getY()) : juce::Point<float>();
+                    const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() - Stage::origin) - 380, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
                     s = cv->host.with ([&] (NaApp* a) { const int n = na_add (a, "sound", at.x, at.y); if (n > 0) na_connect (a, (uint32_t) n, 0, (uint32_t) mine, 0); return n; });
                     cv->refresh();
                 }
@@ -572,7 +572,7 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         chop->wantSound = [cv = &canvas, mine = id] {
             juce::MessageManager::callAsync ([cv, mine] {
                 auto it = cv->nodes.find (mine);
-                const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) it->second->getX() - 380, (float) it->second->getY()) : juce::Point<float>();
+                const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() - Stage::origin) - 380, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
                 const int s = cv->host.with ([&] (NaApp* a) {
                     const int n = na_add (a, "sound", at.x, at.y);
                     if (n > 0 && na_connect (a, (uint32_t) n, 0, (uint32_t) mine, 0) < 0)
@@ -608,7 +608,7 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
                     if (has >= 0)
                         return cv->status ? cv->status ("Open a sound in the Sound module cabled into Edit") : (void) 0;
                     auto it = cv->nodes.find (mine);
-                    const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) it->second->getX() - 380, (float) it->second->getY()) : juce::Point<float>();
+                    const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() - Stage::origin) - 380, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
                     const int s = cv->host.with ([&] (NaApp* a) { const int n = na_add (a, "sound", at.x, at.y); if (n > 0) na_connect (a, (uint32_t) n, 0, (uint32_t) mine, 0); return n; });
                     cv->refresh();
                     if (cv->status)
@@ -796,10 +796,6 @@ void Node::mouseDown (const juce::MouseEvent& e)
         return;
     canvas.select (id);
     toFront (false);
-    // A press on what is inside it (its face, a socket): the module is
-    // selected and comes to the front; the press itself is the face's.
-    if (e.eventComponent != this)
-        return;
     const auto p = e.position;
     if (p.y > (float) (header + border))
         return;
@@ -837,18 +833,24 @@ void Node::mouseDown (const juce::MouseEvent& e)
     grabbedAt = e.getPosition();
 }
 
+void Node::Raise::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.eventComponent == &node || node.canvas.panGesture (e))
+        return;
+    node.canvas.select (node.id);
+    node.toFront (false);
+}
+
 void Node::mouseDrag (const juce::MouseEvent& e)
 {
-    if (!moving || e.eventComponent != this)
+    if (!moving)
         return;
     setTopLeftPosition (e.getEventRelativeTo (&canvas.stage).getPosition() - grabbedAt);
     canvas.cables.update();
 }
 
-void Node::mouseUp (const juce::MouseEvent& e)
+void Node::mouseUp (const juce::MouseEvent&)
 {
-    if (e.eventComponent != this)
-        return;
     if (moving)
         canvas.nodeMoved (id);
     moving = false;
@@ -982,8 +984,11 @@ void AddMenu::filter()
                     items.push_back ({ k->title, k->id, false, {} });
         if (items.empty())
             continue;
-        rows.push_back ({ label, {}, true, { 8, y, 195, 20 } });
-        y += 22;
+        const bool open = q.isNotEmpty() || openGroups().count (label) > 0;
+        rows.push_back ({ label, {}, true, { 8, y, 195, 24 }, (int) items.size(), open });
+        y += 25;
+        if (!open)
+            continue;
         for (auto& r : items)
         {
             r.r = { 8, y, 195, 26 };
@@ -1005,6 +1010,30 @@ void AddMenu::filter()
     // Kept inside the canvas.
     setTopLeftPosition (juce::jlimit (8, juce::jmax (8, canvas.getWidth() - getWidth() - 8), getX()), juce::jlimit (8, juce::jmax (8, canvas.getHeight() - getHeight() - 8), getY()));
     repaint();
+}
+
+std::set<juce::String>& AddMenu::openGroups()
+{
+    static std::set<juce::String> open { "MULTIGRAINLIVE" };
+    return open;
+}
+
+void AddMenu::openEveryGroup (bool all)
+{
+    if (all)
+    {
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            for (const auto& r : rows)
+                if (r.group && r.count > 0)
+                    openGroups().insert (r.label);
+            filter();
+        }
+        return;
+    }
+    openGroups() = { "MULTIGRAINLIVE" };
+    scroll = 0;
+    filter();
 }
 
 void AddMenu::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w)
@@ -1039,8 +1068,33 @@ void AddMenu::paint (juce::Graphics& g)
             continue;
         if (row.group)
         {
+            if ((int) i == hover)
+            {
+                g.setColour (juce::Colours::white.withAlpha (0.05f));
+                g.fillRoundedRectangle (r, 5.0f);
+            }
+            // Its arrow (shut, open), its name, how many it holds.
+            if (row.count == 0)
+            {
+                // Words, not a group ("No module matches").
+                if (groupLabel != nullptr)
+                    face::paintText (g, *groupLabel, r, row.label);
+                continue;
+            }
+            juce::Path arrow;
+            const float cx = r.getX() + 8, cy = r.getCentreY();
+            if (row.open)
+                arrow.addTriangle (cx - 3.5f, cy - 2, cx + 3.5f, cy - 2, cx, cy + 2.5f);
+            else
+                arrow.addTriangle (cx - 2, cy - 3.5f, cx - 2, cy + 3.5f, cx + 2.5f, cy);
+            g.setColour (juce::Colours::white.withAlpha (0.55f));
+            g.fillPath (arrow);
             if (groupLabel != nullptr)
-                face::paintText (g, *groupLabel, r, row.label);
+            {
+                face::paintText (g, *groupLabel, r.withTrimmedLeft (18).withTrimmedRight (26), row.label);
+                if (row.count > 0)
+                    face::paintText (g, *groupLabel, r.withTrimmedRight (6), juce::String (row.count), juce::Justification::centredRight);
+            }
             continue;
         }
         if ((int) i == hover)
@@ -1066,7 +1120,7 @@ void AddMenu::mouseMove (const juce::MouseEvent& e)
 {
     int h = -1;
     for (size_t i = 0; i < rows.size(); ++i)
-        if (!rows[i].group && e.position.y >= (float) listTop && rows[i].r.contains (e.position.translated (0, scroll)))
+        if ((!rows[i].group || rows[i].count > 0) && e.position.y >= (float) listTop && rows[i].r.contains (e.position.translated (0, scroll)))
             h = (int) i;
     if (h != hover)
     {
@@ -1083,6 +1137,15 @@ void AddMenu::mouseExit (const juce::MouseEvent&)
 
 void AddMenu::mouseDown (const juce::MouseEvent& e)
 {
+    for (const auto& r : rows)
+        if (r.group && r.count > 0 && search.getText().trim().isEmpty() && e.position.y >= (float) listTop && r.r.contains (e.position.translated (0, scroll)))
+        {
+            // A group's name opens it, or shuts it.
+            if (!openGroups().erase (r.label))
+                openGroups().insert (r.label);
+            filter();
+            return;
+        }
     for (const auto& r : rows)
         if (!r.group && e.position.y >= (float) listTop && r.r.contains (e.position.translated (0, scroll)))
         {
@@ -1243,7 +1306,7 @@ bool Canvas::panGesture (const juce::MouseEvent& e) const
 
 void Canvas::applyCamera()
 {
-    stage.setTransform (juce::AffineTransform::scale (cam.zoom).translated (-cam.left, -cam.top));
+    stage.setTransform (juce::AffineTransform::translation ((float) -Stage::origin, (float) -Stage::origin).scaled (cam.zoom).translated (-cam.left, -cam.top));
     repaint();
     if (changed)
         changed();
@@ -1332,6 +1395,8 @@ void Canvas::fit()
     else
         for (const auto& [id, n] : nodes)
             boxes.push_back (n->getBounds().toFloat());
+    for (auto& b : boxes)
+        b = b.translated ((float) -Stage::origin, (float) -Stage::origin);
     cam = camera::fit (boxes, { (float) getWidth(), (float) getHeight() });
     applyCamera();
 }
@@ -1357,6 +1422,7 @@ void Canvas::centrePatch()
     auto all = nodes.begin()->second->getBounds().toFloat();
     for (const auto& [id, n] : nodes)
         all = all.getUnion (n->getBounds().toFloat());
+    all = all.translated ((float) -Stage::origin, (float) -Stage::origin);
     cam = camera::centreOn (all.getCentre(), { (float) getWidth(), (float) getHeight() }, cam.zoom);
     applyCamera();
 }
@@ -1556,7 +1622,7 @@ bool Canvas::keyStateChanged (bool, juce::Component*)
 void Canvas::openMenu (juce::Point<float> onCanvas)
 {
     closeMenu();
-    menu = std::make_unique<AddMenu> (*this, stagePoint (onCanvas));
+    menu = std::make_unique<AddMenu> (*this, camera::toCanvas (cam, onCanvas)); // the patch's place for it
     // Where the press was, moved to stay inside the canvas.
     menu->setTopLeftPosition (juce::jlimit (8, juce::jmax (8, getWidth() - menu->getWidth() - 8), (int) onCanvas.x), juce::jlimit (8, juce::jmax (8, getHeight() - menu->getHeight() - 8), (int) onCanvas.y));
     addAndMakeVisible (*menu);
@@ -1677,7 +1743,7 @@ void Canvas::duplicateSelection()
     remember();
     const auto kind = it->second->kind.id.toStdString();
     const auto title = it->second->kind.title;
-    const auto at = it->second->getPosition().toFloat() + juce::Point<float> (40, 40);
+    const auto at = it->second->getPosition().toFloat() + juce::Point<float> (40, 40) - juce::Point<float> ((float) Stage::origin, (float) Stage::origin);
     const int src = selectedNode;
     const int id = host.with ([&] (NaApp* a) {
         const int made = na_add (a, kind.c_str(), at.x, at.y);
@@ -1745,7 +1811,7 @@ void Canvas::refresh()
                 continue;
             const int id = (int) m["id"];
             auto node = std::make_unique<Node> (*this, id, *kind);
-            node->setTopLeftPosition ((int) num (m["x"]), (int) num (m["y"]));
+            node->setTopLeftPosition ((int) num (m["x"]) + Stage::origin, (int) num (m["y"]) + Stage::origin);
             node->setValues (m["values"]);
             node->setPatchName (m["name"].toString());
             node->selected = id == selectedNode;
@@ -2041,7 +2107,7 @@ void Canvas::nodeMoved (int id)
     auto it = nodes.find (id);
     if (it == nodes.end())
         return;
-    const auto p = it->second->getPosition().toFloat();
+    const auto p = it->second->getPosition().toFloat() - juce::Point<float> ((float) Stage::origin, (float) Stage::origin);
     host.with ([=] (NaApp* a) { return na_place (a, (uint32_t) id, p.x, p.y); });
 }
 
