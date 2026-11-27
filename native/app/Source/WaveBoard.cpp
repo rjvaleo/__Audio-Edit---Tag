@@ -1078,21 +1078,142 @@ private:
         return (*n)["on"].isBool() && !(bool) (*n)["on"] ? parts["inspFxOff"] : parts["inspFx"];
     }
 
+    // ── the dock's cards: the inspector, once for each effect of the chain ──
+    // (wvRenderChainDock: `<article class="wv-chaincard">${wvInspFx(node)}`.)
+    // A card is the page's captured one (its panel, its header with "FX ›",
+    // its picture, its foot) with what scrolls in the inspector laid out whole
+    // inside it, so it is as tall as its effect's controls.
+    bool docking = false;
+    juce::Point<float> dockAt;         // the card's top left
+    float dockCardH = 0;               // its height, this pass
+    float inspEndY = 0;                // where what was laid out ended
+    std::vector<Hot> dockHots;
+    std::vector<std::pair<juce::String, float>> dockTops;
+    const juce::var* dockCard() const
+    {
+        if (auto* kids = parts["chaindock"]["tree"]["kids"].getArray())
+            for (auto& k : *kids)
+                if (face::matches (k, "wv-chaincard"))
+                    return &k;
+        return nullptr;
+    }
+
+    float dockDraw (juce::Graphics& g, juce::Rectangle<float> box, float scroll, float t) override
+    {
+        ensureKit();
+        if (!shownOnce || juce::JSON::toString (model().board, true) != juce::JSON::toString (board, true))
+            readBoard();
+        pics.frame (t);
+        dockHots.clear();
+        dockTops.clear();
+        const auto* card = dockCard();
+        if (card == nullptr || !board.isObject())
+            return 0;
+        const auto& dock = parts["chaindock"]["tree"];
+        const juce::var* end = nullptr;
+        if (auto* kids = dock["kids"].getArray())
+            for (auto& k : *kids)
+                if (end == nullptr && face::matches (k, "wv-chain-end"))
+                    end = &k;
+        const auto cardR = face::rectOf (*card);
+        const float endH = end != nullptr ? face::rectOf (*end).getHeight() : 24.59f;
+        const float gap = 10.0f;
+        float y = 0;
+        auto label = [&] (const juce::String& text) {
+            if (end != nullptr)
+            {
+                face::Stamp es;
+                es.text = [&] (const juce::var&, juce::String& out) { out = text; return true; };
+                es.draw (g, *end, juce::Point<float> (box.getX(), box.getY() + y - scroll) - face::rectOf (*end).getPosition());
+            }
+            y += endH;
+        };
+        const auto keep = sel;
+        const auto* sc = face::findNode (*card, "iscroll");
+        const float scrollH = sc != nullptr ? face::rectOf (*sc).getHeight() : 0.0f;
+        juce::Image none (juce::Image::ARGB, 1, 1, true);
+        label ("VOICE");
+        for (const auto& id : board::chainIds (board))
+        {
+            const auto* n = board::node (board, id);
+            if (n == nullptr || !isFx (*n))
+                continue;
+            sel = { "node", id, -1 };
+            docking = true;
+            dockAt = { box.getX(), box.getY() + y - scroll };
+            // Once to find how tall its controls are, once to draw it.
+            dockCardH = cardR.getHeight();
+            {
+                juce::Graphics measure (none);
+                std::vector<Hot> unused;
+                std::swap (unused, dockHots);
+                drawInspector (measure);
+                std::swap (unused, dockHots);
+            }
+            const float top = (sc != nullptr ? face::rectOf (*sc).getY() - cardR.getY() : 0.0f) + dockAt.y;
+            dockCardH = cardR.getHeight() - scrollH + juce::jmax (0.0f, inspEndY - top);
+            dockTops.push_back ({ id, y });
+            if (dockAt.y < box.getBottom() && dockAt.y + dockCardH > box.getY())
+                drawInspector (g);
+            docking = false;
+            y += dockCardH + gap;
+        }
+        sel = keep;
+        label ("OUT");
+        return y;
+    }
+
+    bool dockDown (const juce::MouseEvent& e) override
+    {
+        drag = nullptr;
+        dragEnd = nullptr;
+        last = e.position;
+        // The last drawn is on top.
+        for (auto it = dockHots.rbegin(); it != dockHots.rend(); ++it)
+            if (it->r.contains (e.position))
+            {
+                it->down (e);
+                return true;
+            }
+        return false;
+    }
+
+    float dockTopOf (const juce::String& node) override
+    {
+        for (auto& [id, y] : dockTops)
+            if (id == node)
+                return y;
+        return -1;
+    }
+
     void drawInspector (juce::Graphics& g)
     {
-        hots.clear();
+        auto& hots = docking ? dockHots : this->hots;
+        if (!docking)
+            hots.clear();
+        const auto* dockNode = docking ? dockCard() : nullptr;
         const auto& part = inspPart();
-        const auto& tree = part["tree"];
-        const juce::Point<float> at ((float) (double) part["root"][0], (float) (double) part["root"][1]);
+        const auto& tree = dockNode != nullptr ? *dockNode : part["tree"];
+        // In the dock the card's own place in the capture is taken off: its parts are laid from its corner.
+        const juce::Point<float> at = dockNode != nullptr ? dockAt - face::rectOf (*dockNode).getPosition()
+                                                          : juce::Point<float> ((float) (double) part["root"][0], (float) (double) part["root"][1]);
+        const float footDown = dockNode != nullptr ? dockCardH - face::rectOf (*dockNode).getHeight() : 0.0f;
         const auto* n = sel.t == "node" ? board::node (board, sel.id) : nullptr;
         const juce::var* cab = sel.t == "cab" && board["cables"].isArray() && sel.i < board["cables"].size() ? &board["cables"].getArray()->getReference (sel.i) : nullptr;
         const auto cc = n != nullptr ? nodeCol (*n, cl()) : cl().acc;
         const bool fx = n != nullptr && isFx (*n);
         // The frame of it, its header and foot, as captured; what changes is written over.
         face::Stamp s;
-        s.skip = [&] (const juce::var& k) { return face::matches (k, "iscroll"); };
+        // (A card's picture is drawn after, as wide as its well.)
+        s.skip = [&] (const juce::var& k) { return face::matches (k, "iscroll") || (dockNode != nullptr && k["tag"].toString() == "canvas"); };
         s.fill = [&] (const juce::var& k, juce::Colour& c) { if (!face::matches (k, "ce")) return false; c = cc; return true; };
         s.text = [&] (const juce::var& k, juce::String& out) {
+            if (face::matches (k, "wv-nm") && dockNode != nullptr)
+            {
+                // Written after, at its own length: the captured card's name is a short one.
+                out = {};
+                return true;
+            }
             if (face::matches (k, "wv-nm"))
             {
                 out = n != nullptr ? (n->operator[] ("kind").toString() == "out" ? juce::String ("OUT") : name (*n).toUpperCase()) : cab != nullptr ? juce::String ("CABLE") : juce::String ("MASTER BUS");
@@ -1149,7 +1270,48 @@ private:
             c2d::Context c (gg, cr.getWidth(), cr.getHeight());
             drawNodePic (c, cr.getWidth(), cr.getHeight(), pics, *n);
         };
-        s.draw (g, tree, at);
+        if (dockNode == nullptr)
+            s.draw (g, tree, at);
+        else
+        {
+            // The card's panel at this card's height, its parts in it, its foot at its end.
+            face::paintBox (g, tree, { dockAt.x, dockAt.y, face::rectOf (tree).getWidth(), dockCardH });
+            if (auto* kids = tree["kids"].getArray())
+                for (auto& k : *kids)
+                    if (!face::matches (k, "iscroll"))
+                        s.draw (g, k, at + juce::Point<float> (0, face::matches (k, "ifoot") ? footDown : 0.0f));
+            // Its picture, filling its well (the page stretches the canvas to it).
+            if (n != nullptr)
+                if (auto* wl = face::findNode (tree, "wv-well"))
+                {
+                    const auto cr = face::rectOf (*wl) + at;
+                    juce::Graphics::ScopedSaveState keepPic (g);
+                    g.addTransform (juce::AffineTransform::translation (cr.getX(), cr.getY()));
+                    g.reduceClipRegion (juce::Rectangle<float> (cr.getWidth(), cr.getHeight()).getSmallestIntegerContainer());
+                    c2d::Context c (g, cr.getWidth(), cr.getHeight());
+                    drawNodePic (c, cr.getWidth(), cr.getHeight(), pics, *n);
+                }
+            // Its name, whole.
+            if (n != nullptr)
+                if (auto* nm = face::findNode (tree, "wv-nm"); nm != nullptr && (*nm)["text"].isArray() && (*nm)["text"].size() > 0)
+                {
+                    const auto& run = (*nm)["text"][0];
+                    const auto r = face::rectOf (*nm) + at;
+                    const auto* pw = face::findNode (tree, "data-ipw");
+                    const float right = pw != nullptr ? face::rectOf (*pw).getX() + at.x - 8 : r.getX() + 300;
+                    g.setFont (face::font (run["font"]));
+                    g.setColour (face::colour (run["font"]["colour"]));
+                    g.drawText (name (*n).toUpperCase(), juce::Rectangle<float> (r.getX(), r.getY(), right - r.getX(), r.getHeight()), juce::Justification::centredLeft, true);
+                }
+            // "FX ›": this effect on the FX board.
+            if (n != nullptr)
+                if (auto* open = face::findNode (tree, "data-openfx"))
+                    hots.push_back ({ face::rectOf (*open) + at, [this, id = (*n)["id"].toString()] (const juce::MouseEvent&) {
+                        if (ctx.showView)
+                            ctx.showView ("fx");
+                        select ({ "node", id, -1 });
+                    } });
+        }
         // Its power and foot.
         if (n != nullptr)
             if (auto* pw = face::findNode (tree, "data-ipw"))
@@ -1158,12 +1320,15 @@ private:
                     param (id, "on", nn != nullptr && (*nn)["on"].isBool() && !(bool) (*nn)["on"], false);
                 } });
         if (auto* del = face::findNode (tree, "data-idel"))
-            hots.push_back ({ face::rectOf (*del) + at, [this] (const juce::MouseEvent&) { removeSelected(); } });
+            hots.push_back ({ face::rectOf (*del) + at + juce::Point<float> (0, footDown), [this, was = sel] (const juce::MouseEvent&) {
+                sel = was;
+                removeSelected();
+            } });
         if (auto* del = face::findNode (tree, "data-cdel"))
             hots.push_back ({ face::rectOf (*del) + at, [this] (const juce::MouseEvent&) { removeSelected(); } });
         if (n != nullptr)
             if (auto* rst = face::findNode (tree, "data-irst"))
-                hots.push_back ({ face::rectOf (*rst) + at, [this, id = (*n)["id"].toString()] (const juce::MouseEvent&) {
+                hots.push_back ({ face::rectOf (*rst) + at + juce::Point<float> (0, footDown), [this, id = (*n)["id"].toString()] (const juce::MouseEvent&) {
                     auto* nn = const_cast<juce::var*> (board::node (board, id));
                     if (nn == nullptr)
                         return;
@@ -1177,8 +1342,11 @@ private:
             return;
         const auto box = face::rectOf (*sc) + at;
         juce::Graphics::ScopedSaveState keep (g);
-        g.reduceClipRegion (box.getSmallestIntegerContainer());
-        float y = box.getY();
+        // The inspector scrolls what does not fit; a card in the dock holds all of it.
+        if (dockNode == nullptr)
+            g.reduceClipRegion (box.getSmallestIntegerContainer());
+        inspEndY = box.getY();
+        float& y = inspEndY;
         const auto* igh = face::findNode (*sc, "igh");
         const auto* hint = face::findNode (*sc, "wv-hint");
         auto heading = [&] (const juce::String& text) {

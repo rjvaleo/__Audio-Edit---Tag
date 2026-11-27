@@ -70,6 +70,7 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
         modsChanged();
     };
     ctx.closeMenus = [this] { closeMenu(); };
+    ctx.showView = [this] (const juce::String& v) { showView (v); };
     const auto& other = face::page ("wave-views")["views"];
     const char* names[] = { "create", "matrix", "fx" };
     for (int v = 0; v < 3; ++v)
@@ -159,6 +160,9 @@ float WaveFace::posNow (int i) const
 void WaveFace::poll()
 {
     nowT = (float) (juce::Time::getMillisecondCounterHiRes() / 1000.0);
+    // The dock's pictures, about eight a second.
+    if (dockLayer != nullptr && ctx.view != "fx" && ++dockTick % 4 == 0)
+        dockLayer->repaint();
     if (api)
     {
         int status = 0;
@@ -897,6 +901,22 @@ void WaveFace::buildLayers()
         });
         fxRowLayer->name = "fxrow";
     }
+    // The right dock's chain: every effect's whole card between VOICE and OUT
+    // (wvRenderChainDock), on every view but FX, scrolled by the wheel.
+    {
+        const auto& part = face::page ("wave-views")["parts"]["chaindock"];
+        dockBox = { (float) (double) part["root"][0], (float) (double) part["root"][1], (float) (double) part["root"][2], (float) (double) part["root"][3] };
+        if (auto it = byId.find ("wvChainDock"); it != byId.end())
+            chrome.skip.insert (it->second.i);
+        dockLayer = addLayer (dockBox, {}, [this] (juce::Graphics& g) {
+            if (views[2] == nullptr || ctx.view == "fx")
+                return;
+            g.addTransform (juce::AffineTransform::translation (-dockBox.getX(), -dockBox.getY()));
+            g.reduceClipRegion (dockBox.getSmallestIntegerContainer());
+            dockHeight = views[2]->dockDraw (g, dockBox, dockScroll, nowT);
+        });
+        dockLayer->name = "dock";
+    }
     // A source being dragged onto a control, or lit for a moment: outlines over everything.
     mapLayer = addLayer (getLocalBounds().toFloat(), {}, [this] (juce::Graphics& g) {
         const bool lit = litSrc.isNotEmpty() && juce::Time::getMillisecondCounterHiRes() < litUntil;
@@ -1019,6 +1039,14 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
     for (const auto& [i, n] : chrome.nodes)
         if (hasClass (n, "wv-tab") && rectOf (n["rect"]).contains (at))
             return showView (dataOf (n, "v"));
+    // The dock's cards: their controls are the FX view's.
+    if (ctx.view != "fx" && dockBox.contains (at) && views[2] != nullptr)
+    {
+        dockHeld = views[2]->dockDown (e);
+        if (dockLayer != nullptr)
+            dockLayer->repaint();
+        return;
+    }
     if (ctx.view != "play" && !sharedArea ({ at.x, at.y, 0, 0 }))
     {
         if (auto* v = viewFor (ctx.view); v != nullptr && v->down (e))
@@ -1336,6 +1364,14 @@ void WaveFace::mouseDrag (const juce::MouseEvent& e)
             mapLayer->repaint();
         return;
     }
+    if (dockHeld)
+    {
+        if (views[2] != nullptr)
+            views[2]->dragged (e);
+        if (dockLayer != nullptr)
+            dockLayer->repaint();
+        return;
+    }
     if (viewDrag)
     {
         if (auto* v = viewFor (ctx.view))
@@ -1369,6 +1405,15 @@ void WaveFace::mouseUp (const juce::MouseEvent& e)
         viewDrag = false;
         if (mapLayer != nullptr)
             mapLayer->repaint();
+        return;
+    }
+    if (dockHeld)
+    {
+        dockHeld = false;
+        if (views[2] != nullptr)
+            views[2]->up (e);
+        if (dockLayer != nullptr)
+            dockLayer->repaint();
         return;
     }
     if (viewDrag)
@@ -1560,6 +1605,14 @@ bool WaveFace::fxRowDown (const juce::MouseEvent& e)
             }
             ++k;
         }
+        // The card itself: the dock comes to this effect's card (wvDockScrollTo).
+        if (views[2] != nullptr)
+            if (const float top = views[2]->dockTopOf (id); top >= 0)
+            {
+                dockScroll = top;
+                if (dockLayer != nullptr)
+                    dockLayer->repaint();
+            }
         return true;
     }
     return false;
@@ -1725,6 +1778,14 @@ void WaveFace::mouseMove (const juce::MouseEvent& e)
 
 void WaveFace::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
+    // The dock scrolls its cards; the last can come up to its top.
+    if (ctx.view != "fx" && dockBox.contains (e.position))
+    {
+        dockScroll = juce::jlimit (0.0f, juce::jmax (0.0f, dockHeight - 80.0f), dockScroll - w.deltaY * (w.isSmooth ? 320.0f : 140.0f));
+        if (dockLayer != nullptr)
+            dockLayer->repaint();
+        return;
+    }
     if (ctx.view != "play" && !sharedArea ({ e.position.x, e.position.y, 0, 0 }))
         if (auto* v = viewFor (ctx.view); v != nullptr && v->wheel (e, w))
             return;

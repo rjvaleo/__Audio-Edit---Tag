@@ -32,6 +32,8 @@ struct WaveCtx
     // The page's own menu, as wvMenu: placed under `near` (page pixels), inside the page.
     std::function<void (juce::Component* menu, juce::Rectangle<float> near, float dx)> showMenu;
     std::function<void()> closeMenus;
+    // Show a view (`wvShowView`): "play", "create", "matrix", "fx".
+    std::function<void (const juce::String&)> showView;
     // `/api/wave/state` as last read (null when there is none).
     juce::var tele;
     // The page's view, `play` `create` `matrix` `fx`.
@@ -45,6 +47,9 @@ public:
     WaveView (WaveCtx& c, const juce::var& captured) : ctx (c), chrome (captured), cap (captured)
     {
         setInterceptsMouseClicks (false, false);
+        // The dock's chain is the face's, live, on every view.
+        if (auto* dock = face::findNode (captured["tree"], "#wvChainDock"))
+            chrome.skip.insert ((int) (*dock)["i"]);
         addAndMakeVisible (chrome);
         setSize (chrome.getWidth(), chrome.getHeight());
     }
@@ -57,6 +62,14 @@ public:
     virtual bool wheel (const juce::MouseEvent&, const juce::MouseWheelDetails&) { return false; }
     virtual bool rightClick (const juce::MouseEvent&) { return false; }
     virtual bool key (const juce::KeyPress&) { return false; }
+    // The right dock's chain (`wvRenderChainDock`, 397b-wave-chain.js): every
+    // effect of the board as its inspector card, between VOICE and OUT, drawn
+    // into `box` moved up by `scroll`. Gives the height of all of it. The FX
+    // view draws it (the cards are its inspector's); its presses go to it.
+    virtual float dockDraw (juce::Graphics&, juce::Rectangle<float> /*box*/, float /*scroll*/, float /*t*/) { return 0; }
+    virtual bool dockDown (const juce::MouseEvent&) { return false; }
+    // Where a card is in the dock's list (for a press on Play's row of cards), or -1.
+    virtual float dockTopOf (const juce::String& /*node*/) { return -1; }
     // The view is shown (`wvShowView`): read what it shows again.
     virtual void shown() {}
     // A key changed (anywhere): draw again what shows it.

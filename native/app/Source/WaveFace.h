@@ -138,6 +138,12 @@ private:
     void boardParam (const juce::String& node, const juce::String& key, const juce::var& value, bool live);
     juce::Rectangle<float> fxRowBox;
     Layer* fxRowLayer = nullptr;
+    // The right dock's chain of effect cards.
+    juce::Rectangle<float> dockBox;
+    Layer* dockLayer = nullptr;
+    float dockScroll = 0, dockHeight = 0;
+    bool dockHeld = false;
+    int dockTick = 0;
     std::unique_ptr<board::Pics> fxPics;
     // A source dragged onto a control (wvWireSrc): every control it can move
     // outlined in its colour, the one under the pointer lit; a click lights
