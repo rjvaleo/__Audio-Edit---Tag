@@ -219,6 +219,7 @@ private:
     void say (const juce::String&);
     void presetMenu (juce::Rectangle<float> near);
     void morePresets (juce::Rectangle<float> near);
+    void presetAct (int which);
     void presetStep (int by);
     juce::Rectangle<float> laneRect() const;
     int rowAt (juce::Point<float>) const;

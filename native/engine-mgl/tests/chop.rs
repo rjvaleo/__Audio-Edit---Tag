@@ -490,7 +490,11 @@ fn it_allocates_nothing_while_it_plays_or_takes_new_slices() {
     render(&mut audio, 10_000, BLOCK);
     assert_eq!(counted() - before, 0, "allocations or frees inside a render; the last sizes: {:?}", last_sizes());
     assert!(peak(&l) > 0.01 && peak(&l2) > 0.01);
-    assert!(ctl.collect().things >= 2, "the replaced slices came back to be freed");
+    // A render that arrives while something sounds waits for the next press
+    // (the page's sound plays on from what it was rendered from), and the one
+    // it then replaces is kept until the next arrives: of the three given
+    // here, one has come back, one plays and one is kept.
+    assert!(ctl.collect().things >= 1, "the replaced slices came back to be freed");
 }
 
 // ------------------------------------------------- the edits, the measures, Write

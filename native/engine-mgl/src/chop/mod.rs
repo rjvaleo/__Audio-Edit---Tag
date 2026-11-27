@@ -1121,11 +1121,16 @@ pub struct Chop {
     /// The last slice voice started: its place and its age.
     last: Option<(usize, u64)>,
     shared: Arc<ChopPlaying>,
+    /// A render that arrived while something sounded (`true`: waiting to be
+    /// played), or the one it replaced, waiting to go back (`false`). The
+    /// page's sound keeps playing what it was rendered from when a setting
+    /// moves; the new render is what the next press plays.
+    held: Option<(Box<ChopThing>, bool)>,
 }
 
 impl Chop {
     pub fn new() -> Chop {
-        Chop { thing: None, voices: [None; VOICES], transport: None, age: 0, last: None, shared: Arc::new(ChopPlaying::new()) }
+        Chop { thing: None, voices: [None; VOICES], transport: None, age: 0, last: None, shared: Arc::new(ChopPlaying::new()), held: None }
     }
 
     /// The read-back of what it plays; take it before the module goes to
@@ -1155,7 +1160,30 @@ impl Chop {
         }
     }
 
+    /// The waiting render becomes what plays; what sounded from the old one stops.
+    fn adopt(&mut self) {
+        if !self.waiting() {
+            return;
+        }
+        let Some((mut next, _)) = self.held.take() else { return };
+        self.voices = [None; VOICES];
+        self.transport = None;
+        self.last = None;
+        match self.thing.as_mut() {
+            Some(mine) => {
+                std::mem::swap(mine, &mut next);
+                self.held = Some((next, false));
+            }
+            None => self.thing = Some(next),
+        }
+    }
+
+    fn waiting(&self) -> bool {
+        matches!(self.held, Some((_, true)))
+    }
+
     fn start(&mut self, slice: usize, offset: u32) {
+        self.adopt();
         self.age += 1;
         let v = Voice { source: Source::Slice(slice), pos: -(offset as i64), looped: false, age: self.age };
         let free = self.voices.iter().position(|v| v.is_none()).unwrap_or_else(|| {
@@ -1234,6 +1262,9 @@ impl Module for Chop {
     fn handle(&mut self, event: &EventKind) {
         match *event {
             EventKind::Param { index: TRANSPORT, value } => {
+                if value.round() as i32 != 0 {
+                    self.adopt();
+                }
                 self.age += 1;
                 self.transport = match value.round() as i32 {
                     1 => Some(Voice { source: Source::Preview, pos: 0, looped: false, age: self.age }),
@@ -1253,11 +1284,16 @@ impl Module for Chop {
             Ok(b) => b,
             Err(other) => return Some(other),
         };
-        self.voices = [None; VOICES];
-        self.transport = None;
+        let sounding = self.transport.is_some() || self.voices.iter().any(|v| v.is_some());
+        if sounding {
+            // Kept for the next press; whatever waited before it goes back.
+            let back = self.held.take().map(|(t, _)| t as Thing);
+            self.held = Some((boxed, true));
+            return back;
+        }
         self.last = None;
         self.tell();
-        match self.thing.as_mut() {
+        let old = match self.thing.as_mut() {
             Some(mine) => {
                 std::mem::swap(mine, &mut boxed);
                 Some(boxed)
@@ -1266,11 +1302,23 @@ impl Module for Chop {
                 self.thing = Some(boxed);
                 None
             }
+        };
+        match (self.held.take(), old) {
+            (Some((h, _)), Some(o)) => {
+                self.held = Some((o, false));
+                Some(h as Thing)
+            }
+            (Some((h, _)), None) => Some(h as Thing),
+            (None, o) => o.map(|o| o as Thing),
         }
     }
     fn process(&mut self, io: &mut Io) {
         for note in io.ins.notes(0) {
             self.note(note.note, note.kind, note.offset);
+        }
+        // Nothing sounds: the waiting render is the one to play from now.
+        if self.waiting() && self.transport.is_none() && self.voices.iter().all(|v| v.is_none()) {
+            self.adopt();
         }
         let (l, r) = io.outs.audio(0);
         l.fill(0.0);

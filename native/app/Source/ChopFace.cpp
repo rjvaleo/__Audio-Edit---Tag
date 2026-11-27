@@ -3,6 +3,7 @@
 #include "Canvas2D.h"
 #include "ChopUtil.h"
 #include "Host.h"
+#include "Places.h"
 
 #include <cmath>
 
@@ -46,6 +47,8 @@ ChopFace::ChopFace (Call c, uint32_t i)
     data = juce::JSON::parse (face::embeddedFile ("chop-page.json"));
     setSize (1432, 1000);
     setWantsKeyboardFocus (true);
+    // Where Chop keeps its presets and writes a library sound's slices.
+    chopCall ("home", put (obj(), "home", places::home().getFullPathName()));
 
     // Every knob, as the page's tables have them.
     auto knobOf = [] (const juce::var& s, const juce::String& group) {
@@ -373,6 +376,15 @@ juce::var ChopFace::chopCall (const char* what, const juce::var& body)
             n = na_chop_call (a, id, "state", "{}", buf.data(), (uint32_t) buf.size());
         }
         out = n > 0 ? juce::String::fromUTF8 (buf.data(), juce::jmin (n, (int32_t) buf.size() - 1)) : juce::String();
+        // Refused: why, so the page can say it (the original toasts every failure).
+        if (n < 0)
+        {
+            char why[512] = {};
+            na_error (a, why, sizeof why);
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("error", juce::String::fromUTF8 (why));
+            out = juce::JSON::toString (juce::var (o), true);
+        }
         return n;
     });
     return juce::JSON::parse (out);
@@ -417,6 +429,10 @@ void ChopFace::take (const juce::var& answer)
 void ChopFace::readState (const juce::var& s)
 {
     state = s;
+    // Fewer slices than before: the list is not left scrolled past its end.
+    if (auto it = ids.find ("list"); it != ids.end())
+        if (auto* sl = s["slices"].getArray())
+            listScroll = juce::jlimit (0.0f, juce::jmax (0.0f, (float) sl->size() * 20 - it->second.r.getHeight()), listScroll);
     serial = (int64_t) dnum (s["serial"], -1);
     slices.clear();
     if (auto* a = s["slices"].getArray())
@@ -1114,6 +1130,16 @@ void ChopFace::pick (int i, bool add)
     auto body = put (obj(), "i", i);
     put (body, "add", add);
     take (chopCall ("pick", body));
+    // Its row comes into view in the list (`chopSelect`).
+    if (auto it = ids.find ("list"); it != ids.end() && i >= 0)
+    {
+        const float h = it->second.r.getHeight(), top = (float) i * 20;
+        if (top < listScroll)
+            listScroll = top;
+        else if (top + 20 > listScroll + h)
+            listScroll = top + 20 - h;
+        repaint();
+    }
 }
 
 void ChopFace::playSlice (int i, bool pickIt)
@@ -1151,7 +1177,7 @@ void ChopFace::presetMenu (juce::Rectangle<float> near)
 {
     const auto list = chopCall ("presets", put (obj(), "op", "list"));
     juce::PopupMenu m;
-    const auto* a = list["list"].getArray() != nullptr ? list["list"].getArray() : list.getArray();
+    const auto* a = list["presets"].getArray() != nullptr ? list["presets"].getArray() : list["list"].getArray() != nullptr ? list["list"].getArray() : list.getArray();
     if (a == nullptr || a->isEmpty())
         m.addItem (-1, "No presets yet: Save keeps these settings", false);
     else
@@ -1173,7 +1199,7 @@ void ChopFace::presetMenu (juce::Rectangle<float> near)
 void ChopFace::presetStep (int by)
 {
     const auto list = chopCall ("presets", put (obj(), "op", "list"));
-    const auto* a = list["list"].getArray() != nullptr ? list["list"].getArray() : list.getArray();
+    const auto* a = list["presets"].getArray() != nullptr ? list["presets"].getArray() : list["list"].getArray() != nullptr ? list["list"].getArray() : list.getArray();
     if (a == nullptr || a->isEmpty())
         return;
     int i = -1;
@@ -1194,17 +1220,32 @@ void ChopFace::morePresets (juce::Rectangle<float> near)
     m.addItem (2, "Rename...", state["preset"].toString().isNotEmpty());
     m.addItem (3, "Init");
     m.addItem (4, "Delete", state["preset"].toString().isNotEmpty());
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withTargetScreenArea (localAreaToGlobal (near.toNearestInt())), [this] (int r) {
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withTargetScreenArea (localAreaToGlobal (near.toNearestInt())), [this] (int r) { presetAct (r); });
+}
+
+// 1 Save as, 2 Rename, 3 Init, 4 Delete (`106-preset-bar-pop.js`).
+void ChopFace::presetAct (int r)
+{
+    {
         const auto cur = state["preset"].toString();
         if (r == 1 || r == 2)
         {
+            // The names there are: a new one starts as the current, or "Preset N".
+            const auto list = chopCall ("presets", put (obj(), "op", "list"));
+            juce::StringArray names;
+            if (auto* a = list["presets"].getArray())
+                for (const auto& p : *a)
+                    names.add (p["name"].toString());
+            const auto start = cur.isNotEmpty() ? cur : "Preset " + juce::String (names.size() + 1);
             auto* w = new juce::AlertWindow (r == 1 ? "Save as" : "Rename", r == 1 ? "A name for these settings" : "A new name for " + cur, juce::MessageBoxIconType::NoIcon);
-            w->addTextEditor ("name", r == 1 ? juce::String() : cur);
+            w->addTextEditor ("name", start);
             w->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
             w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-            w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w, r, cur] (int ok) {
+            w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w, r, cur, names] (int ok) {
                 const auto name = w->getTextEditorContents ("name").trim();
-                if (ok == 1 && name.isNotEmpty())
+                if (ok == 1 && r == 2 && name != cur && names.contains (name))
+                    return say ("That name is taken");
+                if (ok == 1 && name.isNotEmpty() && !(r == 2 && name == cur))
                 {
                     auto body = put (obj(), "op", r == 1 ? "save" : "rename");
                     put (body, "name", r == 1 ? name : cur);
@@ -1217,17 +1258,28 @@ void ChopFace::morePresets (juce::Rectangle<float> near)
             take (chopCall ("presets", put (obj(), "op", "init")));
         else if (r == 4)
         {
-            auto body = put (obj(), "op", "remove");
-            put (body, "name", cur);
-            take (chopCall ("presets", body));
+            juce::Component::SafePointer<ChopFace> safe (this);
+            juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::NoIcon, juce::String::fromUTF8 ("Delete \xe2\x80\x9c") + cur + juce::String::fromUTF8 ("\xe2\x80\x9d?"), "It can't be undone.", "Delete", "Cancel", this,
+                juce::ModalCallbackFunction::create ([safe, cur] (int ok) {
+                    if (ok != 1 || safe == nullptr)
+                        return;
+                    auto body = put (obj(), "op", "remove");
+                    put (body, "name", cur);
+                    safe->take (safe->chopCall ("presets", body));
+                }));
         }
-    });
+    }
 }
 
 // ─────────────────────────────────────────────────────────────── gestures
 
 bool ChopFace::keyPressed (const juce::KeyPress& k)
 {
+    // The preset bar's own keys: F2 renames, shift-command-S saves as.
+    if (k.getKeyCode() == juce::KeyPress::F2Key && state["preset"].toString().isNotEmpty())
+        return presetAct (2), true;
+    if (k.getModifiers().isCommandDown() && k.getModifiers().isShiftDown() && (k.getKeyCode() == 'S' || k.getKeyCode() == 's'))
+        return presetAct (1), true;
     // Delete takes out the picked cut (`chopWireLane`).
     if ((k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey) && current >= 0 && hasSound())
     {
@@ -1240,6 +1292,9 @@ bool ChopFace::keyPressed (const juce::KeyPress& k)
 void ChopFace::mouseDown (const juce::MouseEvent& e)
 {
     if (blocked && blocked (e))
+        return;
+    // The left button only, as every handler of the page's is.
+    if (!e.mods.isLeftButtonDown())
         return;
     grabKeyboardFocus();
     const auto p = e.position;
@@ -1393,7 +1448,7 @@ void ChopFace::mouseDown (const juce::MouseEvent& e)
     {
         const auto cur = state["preset"].toString();
         if (cur.isEmpty())
-            return morePresets (ids["pb:save"].r);
+            return presetAct (1);
         auto body = put (obj(), "op", "save");
         put (body, "name", cur);
         return take (chopCall ("presets", body));
