@@ -97,10 +97,24 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
     buildLayers();
     reload();
     startTimerHz (30);
-    // The other views are drawn when first shown, not warmed in advance:
-    // each takes hundreds of milliseconds on the message thread, and with a
-    // few Waves on the board that held every press for seconds (RJ, 26 Nov
-    // 2026; the board bench, IDMLAB_BOARD_TEST).
+    // The other views are not warmed when the module is made: each takes
+    // hundreds of milliseconds on the message thread, and with a few Waves
+    // on the board that held every press for seconds (RJ, 26 Nov 2026; the
+    // board bench, IDMLAB_BOARD_TEST). They are warmed, one at a time, once
+    // the mouse first comes over this Wave (timerCallback), so its tabs open
+    // at once when pressed (RJ, the same day: "a little bit of latency when
+    // the tabs are first selected").
+}
+
+void WaveFace::warmWhenTouched()
+{
+    if (warmed || !isMouseOver (true))
+        return;
+    warmed = true;
+    juce::Timer::callAfterDelay (150, [safe = juce::Component::SafePointer<WaveFace> (this)] {
+        if (safe != nullptr)
+            safe->warm (0);
+    });
 }
 
 void WaveFace::warm (int which)

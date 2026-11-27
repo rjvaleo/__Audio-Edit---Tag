@@ -472,7 +472,7 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         auto choose = [cv = &canvas, mine = id] (const juce::String& file, const juce::String& rel, const juce::String& name, const juce::String& then) {
             juce::MessageManager::callAsync ([cv, mine, file, rel, name, then] {
                 auto it = cv->nodes.find (mine);
-                const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() - Stage::origin) + (float) it->second->getWidth() + 60, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
+                const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() + Node::gutter - Stage::origin) + (float) (it->second->getWidth() - 2 * Node::gutter) + 60, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
                 juce::DynamicObject::Ptr o = new juce::DynamicObject();
                 o->setProperty ("file", file);
                 o->setProperty ("path", rel);
@@ -548,7 +548,7 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
                 if (s < 0)
                 {
                     auto it = cv->nodes.find (mine);
-                    const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() - Stage::origin) - 380, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
+                    const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() + Node::gutter - Stage::origin) - 380, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
                     s = cv->host.with ([&] (NaApp* a) { const int n = na_add (a, "sound", at.x, at.y); if (n > 0) na_connect (a, (uint32_t) n, 0, (uint32_t) mine, 0); return n; });
                     cv->refresh();
                 }
@@ -572,7 +572,7 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         chop->wantSound = [cv = &canvas, mine = id] {
             juce::MessageManager::callAsync ([cv, mine] {
                 auto it = cv->nodes.find (mine);
-                const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() - Stage::origin) - 380, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
+                const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() + Node::gutter - Stage::origin) - 380, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
                 const int s = cv->host.with ([&] (NaApp* a) {
                     const int n = na_add (a, "sound", at.x, at.y);
                     if (n > 0 && na_connect (a, (uint32_t) n, 0, (uint32_t) mine, 0) < 0)
@@ -608,7 +608,7 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
                     if (has >= 0)
                         return cv->status ? cv->status ("Open a sound in the Sound module cabled into Edit") : (void) 0;
                     auto it = cv->nodes.find (mine);
-                    const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() - Stage::origin) - 380, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
+                    const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) (it->second->getX() + Node::gutter - Stage::origin) - 380, (float) (it->second->getY() - Stage::origin)) : juce::Point<float>();
                     const int s = cv->host.with ([&] (NaApp* a) { const int n = na_add (a, "sound", at.x, at.y); if (n > 0) na_connect (a, (uint32_t) n, 0, (uint32_t) mine, 0); return n; });
                     cv->refresh();
                     if (cv->status)
@@ -650,19 +650,19 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
 
 juce::Rectangle<int> Node::bodyBounds() const
 {
-    return { border, border + header, kind.width, kind.height };
+    return { gutter + border, border + header, kind.width, kind.height };
 }
 
 void Node::layout()
 {
     const int w = kind.width + 2 * border, h = collapsed ? header + 2 * border : kind.height + header + 2 * border;
-    setSize (w, h);
+    setSize (w + 2 * gutter, h);
     int in = 0, out = 0;
     for (auto& j : jacks)
     {
         // idMLab's sockets: half outside the frame, 18 px apart from y 27.
         const int y = collapsed ? 4 : 27 + 18 * (j->isInput ? in++ : out++);
-        j->setTopLeftPosition (j->isInput ? -8 : w - 4, y);
+        j->setTopLeftPosition (gutter + (j->isInput ? -8 : w - 4), y);
     }
     if (auto* b = body())
     {
@@ -676,12 +676,13 @@ void Node::layout()
     }
     // The header's parts, where idMLab puts them.
     const float hy = (float) border;
-    collapseR = { 8, hy + 4, 15, 11 };
-    powerR = { 28.9f, hy + 4, 12.7f, 11 };
-    menuR = { 47.6f, hy + 3.5f, 17.3f, 12 };
-    handleR = { 70.8f, hy + 3, 6.6f, 13 };
-    closeR = { (float) w - 18.2f, hy + 3.5f, 11.2f, 12 };
-    nameR = { 83.4f, hy + 3, closeR.getX() - 6 - 83.4f, 13 };
+    const float gx = (float) gutter;
+    collapseR = { gx + 8, hy + 4, 15, 11 };
+    powerR = { gx + 28.9f, hy + 4, 12.7f, 11 };
+    menuR = { gx + 47.6f, hy + 3.5f, 17.3f, 12 };
+    handleR = { gx + 70.8f, hy + 3, 6.6f, 13 };
+    closeR = { gx + (float) w - 18.2f, hy + 3.5f, 11.2f, 12 };
+    nameR = { gx + 83.4f, hy + 3, closeR.getX() - 6 - (gx + 83.4f), 13 };
     repaint();
 }
 
@@ -717,13 +718,13 @@ void Node::paint (juce::Graphics& g)
 
 void Node::paintFrame (juce::Graphics& g)
 {
-    const auto all = getLocalBounds().toFloat();
+    const auto all = frameBounds().toFloat();
     if (auto* article = frameNode ("mm-node"))
         face::paintBox (g, *article, all);
     auto* head = frameNode ("n4-header");
     if (head == nullptr)
         return;
-    face::paintBox (g, *head, { (float) border, (float) border, all.getWidth() - 2 * border, (float) header });
+    face::paintBox (g, *head, { all.getX() + (float) border, (float) border, all.getWidth() - 2 * border, (float) header });
     const auto* kids = (*head)["kids"].getArray();
     auto kid = [&] (int i) -> const juce::var* { return kids != nullptr && i < kids->size() ? &kids->getReference (i) : nullptr; };
     if (auto* n = kid (0))
@@ -787,7 +788,7 @@ void Node::paintOverChildren (juce::Graphics& g)
         return;
     // idMLab's selection: a 3 px outline 3 px out, in the module's accent.
     g.setColour (accent);
-    g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.5f), 6.0f, 3.0f);
+    g.drawRoundedRectangle (frameBounds().toFloat().reduced (1.5f), 6.0f, 3.0f);
 }
 
 void Node::mouseDown (const juce::MouseEvent& e)
@@ -796,7 +797,17 @@ void Node::mouseDown (const juce::MouseEvent& e)
         return;
     canvas.select (id);
     toFront (false);
+    // A right-click on its frame: what it can be patched to.
+    if (e.mods.isPopupMenu())
+        return canvas.patchMenu (*this);
     const auto p = e.position;
+    // Either side of the frame: a cable out of its first output, or input.
+    if (auto* j = sideJack (p))
+    {
+        cabling = true;
+        canvas.beginCable (j);
+        return;
+    }
     if (p.y > (float) (header + border))
         return;
     if (collapseR.expanded (2).contains (p))
@@ -841,16 +852,63 @@ void Node::Raise::mouseDown (const juce::MouseEvent& e)
     node.toFront (false);
 }
 
+// The socket a press at the frame's side pulls a cable from: the one pressed
+// near, else the side's first.
+Jack* Node::sideJack (juce::Point<float> p) const
+{
+    const auto f = frameBounds().toFloat();
+    const bool right = p.x >= f.getRight() - (float) border && p.x <= f.getRight() + (float) grab;
+    const bool left = p.x <= f.getX() + (float) border && p.x >= f.getX() - (float) grab;
+    if (!right && !left)
+        return nullptr;
+    Jack* first = nullptr;
+    for (auto& j : jacks)
+        if (j->isInput == left)
+        {
+            if (first == nullptr)
+                first = j.get();
+            if (j->getBounds().toFloat().expanded (0, 3).contains (p.withX ((float) j->getBounds().getCentreX())))
+                return j.get();
+        }
+    return first;
+}
+
+bool Node::hitTest (int x, int y)
+{
+    // The frame, and the strip either side of it that has sockets; the rest
+    // of the room for their names is the canvas's.
+    if (frameBounds().contains (x, y))
+        return true;
+    return sideJack ({ (float) x, (float) y }) != nullptr;
+}
+
+void Node::mouseMove (const juce::MouseEvent& e)
+{
+    setMouseCursor (sideJack (e.position) != nullptr ? juce::MouseCursor::CrosshairCursor : juce::MouseCursor::NormalCursor);
+}
+
 void Node::mouseDrag (const juce::MouseEvent& e)
 {
+    if (cabling)
+    {
+        if (!canvas.isPanning())
+            canvas.dragCable (e.getEventRelativeTo (&canvas.stage).position);
+        return;
+    }
     if (!moving)
         return;
     setTopLeftPosition (e.getEventRelativeTo (&canvas.stage).getPosition() - grabbedAt);
     canvas.cables.update();
 }
 
-void Node::mouseUp (const juce::MouseEvent&)
+void Node::mouseUp (const juce::MouseEvent& e)
 {
+    if (cabling)
+    {
+        cabling = false;
+        canvas.endCable (e.getEventRelativeTo (&canvas.stage).position);
+        return;
+    }
     if (moving)
         canvas.nodeMoved (id);
     moving = false;
@@ -1743,7 +1801,7 @@ void Canvas::duplicateSelection()
     remember();
     const auto kind = it->second->kind.id.toStdString();
     const auto title = it->second->kind.title;
-    const auto at = it->second->getPosition().toFloat() + juce::Point<float> (40, 40) - juce::Point<float> ((float) Stage::origin, (float) Stage::origin);
+    const auto at = it->second->getPosition().toFloat() + juce::Point<float> (40, 40) - juce::Point<float> ((float) (Stage::origin - Node::gutter), (float) Stage::origin);
     const int src = selectedNode;
     const int id = host.with ([&] (NaApp* a) {
         const int made = na_add (a, kind.c_str(), at.x, at.y);
@@ -1811,7 +1869,7 @@ void Canvas::refresh()
                 continue;
             const int id = (int) m["id"];
             auto node = std::make_unique<Node> (*this, id, *kind);
-            node->setTopLeftPosition ((int) num (m["x"]) + Stage::origin, (int) num (m["y"]) + Stage::origin);
+            node->setTopLeftPosition ((int) num (m["x"]) + Stage::origin - Node::gutter, (int) num (m["y"]) + Stage::origin);
             node->setValues (m["values"]);
             node->setPatchName (m["name"].toString());
             node->selected = id == selectedNode;
@@ -2107,7 +2165,7 @@ void Canvas::nodeMoved (int id)
     auto it = nodes.find (id);
     if (it == nodes.end())
         return;
-    const auto p = it->second->getPosition().toFloat() - juce::Point<float> ((float) Stage::origin, (float) Stage::origin);
+    const auto p = it->second->getPosition().toFloat() - juce::Point<float> ((float) (Stage::origin - Node::gutter), (float) Stage::origin);
     host.with ([=] (NaApp* a) { return na_place (a, (uint32_t) id, p.x, p.y); });
 }
 
@@ -2179,10 +2237,36 @@ void Canvas::endCable (juce::Point<float> onStage)
         for (auto& j : n->jacks)
             if (j.get() != from && j->getBounds().translated (n->getX(), n->getY()).expanded (8).toFloat().contains (onStage))
                 target = j.get();
+    // Let go anywhere on another module: its first socket of the cable's
+    // kind on the other side, one with nothing in it before one with.
+    if (target == nullptr)
+        for (const auto& [id, n] : nodes)
+            if (id != from->module && n->getBounds().toFloat().contains (onStage))
+            {
+                Jack* taken = nullptr;
+                for (auto& j : n->jacks)
+                {
+                    if (j->isInput == from->isInput || j->type != from->type)
+                        continue;
+                    const bool used = std::any_of (wires.begin(), wires.end(), [&] (const Wire& w) { return j->isInput ? (w.to == id && w.toSocket == j->index) : (w.from == id && w.fromSocket == j->index); });
+                    if (!used && target == nullptr)
+                        target = j.get();
+                    if (used && taken == nullptr)
+                        taken = j.get();
+                }
+                if (target == nullptr)
+                    target = taken;
+            }
     if (target == nullptr || target->isInput == from->isInput)
         return;
-    auto* out = from->isInput ? target : from;
-    auto* in = from->isInput ? from : target;
+    connect (from->isInput ? target : from, from->isInput ? from : target);
+}
+
+// One cable, from an output to an input.
+bool Canvas::connect (Jack* out, Jack* in)
+{
+    if (out == nullptr || in == nullptr)
+        return false;
     remember();
     const int code = host.with ([=] (NaApp* a) {
         return na_connect (a, (uint32_t) out->module, (uint32_t) out->index, (uint32_t) in->module, (uint32_t) in->index);
@@ -2190,13 +2274,65 @@ void Canvas::endCable (juce::Point<float> onStage)
     if (code < 0)
     {
         undoStack.pop_back();
-        return report (code, "That cable");
+        report (code, "That cable");
+        return false;
     }
     wires.push_back ({ out->module, out->index, in->module, in->index });
     cables.update();
     report (0, "Connected " + nodes[out->module]->kind.title + " to " + nodes[in->module]->kind.title);
     if (changed)
         changed();
+    return true;
+}
+
+// A module's right-click menu: every socket of its own, and under each what
+// it can be cabled to on the board (ticked where it is; choosing a ticked one
+// takes the cable out).
+void Canvas::patchMenu (Node& node)
+{
+    juce::PopupMenu m;
+    m.addSectionHeader (node.kind.title);
+    bool any = false;
+    for (auto& mine : node.jacks)
+    {
+        juce::PopupMenu sub;
+        int listed = 0;
+        for (const auto& [id, n] : nodes)
+        {
+            if (id == node.id)
+                continue;
+            for (auto& theirs : n->jacks)
+            {
+                if (theirs->isInput == mine->isInput || theirs->type != mine->type)
+                    continue;
+                auto* out = mine->isInput ? theirs.get() : mine.get();
+                auto* in = mine->isInput ? mine.get() : theirs.get();
+                int at = -1;
+                for (size_t w = 0; w < wires.size(); ++w)
+                    if (wires[w].from == out->module && wires[w].fromSocket == out->index && wires[w].to == in->module && wires[w].toSocket == in->index)
+                        at = (int) w;
+                const int om = out->module, oi = out->index, im = in->module, ii = in->index;
+                juce::Component::SafePointer<Canvas> self (this);
+                sub.addItem (n->kind.title + juce::String::fromUTF8 (" \xc2\xb7 ") + theirs->name, true, at >= 0, [self, om, oi, im, ii, at] {
+                    if (self == nullptr)
+                        return;
+                    if (at >= 0)
+                        return self->removeWire (at);
+                    self->connect (self->jackOf (om, false, oi), self->jackOf (im, true, ii));
+                });
+                ++listed;
+            }
+        }
+        const auto label = (mine->isInput ? "Connect " + mine->name + " from" : "Connect " + mine->name + " to");
+        if (listed > 0)
+            m.addSubMenu (label, sub);
+        else
+            m.addItem (label + ": nothing on the board fits", false, false, [] {});
+        any = true;
+    }
+    if (!any)
+        m.addItem ("This module has no sockets", false, false, [] {});
+    m.showMenuAsync (juce::PopupMenu::Options().withMousePosition());
 }
 
 void Canvas::removeWire (int index)

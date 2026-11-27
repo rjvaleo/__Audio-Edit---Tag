@@ -861,9 +861,9 @@ public:
             auto* first = cv.nodes.begin()->second.get();
             auto* last = cv.nodes.rbegin()->second.get();
             const auto was = first->getPosition();
-            press (*first, { 200, 10 }, 0);
-            press (*first, { 200 - 900, 10 - 1200 }, 1);
-            press (*first, { 200, 10 }, 2);
+            press (*first, { (float) Node::gutter + 100, 10 }, 0);
+            press (*first, { (float) Node::gutter + 100 - 900, 10 - 1200 }, 1);
+            press (*first, { (float) Node::gutter + 100, 10 }, 2);
             const auto now = first->getPosition();
             say ("a drag by the title bar moves the module", now == was + juce::Point<int> (-900, -1200));
             say ("above and left of the patch's (0, 0)", now.x < Stage::origin && now.y < Stage::origin && now.x > 0 && now.y > 0);
@@ -871,7 +871,7 @@ public:
             bool kept = false;
             if (auto* ms = saved["modules"].getArray())
                 for (const auto& m : *ms)
-                    kept = kept || ((int) m["id"] == first->id && (int) (double) m["y"] == now.y - Stage::origin && (int) (double) m["x"] == now.x - Stage::origin);
+                    kept = kept || ((int) m["id"] == first->id && (int) (double) m["y"] == now.y - Stage::origin && (int) (double) m["x"] == now.x + Node::gutter - Stage::origin);
             say ("and the patch keeps where it is", kept);
             // A press inside another module's face raises it.
             if (auto* kid = last->getChildComponent (last->getNumChildComponents() - 1))
@@ -880,6 +880,28 @@ public:
                 juce::MouseEvent e (juce::Desktop::getInstance().getMainMouseSource(), { 5, 5 }, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 0, 0, 0, 0, 0, kid, kid, juce::Time::getCurrentTime(), { 5, 5 }, juce::Time::getCurrentTime(), 1, false);
                 last->pressedInside (e);
                 say ("a press inside a module brings it to the front", last->getParentComponent()->getIndexOfChildComponent (last) > first->getParentComponent()->getIndexOfChildComponent (first) && cv.selectedNode == last->id);
+            }
+            // A cable pulled from the right side of Atmosphere, well below its
+            // socket, and let go in the middle of the Output module.
+            {
+                Node* atmos = nullptr; Node* outNode = nullptr;
+                for (auto& [id, n] : cv.nodes)
+                {
+                    if (n->kind.id == "atmos") atmos = n.get();
+                    if (n->kind.id == "output") outNode = n.get();
+                }
+                if (atmos != nullptr && outNode != nullptr)
+                {
+                    const size_t before = cv.wires.size();
+                    const juce::Point<float> side ((float) (atmos->getWidth() - Node::gutter + 12), (float) atmos->getHeight() * 0.6f);
+                    const auto drop = (outNode->getBounds().getCentre() - atmos->getPosition()).toFloat();
+                    press (*atmos, side, 0);
+                    press (*atmos, drop, 1);
+                    press (*atmos, drop, 2);
+                    say ("a cable pulled from a module's right side reaches Output", cv.wires.size() == before + 1 && cv.wires.back().from == atmos->id && cv.wires.back().to == outNode->id);
+                }
+                else
+                    say ("Atmosphere and Output are on the board", false);
             }
             cv.fit();
             auto* menu = cv.openMenuForCheck ({ 300, 300 });

@@ -152,6 +152,17 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
 
     static constexpr int header = 20, border = 1;
+    // Room either side of the frame, inside the module's own bounds, for its
+    // sockets and their names: JUCE draws and hears nothing of a child outside
+    // its parent, and the sockets sit half outside the frame (they were cut
+    // to a 4 px sliver: RJ, 26 Nov 2026, "it's so hard to grab the output").
+    static constexpr int gutter = 72;
+    // The strip along each side, the frame's edge and this far out, that
+    // pulls a cable from the module's first output (right) or input (left).
+    static constexpr int grab = 28;
+    juce::Rectangle<int> frameBounds() const { return getLocalBounds().reduced (gutter, 0); }
+    bool hitTest (int x, int y) override;
+    void mouseMove (const juce::MouseEvent&) override;
     juce::Rectangle<int> bodyBounds() const;
     // A press on something inside it, as its listener hears it (the check).
     void pressedInside (const juce::MouseEvent& e) { raise.mouseDown (e); }
@@ -161,7 +172,8 @@ private:
     juce::String shownName;
     std::unique_ptr<juce::ComboBox> channel;
     juce::Point<int> grabbedAt;
-    bool moving = false;
+    bool moving = false, cabling = false;
+    Jack* sideJack (juce::Point<float>) const;
     // A press on what is inside it (its face, a socket) selects the module
     // and brings it to the front; the press itself stays the face's.
     struct Raise final : juce::MouseListener
@@ -268,6 +280,9 @@ public:
     int selectedWire = -1, selectedNode = -1;
     // The Add menu, opened at a place on the canvas (the check).
     AddMenu* openMenuForCheck (juce::Point<float> onCanvas) { openMenu (onCanvas); return menu.get(); }
+    // A cable from an output to an input; a module's right-click menu of them.
+    bool connect (Jack* out, Jack* in);
+    void patchMenu (Node&);
     juce::String patchForCheck() { return snapshot(); }
     std::map<int, std::unique_ptr<Node>> nodes;
 

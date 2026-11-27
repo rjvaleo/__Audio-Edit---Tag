@@ -176,7 +176,9 @@ private:
     std::vector<std::array<float, 3>> trail;
     juce::String lastChoices, lastVoices;
     float posNow (int osc) const;
-    void timerCallback() override { if (isShowing()) poll(); }
+    void timerCallback() override { if (isShowing()) { warmWhenTouched(); poll(); } }
+    void warmWhenTouched();
+    bool warmed = false;
     std::map<int, juce::String> texts;           // node -> its reading now
 
     // The keys: the lowest note shown, what is held, and by which computer key.
