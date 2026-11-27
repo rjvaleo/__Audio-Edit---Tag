@@ -815,6 +815,30 @@ public:
         auto args = juce::StringArray::fromTokens (commandLine, true);
         args.trim();
         args.removeEmptyStrings();
+        // --font-probe: what the system's faces offer (styles, axes), printed.
+        if (args.size() >= 1 && args[0] == "--font-probe")
+        {
+            auto show = [] (const char* what, juce::Typeface::Ptr t) {
+                if (t == nullptr)
+                    return (void) std::printf ("%s: none\n", what);
+                std::printf ("%s: %s / %s, axes:", what, t->getName().toRawUTF8(), t->getStyle().toRawUTF8());
+                for (auto tag : t->getSupportedVariables())
+                    if (auto r = t->getRangeForVariable (tag))
+                        std::printf (" %s[%g..%g]", tag.toString().toRawUTF8(), r->getStart(), r->getEnd());
+                std::printf (" instances: %d\n", (int) t->getInstanceNames().size());
+            };
+            for (auto n : { ".AppleSystemUIFont", ".AppleSystemUIFontMonospaced" })
+            {
+                std::printf ("%s styles: %s\n", n, juce::Font::findAllTypefaceStyles (n).joinIntoString (", ").toRawUTF8());
+                show (n, juce::Font (juce::FontOptions().withName (n).withStyle ("Semibold").withPointHeight (13)).getTypefacePtr());
+            }
+            show ("system", juce::Typeface::findSystemTypeface());
+            const juce::FontVariableSetting axes[] { { "opsz", 13.0f }, { "wght", 600.0f } };
+            if (auto sys = juce::Typeface::findSystemTypeface())
+                show ("system varied", sys->cloneWithVariableSettings (axes));
+            quit();
+            return;
+        }
         // --bench: how long the Wave face takes to draw whole, and to draw
         // again after one knob moves, as a drag does on every step.
         if (args.size() >= 2 && args[0] == "--bench" && args[1] == "canvas")

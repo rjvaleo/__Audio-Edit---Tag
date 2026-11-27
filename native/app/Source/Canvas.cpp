@@ -107,6 +107,7 @@ public:
             image = make (g, sizeAt (step));
             valid.clear();
             next = {};
+            blank = true;
         }
         if (auto ptr = image.getPixelData())
             if (auto* ext = ptr->getBackupExtensions())
@@ -119,7 +120,9 @@ public:
             // every face animates as its page does, and a board of them at
             // full rate held the message thread (RJ, 26 Nov 2026).
             const double now = juce::Time::getMillisecondCounterHiRes();
-            const bool quick = first || (live && live());
+            // A picture just made (the module is new, or opened or closed) has
+            // nothing in it: drawn now, never left empty for a turn.
+            const bool quick = first || blank || (live && live());
             if (!quick && now - renderedAt < calmMs)
             {
                 if (!later)
@@ -139,6 +142,7 @@ public:
                 render (image, step, valid, bounds, bounds);
                 renderedAt = now;
                 valid = bounds;
+                blank = false;
             }
         }
 
@@ -203,7 +207,7 @@ public:
 private:
     static constexpr double calmMs = 125.0;
     double renderedAt = 0;
-    bool later = false;
+    bool later = false, blank = false;
     juce::Component& owner;
     juce::Image image, next;
     juce::RectangleList<int> valid, nextValid;
@@ -337,6 +341,8 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
     auto* cache = new SteppedCache (*this);
     cache->live = [this] { return selected || isMouseOverOrDragging (true); };
     setCachedComponentImage (cache);
+    // Presses on its children are heard here too (mouseDown).
+    addMouseListener (this, true);
 
     for (int s = 0; s < (int) kind.ins.size(); ++s)
     {
@@ -790,6 +796,10 @@ void Node::mouseDown (const juce::MouseEvent& e)
         return;
     canvas.select (id);
     toFront (false);
+    // A press on what is inside it (its face, a socket): the module is
+    // selected and comes to the front; the press itself is the face's.
+    if (e.eventComponent != this)
+        return;
     const auto p = e.position;
     if (p.y > (float) (header + border))
         return;
@@ -829,14 +839,16 @@ void Node::mouseDown (const juce::MouseEvent& e)
 
 void Node::mouseDrag (const juce::MouseEvent& e)
 {
-    if (!moving)
+    if (!moving || e.eventComponent != this)
         return;
     setTopLeftPosition (e.getEventRelativeTo (&canvas.stage).getPosition() - grabbedAt);
     canvas.cables.update();
 }
 
-void Node::mouseUp (const juce::MouseEvent&)
+void Node::mouseUp (const juce::MouseEvent& e)
 {
+    if (e.eventComponent != this)
+        return;
     if (moving)
         canvas.nodeMoved (id);
     moving = false;
@@ -985,7 +997,20 @@ void AddMenu::filter()
         rows.push_back ({ juce::String::fromUTF8 ("No module matches \xe2\x80\x9c") + search.getText() + juce::String::fromUTF8 ("\xe2\x80\x9d."), {}, true, { 8, y, 195, 20 } });
         y += 26;
     }
-    setSize (211, (int) y + 8);
+    // As tall as its list, or as the canvas has room for: the list scrolls.
+    contentH = y + 8;
+    const float room = (float) juce::jmax (160, canvas.getHeight() - 16);
+    setSize (211, (int) juce::jmin (contentH, room));
+    scroll = juce::jlimit (0.0f, juce::jmax (0.0f, contentH - (float) getHeight()), scroll);
+    // Kept inside the canvas.
+    setTopLeftPosition (juce::jlimit (8, juce::jmax (8, canvas.getWidth() - getWidth() - 8), getX()), juce::jlimit (8, juce::jmax (8, canvas.getHeight() - getHeight() - 8), getY()));
+    repaint();
+}
+
+void AddMenu::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w)
+{
+    scroll = juce::jlimit (0.0f, juce::jmax (0.0f, contentH - (float) getHeight()), scroll - w.deltaY * (w.isSmooth ? 260.0f : 120.0f));
+    hover = -1;
     repaint();
 }
 
@@ -1003,22 +1028,37 @@ void AddMenu::paint (juce::Graphics& g)
     const juce::var* group = face::find (tree, "mm-module-menu__group");
     const juce::var* groupLabel = group != nullptr ? face::find (*group, "b") : nullptr;
     const juce::var* item = group != nullptr ? face::find (*group, "button") : nullptr;
+    // The list, under the title and the search, moved by how far it is scrolled.
+    juce::Graphics::ScopedSaveState keep (g);
+    g.reduceClipRegion (0, listTop, getWidth(), getHeight() - listTop - 4);
     for (size_t i = 0; i < rows.size(); ++i)
     {
-        const auto& r = rows[i];
-        if (r.group)
+        const auto& row = rows[i];
+        const auto r = row.r.translated (0, -scroll);
+        if (r.getBottom() < (float) listTop || r.getY() > (float) getHeight())
+            continue;
+        if (row.group)
         {
             if (groupLabel != nullptr)
-                face::paintText (g, *groupLabel, r.r, r.label);
+                face::paintText (g, *groupLabel, r, row.label);
             continue;
         }
         if ((int) i == hover)
         {
             g.setColour (juce::Colours::white.withAlpha (0.08f));
-            g.fillRoundedRectangle (r.r, 5.0f);
+            g.fillRoundedRectangle (r, 5.0f);
         }
         if (item != nullptr)
-            face::paintText (g, *item, r.r.withTrimmedLeft (6), r.label);
+            face::paintText (g, *item, r.withTrimmedLeft (6), row.label);
+    }
+    // How far down the list is, when there is more than fits.
+    if (contentH > (float) getHeight())
+    {
+        const float track = (float) (getHeight() - listTop - 8), shown = (float) (getHeight() - listTop);
+        const float len = juce::jmax (18.0f, track * shown / (contentH - (float) listTop));
+        const float at = (float) listTop + (track - len) * scroll / juce::jmax (1.0f, contentH - (float) getHeight());
+        g.setColour (juce::Colours::white.withAlpha (0.22f));
+        g.fillRoundedRectangle ((float) getWidth() - 5.0f, at, 3.0f, len, 1.5f);
     }
 }
 
@@ -1026,7 +1066,7 @@ void AddMenu::mouseMove (const juce::MouseEvent& e)
 {
     int h = -1;
     for (size_t i = 0; i < rows.size(); ++i)
-        if (!rows[i].group && rows[i].r.contains (e.position))
+        if (!rows[i].group && e.position.y >= (float) listTop && rows[i].r.contains (e.position.translated (0, scroll)))
             h = (int) i;
     if (h != hover)
     {
@@ -1044,7 +1084,7 @@ void AddMenu::mouseExit (const juce::MouseEvent&)
 void AddMenu::mouseDown (const juce::MouseEvent& e)
 {
     for (const auto& r : rows)
-        if (!r.group && r.r.contains (e.position))
+        if (!r.group && e.position.y >= (float) listTop && r.r.contains (e.position.translated (0, scroll)))
         {
             const auto kind = r.kind;
             const auto where = at;
@@ -1175,9 +1215,28 @@ juce::String Canvas::fileName() const
     return currentFile == juce::File() ? juce::String ("Untitled") : currentFile.getFileName();
 }
 
+// Whether Space is down now, asked of the keyboard itself. JUCE's own record
+// of held keys keeps Space "down" when its release went elsewhere (a menu, a
+// text field losing focus), and then every press on a module panned the
+// canvas and none selected or moved one (RJ, 26 Nov 2026).
+#if JUCE_MAC
+// CoreGraphics' own (declared here: its headers' Point and Component are not JUCE's).
+extern "C" bool CGEventSourceKeyState (int32_t stateID, uint16_t key);
+#endif
+static bool spaceDown()
+{
+   #if JUCE_MAC
+    return CGEventSourceKeyState (0 /* the session's combined state */, 49 /* Space */);
+   #else
+    return juce::KeyPress::isKeyCurrentlyDown (juce::KeyPress::spaceKey);
+   #endif
+}
+
 bool Canvas::panGesture (const juce::MouseEvent& e) const
 {
-    return e.mods.isMiddleButtonDown() || (e.mods.isLeftButtonDown() && juce::KeyPress::isKeyCurrentlyDown (juce::KeyPress::spaceKey));
+    // Space pans from the canvas and from a module's frame, not while typing.
+    const bool typing = dynamic_cast<juce::TextEditor*> (juce::Component::getCurrentlyFocusedComponent()) != nullptr;
+    return e.mods.isMiddleButtonDown() || (e.mods.isLeftButtonDown() && !typing && spaceDown());
 }
 
 // ─── the camera
@@ -1483,7 +1542,7 @@ bool Canvas::keyPressed (const juce::KeyPress& key, juce::Component*) { return k
 
 bool Canvas::keyStateChanged (bool, juce::Component*)
 {
-    const bool space = juce::KeyPress::isKeyCurrentlyDown (juce::KeyPress::spaceKey);
+    const bool space = spaceDown();
     if (space != spaceHeld)
     {
         spaceHeld = space;
@@ -1498,7 +1557,8 @@ void Canvas::openMenu (juce::Point<float> onCanvas)
 {
     closeMenu();
     menu = std::make_unique<AddMenu> (*this, stagePoint (onCanvas));
-    menu->setTopLeftPosition (onCanvas.toInt());
+    // Where the press was, moved to stay inside the canvas.
+    menu->setTopLeftPosition (juce::jlimit (8, juce::jmax (8, getWidth() - menu->getWidth() - 8), (int) onCanvas.x), juce::jlimit (8, juce::jmax (8, getHeight() - menu->getHeight() - 8), (int) onCanvas.y));
     addAndMakeVisible (*menu);
     juce::Component::SafePointer<juce::Component> field (menu->getChildComponent (0));
     juce::MessageManager::callAsync ([field] { if (field != nullptr && field->isShowing()) field->grabKeyboardFocus(); });

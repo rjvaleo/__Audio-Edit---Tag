@@ -3,7 +3,9 @@
 #include "BinaryData.h"
 
 #include <cstring>
+#include <map>
 #include <set>
+#include <tuple>
 
 namespace face
 {
@@ -74,14 +76,44 @@ juce::Rectangle<float> rectOf (const juce::var& r)
 }
 } // namespace
 
+namespace
+{
+// The system's faces are variable fonts: a style name alone gives their
+// default drawing (regular weight, the large optical size), so the weight
+// and the optical size the page asks for are set on the font's own axes,
+// as the browser does. Made once for each size and weight: making one
+// builds a typeface.
+juce::Font made (bool monospaced, float px, int weight)
+{
+    static std::map<std::tuple<bool, int, int>, juce::Font> kept;
+    const auto key = std::make_tuple (monospaced, juce::roundToInt (px * 100.0f), weight);
+    if (auto it = kept.find (key); it != kept.end())
+        return it->second;
+    const auto name = monospaced ? monoName() : sansName();
+    auto varied = juce::Font (juce::FontOptions().withName (name).withStyle (styleFor (weight)).withPointHeight (px));
+    // The face itself, set to this weight (and, where it has one, this optical size).
+    static std::map<juce::String, juce::Typeface::Ptr> bases;
+    auto& base = bases[name];
+    if (base == nullptr)
+        base = juce::Font (juce::FontOptions().withName (name).withStyle ("Regular").withPointHeight (px)).getTypefacePtr();
+    if (base != nullptr && !base->getSupportedVariables().empty())
+    {
+        const juce::FontVariableSetting axes[] { { "opsz", px }, { "wght", (float) weight } };
+        if (auto set = base->cloneWithVariableSettings (axes))
+            varied = juce::Font (juce::FontOptions (set).withPointHeight (px));
+    }
+    return kept.emplace (key, varied).first->second;
+}
+} // namespace
+
 juce::Font sans (float px, int weight)
 {
-    return juce::Font (juce::FontOptions().withName (sansName()).withStyle (styleFor (weight)).withPointHeight (px));
+    return made (false, px, weight);
 }
 
 juce::Font mono (float px, int weight)
 {
-    return juce::Font (juce::FontOptions().withName (monoName()).withStyle (styleFor (weight)).withPointHeight (px));
+    return made (true, px, weight);
 }
 
 juce::Font font (const juce::var& f)

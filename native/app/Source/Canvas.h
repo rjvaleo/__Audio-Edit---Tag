@@ -195,6 +195,7 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     void mouseMove (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     const juce::Point<float> at;
 
 private:
@@ -208,6 +209,9 @@ private:
     };
     std::vector<Row> rows;
     int hover = -1;
+    // The list scrolls under the title and the search (the first 63 px).
+    static constexpr int listTop = 61;
+    float scroll = 0, contentH = 0;
     void filter();
     void textEditorTextChanged (juce::TextEditor&) override { filter(); }
     void textEditorReturnKeyPressed (juce::TextEditor&) override;
