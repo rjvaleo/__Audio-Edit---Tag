@@ -38,6 +38,8 @@ public:
     // The presets: the page's recall menu lists these names; choosing one
     // loads it; Save names the module's state and keeps it; ✕ deletes one.
     std::function<juce::StringArray()> presetNames;
+    // The preset last picked here, as the page's display keeps it.
+    juce::String shownPreset;
     std::function<void (const juce::String&)> loadPreset, deletePreset;
     std::function<void()> savePreset;
     // True for a press that belongs to the canvas (Space held, the middle button).

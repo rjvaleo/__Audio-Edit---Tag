@@ -488,7 +488,10 @@ void SeqFace::sync()
         txt ("statusNote", dash), txt ("statusFreq", dash), txt ("statusStep", dash);
         txt ("posDisplay", juce::String ("01") + dot + "01");
     }
-    if (str ("presetName").isNotEmpty() || str ("name").isNotEmpty())
+    // The name the page last wrote there: the preset picked, else the patch's own.
+    if (shownPreset.isNotEmpty())
+        txt ("presetNameDisplay", shownPreset.toUpperCase());
+    else if (str ("presetName").isNotEmpty() || str ("name").isNotEmpty())
         txt ("presetNameDisplay", (str ("name").isNotEmpty() ? str ("name") : str ("presetName")).toUpperCase());
     // Play, lit while playing: the captured lit button drawn over it.
     if (auto it = byId.find ("playBtn"); it != byId.end())
@@ -1325,7 +1328,13 @@ void SeqFace::menu (const juce::String& key, juce::Rectangle<float> near)
                          if (key == "preset")
                          {
                              if (value.isNotEmpty() && loadPreset)
-                                 loadPreset (value), v["name"] = value, readBack(), sync();
+                             {
+                                 // loadPreset (app.js): the preset's state applied, its name shown.
+                                 loadPreset (value);
+                                 readBack();
+                                 shownPreset = value;
+                                 sync();
+                             }
                              for (auto& l : layers)
                                  l->repaint();
                              return;
