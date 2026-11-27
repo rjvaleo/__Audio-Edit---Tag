@@ -454,6 +454,70 @@ Node::Node (Canvas& c, int i, const KindInfo& k) : id (i), kind (k), canvas (c)
         };
         addAndMakeVisible (*grain);
     }
+    else if (kind.id == "browse" || kind.id == "library")
+    {
+        // MGL's Browse page and its Library page (BrowseFace, LibraryFace).
+        auto* host = &canvas.host;
+        auto call = [host] (const std::function<int64_t (NaApp*)>& f) { return host->with ([&] (NaApp* a) { return f (a); }); };
+        // A sound chosen with no Sound module cabled from this one: a Sound
+        // module added beside it and cabled, and the sound opened there; with
+        // `then` ("grain", "chop", "edit": the Library page's Open on ...), that
+        // page added beside it too, the Sound cabled into it.
+        auto choose = [cv = &canvas, mine = id] (const juce::String& file, const juce::String& rel, const juce::String& name, const juce::String& then) {
+            juce::MessageManager::callAsync ([cv, mine, file, rel, name, then] {
+                auto it = cv->nodes.find (mine);
+                const auto at = it != cv->nodes.end() ? juce::Point<float> ((float) it->second->getX() + (float) it->second->getWidth() + 60, (float) it->second->getY()) : juce::Point<float>();
+                juce::DynamicObject::Ptr o = new juce::DynamicObject();
+                o->setProperty ("file", file);
+                o->setProperty ("path", rel);
+                o->setProperty ("name", name);
+                const auto json = juce::JSON::toString (juce::var (o.get()), true);
+                int sound = -1;
+                const int opened = cv->host.with ([&] (NaApp* a) {
+                    std::vector<char> buf (1 << 14);
+                    if (then.isEmpty())
+                    {
+                        na_browse_call (a, (uint32_t) mine, "open", json.toRawUTF8(), buf.data(), (uint32_t) buf.size());
+                        const auto v = juce::JSON::parse (juce::String::fromUTF8 (buf.data()));
+                        if (auto* ids = v["opened"].getArray(); ids != nullptr && !ids->isEmpty())
+                            return (int) ids->size();
+                    }
+                    sound = na_add (a, "sound", at.x, at.y);
+                    if (sound <= 0 || na_connect (a, (uint32_t) mine, 0, (uint32_t) sound, 0) < 0)
+                        return -1;
+                    na_browse_call (a, (uint32_t) mine, "open", json.toRawUTF8(), buf.data(), (uint32_t) buf.size());
+                    if (then.isNotEmpty())
+                    {
+                        const int page = na_add (a, then.toRawUTF8(), at.x + 380, at.y);
+                        if (page > 0)
+                            na_connect (a, (uint32_t) sound, 0, (uint32_t) page, 0);
+                    }
+                    return 1;
+                });
+                cv->refresh();
+                if (cv->status)
+                    cv->status (opened < 0 ? "Opening " + name + " didn't work"
+                                : sound > 0 ? "Opened " + name + " in a Sound module" + (then.isNotEmpty() ? " cabled into " + then : juce::String()) + " beside it"
+                                            : "Opened " + name + " in the Sound module" + (opened > 1 ? "s" : "") + " cabled from it");
+            });
+        };
+        if (kind.id == "browse")
+        {
+            browse = std::make_unique<BrowseFace> (call, (uint32_t) id);
+            browse->onMessage = [cv = &canvas] (const juce::String& m) { if (cv->status) cv->status (m); };
+            browse->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
+            browse->choose = choose;
+            addAndMakeVisible (*browse);
+        }
+        else
+        {
+            library = std::make_unique<LibraryFace> (call, (uint32_t) id);
+            library->onMessage = [cv = &canvas] (const juce::String& m) { if (cv->status) cv->status (m); };
+            library->blocked = [this] (const juce::MouseEvent& e) { return canvas.panGesture (e); };
+            library->choose = choose;
+            addAndMakeVisible (*library);
+        }
+    }
     else if (kind.id == "prism")
     {
         // MGL's Prism page, on the sound cabled into it (PrismFace).
@@ -866,7 +930,7 @@ void AddMenu::filter()
     const auto q = search.getText().trim().toLowerCase();
     // idMLab groups its modules by family; MGL's sit under their own.
     const std::vector<std::pair<juce::String, juce::StringArray>> groups {
-        { "MULTIGRAINLIVE", { "wave", "atmos", "seq", "sound", "edit", "grain", "chop", "prism", "fx" } },
+        { "MULTIGRAINLIVE", { "wave", "atmos", "seq", "sound", "edit", "grain", "chop", "prism", "fx", "browse", "library" } },
         { "MIDI", { "midi-in" } },
         { "AUDIO", { "output" } },
     };

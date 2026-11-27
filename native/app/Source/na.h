@@ -168,6 +168,27 @@ int32_t na_chop_render (NaApp*, uint32_t id, int32_t i, float* out, uint32_t n);
 // What plays now, first channel, from the playhead (a loop wraps); how many, 0 when nothing plays.
 int32_t na_chop_out (NaApp*, uint32_t id, float* out, uint32_t n);
 
+// Browse and Library (MGL's Browse page and its Library page, engine-app's
+// browse_part.rs): the module's own calls ("info", "ui", "play", "pause",
+// "stop", "seek", "loop", "open", "cabled"), JSON in and out.
+int32_t na_browse_call (NaApp*, uint32_t id, const char* what, const char* json, char* buf, uint32_t cap);
+
+// MGL's library, in the app (engine-library): MGL's own routes for the Browse
+// and Library pages answered in-process. One for the whole app, callable from
+// any thread (never the audio thread). `home` the app's copy of MGL's library
+// files (made from `mgl`, MGL's data folder, the first time), `models` where
+// MGL's listening model is. Each call's whole answer is held in an NaReply.
+typedef struct NaLib NaLib;
+typedef struct NaReply NaReply;
+NaLib* na_lib_open (const char* home, const char* mgl, const char* models);
+void na_lib_free (NaLib*);
+NaReply* na_lib_call (NaLib*, const char* method, const char* target, const uint8_t* body, uint32_t len);
+uint32_t na_lib_folder (NaLib*, char* buf, uint32_t cap);
+uint32_t na_reply_status (const NaReply*);
+const uint8_t* na_reply_body (const NaReply*, uint32_t* len);
+const char* na_reply_type (const NaReply*);
+void na_reply_free (NaReply*);
+
 #ifdef __cplusplus
 }
 #endif

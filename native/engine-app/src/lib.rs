@@ -22,6 +22,9 @@
 //! number of its option.
 
 pub mod annot;
+// MGL's Browse and Library pages: the library, heard and chosen from.
+pub mod browse_part;
+mod browse_link;
 pub mod atmos_part;
 pub mod seq_part;
 // MGL's Chop page, on the sound cabled into it.
@@ -117,7 +120,29 @@ pub static KINDS: &[KindInfo] = &[
         keyboard: true,
     },
     // MGL's sound document: a file from disk or the library, and its edits.
-    KindInfo { id: "sound", title: "Sound", width: SOUND_W, height: SOUND_H, ins: &[], outs: &[("Sound", Kind::Sound)], keyboard: false },
+    // Its Library socket takes a Browse or Library module's Sound: a sound
+    // chosen there opens here.
+    KindInfo { id: "sound", title: "Sound", width: SOUND_W, height: SOUND_H, ins: &[("Library", Kind::Sound)], outs: &[("Sound", Kind::Sound)], keyboard: false },
+    // MGL's Browse page: every sound in the library, heard and chosen from.
+    KindInfo {
+        id: "browse",
+        title: "Browse",
+        width: browse_part::BROWSE_W,
+        height: browse_part::BROWSE_H,
+        ins: &[],
+        outs: &[("Sound", Kind::Sound), ("Audio", Kind::Audio)],
+        keyboard: false,
+    },
+    // MGL's Library page: the PC's own sounds, by the words that made them.
+    KindInfo {
+        id: "library",
+        title: "Library",
+        width: browse_part::LIBRARY_W,
+        height: browse_part::LIBRARY_H,
+        ins: &[],
+        outs: &[("Sound", Kind::Sound), ("Audio", Kind::Audio)],
+        keyboard: false,
+    },
     KindInfo {
         id: "edit",
         title: "Edit",
@@ -373,6 +398,7 @@ enum Part {
     Chop(Box<chop_part::ChopPart>),
     Prism(Box<prism::PrismPart>),
     Fx(Box<fx::FxPart>),
+    Browse(Box<browse_part::BrowsePart>),
 }
 
 struct Placed {
@@ -492,6 +518,8 @@ impl Session {
             "grain" => self.add_grain(id, saved)?,
             "chop" => self.add_chop(id, saved)?,
             "prism" => self.add_prism(id, saved)?,
+            "browse" => self.add_browse(id, browse_part::Page::Browse, saved)?,
+            "library" => self.add_browse(id, browse_part::Page::Library, saved)?,
             k if k == "fx" || k.starts_with("fx:") => self.add_fx(id, k, saved)?,
             "midi-in" => {
                 let channel = saved.and_then(|s| s.get("channel")).and_then(Value::as_u64).unwrap_or(0).min(16) as u8;
@@ -531,6 +559,7 @@ impl Session {
             Part::Output => 2,
             Part::Atmos(_) => 3,
             Part::Fx(f) if f.is_page() => 4,
+            Part::Browse(_) => 2,
             _ => 1,
         };
         for k in 0..count {
@@ -563,6 +592,10 @@ impl Session {
     fn engine_out(&self, (id, socket): (u32, u32)) -> Result<(engine_core::PortRef, Kind), AppError> {
         let m = self.modules.get(&id).ok_or(AppError::NoSuchModule(id))?;
         let (_, kind) = m.kind.outs.get(socket as usize).ok_or(AppError::NoSuchSocket)?;
+        // Browse's Sound is its audition's sound, its Audio the player's.
+        if matches!(m.part, Part::Browse(_)) {
+            return Ok((port(engine_id(id, socket.min(1)), 0), *kind));
+        }
         let k = match &m.part {
             Part::Atmos(_) => atmos_part::FX,
             Part::Fx(f) if f.is_page() => fx::LEVELS,
@@ -596,6 +629,9 @@ impl Session {
         if let Some(r) = self.prism_connect(from, to, true) {
             return r;
         }
+        if let Some(r) = self.browse_connect(from, to, true) {
+            return r;
+        }
         let (out, a) = self.engine_out(from)?;
         let (inp, b) = self.engine_in(to)?;
         if a != b {
@@ -625,6 +661,9 @@ impl Session {
             return r;
         }
         if let Some(r) = self.prism_connect(from, to, false) {
+            return r;
+        }
+        if let Some(r) = self.browse_connect(from, to, false) {
             return r;
         }
         let wire = Wire { from, to };
@@ -662,7 +701,7 @@ impl Session {
                 *channel = (value.max(0.0) as u8).min(16);
                 Ok(())
             }
-            Part::Output | Part::Atmos(_) | Part::Seq(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Chop(_) | Part::Prism(_) | Part::Fx(_) => Err(AppError::NoSuchControl(index)),
+            Part::Output | Part::Atmos(_) | Part::Seq(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Chop(_) | Part::Prism(_) | Part::Fx(_) | Part::Browse(_) => Err(AppError::NoSuchControl(index)),
         }
     }
 
@@ -673,14 +712,14 @@ impl Session {
         Ok(match &m.part {
             Part::Wave(w) => w.values(),
             Part::MidiIn { channel } => vec![*channel as f32],
-            Part::Output | Part::Atmos(_) | Part::Seq(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Chop(_) | Part::Prism(_) | Part::Fx(_) => Vec::new(),
+            Part::Output | Part::Atmos(_) | Part::Seq(_) | Part::Sound(_) | Part::Edit(_) | Part::Grain(_) | Part::Chop(_) | Part::Prism(_) | Part::Fx(_) | Part::Browse(_) => Vec::new(),
         })
     }
 
     /// A note played on a module's own keyboard, heard from the next block.
     pub fn note(&mut self, id: u32, on: bool, note: u8, velocity: f32) -> Result<u64, AppError> {
         let m = self.modules.get(&id).ok_or(AppError::NoSuchModule(id))?;
-        if matches!(m.part, Part::Output | Part::Sound(_) | Part::Edit(_) | Part::Fx(_)) {
+        if matches!(m.part, Part::Output | Part::Sound(_) | Part::Edit(_) | Part::Fx(_) | Part::Browse(_)) {
             return Err(AppError::NoSuchSocket);
         }
         let event = if on { NoteEvent::on(note.min(127), velocity.clamp(0.0, 1.0)) } else { NoteEvent::off(note.min(127)) };
@@ -834,6 +873,9 @@ impl Session {
                     }
                     Part::Fx(f) => {
                         o.insert("fx".into(), f.state());
+                    }
+                    Part::Browse(b) => {
+                        o.insert("browse".into(), b.state());
                     }
                 }
                 Value::Object(o)

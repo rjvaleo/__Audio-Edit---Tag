@@ -22,6 +22,7 @@
 #include "SeqFace.h"
 #include "ChopFace.h"
 #include "PrismFace.h"
+#include "BrowseFace.h"
 #include "FxFace.h"
 #include "EditFace.h"
 #include "GrainFace.h"
@@ -110,9 +111,15 @@ public:
     std::unique_ptr<ChopFace> chop;
     std::unique_ptr<PrismFace> prism;
     std::unique_ptr<FxFace> fxFace;
+    std::unique_ptr<BrowseFace> browse;
+    std::unique_ptr<LibraryFace> library;
     // The page that is this module's face, if it has one.
     juce::Component* body() const
     {
+        if (browse != nullptr)
+            return browse.get();
+        if (library != nullptr)
+            return library.get();
         if (seq != nullptr)
             return seq.get();
         if (chop != nullptr)

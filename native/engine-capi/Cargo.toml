@@ -15,4 +15,6 @@ engine-core = { path = "../engine-core" }
 engine-mgl = { path = "../engine-mgl" }
 # The app's side: the canvas, its modules' state, save and load (`na_*`).
 engine-app = { path = "../engine-app" }
+# MGL's library, answered in-process (`na_lib_*`).
+engine-library = { path = "../engine-library" }
 serde_json = "1"
