@@ -157,6 +157,9 @@ private:
     double litUntil = 0;
     std::vector<WaveView::Target> mapTargets;
     Layer* mapLayer = nullptr;
+    static bool isFactoryPatch (const juce::String& name);
+    void askPatchName (const juce::String& title, const juce::String& start, std::function<void (const juce::String&)> then);
+    void savePatchAs (const juce::String& name);
     void tableMenu (juce::Rectangle<float> near, int osc);
     void warpMenu (juce::Rectangle<float> near, int osc, int j);
     void fxMenu (juce::Rectangle<float> near, int osc);
@@ -180,7 +183,11 @@ private:
     // morph puck's trail: x, y, when (ms).
     float nowT = 0;
     std::vector<std::array<float, 3>> trail;
-    juce::String lastChoices, lastVoices;
+    juce::String lastChoices, lastVoices, lastPos;
+    juce::juce_wchar octKey = 0;
+    void releaseKeys();
+    void focusLost (FocusChangeType) override { releaseKeys(); }
+    void visibilityChanged() override { if (!isShowing()) releaseKeys(); }
     float posNow (int osc) const;
     void timerCallback() override { if (isShowing()) { warmWhenTouched(); poll(); } }
     void warmWhenTouched();

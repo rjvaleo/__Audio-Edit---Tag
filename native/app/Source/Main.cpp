@@ -1519,6 +1519,28 @@ public:
                     juce::MouseEvent up (src, p, juce::ModifierKeys(), 0, 0, 0, 0, 0, &w, &w, t, p, t, 1, false);
                     w.mouseUp (up);
                 }
+                // WAVE_SAY=1: which table oscillator A plays now, and how far the frame it is
+                // on differs from the built-in's (a stroke in Create must show here).
+                if (juce::SystemStats::getEnvironmentVariable ("WAVE_SAY", {}).isNotEmpty())
+                {
+                    int st = 0;
+                    const auto patch = waveApi (a, id, "GET", "/api/wave/patch", {}, st);
+                    const auto name = patch["params"]["osc0.table"].toString();
+                    const double pos = (double) patch["params"]["osc0.pos"];
+                    const auto now = waveApi (a, id, "GET", "/api/wave/table?name=" + juce::URL::addEscapeChars (name, true), {}, st);
+                    const auto was = waveApi (a, id, "GET", "/api/wave/table?name=" + juce::URL::addEscapeChars (name.upToFirstOccurrenceOf (" (edited)", false, false), true), {}, st);
+                    double diff = 0;
+                    int frame = 0;
+                    if (auto* fn = now["frames"].getArray())
+                        if (auto* fw = was["frames"].getArray())
+                        {
+                            frame = juce::roundToInt (pos * (fn->size() - 1));
+                            if (frame < fw->size())
+                                for (int k = 0; k < (*fn)[frame].size() && k < (*fw)[frame].size(); ++k)
+                                    diff = juce::jmax (diff, std::abs ((double) (*fn)[frame][k] - (double) (*fw)[frame][k]));
+                        }
+                    std::printf ("osc A plays \"%s\" at frame %d; that frame differs from the built-in by %.3f\n", name.toRawUTF8(), frame + 1, diff);
+                }
                 image = w.createComponentSnapshot (w.getLocalBounds(), true, scale);
                 na_free (a);
             }

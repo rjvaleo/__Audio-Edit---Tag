@@ -59,6 +59,22 @@ public:
         again ("live");
     }
 
+    bool key (const juce::KeyPress& k) override
+    {
+        if (k == juce::KeyPress::escapeKey && picker.isNotEmpty())
+        {
+            closePicker();
+            return true;
+        }
+        return false;
+    }
+
+    void closeMenus() override
+    {
+        if (picker.isNotEmpty())
+            closePicker();
+    }
+
     std::vector<std::pair<juce::String, double>> profile (float s) override { return timeLayers (s); }
 
     bool down (const juce::MouseEvent& e) override
@@ -298,6 +314,7 @@ private:
         th.model = ctx.model;
         th.cl = ctx.cl;
         th.set = [this] (const juce::String& k, const juce::var& v) { ctx.set (k, v); };
+        th.lfoMenu = [this] (juce::Rectangle<float> near, int L) { if (ctx.lfoMenu) ctx.lfoMenu (near, L); };
         th.addLayer = [this] (const juce::String& name, juce::Rectangle<float> r, std::function<void (juce::Graphics&)> draw) -> juce::Component* {
             const auto box = r.getSmallestIntegerContainer().toFloat();
             const auto off = r.getPosition() - box.getPosition();
@@ -565,6 +582,7 @@ private:
     {
         if (ctx.modsChanged)
             ctx.modsChanged();
+        tiles->sync();
         render();
     }
 
@@ -927,6 +945,14 @@ private:
                     return (out = juce::String (r + 1)), true;
                 if (face::matches (n, "wv-hint") && n["text"][0]["text"].toString().startsWith ("pick a source"))
                     return (out = draftSrc.isNotEmpty() || draftDst.isNotEmpty() ? juce::String ("pick the other one") : n["text"][0]["text"].toString()), true;
+                // What has been picked so far is named on its button.
+                const auto was = n["text"][0]["text"].toString();
+                if (face::matches (n, "wv-hint") && was.startsWith ("Source") && draftSrc.isNotEmpty())
+                    return (out = wave::srcName (model(), draftSrc)), true;
+                if (face::matches (n, "wv-hint") && was.startsWith ("Target") && draftDst.isNotEmpty())
+                    return (out = wave::targetName (model(), draftDst)), true;
+                if (face::matches (n, "wv-hint") && was.startsWith (juce::String::fromUTF8 ("\xc3\x97")) && draftVia.isNotEmpty())
+                    return (out = juce::String::fromUTF8 ("\xc3\x97 ") + wave::srcName (model(), draftVia)), true;
                 return false;
             };
             s.draw (g, *addRow, juce::Point<float> (rowsAt.x, y) - tr.getPosition());

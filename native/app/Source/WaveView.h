@@ -34,10 +34,14 @@ struct WaveCtx
     std::function<void()> closeMenus;
     // Show a view (`wvShowView`): "play", "create", "matrix", "fx".
     std::function<void (const juce::String&)> showView;
+    // The LFO shape menu, the face's (`wvLfoMenu`).
+    std::function<void (juce::Rectangle<float> near, int L)> lfoMenu;
     // `/api/wave/state` as last read (null when there is none).
     juce::var tele;
     // The page's view, `play` `create` `matrix` `fx`.
     juce::String view = "play";
+    // The oscillator last worked on (0 A, 1 B, 2 C): the one Create edits.
+    int editOsc = 0;
     float lastT = 0;
 };
 
@@ -70,6 +74,13 @@ public:
     virtual bool dockDown (const juce::MouseEvent&) { return false; }
     // Where a card is in the dock's list (for a press on Play's row of cards), or -1.
     virtual float dockTopOf (const juce::String& /*node*/) { return -1; }
+    // The header's A and B, lit as the face's are.
+    void lightAB (bool b)
+    {
+        light (nodes ("data-ab"), [b] (const juce::var& n) { return (n["data"]["ab"].toString() == "B") == b; });
+    }
+    // Shut whatever menu the view has open (`wvCloseMenus`).
+    virtual void closeMenus() {}
     // The view is shown (`wvShowView`): read what it shows again.
     virtual void shown() {}
     // A key changed (anywhere): draw again what shows it.
@@ -163,6 +174,11 @@ protected:
     void say (const juce::String& id, const juce::String& t)
     {
         if (auto* n = node ("#" + id))
+            sayNode (*n, t);
+    }
+    void sayNode (const juce::var& node, const juce::String& t)
+    {
+        if (auto* n = &node)
         {
             chrome.skipText.insert ((int) (*n)["i"]);
             if (texts[(int) (*n)["i"]] != t)

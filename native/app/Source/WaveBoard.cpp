@@ -125,8 +125,25 @@ public:
 
     std::vector<std::pair<juce::String, double>> profile (float s) override { return timeLayers (s); }
 
+    void closeMenus() override
+    {
+        if (!menu.empty())
+        {
+            menu.clear();
+            again ("menu");
+        }
+    }
+
     bool key (const juce::KeyPress& k) override
     {
+        if (k == juce::KeyPress::escapeKey && !menu.empty())
+        {
+            closeMenus();
+            return true;
+        }
+        // With ⌘, ⌥ or ctrl held the page leaves the key alone.
+        if (k.getModifiers().isCommandDown() || k.getModifiers().isAltDown() || k.getModifiers().isCtrlDown())
+            return false;
         if (k == juce::KeyPress::deleteKey || k == juce::KeyPress::backspaceKey)
         {
             removeSelected();

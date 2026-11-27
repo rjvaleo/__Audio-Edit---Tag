@@ -71,6 +71,7 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
     };
     ctx.closeMenus = [this] { closeMenu(); };
     ctx.showView = [this] (const juce::String& v) { showView (v); };
+    ctx.lfoMenu = [this] (juce::Rectangle<float> near, int L) { lfoMenu (near, L); };
     const auto& other = face::page ("wave-views")["views"];
     const char* names[] = { "create", "matrix", "fx" };
     for (int v = 0; v < 3; ++v)
@@ -85,6 +86,15 @@ WaveFace::WaveFace (Send s, Patch p, Frames f) : send (std::move (s)), readPatch
         for (const auto& id : { "wvVoicesRo", "wvOctRo", "wvVelRo" })
             if (auto* n = face::findNode (cap["tree"], "#" + juce::String (id)))
                 views[v]->page().skipText.insert ((int) (*n)["i"]);
+        // The patch's name and tags too, and the unsaved dot (the bar is the face's).
+        for (auto* n : face::findAll (cap["tree"], "data-pb"))
+        {
+            const auto pb = (*n)["data"]["pb"].toString();
+            if (pb == "label" || pb == "tag")
+                views[v]->page().skipText.insert ((int) (*n)["i"]);
+            if (pb == "dirty")
+                views[v]->page().skip.insert ((int) (*n)["i"]);
+        }
         for (int m = 0; m < 8; ++m)
             for (const auto& id : { "#wvMacr", "#wvMacn" })
                 if (auto* n = face::findNode (cap["tree"], id + juce::String (m)))
@@ -168,6 +178,20 @@ void WaveFace::poll()
         int status = 0;
         const auto t = api ("GET", "/api/wave/state", {}, status);
         model.tele = status == 200 ? t : juce::var();
+        ctx.tele = model.tele;
+        juce::String psig;
+        if (auto* pos = model.tele["pos"].getArray())
+            for (const auto& v : *pos)
+                psig << juce::String ((double) v, 4) << ",";
+        if (psig != lastPos)
+        {
+            lastPos = psig;
+            for (int i = 0; i < 3; ++i)
+                repaintFor ("osc" + juce::String (i) + ".pos");
+            if (auto* v = viewFor (ctx.view))
+                for (int i = 0; i < 3; ++i)
+                    v->changed ("osc" + juce::String (i) + ".pos");
+        }
     }
     // What each source has done, fifty a second (WV_HIST).
     const double t = nowT;
@@ -234,8 +258,7 @@ void WaveFace::poll()
             if (fx == "chorus" || fx == "phaser")
                 repaintCanvas ("wvOfx" + juce::String (i));
         }
-        if (model.g ("noise.on") >= 0.5f)
-            repaintCanvas ("wvMixL4");
+        repaintCanvas ("wvMixL4");
         for (const auto& src : wave::sources())
             if (src.kind == "perf" || src.kind == "macro")
                 repaintCanvas ("wvSc" + src.key);
@@ -282,6 +305,9 @@ void WaveFace::showView (const juce::String& v)
     if (v != "play" && viewFor (v) == nullptr)
         return;
     closeMenu();
+    for (auto& w : views)
+        if (w != nullptr)
+            w->closeMenus();
     ctx.view = v;
     chrome.setVisible (v == "play");
     for (auto& l : layers)
@@ -289,8 +315,26 @@ void WaveFace::showView (const juce::String& v)
     for (auto& w : views)
         if (w != nullptr)
             w->setVisible (w.get() == viewFor (v));
+    // The effects column is over every view but FX; what is drawn over all of them stays on top.
+    if (dockLayer != nullptr && v != "play" && v != "fx")
+    {
+        dockLayer->toFront (false);
+        if (textLayer != nullptr)
+            textLayer->toFront (false);
+        if (mapLayer != nullptr)
+            mapLayer->toFront (false);
+        if (menuOpen != nullptr)
+            menuOpen->toFront (false);
+    }
     if (auto* w = viewFor (v))
-        w->shown();
+    {
+        // The patch as the engine holds it now, as the page reads it on arriving.
+        const auto now = readPatch ? readPatch() : juce::String();
+        if (now != lastPatch)
+            reload();
+        else
+            w->shown();
+    }
     else
     {
         // Back on Play: read the patch again, and draw again only if it changed elsewhere.
@@ -369,6 +413,15 @@ void WaveFace::set (const juce::String& key, const juce::var& value)
     model.p[key] = value;
     if (send)
         send (key, json (value));
+    // The engine's last word on a position is older than this one: until it
+    // answers again the pictures use what was just set.
+    if (key.startsWith ("osc") && key.endsWith (".pos"))
+        if (auto* pos = model.tele["pos"].getArray())
+        {
+            const int i = key.substring (3, 4).getIntValue();
+            if (i < pos->size())
+                pos->set (i, value);
+        }
     sync();
     repaintFor (key);
     if (tiles != nullptr)
@@ -454,9 +507,8 @@ void WaveFace::sync()
     }
     // The preset bar: the patch's name, and its tags (a factory patch's are "Factory · …").
     {
-        bool factory = false;
-        for (auto& p : patchList())
-            factory = factory || (p["name"].toString() == patchName && (bool) p["factory"]);
+        // A factory patch is one of the page's eight by name (no need to read the list).
+        const bool factory = isFactoryPatch (patchName);
 
         for (const auto& [i, n] : chrome.nodes)
         {
@@ -488,7 +540,8 @@ void WaveFace::sync()
     txt ("wvVelRo", velText);
     for (int i = 0; i < 8; ++i)
         txt ("wvMacr" + juce::String (i), juce::String (juce::roundToInt (model.g ("macro" + juce::String (i)) * 100)));
-    txt ("wvVoicesRo", "0 voices");
+    if (auto it = byId.find ("wvVoicesRo"); it != byId.end() && texts.count (it->second.i) == 0)
+        txt ("wvVoicesRo", "0 voices");
     for (int i = 0; i < 3; ++i)
         if (auto it = byId.find ("wvOfr" + juce::String (i)); it != byId.end())
             texts[it->second.i] = wave::ofxText (model, i);
@@ -959,7 +1012,7 @@ void WaveFace::buildLayers()
     textLayer = addLayer (getLocalBounds().toFloat(), { "*" }, [this] (juce::Graphics& g) { drawTexts (g); });
     textLayer->name = "texts";
     for (auto& l : layers)
-        l->shared = l.get() == textLayer || l.get() == mapLayer || sharedArea (l->getBounds().toFloat());
+        l->shared = l.get() == textLayer || l.get() == mapLayer || l.get() == dockLayer || sharedArea (l->getBounds().toFloat());
 }
 
 void WaveFace::drawTexts (juce::Graphics& g)
@@ -1035,6 +1088,11 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
     // The preset bar.
     if (at.y < 44 && presetBarDown (at))
         return;
+    // The oscillator pressed in is the one Create edits.
+    if (ctx.view == "play")
+        for (int i = 0; i < 3; ++i)
+            if (auto it = byId.find ("wvOsc" + juce::String (i)); it != byId.end() && it->second.r.contains (at))
+                ctx.editOsc = i;
     // The view tabs.
     for (const auto& [i, n] : chrome.nodes)
         if (hasClass (n, "wv-tab") && rectOf (n["rect"]).contains (at))
@@ -1287,6 +1345,7 @@ void WaveFace::mouseDown (const juce::MouseEvent& e)
     {
         drag = [this] (float, float dy, const juce::MouseEvent&) {
             mw = wave::clamp (mw - dy / 90);
+            model.mw = mw;
             if (onWheel)
                 onWheel (1, mw);
             repaintCanvas ("wvModw");
@@ -1650,6 +1709,54 @@ juce::Array<juce::var> WaveFace::patchList()
     return out;
 }
 
+bool WaveFace::isFactoryPatch (const juce::String& name)
+{
+    static const juce::StringArray names { "Night Glass Pad", "Hollow Choir", "Organ Bloom", "Pulse Runner", "Grit Engine", "Vowel Pluck", "Formant Bass", "Glass Bell" };
+    return names.contains (name);
+}
+
+void WaveFace::askPatchName (const juce::String& title, const juce::String& start, std::function<void (const juce::String&)> then)
+{
+    auto* w = new juce::AlertWindow (title, {}, juce::MessageBoxIconType::NoIcon);
+    w->addTextEditor ("name", start);
+    w->addButton ("OK", 1);
+    w->addButton ("Cancel", 0);
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([w, then] (int ok) {
+        const auto name = w->getTextEditorContents ("name").trim();
+        if (ok != 1 || name.isEmpty())
+            return;
+        // A factory name is the factory's.
+        if (isFactoryPatch (name))
+            return (void) juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::NoIcon, "That name is a factory patch's", "Pick another name.");
+        then (name);
+    }), true);
+}
+
+// `WV_PATCHES.saveAs`: stored under the name, and the patch now carries it.
+void WaveFace::savePatchAs (const juce::String& name)
+{
+    if (!api)
+        return;
+    int st = 0;
+    auto patch = api ("GET", "/api/wave/patch", {}, st);
+    if (!patch.isObject())
+        return;
+    patch.getDynamicObject()->setProperty ("name", name);
+    juce::Array<juce::var> tags;
+    for (const auto& t : juce::StringArray::fromTokens (patchTags, juce::String::fromUTF8 ("\xc2\xb7"), ""))
+        if (t.trim().isNotEmpty())
+            tags.add (t.trim());
+    auto* body = new juce::DynamicObject();
+    body->setProperty ("name", name);
+    body->setProperty ("tags", tags);
+    body->setProperty ("patch", patch);
+    api ("POST", "/api/wave/presets", juce::var (body), st);
+    if (st != 200)
+        return (void) juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::NoIcon, "The patch was not saved", "The synth engine did not take it.");
+    api ("POST", "/api/wave/patch", patch, st);
+    reload();
+}
+
 // wvApplyPreset: over the current patch, sent whole to the engine.
 void WaveFace::loadPatch (const juce::var& p)
 {
@@ -1657,6 +1764,10 @@ void WaveFace::loadPatch (const juce::var& p)
         return;
     int st = 0;
     auto patch = api ("GET", "/api/wave/patch", {}, st);
+    if (!patch.isObject() || !patch["params"].isObject())
+        return;
+    // The tables are the engine's again (`wvFetchTable`, each oscillator's).
+    model.forgetAll();
     if (auto* params = p["patch"]["params"].getDynamicObject())
         for (auto& pr : params->getProperties())
             patch["params"].getDynamicObject()->setProperty (pr.name, pr.value);
@@ -1711,19 +1822,104 @@ bool WaveFace::presetBarDown (juce::Point<float> at)
                     chrome.styleFrom[j] = (int) (*((dataOf (m, "ab") == "B") == (ab == 1) ? lit : unlit))["i"];
                     chrome.redraw (rectOf (m["rect"]));
                 }
+            for (auto& w : views)
+                if (w != nullptr)
+                    w->lightAB (ab == 1);
             reload();
             return true;
         }
         if (pb == "save" && api)
         {
-            // Save: these settings as the patch of its name (a factory one is saved as yours).
-            int st = 0;
-            const auto patch = api ("GET", "/api/wave/patch", {}, st);
-            auto* body = new juce::DynamicObject();
-            body->setProperty ("name", patchName.isNotEmpty() ? patchName : juce::String ("Patch"));
-            body->setProperty ("tags", juce::StringArray::fromTokens (patchTags, juce::String::fromUTF8 ("\xc2\xb7"), "").joinIntoString (","));
-            body->setProperty ("patch", patch);
-            api ("POST", "/api/wave/presets", juce::var (body), st);
+            // Save: over the patch of its name; a factory or unnamed one asks for a name first.
+            if (patchName.isEmpty() || isFactoryPatch (patchName))
+                askPatchName ("Save these settings as", patchName.isNotEmpty() ? patchName + " (mine)" : juce::String ("Patch 1"), [this] (const juce::String& n) { savePatchAs (n); });
+            else
+                savePatchAs (patchName);
+            return true;
+        }
+        if ((pb == "open" || pb == "label" || pb == "tag") && api)
+        {
+            // The list: the factory set, then yours; a pick loads it.
+            const auto list = patchList();
+            juce::PopupMenu m;
+            bool yours = false;
+            m.addSectionHeader ("Factory");
+            for (int k = 0; k < list.size(); ++k)
+            {
+                if (!(bool) list[k]["factory"] && !yours)
+                {
+                    yours = true;
+                    m.addSectionHeader ("Yours");
+                }
+                m.addItem (k + 1, list[k]["name"].toString(), true, list[k]["name"].toString() == patchName);
+            }
+            if (!yours)
+            {
+                m.addSectionHeader ("Yours");
+                m.addItem (-1, juce::String::fromUTF8 ("None yet: Save as\xe2\x80\xa6 keeps these settings"), false);
+            }
+            juce::Component::SafePointer<WaveFace> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withTargetScreenArea (localAreaToGlobal (rectOf (n["rect"]).getSmallestIntegerContainer())), [safe, list] (int r) {
+                if (safe != nullptr && r > 0 && r <= list.size())
+                    safe->loadPatch (list[r - 1]);
+            });
+            return true;
+        }
+        if (pb == "more" && api)
+        {
+            const bool mine = patchName.isNotEmpty() && !isFactoryPatch (patchName);
+            juce::PopupMenu m;
+            m.addItem (1, juce::String::fromUTF8 ("Save as\xe2\x80\xa6"));
+            m.addItem (2, juce::String::fromUTF8 ("Rename\xe2\x80\xa6"), mine);
+            m.addItem (3, "Init");
+            m.addSeparator();
+            m.addItem (4, juce::String::fromUTF8 ("Delete\xe2\x80\xa6"), mine);
+            juce::Component::SafePointer<WaveFace> safe (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withTargetScreenArea (localAreaToGlobal (rectOf (n["rect"]).getSmallestIntegerContainer())), [safe] (int r) {
+                if (safe == nullptr)
+                    return;
+                auto& f = *safe;
+                if (r == 1)
+                    f.askPatchName ("Save these settings as", f.patchName.isEmpty() ? juce::String ("Patch 1") : f.isFactoryPatch (f.patchName) ? f.patchName + " (mine)" : f.patchName, [safe] (const juce::String& nm) { if (safe != nullptr) safe->savePatchAs (nm); });
+                if (r == 2)
+                    f.askPatchName ("Rename", f.patchName, [safe] (const juce::String& nm) {
+                        if (safe == nullptr || nm == safe->patchName)
+                            return;
+                        const auto old = safe->patchName;
+                        safe->savePatchAs (nm);
+                        int st = 0;
+                        auto* gone = new juce::DynamicObject();
+                        gone->setProperty ("name", old);
+                        gone->setProperty ("remove", true);
+                        safe->api ("POST", "/api/wave/presets", juce::var (gone), st);
+                    });
+                if (r == 3)
+                {
+                    // The engine's own default patch.
+                    int st = 0;
+                    auto* body = new juce::DynamicObject();
+                    body->setProperty ("name", "Init");
+                    f.api ("POST", "/api/wave/patch", juce::var (body), st);
+                    for (int i = 0; i < 3; ++i)
+                        f.model.forget (f.model.s ("osc" + juce::String (i) + ".table"));
+                    f.reload();
+                }
+                if (r == 4)
+                {
+                    const auto name = f.patchName;
+                    juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::NoIcon, juce::String::fromUTF8 ("Delete \xe2\x80\x9c") + name + juce::String::fromUTF8 ("\xe2\x80\x9d?"), "It can't be undone.", "Delete", "Cancel", safe.getComponent(),
+                        juce::ModalCallbackFunction::create ([safe, name] (int ok) {
+                            if (ok != 1 || safe == nullptr)
+                                return;
+                            int st = 0;
+                            auto* gone = new juce::DynamicObject();
+                            gone->setProperty ("name", name);
+                            gone->setProperty ("remove", true);
+                            safe->api ("POST", "/api/wave/presets", juce::var (gone), st);
+                            safe->sync();
+                        }));
+                }
+            });
             return true;
         }
     }
@@ -1841,11 +2037,19 @@ bool WaveFace::keyPressed (const juce::KeyPress& key)
     }
     if (auto* v = viewFor (ctx.view); v != nullptr && v->key (key))
         return true;
+    // Delete is the FX board's alone: anywhere else on the page it does nothing
+    // (it must not reach the canvas and remove the module).
+    if (key.getKeyCode() == juce::KeyPress::deleteKey || key.getKeyCode() == juce::KeyPress::backspaceKey)
+        return true;
     if (key.getModifiers().isCommandDown() || key.getModifiers().isAltDown() || key.getModifiers().isCtrlDown())
         return false;
     const auto ch = juce::CharacterFunctions::toLowerCase (key.getTextCharacter());
     if (ch == 'z' || ch == 'x')
     {
+        // Held, it repeats: one step a press, as the page ignores repeats.
+        if (octKey == ch)
+            return true;
+        octKey = ch;
         kbLo = juce::jlimit (12, 96, kbLo + (ch == 'z' ? -12 : 12));
         sync();
         repaintCanvas ("wvKeys");
@@ -1865,9 +2069,19 @@ bool WaveFace::keyPressed (const juce::KeyPress& key)
     return true;
 }
 
+void WaveFace::releaseKeys()
+{
+    for (const auto& [ch, n] : keyNotes)
+        note (n, 0, false);
+    keyNotes.clear();
+    octKey = 0;
+}
+
 bool WaveFace::keyStateChanged (bool)
 {
     bool any = false;
+    if (octKey != 0 && !juce::KeyPress::isKeyCurrentlyDown ((int) octKey) && !juce::KeyPress::isKeyCurrentlyDown ((int) juce::CharacterFunctions::toUpperCase (octKey)))
+        octKey = 0;
     for (auto it = keyNotes.begin(); it != keyNotes.end();)
     {
         if (!juce::KeyPress::isKeyCurrentlyDown ((int) it->first))
@@ -1971,7 +2185,19 @@ void WaveFace::tableMenu (juce::Rectangle<float> near, int i)
 {
     const auto k = "osc" + juce::String (i) + ".table";
     std::vector<WaveMenu::Item> items;
-    for (const auto& name : options (k))
+    juce::StringArray names;
+    if (api)
+    {
+        int st = 0;
+        const auto list = api ("GET", "/api/wave/tables", {}, st);
+        if (auto* a = list.getArray())
+            for (const auto& t : *a)
+                names.addIfNotAlreadyThere (t.isString() ? t.toString() : t["name"].toString());
+        names.removeEmptyStrings();
+    }
+    if (names.isEmpty())
+        names = options (k);
+    for (const auto& name : names)
     {
         WaveMenu::Item it;
         it.label = name;
@@ -1980,7 +2206,13 @@ void WaveFace::tableMenu (juce::Rectangle<float> near, int i)
             const auto f = wave::frameAt (model.table (name), 0.5f);
             wave::trace (c, wave::path ([&] (float u) { return menuPt (4 + u * 80, 19 - wave::rd (f, u) * 14); }, 100), cl, 1.3f, 0.6f);
         };
-        it.act = [this, k, name] { set (k, name); };
+        it.act = [this, k, name] {
+            // The engine's frames, read again (`wvFetchTable`).
+            model.forget (name);
+            set (k, name);
+            for (auto& l : layers)
+                l->repaint();
+        };
         items.push_back (std::move (it));
     }
     openMenu (std::make_unique<WaveMenu> (menuPart(), std::move (items), cl.t2, cl.t), "table" + juce::String (i), near, 0);

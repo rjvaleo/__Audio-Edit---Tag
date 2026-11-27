@@ -112,6 +112,10 @@ public:
 
     void shown() override
     {
+        // The oscillator last worked on in Play is the one edited here, on the
+        // frame it is playing: what is drawn is what is heard.
+        osc = juce::jlimit (0, 2, ctx.editOsc);
+        followPos();
         sync();
         for (auto& l : layers)
             l->repaint();
@@ -119,7 +123,7 @@ public:
 
     void changed (const juce::String& key) override
     {
-        if (key.startsWith ("osc0."))
+        if (key.startsWith ("osc" + juce::String (osc) + "."))
         {
             sync();
             redrawAll();
@@ -131,7 +135,7 @@ public:
     bool key (const juce::KeyPress& k) override
     {
         // ⌘Z undoes the last edit, in Create.
-        if (k.getModifiers().isCommandDown() && !k.getModifiers().isShiftDown() && k.getKeyCode() == 'Z')
+        if ((k.getModifiers().isCommandDown() || k.getModifiers().isCtrlDown()) && !k.getModifiers().isShiftDown() && k.getKeyCode() == 'Z')
         {
             undo();
             return true;
@@ -161,7 +165,18 @@ public:
         if (auto* n = node ("#wvCTable"); n != nullptr && face::rectOf (*n).contains (at))
         {
             if (tableMenu)
-                tableMenu (face::rectOf (*n), 0);
+                tableMenu (face::rectOf (*n), osc);
+            return true;
+        }
+        // The caption names the oscillator being edited; a press takes the next.
+        if (auto* n = caption(); n != nullptr && face::rectOf (*n).contains (at))
+        {
+            osc = (osc + 1) % 3;
+            ctx.editOsc = osc;
+            undos.clear();
+            followPos();
+            sync();
+            redrawAll();
             return true;
         }
         auto seg = [&] (const juce::String& id, const std::function<void (const juce::String&)>& pick) {
@@ -251,7 +266,7 @@ public:
             else
             {
                 frame = i;
-                ctx.set ("osc0.pos", (double) i / (double) juce::jmax (1, (int) frames().size() - 1));
+                ctx.set ("osc" + juce::String (osc) + ".pos", (double) i / (double) juce::jmax (1, (int) frames().size() - 1));
                 sync();
                 redrawAll();
             }
@@ -312,6 +327,21 @@ private:
 
     wave::Model& model() { return *ctx.model; }
     const wave::Cl& cl() const { return *ctx.cl; }
+    // The frame the oscillator is on (its position along the table).
+    void followPos()
+    {
+        if (tableName().isEmpty())
+            return;
+        const int n = (int) model().editable (tableName()).size();
+        frame = juce::jlimit (0, juce::jmax (0, n - 1), juce::roundToInt (clamp (model().g ("osc" + juce::String (osc) + ".pos")) * (float) (n - 1)));
+    }
+    const juce::var* caption() const
+    {
+        for (auto* n : nodes ("wv-nm"))
+            if ((*n)["text"]["text"].toString().startsWith ("OSC A"))
+                return n;
+        return nullptr;
+    }
     juce::String tableName() { return model().s ("osc" + juce::String (osc) + ".table"); }
 
     // The table being edited, as frames the page owns (`wvEditFrames`).
@@ -413,7 +443,7 @@ private:
             f[(size_t) i] = vv;
             last = std::pair { i, vv };
         }
-        redrawAll();
+        sync(); redrawAll();
     }
 
     void setH (juce::Point<float> p, juce::Rectangle<float> r, bool shift)
@@ -430,7 +460,7 @@ private:
         sp.re[(size_t) hk] = nm * std::cos (nph);
         sp.im[(size_t) hk] = nm * std::sin (nph);
         f = wave::normalised (wave::fromSpec (sp.re, sp.im));
-        redrawAll();
+        sync(); redrawAll();
     }
 
     int stripFrame (float x, juce::Rectangle<float> r)
@@ -601,6 +631,8 @@ private:
         auto& T = frames();
         const int n = (int) T.size();
         say ("wvCTableName", tableName());
+        if (auto* n = caption())
+            sayNode (*n, "OSC " + juce::String::charToString ((juce::juce_wchar) ('A' + osc)) + juce::String::fromUTF8 (" \xc2\xb7 FRAME"));
         for (const auto& [k, name] : tools)
             if (k == tool)
                 say ("wvCTool", name);

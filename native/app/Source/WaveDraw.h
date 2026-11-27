@@ -71,6 +71,7 @@ struct Model
     void putTable (const juce::String& name, Table t) { tables[name] = std::move (t); }
     // Read a table from the engine again (it was stored anew).
     void forget (const juce::String& name) { tables.erase (name); }
+    void forgetAll() { tables.clear(); }
 
 private:
     std::map<juce::String, Table> tables;
