@@ -150,14 +150,18 @@ int browseBench (const juce::StringArray&)
         check ("a folder row closes it", !f.openFolders.contains (first), t, 40);
         t = press ({ tree.getX() + 120, tree.getY() + 14 });
         check ("and opens it again", f.openFolders.contains (first), t, 40);
+        // The page's rows: the folder's is 31 px, each file's 33 (its play button in its middle).
+        auto rowY = [&] (int n) { return tree.getY() + 31.0f + 33.0f * (float) n + 16.0f; };
         // A file row: picked, its stats asked.
-        t = press ({ tree.getX() + 200, tree.getY() + 14 + 47 * 2.5f });
+        t = press ({ tree.getX() + 200, rowY (3) });
         check ("a file row picks the sound", f.picked.isNotEmpty() && f.picked != ui["picked"].toString(), t, 40);
         // Its play button: heard.
-        t = press ({ tree.getX() + 34, tree.getY() + 14 + 47 * 2.5f });
+        t = press ({ tree.getX() + 34, rowY (3) });
         const auto i = rig.call ("info");
         check ("its play button plays it", (bool) i["playing"] && i["heard"]["path"].toString() == f.picked, t, 40);
-        t = press ({ tree.getX() + 34, tree.getY() + 14 + 47 * 2.5f });
+        if (!((bool) i["playing"] && i["heard"]["path"].toString() == f.picked))
+            std::printf ("  picked %s\n  info %s\n", f.picked.toRawUTF8(), juce::JSON::toString (i, true).substring (0, 600).toRawUTF8());
+        t = press ({ tree.getX() + 34, rowY (3) });
         check ("and again pauses it", !(bool) rig.call ("info")["playing"], t, 40);
         // A type.
         const auto types = f.where ("types");
@@ -174,10 +178,10 @@ int browseBench (const juce::StringArray&)
         t = press (f.where ("playAll").getCentre());
         check ("Play all files", f.playAll, t, 40);
         // Double-click: opened in the Sound module cabled from it.
-        mouse (f, { tree.getX() + 200, tree.getY() + 14 + 47 * 1.5f }, 0);
+        mouse (f, { tree.getX() + 200, rowY (1) }, 0);
         juce::String chosen;
         f.choose = [&] (const juce::String& file, const juce::String&, const juce::String&, const juce::String&) { chosen = file; };
-        t = ms ([&] { mouse (f, { tree.getX() + 200, tree.getY() + 14 + 47 * 1.5f }, 4); });
+        t = ms ([&] { mouse (f, { tree.getX() + 200, rowY (1) }, 4); });
         check ("a double-click chooses it", chosen.isNotEmpty(), t, 40);
         // The panes.
         f.showPane ("search");

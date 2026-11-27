@@ -5,7 +5,8 @@
 #
 # The crates this workspace builds from go beside it, laid out as they are in
 # ~/Documents: GitHub\M Clone (idMLab's engine), GitHub\prism-fx and
-# MultiGrainLive\core. Each is the committed code (idMLab's is the working
+# MultiGrainLive\core (with Seq's presets, ui\sequencer\presets.json, which
+# its test reads). Each is the committed code (idMLab's is the working
 # folder), replaced whole on every run.
 set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -38,5 +39,5 @@ COPYFILE_DISABLE=1 tar -C "$LAB/rust" --exclude target -cf - . \
 fresh 'GitHub\\prism-fx'
 git -C "$FX" archive --format=tar HEAD | ssh pc "tar -x -f - -C $U/GitHub/prism-fx" 2>&1 | quiet
 fresh 'MultiGrainLive\\core'
-git -C "$MGL" archive --format=tar "$MGL_REV" core | ssh pc "tar -x -f - -C $U/MultiGrainLive" 2>&1 | quiet
+git -C "$MGL" archive --format=tar "$MGL_REV" core ui/sequencer/presets.json visualiser/grain-views.html visualiser/p5.min.js visualiser/fonts.css tools/pc/notes_basic_pitch.py | ssh pc "tar -x -f - -C $U/MultiGrainLive" 2>&1 | quiet
 ssh pc "cd /d $R\\MultiGrainLive\\native && cargo test --workspace --features engine-core/rt-check $*" 2>&1 | grep -Ev "$Q"
