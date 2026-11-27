@@ -72,7 +72,7 @@ struct Hit
 {
     juce::Rectangle<float> r;
     std::function<void()> click, dbl;
-    std::function<void (const juce::MouseEvent&)> drag;
+    std::function<void (const juce::MouseEvent&)> drag, up;
 };
 
 // BROWSE_TYPES (251-browse-types.js).
@@ -164,6 +164,29 @@ struct BrowseFace::Impl
 
     float treeScroll = 0, btScroll = 0, resultScroll = 0;
     std::vector<Hit> hits;
+    // The bar's fader, the loop, and the lane's cue and selection (the file's frames; -1 none).
+    float vol = 0.85f;
+    bool loopOn = false, laneMoved = false, holdingLane = false;
+    double cue = 0, selA = -1, selB = -1, laneFrom = 0;
+    N loopBtn, loopLabel;
+    Hit held;
+    bool holding = false;
+    double framesOfPicked() const { return peakTo > peakFrom ? peakTo - peakFrom : 0; }
+    void sendLoop()
+    {
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        o->setProperty ("on", loopOn);
+        const bool has = selB > selA && selA >= 0;
+        o->setProperty ("a", has ? selA : 0.0);
+        o->setProperty ("b", has ? selB : 0.0);
+        f.module ("loop", juce::var (o.get()));
+    }
+    void seekTo (double frame)
+    {
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        o->setProperty ("frame", frame);
+        f.module ("seek", juce::var (o.get()));
+    }
 
     explicit Impl (BrowseFace& face) : f (face), cap (face::page ("browse"))
     {
@@ -234,6 +257,8 @@ struct BrowseFace::Impl
         timeNow = at ("#timeNow");
         playAllBox = at ("#playAll");
         volume = at ("#volume");
+        loopBtn = at ("#loopBtn");
+        loopLabel = at ("#loopLabel");
         {
             std::vector<N> dots;
             browse::Base::findAll (page, ".dot", dots);
@@ -666,6 +691,9 @@ struct BrowseFace::Impl
         }
         f.drawRow (g, *frame, t.n, by.translated (RAIL * 0, 0) + juce::Point<float> (-RAIL, 0), [&] (const juce::var& tn, const juce::String& captured) -> juce::String {
             const auto cls = tn["cls"].toString();
+            // The row's play button shows pause while its sound plays (`markPlaying`).
+            if (cls.contains ("pb") && playing)
+                return juce::String::fromUTF8 ("\xe2\x9d\x9a\xe2\x9d\x9a");
             if (cls.contains ("fname"))
                 return file["name"].toString();
             if (cls.contains ("cat"))
@@ -705,6 +733,7 @@ struct BrowseFace::Impl
             Hit p;
             p.r = pb.r.translated (-RAIL, by.y).getIntersection (clip);
             p.click = [this, fv] { f.playFile (fv); };
+            p.dbl = [this, fv] { f.openFile (fv); };
             hits.push_back (p);
         }
         if (typesList)
@@ -855,6 +884,20 @@ struct BrowseFace::Impl
                 ctx.lineTo (w, top);
                 ctx.stroke();
             }
+        }
+        // The selection and the cue (040 `drawWave`'s overlays).
+        if (const double n = framesOfPicked(); n > 0)
+        {
+            if (selB > selA && selA >= 0)
+            {
+                ctx.globalAlpha = 0.18f;
+                ctx.fillStyle = css (cap["cl"], "--look-accent", "#ffb547");
+                ctx.fillRect ((float) (selA / n * w), 0, (float) ((selB - selA) / n * w), h);
+            }
+            ctx.globalAlpha = 0.7f;
+            ctx.fillStyle = css (cap["cl"], "--look-text", "#e8eaee");
+            ctx.fillRect ((float) (cue / n * w), 0, 1.0f, h);
+            ctx.globalAlpha = 1;
         }
         // The head, while the picked sound is heard.
         if (f.info["heard"]["path"].toString() == f.picked && (double) f.info["frames"] > 0)
@@ -1258,9 +1301,109 @@ struct BrowseFace::Impl
             g.setColour (css (cap["cl"], "--look-well", "#06070a"));
             g.fillRoundedRectangle (track, 2);
             g.setColour (css (cap["cl"], "--look-text-2", "#b9bec6"));
-            g.fillRoundedRectangle (track.withWidth (r.getWidth() * 0.85f), 2);
+            g.fillRoundedRectangle (track.withWidth (r.getWidth() * vol), 2);
             g.setColour (css (cap["cl"], "--look-text", "#e8eaee"));
-            g.fillEllipse (juce::Rectangle<float> (10, 10).withCentre ({ r.getX() + r.getWidth() * 0.85f, r.getCentreY() }));
+            g.fillEllipse (juce::Rectangle<float> (10, 10).withCentre ({ r.getX() + r.getWidth() * vol, r.getCentreY() }));
+            // Dragged along, it sets the sound's level (`#volume`, 020).
+            Hit h;
+            h.r = r.expanded (0, 6);
+            h.drag = [this, r] (const juce::MouseEvent& e) {
+                vol = juce::jlimit (0.0f, 1.0f, (e.position.x - r.getX()) / r.getWidth());
+                juce::DynamicObject::Ptr o = new juce::DynamicObject();
+                o->setProperty ("gain", vol);
+                f.module ("gain", juce::var (o.get()));
+                over.repaint();
+            };
+            hits.push_back (h);
+        }
+        // Play is lit while the sound plays, Loop while it loops (`reflectTransport`, `paintLoop`).
+        auto lit = [&] (const N& n) {
+            if (!n.ok())
+                return;
+            g.setColour (css (cap["cl"], "--look-accent", "#ffb547").withAlpha (0.22f));
+            g.fillRoundedRectangle (n.r, 5);
+            g.setColour (css (cap["cl"], "--look-accent", "#ffb547"));
+            g.drawRoundedRectangle (n.r.reduced (0.5f), 5, 1.0f);
+        };
+        if ((bool) f.info["playing"])
+            lit (nowPlay);
+        if (loopOn)
+        {
+            lit (loopBtn);
+            if (loopLabel.ok())
+            {
+                g.setColour (css (cap["cl"], "--look-text-2", "#b9bec6"));
+                g.setFont (face::sans (11.0f, 400));
+                g.drawText (selB > selA && selA >= 0 ? "selection" : "whole file", loopLabel.r.withWidth (90), juce::Justification::centredLeft);
+            }
+        }
+        if (loopBtn.ok())
+        {
+            Hit h;
+            h.r = loopBtn.r;
+            h.click = [this] {
+                loopOn = !loopOn;
+                sendLoop();
+                over.repaint();
+            };
+            hits.push_back (h);
+        }
+        // The lane (040 `wireWaveform`): a click sets the cue and plays from it,
+        // a drag selects (what Loop then loops), alt-drag scrubs.
+        if (laneW.ok() && f.picked.isNotEmpty() && framesOfPicked() > 0)
+        {
+            Hit h;
+            h.r = laneW.r;
+            const auto lane = laneW.r;
+            auto frameAt = [this, lane] (const juce::MouseEvent& e) { return juce::jlimit (0.0, 1.0, (double) ((e.position.x - lane.getX()) / lane.getWidth())) * framesOfPicked(); };
+            h.drag = [this, frameAt] (const juce::MouseEvent& e) {
+                const double at = frameAt (e);
+                if (!holdingLane)
+                {
+                    holdingLane = true;
+                    laneMoved = false;
+                    laneFrom = at;
+                    if (!e.mods.isAltDown())
+                        selA = selB = -1;
+                }
+                else if (std::abs (at - laneFrom) > 0 && e.getDistanceFromDragStart() > 2)
+                    laneMoved = true;
+                if (e.mods.isAltDown())
+                {
+                    cue = at;
+                    seekTo (at);
+                }
+                else if (laneMoved)
+                {
+                    selA = juce::jmin (laneFrom, at);
+                    selB = juce::jmax (laneFrom, at);
+                }
+                over.repaint (laneW.r.toNearestInt().expanded (2));
+            };
+            h.up = [this, frameAt] (const juce::MouseEvent& e) {
+                holdingLane = false;
+                if (e.mods.isAltDown())
+                    return;
+                if (!laneMoved)
+                {
+                    // A click: the cue, and the sound from there (it starts if it was not playing).
+                    cue = frameAt (e);
+                    const bool mine = f.info["heard"]["path"].toString() == f.picked;
+                    if (!mine || !(bool) f.info["playing"])
+                        if (pickedFile.isObject())
+                        {
+                            if (mine)
+                                seekTo (cue);
+                            f.playFile (pickedFile);
+                        }
+                    seekTo (cue);
+                }
+                else
+                    cue = selA;
+                sendLoop();
+                over.repaint();
+            };
+            hits.push_back (h);
         }
         // The chrome's own buttons.
         auto button = [&] (const N& n, std::function<void()> go) {
@@ -1612,6 +1755,15 @@ void BrowseFace::toggleFolder (const juce::String& name)
 
 void BrowseFace::selectFile (const juce::var& file)
 {
+    // Another sound picked: the one playing stops (`releaseEngineFor`), and the
+    // lane's cue and selection start again.
+    if (picked != file["path"].toString())
+    {
+        if ((bool) info["playing"] && info["heard"]["path"].toString() != file["path"].toString())
+            module ("pause");
+        d->cue = 0;
+        d->selA = d->selB = -1;
+    }
     picked = file["path"].toString();
     d->pickedFile = file;
     d->selectedFolder = d->folderNameOf (file);
@@ -1772,13 +1924,37 @@ void BrowseFace::mouseDown (const juce::MouseEvent& e)
 {
     if (blocked && blocked (e))
         return;
+    // The left button only, as the page's handlers are.
+    if (!e.mods.isLeftButtonDown())
+        return;
     grabKeyboardFocus();
-    if (const auto* h = hitAt (d->hits, e.position); h != nullptr && h->click)
-        h->click();
+    d->holding = false;
+    if (const auto* h = hitAt (d->hits, e.position); h != nullptr)
+    {
+        if (h->drag)
+        {
+            // Kept by value: the hits are made again at every draw.
+            d->held = *h;
+            d->holding = true;
+            d->held.drag (e);
+        }
+        else if (h->click)
+            h->click();
+    }
 }
 
-void BrowseFace::mouseDrag (const juce::MouseEvent&) {}
-void BrowseFace::mouseUp (const juce::MouseEvent&) {}
+void BrowseFace::mouseDrag (const juce::MouseEvent& e)
+{
+    if (d->holding && d->held.drag)
+        d->held.drag (e);
+}
+
+void BrowseFace::mouseUp (const juce::MouseEvent& e)
+{
+    if (d->holding && d->held.up)
+        d->held.up (e);
+    d->holding = false;
+}
 
 void BrowseFace::mouseDoubleClick (const juce::MouseEvent& e)
 {
@@ -1807,6 +1983,21 @@ void BrowseFace::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWhe
 
 bool BrowseFace::keyPressed (const juce::KeyPress& k)
 {
+    // Space plays and pauses the picked sound; Escape clears the selection and the cue (320).
+    if (k == juce::KeyPress::spaceKey)
+    {
+        if (d->pickedFile.isObject())
+            playFile (d->pickedFile);
+        return true;
+    }
+    if (k == juce::KeyPress::escapeKey)
+    {
+        d->selA = d->selB = -1;
+        d->cue = 0;
+        d->sendLoop();
+        d->over.repaint();
+        return true;
+    }
     // ↑ ↓ step through the type's files and play each (251).
     if (k == juce::KeyPress::downKey || k == juce::KeyPress::upKey)
     {

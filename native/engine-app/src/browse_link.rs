@@ -103,6 +103,12 @@ impl Session {
                 let same = b.heard.as_ref().and_then(|h| h.get("file")).and_then(Value::as_str) == Some(file.as_str());
                 if same && b.own.is_open() {
                     let on = !b.transport.is_playing();
+                    // It ran to its end: Play plays it again from the top (the
+                    // page drops back to the cue when the sound ends).
+                    let (at, frames) = b.head(rate);
+                    if on && frames > 0.0 && at >= frames - 1.0 {
+                        b.transport.seek(0);
+                    }
                     b.transport.play(on);
                     return Ok(b.info(rate));
                 }
@@ -143,7 +149,15 @@ impl Session {
             "loop" => {
                 let b = self.browse(id)?;
                 let on = v.get("on").and_then(Value::as_bool).unwrap_or(false);
-                b.transport.set_loop(on, 0, 0);
+                // The selection's ends, in the file's frames; none is the whole sound.
+                let file_rate = b.own.file_rate();
+                let end = |k: &str| v.get(k).and_then(Value::as_f64).filter(|f| *f > 0.0).map_or(0, |f| crate::edit_part::to_bank(f, file_rate, rate));
+                b.transport.set_loop(on, end("a"), end("b"));
+                Ok(b.info(rate))
+            }
+            "gain" => {
+                let b = self.browse(id)?;
+                b.transport.set_gain(v.get("gain").and_then(Value::as_f64).unwrap_or(1.0) as f32);
                 Ok(b.info(rate))
             }
             "open" => {

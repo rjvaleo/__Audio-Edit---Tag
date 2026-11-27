@@ -57,7 +57,7 @@ struct LibraryFace::Impl
     std::map<juce::String, std::vector<float>> peaks; // file -> 376 peaks, or empty while waiting
     std::set<juce::String> asked;
     juce::String acting;
-    float groupScroll = 0;
+    float groupScroll = 0, tileScroll = 0, tileRows = 0;
     std::vector<Hit> hits;
 
     explicit Impl (LibraryFace& face) : f (face), cap (face::page ("library"))
@@ -456,12 +456,20 @@ struct LibraryFace::Impl
         write (g, gname, f.group.isNotEmpty() ? f.group.toUpperCase() : juce::String ("SOUNDS"), gmeta.ok() ? gmeta.r.getX() - gname.r.getX() - 10 : 0);
         write (g, gmeta, xs.isEmpty() ? juce::String() : juce::String (xs.size()) + " sound" + (xs.size() > 1 ? "s" : ""));
         if (tiles.ok() && tileOn.ok())
+        {
+            // The list scrolls inside its box (the page's `.lb-tiles`).
+            tileRows = (float) ((xs.size() + tilesPerRow - 1) / tilesPerRow) * tileStepY;
+            tileScroll = juce::jlimit (0.0f, juce::jmax (0.0f, tileRows - tiles.r.getHeight()), tileScroll);
+            juce::Graphics::ScopedSaveState keepTiles (g);
+            g.reduceClipRegion (tiles.r.toNearestInt());
             for (int i = 0; i < xs.size(); ++i)
             {
                 const auto& x = xs[i];
                 const bool on = i == f.pick;
                 const auto& tpl = on ? tileOn : (tile.ok() ? tile : tileOn);
-                const float tx = tileOn.r.getX() + (float) (i % tilesPerRow) * tileStepX, ty = tileOn.r.getY() + (float) (i / tilesPerRow) * tileStepY;
+                const float tx = tileOn.r.getX() + (float) (i % tilesPerRow) * tileStepX, ty = tileOn.r.getY() + (float) (i / tilesPerRow) * tileStepY - tileScroll;
+                if (ty + tileStepY < tiles.r.getY())
+                    continue;
                 if (ty > tiles.r.getBottom())
                     break;
                 const juce::Point<float> by (tx - tpl.r.getX(), ty - tpl.r.getY());
@@ -504,7 +512,7 @@ struct LibraryFace::Impl
                     wave (g, well.r + by + at, x, 212, 54);
                 const auto tr = tpl.r + by;
                 Hit h;
-                h.r = tr;
+                h.r = tr.getIntersection (tiles.r);
                 h.click = [this, i] {
                     f.pick = i;
                     over.repaint();
@@ -513,7 +521,7 @@ struct LibraryFace::Impl
                 if (auto pb = browse::Base::find (tpl.n, ".lb-play"); pb.ok())
                 {
                     Hit p;
-                    p.r = pb.r + by + at;
+                    p.r = (pb.r + by + at).getIntersection (tiles.r);
                     p.click = [this, i] {
                         f.pick = i;
                         f.play (i);
@@ -521,6 +529,7 @@ struct LibraryFace::Impl
                     hits.push_back (p);
                 }
             }
+        }
         // The sound.
         if (f.pick >= 0 && f.pick < xs.size())
         {
@@ -774,6 +783,11 @@ void LibraryFace::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWh
     if (d->groups.r.contains (e.position))
     {
         d->groupScroll = juce::jmax (0.0f, d->groupScroll - w.deltaY * 300);
+        d->over.repaint();
+    }
+    else if (d->tiles.r.contains (e.position))
+    {
+        d->tileScroll = juce::jlimit (0.0f, juce::jmax (0.0f, d->tileRows - d->tiles.r.getHeight()), d->tileScroll - w.deltaY * 300);
         d->over.repaint();
     }
 }

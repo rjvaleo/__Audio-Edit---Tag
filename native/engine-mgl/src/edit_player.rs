@@ -33,6 +33,8 @@ pub struct Transport {
     peak_r: AtomicU32,
     /// Bumped each block that played, so a reader knows the head moved.
     blocks: AtomicU64,
+    /// The volume (the bar's fader), as `f32` bits; 1 is the sound as it is.
+    gain: AtomicU32,
 }
 
 impl Transport {
@@ -47,6 +49,7 @@ impl Transport {
             peak_l: AtomicU32::new(0),
             peak_r: AtomicU32::new(0),
             blocks: AtomicU64::new(0),
+            gain: AtomicU32::new(1.0f32.to_bits()),
         })
     }
 
@@ -69,6 +72,15 @@ impl Transport {
         self.loop_a.store(a, Ordering::Release);
         self.loop_b.store(b, Ordering::Release);
         self.loop_on.store(on, Ordering::Release);
+    }
+
+    /// The volume: every sample times this (1 leaves it to the bit).
+    pub fn set_gain(&self, g: f32) {
+        self.gain.store(g.clamp(0.0, 4.0).to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn gain(&self) -> f32 {
+        f32::from_bits(self.gain.load(Ordering::Relaxed))
     }
 
     pub fn position(&self) -> u64 {
@@ -150,6 +162,7 @@ impl Module for EditPlayer {
                 self.at = a;
             }
         }
+        let gain = t.gain();
         let (mut pl, mut pr) = (0.0f32, 0.0f32);
         for i in 0..l.len() {
             if let Some((a, b)) = bounds {
@@ -164,7 +177,7 @@ impl Module for EditPlayer {
                 t.playing.store(false, Ordering::Release);
                 break;
             }
-            let (x, y) = (data.l[self.at as usize], data.r[self.at as usize]);
+            let (x, y) = (data.l[self.at as usize] * gain, data.r[self.at as usize] * gain);
             l[i] = x;
             r[i] = y;
             pl = pl.max(x.abs());
