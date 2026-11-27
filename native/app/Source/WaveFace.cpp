@@ -295,6 +295,12 @@ void WaveFace::showView (const juce::String& v)
             reload();
         else
             sync();
+        // And every picture on Play drawn again, as the page draws them when
+        // Play is shown: a table drawn on in Create keeps its name after its
+        // first edit, so nothing else says its frames changed (RJ, 26 Nov
+        // 2026: he drew a frame and Play showed nothing of it).
+        for (auto& l : layers)
+            l->repaint();
     }
     if (textLayer != nullptr)
         textLayer->repaint();
